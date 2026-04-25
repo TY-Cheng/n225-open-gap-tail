@@ -1,0 +1,16 @@
+site_name: n225-open-gap-tail
+site_description: LightGBM-EVT workflow for Nikkei 225 futures opening-gap tail risk.
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+markdown_extensions:
+  - pymdownx.snippets:
+      base_path: .
+      check_paths: true
+nav:
+  - Home: index.md
+  - Data: data.md
+  - Paper Plan: paper_plan.md
+  - Development Prompt: development_prompt.md

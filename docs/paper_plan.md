@@ -4,272 +4,166 @@
 
 **Forecasting Pre-Open Tail Risk in Nikkei 225 Futures Using U.S. Close Information: A Session-Aligned LightGBM-EVT Framework**
 
-## Core Thesis
+This is a historical, session-aligned downside tail-risk forecasting study. The paper is not designed as a trading-system paper, and its contribution does not rest on presenting LightGBM-EVT as a new algorithm.
 
-This paper studies whether information frozen at the U.S. cash-market close improves timestamp-safe forecasts of the lower-tail risk of the next Osaka Exchange (OSE) Nikkei 225 Futures day-session open. The empirical object is not a conventional non-trading overnight return: OSE Nikkei 225 Futures trade through an extended night session that overlaps the U.S. trading day and closes shortly before the Japanese day session.
+## Core Argument
 
-The central identification issue is therefore session alignment. U.S. close information may help explain the full opening level relative to the previous settlement or day-session close, but it may already be partly reflected in the OSE night session. The paper must distinguish full opening-gap risk from residual pre-open risk measured relative to a U.S.-close or night-session reference mark.
+The paper asks whether information available at the U.S. cash-market close helps forecast the lower tail of the next Osaka Exchange (OSE) Nikkei 225 Futures day-session open. The empirical object is the pre-open risk faced before the Japanese day session, not a generic Japanese equity overnight return.
 
-LightGBM is used as a flexible conditional-learning layer for nonlinear cross-market signals. EVT is used as a disciplined tail-extrapolation layer for downside losses. The contribution is not "LightGBM plus EVT" as a generic model combination; it is a timestamp-safe, session-aware test of whether U.S. close-side information has incremental lower-tail forecasting content for OSE Nikkei 225 Futures.
+The market structure matters. OSE Nikkei 225 Futures trade through an extended night session that overlaps the U.S. trading day and ends shortly before the Japanese day session. U.S. close information may therefore be partly incorporated into futures prices before the day-session open. The paper treats this as the central identification problem rather than as a technical calendar detail.
 
-## Research Question
+The empirical design separates full opening-gap risk from residual pre-open risk. Full gaps are measured relative to the previous settlement or previous day-session close; residual gaps are measured relative to a night-session or U.S.-close reference price when such a reference is available. This distinction determines whether U.S. close variables are interpreted as drivers of the full opening level or as incremental signals for unresolved pre-open risk.
 
-Can information frozen at the U.S. cash-market close improve timestamp-safe forecasts of the lower-tail risk of the next OSE Nikkei 225 Futures day-session opening level, relative to prior-settlement, prior-day-close, and night-session reference prices?
+The modeling framework has two roles. LightGBM is used as a flexible conditional layer for nonlinear cross-market predictors. Extreme value theory (EVT), implemented through a peaks-over-threshold tail model, is used to calibrate sparse downside losses and to support VaR and ES forecasts at lower-tail levels.
+
+## Research Questions
+
+The main research question is:
+
+> Can information frozen at the U.S. cash-market close improve timestamp-safe forecasts of lower-tail risk at the next OSE Nikkei 225 Futures day-session open?
 
 Secondary questions:
 
-- Does U.S. close information improve full opening-gap VaR and ES calibration relative to Japan-only and historical baselines?
-- After controlling for OSE night-session information, does the U.S. close vector retain incremental content for residual pre-open downside risk?
-- Does the LightGBM layer mainly improve tail-event ranking, conditional scale, conditional quantiles, or VaR/ES calibration?
-- Does the POT-EVT layer improve extreme quantile extrapolation and ES severity calibration beyond LightGBM-only forecasts?
-- Are the results stable across roll windows, SQ windows, holiday-adjacent sessions, DST transitions, and stress regimes?
+- Does U.S. close information improve full opening-gap VaR and ES forecasts relative to Japan-only, historical, and econometric baselines?
+- After accounting for OSE night-session information, does the U.S. close vector retain incremental content for residual pre-open downside risk?
+- Does the LightGBM layer improve tail-event ranking, conditional scale, conditional quantiles, or VaR/ES calibration?
+- Does the EVT layer improve extreme-tail extrapolation and ES severity calibration relative to LightGBM-only forecasts?
+- Are results stable across roll windows, SQ windows, holiday-adjacent sessions, daylight-saving transitions, and stress regimes?
 
-Upper-tail modeling is optional robustness or appendix work. The first implementation and main manuscript line should focus on downside tail risk.
+Upper-tail analysis is an optional appendix or robustness exercise. The main paper focuses on downside tail risk.
 
-## Contributions
+## Prior Literature and Intended Contribution
 
-1. **Session-aligned target construction**
-   - Construct OSE day-session opening targets while explicitly handling night sessions, roll windows, SQ windows, Japan holidays, U.S. holidays, U.S. early closes, DST, and OSE holiday trading.
+This project sits between three literatures: international U.S.-Japan information transmission, futures price discovery across time zones, and conditional tail-risk forecasting. The paper's contribution is empirical and design-based: it studies U.S. close information as a timestamped predictor of OSE Nikkei 225 Futures day-session lower-tail opening risk, with explicit controls for market sessions and data availability.
 
-2. **Incremental U.S. close information test**
-   - Compare Japan-only, U.S.-only, combined, FX/risk-proxy-augmented, and night-session-controlled specifications to test whether U.S. close-side variables add lower-tail forecasting content.
+### Closest Literature
 
-3. **Conditional EVT design**
-   - Use LightGBM to learn nonlinear conditional structure and use POT-GPD on filtered or standardized downside losses for tail extrapolation.
+| Literature stream | Representative studies | Data and question | Models and metrics | Main lesson for this paper |
+| --- | --- | --- | --- | --- |
+| U.S.-Japan return and volatility transmission | [Hamao, Masulis, and Ng (1990)](https://academic.oup.com/rfs/article/3/2/281/1595767), [Lin, Engle, and Ito (1991/1994)](https://www.nber.org/papers/w3911), [Becker, Finnerty, and Gupta (1990)](https://ideas.repec.org/a/bla/jfinan/v45y1990i4p1297-1306.html) | Open/close or intraday index returns across Tokyo, New York, and London. | ARCH-family models, daytime and overnight decompositions, lead-lag regressions, trading simulations. | Cross-market dependence is well documented, but its interpretation depends on session timing and trading frictions. |
+| Futures price discovery across time zones | [Kao, Ho, and Fung (2015)](https://www.sciencedirect.com/science/article/pii/S1042443114001516) and related spot-futures linkage studies | Minute-level Nikkei 225 and S&P 500 futures across OSE, SGX, and CME. | Information shares, component shares, Granger causality. | Nikkei futures already incorporate information across time zones; the relevant question is incremental pre-open tail-risk content after the night session. |
+| Japanese equity tail-risk predictability | [Andersen, Todorov, and Ubukata (2021)](https://www.sciencedirect.com/science/article/pii/S0304407620301950) | U.S. and Japanese option-implied volatility and tail-risk measures for Japanese equity and FX prediction. | Predictive regressions with model-free volatility and tail-risk measures. | U.S. risk measures and USD/JPY are natural predictors for Japanese market risk, especially from a global-investor perspective. |
+| Conditional EVT and econometric tail-risk forecasting | [McNeil and Frey (2000)](https://www.sciencedirect.com/science/article/pii/S0927539800000128), [James et al. (2023)](https://www.sciencedirect.com/science/article/pii/S0927539823000026), [Engle and Manganelli (2004)](https://www.nber.org/papers/w7341) | Daily financial losses and one-step-ahead VaR/ES forecasting. | GARCH-EVT, covariate-conditioned EVT, CAViaR, GJR-GARCH, POT-GPD. | EVT is most persuasive when applied to filtered or standardized losses and compared with established tail-risk baselines. |
+| VaR-ES evaluation and ML tail-risk forecasting | [Fissler and Ziegel (2016)](https://arxiv.org/abs/1503.08123), [Patton, Ziegel, and Chen (2019)](https://www.sciencedirect.com/science/article/pii/S030440761930048X), [Taylor (2019)](https://www.tandfonline.com/doi/full/10.1080/07350015.2017.1281815), [Barrera et al. (2022)](https://arxiv.org/abs/2209.06476), [Gupta (2025)](https://papers.ssrn.com/sol3/Delivery.cfm/5334625.pdf?abstractid=5334625&mirid=1) | Financial loss distributions, VaR/ES scoring, and machine-learning risk forecasts. | Joint VaR-ES scoring, ALD-based VaR-ES models, statistical learning, LightGBM forecasts. | LightGBM-EVT should be evaluated with the same tail-risk metrics used for econometric VaR/ES models. |
 
-4. **Risk-management evaluation**
-   - Evaluate VaR coverage, joint VaR-ES scores, ES severity diagnostics, tail-event ranking, and fixed-rule hedge-trigger diagnostics without presenting the results as standalone trading-alpha claims.
+### Peer-Comparable Boundary
 
-## Forecast Origins
+The peer-comparable object is a one-step-ahead, session-aligned lower-tail forecast for the next OSE Nikkei 225 Futures day-session open. It is narrower than broad U.S.-Japan spillover work, which often studies mean or volatility transmission across equity indices, and narrower than high-frequency price-discovery work, which identifies where common price innovations are incorporated.
 
-| Forecast origin | Nominal timestamp | Known information | Target open | Main use |
-| --- | ---: | --- | --- | --- |
-| `US_CASH_CLOSE` | 16:00 ET | U.S. ETF/index/FX/risk proxies available at the U.S. cash close | OSE day open at 8:45 JST | Main pre-open risk forecast origin |
-| `OSE_NIGHT_CLOSE` | 6:00 JST | OSE night close if a live or historical session field is available | OSE day open at 8:45 JST | Opening-auction residual robustness |
-| `PREV_OSE_DAY_CLOSE` | 15:45 JST | Previous OSE day-session close and settlement context | Next OSE day open | Full overnight inventory or margin-risk target |
+The paper makes three boundary choices explicit: the target is downside opening-gap risk rather than average return predictability; the forecast origin is the U.S. cash-market close rather than an unrestricted overnight information set; and the claim is incremental historical risk-forecasting content rather than structural causality or deployable trading profitability.
 
-J-Quants daily futures OHLC is appropriate for reproducible historical target construction. It must not be described as a live pre-open production feed because futures OHLC is updated after the fact and update timing is not guaranteed. A live pre-open hedge trigger would require a live OSE, CME, SGX, or equivalent Nikkei futures reference feed.
+### Peer Models and Metric Comparability
 
-## Data Design
+The model comparison should include forecasts that a tail-risk referee would expect: historical and rolling historical quantiles, volatility-scaled quantiles, GARCH-t or GJR-GARCH-t, GARCH-EVT, CAViaR where feasible, a Taylor-style VaR-ES benchmark where feasible, LightGBM-only quantile forecasts, and LightGBM-EVT variants.
 
-The target side should come from J-Quants, with OSE Nikkei 225 Futures large contract as the default main contract. Mini or micro contracts should be used only for liquidity checks or robustness unless the research design is explicitly changed.
+Metrics should match the risk object. The main comparisons should use quantile loss, VaR coverage and independence tests, dynamic quantile diagnostics where feasible, joint VaR-ES scoring, ES exceedance-severity diagnostics, tail-event ranking metrics, and fixed-rule hedge-trigger diagnostics.
 
-Required J-Quants fields:
+### Intended Contribution
 
-- Trading date, contract code, derivative product category, contract month, central contract flag.
-- Day-session open, high, low, close.
-- Night-session open, high, low, close where available.
-- Whole-day open, high, low, close.
-- Settlement price, volume, open interest, last trading day, and special quotation day.
+The paper contributes a session-aligned target construction and evaluation design for OSE Nikkei 225 Futures pre-open downside risk. It tests whether U.S. close-side variables add lower-tail forecasting content beyond Japan-only and, where data permit, night-session-controlled benchmarks. It also evaluates a conditional-learning plus EVT calibration framework against peer econometric and machine-learning baselines.
 
-Massive.com should be used for U.S. close-side predictors:
+### Expected Evidence and Contribution Boundaries
 
-- Broad equity ETFs and indexes: SPY, QQQ, DIA, IWM, and major index proxies where licensed.
-- Sector and cross-market dispersion signals, including sector ETFs and semiconductor or global-risk proxies where available.
-- Implied-risk proxies such as VIX, VVIX, SKEW, or VIX futures where licensed.
-- FX, rates, and commodity proxies, especially USD/JPY and U.S. rates proxies where available.
-- U.S. futures only where the subscribed Massive.com plan supports the required instruments and history.
+The strongest evidence would be a stable rolling out-of-sample improvement in lower-tail calibration and ES severity after adding U.S. close variables, especially relative to Japan-only, historical, GARCH-EVT, CAViaR, and LightGBM-only baselines. Feature importance summaries are secondary; the main evidence is incremental information, calibration, scoring, and robustness.
 
-Each row must distinguish observation time, bar end time, vendor availability time, research download time, model cutoff time, and target open time. Massive.com timestamps are UTC and must be explicitly converted to exchange-local time before session alignment.
+A positive result would support timestamp-safe historical risk forecasting for pre-open risk management. It would not establish a structural causal channel, standalone trading alpha, or live deployability. A negative or attenuated result after night-session controls would also be informative, because it would show that much of the U.S. close information is already absorbed before the day-session open.
 
-## Target Hierarchy
+## Data, Targets, and Forecast Origin
 
-Primary empirical target if only J-Quants daily/session data is available:
+The canonical data contract is maintained in [Data Design and Contract](data.md). That page defines source roles, forecast origins, target hierarchy, timestamp fields, tail-risk labels, and feature families. The paper plan uses that contract without duplicating vendor fields or ticker lists.
 
-- `full_gap_settle_to_open = log(day_open_t) - log(prev_settlement_{t-1})`
+The paper-facing target hierarchy is:
 
-Secondary full-gap target:
+- Main target: `full_gap_settle_to_open`.
+- Secondary full-gap target: `full_gap_close_to_open`.
+- Robustness target: `residual_nightclose_to_day_open`.
+- Extension target: `residual_usclosemark_to_open`, available only with a licensed intraday Nikkei futures reference mark at the U.S. cash close.
 
-- `full_gap_close_to_open = log(day_open_t) - log(prev_day_close_{t-1})`
-
-Residual robustness target:
-
-- `residual_nightclose_to_day_open = log(day_open_t) - log(night_close_t)`
-
-Ideal pre-open residual target, only if a licensed intraday Nikkei futures reference mark exists:
-
-- `residual_usclosemark_to_open = log(day_open_t) - log(nikkei_futures_mark_at_us_cash_close_t)`
-
-Lower-tail labels:
-
-- Loss: `L_t = -gap_t`.
-- Downside exceedance: `L_t` above a training-window threshold.
-- Downside severity: exceedance magnitude beyond the threshold.
-- Conditional risk outputs: lower-tail probability, VaR, and ES.
-
-The paper should report which forecast origin, reference price, and target family each empirical table uses.
-
-## Feature Design
-
-U.S. close-side features:
-
-- U.S. broad market returns and intraday close-to-close or open-to-close signals.
-- Sector ETF returns and cross-sector dispersion.
-- Volatility and implied-risk proxy changes.
-- FX, rates, and commodity proxy moves.
-- U.S. market calendar flags, including regular close, early close, holiday-adjacent sessions, and DST regime.
-
-Lagged Japanese futures variables:
-
-- Prior full opening gap and lagged target values.
-- Lagged OSE day-session returns.
-- Lagged OSE night-session returns where available.
-- Volume and open-interest changes.
-- Roll-window and SQ-window indicators.
-- Japan holiday-adjacent, U.S. holiday-adjacent, and OSE holiday-trading flags.
-
-All features must satisfy `availability_ts <= model_cutoff_ts < target_open_ts`.
+Empirical tables should state the forecast origin, target family, reference price, information cutoff, and data-source status. This is especially important when comparing full opening-gap forecasts with residual pre-open forecasts.
 
 ## Empirical Design
 
-Use chronological evaluation only. Random splits are not acceptable.
+The empirical design uses chronological out-of-sample evaluation. Random train/test splits are inappropriate because the forecast object is explicitly time ordered. The preferred structure is an initial training window, a validation window, and a final test window, with rolling or expanding retraining for the final evaluation.
 
-Recommended validation structure:
+The main incremental-information sequence is:
 
-- Initial training window, validation window, and final untouched test window.
-- Rolling or expanding retraining for final evaluation.
-- Thresholds and transformations estimated only inside each training window.
-- Feature availability and target-open ordering checked for every row.
+1. Japan-only.
+2. U.S.-only.
+3. Japan plus U.S. close.
+4. Japan plus U.S. close plus FX.
+5. Japan plus U.S. close plus risk indicators.
+6. Night-session-controlled model where a night close or U.S.-close Nikkei futures mark is available.
+7. Full LightGBM-EVT specification.
 
-Incremental information specifications:
+The baseline layer should include historical quantiles, rolling historical quantiles, volatility-scaled quantiles, simple linear or penalized specifications, and econometric tail-risk models such as GARCH-t, GJR-GARCH-t, GARCH-EVT, and CAViaR where feasible.
 
-- Japan-only baseline.
-- U.S.-only model.
-- Japan plus U.S. close model.
-- Japan plus U.S. plus FX model.
-- Japan plus U.S. plus risk-indicator model.
-- Night-session-controlled model where a night close or U.S.-close Nikkei futures mark is available.
-- Full LightGBM-EVT model.
+The LightGBM layer should be evaluated in more than one role: conditional location, conditional scale, direct quantile forecasting, and exceedance-probability forecasting. The EVT layer should then be applied to downside losses, filtered residual losses, standardized losses, or conditional exceedance severities. Thresholds and transformations are estimated inside the training window, and empirical tail levels should be distinguished from extrapolated tail levels.
 
-Baseline stack:
+## Evaluation Strategy
 
-- Historical unconditional quantile.
-- Rolling historical quantile.
-- EWMA or volatility-scaled historical quantile.
-- Linear or penalized quantile or location/scale baseline.
-- GARCH-t or GJR-GARCH-t where feasible.
-- GARCH-EVT on standardized residuals.
-- CAViaR or a documented deferred CAViaR gate.
-- ALD or Taylor-style semiparametric VaR-ES benchmark where feasible.
-- LightGBM-only quantile and exceedance-probability variants.
+Forecast calibration is the primary evaluation dimension. VaR forecasts should be assessed with quantile loss, unconditional coverage, independence or conditional coverage tests, and dynamic quantile diagnostics where feasible. ES forecasts should be assessed with joint VaR-ES scoring and exceedance-severity diagnostics.
 
-Main LightGBM-EVT variants:
+Tail ranking is a complementary diagnostic. Precision at the top of the ranked risk distribution, recall among realized tail events, hit rates, and event concentration help distinguish models that rank dangerous openings well from models that merely match unconditional coverage.
 
-- `conditional_location_model`: LightGBM predicts conditional location; EVT fits residual losses.
-- `conditional_scale_model`: LightGBM predicts scale proxy; EVT fits standardized losses.
-- `quantile_model`: LightGBM quantile objective at alpha in `{0.05, 0.025, 0.01}`.
-- `exceedance_probability_model`: LightGBM predicts rolling-threshold exceedance probability.
-- `severity_model`: optional model for exceedance magnitudes.
+Decision usefulness should be reported as a risk-management diagnostic. A fixed hedge-trigger rule can summarize false positives, missed events, turnover, and loss avoided under stated assumptions. These diagnostics should not be interpreted as a trading-alpha test.
 
-## EVT Protocol
-
-- Model downside losses `L_t = -gap_t`.
-- Fit POT-GPD using training-window exceedances only.
-- Store threshold grid diagnostics: exceedance count, mean-excess behavior, shape stability, and scale stability.
-- Enforce a minimum exceedance count before reporting any extreme tail level.
-- Report empirical tail levels such as 5%, 2.5%, and 1% separately from extrapolated levels.
-- Do not claim 0.1% performance unless the sample size supports meaningful evaluation.
-- Evaluate VaR and ES separately and jointly.
-
-## Evaluation
-
-Primary forecast evaluation:
-
-- Quantile loss or pinball loss.
-- Kupiec unconditional coverage test.
-- Christoffersen independence and conditional coverage tests.
-- Engle-Manganelli dynamic quantile test where feasible.
-- Fissler-Ziegel joint VaR-ES score.
-- ES exceedance severity diagnostics.
-- Tail-event ranking: precision@k, recall@k, hit rate, and event concentration.
-
-Model-comparison inference:
-
-- Diebold-Mariano tests with block bootstrap where feasible.
-- Model Confidence Set where feasible.
-
-Risk-management diagnostic:
-
-- Fixed hedge-trigger rule.
-- Fixed cost assumptions.
-- Loss avoided conditional on triggered hedge.
-- False-positive rate, missed-event rate, and turnover.
-
-The hedge-trigger analysis is a risk-management diagnostic, not a trading-profit claim.
+Model-comparison inference should use Diebold-Mariano tests with block bootstrap or a Model Confidence Set where feasible. The inference target is forecast quality under chronological evaluation, not in-sample fit.
 
 ## Manuscript Structure
 
 1. **Introduction**
-   - Motivate OSE Nikkei 225 Futures pre-open downside risk.
-   - Explain why the night session changes the identification problem.
-   - State the session-aligned LightGBM-EVT contribution without overclaiming model novelty.
+   - Motivate OSE Nikkei 225 Futures day-session pre-open downside risk.
+   - Explain why the OSE night session changes the interpretation of U.S. close information.
+   - State the session-aligned LightGBM-EVT contribution without presenting the model combination as a standalone novelty.
 
 2. **Market Structure, Data, and Target Construction**
-   - Describe OSE day and night sessions, Massive.com U.S. close data, and J-Quants futures targets.
-   - Define forecast origins, reference prices, target families, roll handling, and availability timestamps.
-   - Present target distribution, tail counts, and extreme-event source tracebacks.
+   - Describe the OSE day and night sessions, U.S. close predictors, and J-Quants futures target source.
+   - Define forecast origins, reference prices, target families, roll handling, and information cutoffs.
+   - Present target coverage, distribution, tail counts, and extreme-event tracebacks.
 
 3. **Methodology**
-   - Define the incremental information tests.
-   - Define baselines, LightGBM conditional layers, and POT-EVT tail layer.
-   - State rolling estimation, threshold selection, and leakage controls.
+   - Define the incremental information tests and baseline models.
+   - Describe the LightGBM conditional layer and the POT-EVT tail calibration layer.
+   - Explain rolling estimation, threshold selection, and timestamp controls.
 
 4. **Empirical Design**
-   - Define train/validation/test periods.
+   - Define train, validation, and test periods.
    - Specify feature groups, model variants, and ablations.
-   - Define VaR, ES, ranking, and hedge-trigger evaluation.
+   - Define VaR, ES, tail-ranking, and hedge-trigger diagnostics.
 
 5. **Results**
-   - Start with incremental information tables, not just a model leaderboard.
+   - Begin with incremental information results rather than a model leaderboard.
    - Compare Japan-only, U.S.-only, combined, night-controlled, and full LightGBM-EVT specifications.
    - Discuss calibration, ES severity, tail ranking, and feature interpretation.
 
 6. **Robustness**
-   - Alternative target families.
-   - Alternative thresholds and tail levels.
-   - Roll and SQ windows.
-   - Holiday-adjacent and DST subsamples.
-   - Crisis-period subsamples.
-   - Upper-tail appendix only if it adds useful evidence.
+   - Consider alternative target families, thresholds, and tail levels.
+   - Examine roll windows, SQ windows, holiday-adjacent sessions, daylight-saving regimes, and stress periods.
+   - Include upper-tail results only if they add evidence beyond the main downside analysis.
 
 7. **Conclusion**
-   - Summarize whether U.S. close information has incremental timestamp-safe downside-tail content.
-   - State limitations around data availability, live feeds, and market microstructure.
-   - Identify extensions to intraday marks, options-implied measures, and real-time monitoring.
+   - Summarize whether U.S. close information contains timestamp-safe incremental downside-tail content.
+   - State the limits imposed by data availability, night-session absorption, and live-feed requirements.
+   - Identify natural extensions to intraday marks and options-implied tail-risk measures.
 
-## Execution Gates
+## Planned Tables and Figures
 
-1. **Research Design Gate**
-   - Forecast origins, target families, and reference-price rules are locked before ingestion or modeling.
-   - Each empirical claim specifies forecast origin and target family.
+| Manuscript item | Purpose |
+| --- | --- |
+| Forecast-origin and target-definition table | Defines the information cutoff, reference price, and target family used in each empirical design. |
+| Target audit and tail-count table | Reports coverage, missingness, tail counts, roll/SQ flags, holiday-adjacent sessions, and extreme-gap tracebacks. |
+| Incremental information table | Compares Japan-only, U.S.-only, combined, FX/risk-augmented, night-controlled, and full models. |
+| VaR-ES evaluation table | Reports quantile loss, coverage, independence, joint VaR-ES score, and ES severity diagnostics. |
+| EVT threshold diagnostics figure | Shows threshold stability, exceedance counts, and tail-parameter behavior. |
+| Hedge-trigger diagnostic table | Reports false positives, missed events, turnover, and loss avoided under fixed assumptions. |
 
-2. **Data Audit Gate**
-   - J-Quants target fields are parsed and checked against expected sessions and contract metadata.
-   - Massive.com predictor rows have source, symbol, observation time, bar end time, vendor availability time, and download time.
-   - Raw vendor data is never committed.
+## Boundaries and Readiness
 
-3. **Label Sanity Gate**
-   - Full-gap and residual-gap definitions produce plausible distributions.
-   - Roll windows, SQ windows, missing sessions, and holiday-adjacent sessions are flagged.
-   - Extreme gaps are traceable to raw contract rows and session fields.
+Paper-grade empirical claims require OSE Nikkei 225 Futures target data. The current J-Quants free plan can support API smoke checks, but it cannot support final futures target evidence. The current implementation status is maintained in [Results Snapshot](results_snapshot.md).
 
-4. **Feature Leakage Gate**
-   - Every feature has an availability timestamp.
-   - `target_open_ts_utc > model_cutoff_ts_utc`.
-   - No feature availability timestamp is later than `model_cutoff_ts_utc`.
+`residual_usclosemark_to_open` remains an extension until a licensed intraday Nikkei futures reference mark is available at the U.S. cash close. A live pre-open deployment would require live OSE, CME, SGX, or equivalent futures feeds; J-Quants daily/session data is a historical research source.
 
-5. **Baseline Gate**
-   - Historical, volatility-scaled, econometric, and simple ML baselines are stored before LightGBM-EVT tuning.
-
-6. **EVT Calibration Gate**
-   - Threshold diagnostics precede VaR/ES claims.
-   - Shape and scale stability are reviewed.
-   - Weak calibration results are reported honestly.
-
-7. **Manuscript Artifact Gate**
-   - Tables and figures are reproducible from code.
-   - Each reported result has a source artifact.
-   - Smoke, schema, and real-data validation checks are labeled separately.
+Engineering gates, schema checks, and implementation order are maintained in [Development Audit](development_audit.md). This paper plan intentionally avoids duplicating those instructions.
 
 ## Source Notes
 

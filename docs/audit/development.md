@@ -15,7 +15,7 @@ Before editing anything, read these files in order:
 2. docs/results_snapshot.md
 3. docs/data.md
 4. docs/paper_plan.md
-5. docs/development_audit.md
+5. docs/audit/development.md
 6. .env.example
 7. pyproject.toml
 8. justfile

@@ -5,9 +5,7 @@
 - [Results Snapshot](results_snapshot.md): current evidence state, smoke outputs, blockers, and artifact map.
 - [Paper Plan](paper_plan.md): research design, contribution boundary, empirical contract, and acceptance gates.
 - [Data](data.md): source roles, target hierarchy, timestamp contract, and data-source caveats.
-- Audit:
-  - [Development Audit](development_audit.md): single coding handoff and audit checklist for checking implementation against the research contract.
-  - [Manuscript Audit](manuscript_audit.md): prompt for checking the future paper draft against the evidence.
+- [Audit](audit/index.md): prompts for reviewing implementation and manuscript claims against the research contract.
 - [Future Work](future_work.md): deferred extensions that should not dilute the first paper.
 
 ## Workflow
@@ -53,4 +51,4 @@ Modeling | Baselines, LightGBM, EVT, and evaluation are planned. | No paper-grad
 
 ## Reading Order
 
-Start with the [results snapshot](results_snapshot.md) for current implementation status. Use the [paper plan](paper_plan.md) as the research contract. Use [data](data.md) before touching ingestion or schemas. Use the audit prompts when handing work to another coding agent or reviewing a manuscript draft.
+Start with the [results snapshot](results_snapshot.md) for current implementation status. Use the [paper plan](paper_plan.md) as the research contract. Use [data](data.md) before touching ingestion or schemas. Use the [audit section](audit/index.md) when handing work to another coding agent or reviewing a manuscript draft.

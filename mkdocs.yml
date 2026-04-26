@@ -25,6 +25,7 @@ theme:
     - content.tabs.link
     - content.tooltips
     - navigation.footer
+    - navigation.indexes
     - navigation.instant
     - navigation.instant.prefetch
     - navigation.instant.progress
@@ -64,6 +65,7 @@ nav:
   - Paper Plan: paper_plan.md
   - Data: data.md
   - Audit:
-      - Development Audit: development_audit.md
-      - Manuscript Audit: manuscript_audit.md
+      - audit/index.md
+      - Development Audit: audit/development.md
+      - Manuscript Audit: audit/manuscript.md
   - Future Work: future_work.md

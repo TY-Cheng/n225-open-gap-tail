@@ -111,40 +111,47 @@ Model-comparison inference should use Diebold-Mariano tests with block bootstrap
 
 ## Manuscript Structure
 
-1. **Introduction**
-   - Motivate OSE Nikkei 225 Futures day-session pre-open downside risk.
-   - Explain why the OSE night session changes the interpretation of U.S. close information.
-   - State the session-aligned LightGBM-EVT contribution without presenting the model combination as a standalone novelty.
+### 1. Introduction
 
-2. **Market Structure, Data, and Target Construction**
-   - Describe the OSE day and night sessions, U.S. close predictors, and J-Quants futures target source.
-   - Define forecast origins, reference prices, target families, roll handling, and information cutoffs.
-   - Present target coverage, distribution, tail counts, and extreme-event tracebacks.
+- Motivate OSE Nikkei 225 Futures day-session pre-open downside risk.
+- Explain why the OSE night session changes the interpretation of U.S. close information.
+- State the session-aligned LightGBM-EVT contribution without presenting the model combination as a standalone novelty.
 
-3. **Methodology**
-   - Define the incremental information tests and baseline models.
-   - Describe the LightGBM conditional layer and the POT-EVT tail calibration layer.
-   - Explain rolling estimation, threshold selection, and timestamp controls.
+### 2. Market Structure, Data, and Target Construction
 
-4. **Empirical Design**
-   - Define train, validation, and test periods.
-   - Specify feature groups, model variants, and ablations.
-   - Define VaR, ES, tail-ranking, and hedge-trigger diagnostics.
+- Describe the OSE day and night sessions, U.S. close predictors, and J-Quants futures target source.
+- Define forecast origins, reference prices, target families, roll handling, and information cutoffs.
+- Present target coverage, distribution, tail counts, and extreme-event tracebacks.
 
-5. **Results**
-   - Begin with incremental information results rather than a model leaderboard.
-   - Compare Japan-only, U.S.-only, combined, night-controlled, and full LightGBM-EVT specifications.
-   - Discuss calibration, ES severity, tail ranking, and feature interpretation.
+### 3. Methodology
 
-6. **Robustness**
-   - Consider alternative target families, thresholds, and tail levels.
-   - Examine roll windows, SQ windows, holiday-adjacent sessions, daylight-saving regimes, and stress periods.
-   - Include upper-tail results only if they add evidence beyond the main downside analysis.
+- Define the incremental information tests and baseline models.
+- Describe the LightGBM conditional layer and the POT-EVT tail calibration layer.
+- Explain rolling estimation, threshold selection, and timestamp controls.
 
-7. **Conclusion**
-   - Summarize whether U.S. close information contains timestamp-safe incremental downside-tail content.
-   - State the limits imposed by data availability, night-session absorption, and live-feed requirements.
-   - Identify natural extensions to intraday marks and options-implied tail-risk measures.
+### 4. Empirical Design
+
+- Define train, validation, and test periods.
+- Specify feature groups, model variants, and ablations.
+- Define VaR, ES, tail-ranking, and hedge-trigger diagnostics.
+
+### 5. Results
+
+- Begin with incremental information results rather than a model leaderboard.
+- Compare Japan-only, U.S.-only, combined, night-controlled, and full LightGBM-EVT specifications.
+- Discuss calibration, ES severity, tail ranking, and feature interpretation.
+
+### 6. Robustness
+
+- Consider alternative target families, thresholds, and tail levels.
+- Examine roll windows, SQ windows, holiday-adjacent sessions, daylight-saving regimes, and stress periods.
+- Include upper-tail results only if they add evidence beyond the main downside analysis.
+
+### 7. Conclusion
+
+- Summarize whether U.S. close information contains timestamp-safe incremental downside-tail content.
+- State the limits imposed by data availability, night-session absorption, and live-feed requirements.
+- Identify natural extensions to intraday marks and options-implied tail-risk measures.
 
 ## Planned Tables and Figures
 
@@ -163,7 +170,7 @@ Paper-grade empirical claims require OSE Nikkei 225 Futures target data. The cur
 
 `residual_usclosemark_to_open` remains an extension until a licensed intraday Nikkei futures reference mark is available at the U.S. cash close. A live pre-open deployment would require live OSE, CME, SGX, or equivalent futures feeds; J-Quants daily/session data is a historical research source.
 
-Engineering gates, schema checks, and implementation order are maintained in [Development Audit](development_audit.md). This paper plan intentionally avoids duplicating those instructions.
+Engineering gates, schema checks, and implementation order are maintained in [Development Audit](audit/development.md). This paper plan intentionally avoids duplicating those instructions.
 
 ## Source Notes
 

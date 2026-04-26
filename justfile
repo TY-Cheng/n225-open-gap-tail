@@ -24,8 +24,8 @@ lint: _require-external-uv-env
 test: _require-external-uv-env
     uv run pytest
 
-docs: _require-external-uv-env
-    uv run mkdocs serve -a 127.0.0.1:8000
+docs port="8000": _require-external-uv-env
+    @port=$(python3 -c 'import socket, sys; host = "127.0.0.1"; start = int(sys.argv[1]); print(next(p for p in range(start, start + 100) if socket.socket().connect_ex((host, p))))' "{{port}}"); echo "Serving docs at http://127.0.0.1:${port}"; uv run mkdocs serve -a 127.0.0.1:${port}
 
 docs-build: _require-external-uv-env
     uv run mkdocs build --strict

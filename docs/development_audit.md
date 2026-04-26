@@ -1,20 +1,24 @@
-# Development Prompt
+# Development Audit
 
-Use this prompt for the next coding phase.
+Use this as the single handoff for the next coding agent. It combines the development prompt with the audit checklist, so implementation and review use the same research contract.
 
 ```text
 You are working in the n225-open-gap-tail repository. Your task is to build the first reproducible research pipeline for "Forecasting Pre-Open Tail Risk in Nikkei 225 Futures Using U.S. Close Information: A Session-Aligned LightGBM-EVT Framework".
 
 The research is about OSE Nikkei 225 Futures downside pre-open tail risk, not generic Japanese equity overnight returns. OSE futures have a night session, so every model, table, and claim must state its forecast origin, reference price, target family, and information cutoff.
 
+Start by auditing the current repository state against this contract. Only proceed to new implementation after documenting any blockers, non-blocking risks, missing tests, and documentation drift.
+
 Before editing anything, read these files in order:
 
 1. README.md
-2. docs/data.md
-3. docs/paper_plan.md
-4. .env.example
-5. pyproject.toml
-6. justfile
+2. docs/results_snapshot.md
+3. docs/data.md
+4. docs/paper_plan.md
+5. docs/development_audit.md
+6. .env.example
+7. pyproject.toml
+8. justfile
 
 Respect the existing workflow:
 
@@ -23,6 +27,19 @@ Respect the existing workflow:
 - Do not commit `.env`, `uv.lock`, raw vendor data, credentials, caches, generated reports, or local build artifacts.
 - Keep tests honest: smoke tests, schema tests, and real-data validation tests must be named and documented separately.
 - Maintain at least 95% test coverage. Every new functional module needs focused tests with small synthetic fixtures.
+
+Audit checklist before adding features:
+
+- Does every data row distinguish observation time, bar end time, research download time, vendor availability time where known, model cutoff time, and target-open time where relevant?
+- Do Massive, FRED, calendar, and contract metadata outputs remain smoke/schema artifacts rather than empirical validation claims?
+- Is J-Quants V2 the only J-Quants API path, with no V1 residue?
+- Is the OSE futures target still correctly marked as unavailable until a futures-capable subscription is present?
+- Are raw vendor data, `.env`, `uv.lock`, build outputs, generated data artifacts, and caches ignored?
+- Do all `uv`-based `just` recipes require an external `UV_PROJECT_ENVIRONMENT`?
+- Does `just test` pass with coverage above 95%?
+- Are tests named honestly as unit, schema, smoke, or real-data checks?
+- Are rule-based contract metadata and exchange-calendar outputs clearly labeled as scaffolding that requires vendor reconciliation?
+- Is any claim about model performance, VaR/ES calibration, or hedge usefulness unsupported by current artifacts?
 
 Implement the pipeline in this order:
 
@@ -134,9 +151,16 @@ Acceptance criteria for each implementation phase:
 
 When reporting progress, separate:
 
+- Blocking issues.
+- Non-blocking risks.
+- Missing tests.
+- Documentation drift.
+- Recommended next implementation step.
 - Implemented and tested.
 - Implemented but only smoke-tested.
 - Requires real vendor data.
 - Requires licensed intraday data.
 - Still planned or deferred.
+
+Use file paths and line references where possible. Do not propose model work until the target-data audit gate is satisfied.
 ```

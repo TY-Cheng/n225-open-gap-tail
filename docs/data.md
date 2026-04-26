@@ -1,4 +1,6 @@
-# Data Contract
+# Data Design and Contract
+
+This page is the canonical source for data-source roles, forecast origins, target definitions, timestamp fields, and feature families. The paper plan should reference this page rather than restating data definitions.
 
 ## Source Roles
 
@@ -7,6 +9,14 @@ J-Quants is the primary research source for OSE Nikkei 225 Futures target constr
 Massive.com is the primary source for U.S. close-side predictors. Massive timestamps must be treated as UTC and explicitly converted to ET before U.S. session alignment.
 
 Nikkei Indexes spot OHLC can support spot-market controls or robustness checks, but it is not the futures target.
+
+The data design separates three roles:
+
+Role | Source | Use | Current boundary
+--- | --- | --- | ---
+Target construction | J-Quants futures daily/session OHLC | OSE Nikkei 225 Futures day-open, prior settlement, prior day close, night close, volume, and open interest. | Futures endpoint requires a futures-capable plan.
+U.S. predictors | Massive.com, FRED, and licensed market-data sources | U.S. close-side ETF, sector, FX, VIX, rates, and risk-proxy variables. | Historical research predictors, not live production guarantees.
+Alignment metadata | Exchange calendars, JPX rules, J-Quants/JPX contract metadata | Trading-day joins, holiday flags, roll windows, SQ windows, and contract selection. | Rule-based scaffolding must be reconciled before final empirical claims.
 
 ## Target Data
 
@@ -39,9 +49,11 @@ The main contract is OSE Nikkei 225 Futures large contract. Mini and micro contr
 
 Every target and feature table must state the forecast origin and model cutoff:
 
-- `US_CASH_CLOSE`: U.S. predictors frozen at the regular U.S. cash close.
-- `OSE_NIGHT_CLOSE`: OSE night close used only when available and timestamp-valid.
-- `PREV_OSE_DAY_CLOSE`: previous OSE day-session close or settlement context.
+Forecast origin | Nominal timestamp | Known information | Target open | Main use
+--- | ---: | --- | --- | ---
+`US_CASH_CLOSE` | 16:00 ET | U.S. ETF/index/FX/risk proxies available at the U.S. cash close. | OSE day open at 8:45 JST. | Main pre-open risk forecast origin.
+`OSE_NIGHT_CLOSE` | 6:00 JST | OSE night close if a live or historical session field is available. | OSE day open at 8:45 JST. | Opening-auction residual robustness.
+`PREV_OSE_DAY_CLOSE` | 15:45 JST | Previous OSE day-session close and settlement context. | Next OSE day open. | Full overnight inventory or margin-risk target.
 
 The research must not claim that U.S. close information mechanically identifies U.S.-to-Japan spillover without accounting for the OSE night session.
 

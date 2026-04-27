@@ -1,3 +1,8 @@
+---
+hide:
+  - navigation
+---
+
 # Results Snapshot
 
 Static snapshot as of 2026-04-26.

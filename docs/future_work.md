@@ -1,3 +1,8 @@
+---
+hide:
+  - navigation
+---
+
 # Deferred Extensions
 
 This page records work that should remain outside the first paper until the target-data, feature, baseline, LightGBM, EVT, and evaluation gates are reproducible.

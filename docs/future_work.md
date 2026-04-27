@@ -9,6 +9,18 @@ This page records work that should remain outside the first paper until the targ
 
 Scope guardrail: the first paper is a session-aligned historical risk-forecasting study. Extensions should be activated only when they sharpen that study or become a clearly separate paper.
 
+## Not Deferred From The First Paper
+
+The following items are now part of the first-paper contract, subject to the stability and sample-size gates in [Paper Plan](paper_plan.md) and [Development Audit](audit/development.md):
+
+- DST absorption and the absorption coefficient.
+- LightGBM standardized-loss POT-GPD.
+- Direct FZ-loss or CARE-style VaR-ES benchmark.
+- CAViaR.
+- Taylor/ALD VaR-ES when stable on the audited sample.
+- Murphy diagrams and Model Confidence Set when the out-of-sample loss series supports them.
+- SPY late-session minute-bar features after timestamp validation.
+
 ## Extension Portfolio
 
 Extension | Research contribution | When to activate
@@ -16,7 +28,7 @@ Extension | Research contribution | When to activate
 Intraday U.S.-close Nikkei reference mark | Converts the ideal `residual_usclosemark_to_open` target from a documented extension into a main residual-risk target. | After licensed OSE, CME, SGX, or equivalent intraday Nikkei futures marks are available with timestamps.
 Options-implied tail-risk proxies | Tests whether VIX, VVIX, SKEW, VIX term structure, or SPX option-implied tail measures add information beyond ETFs and rates. | After the daily target pipeline is stable and baseline predictor groups are working.
 Night-session microstructure | Separates full overnight gap risk from opening-auction residual risk using night-session path, volume, and liquidity features. | After night-session OHLC and, ideally, intraday OSE data are licensed.
-Richer econometric benchmark suite | Adds CAViaR variants, ALD VaR-ES, GAS/realized-measure models, and Model Confidence Set inference. | After historical, rolling, volatility-scaled, GARCH-EVT, and LightGBM-only baselines are reproducible.
+Richer econometric benchmark suite | Adds richer CAViaR/CARE variants, GAS/realized-measure models, neural VaR/ES, and broader distributional forecast comparisons beyond the first-paper benchmark contract. | After the first-paper benchmark floor, direct FZ/CARE, CAViaR, Taylor/ALD where stable, Murphy diagrams, and MCS gates are reproducible.
 Real-time pre-open monitoring | Turns the historical design into a live pre-open risk monitor. | Only after live data feeds, vendor availability timestamps, and operational alerting are specified.
 Reproducibility package | Makes the project submission-ready with pinned source manifests and table/figure reproduction commands. | Before manuscript circulation.
 

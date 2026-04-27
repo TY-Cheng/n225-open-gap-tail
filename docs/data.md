@@ -92,6 +92,7 @@ The first-paper predictor universe is pre-registered by economic role rather tha
 | Block | Candidate variables | Source | Timing status | Economic justification |
 | --- | --- | --- | --- | --- |
 | Broad U.S. beta | SPY, DIA, QQQ, IWM returns and ranges | Massive.com | `US_CASH_CLOSE` after official close plus vendor lag | U.S. equity-market direction and risk appetite. |
+| U.S. late-session dynamics | SPY last-30-minute return, last-hour return, late-session range, late-session volume surge, final-window reversal or momentum | Massive.com minute bars | `US_CASH_CLOSE` after official close plus vendor lag | Late U.S. trading pressure and closing imbalance proxies that may be more informative than daily close-to-close moves. |
 | U.S. sectors | XLK, XLF, XLE, XLV, XLI returns and dispersion | Massive.com | `US_CASH_CLOSE` | Sector composition, growth/cyclical rotation, and risk concentration. |
 | Asia and global risk | EEM, FXI, SMH | Massive.com planned candidates | `US_CASH_CLOSE` after source audit | Emerging-market, China, and semiconductor channels relevant to Japan. |
 | FX | USD/JPY | Massive.com forex | Timestamped bar close converted from UTC | Currency channel for dollar-denominated Japanese risk and exporter exposure. |
@@ -199,6 +200,7 @@ The data lake is intentionally tiered to prevent feature fishing.
 ### Tier 1: Core Controls and Predictors
 
 - Massive U.S. ETF, sector, equity-index, and USD/JPY predictors.
+- SPY minute-bar late-session features: last-30-minute return, last-hour return, late-session range, late-session volume surge, and final-window reversal or momentum, all frozen at U.S. close plus the configured vendor-availability lag.
 - Massive planned additions: TLT, GLD, USO, EEM, FXI, and SMH after source and coverage audit.
 - Cboe or FRED VIX close; VIX high, low, and range only when the source supports them.
 - FRED 2-year and 10-year Treasury yields, T10Y2Y yield-curve slope, SOFR or EFFR funding proxies, and ICE BofA credit-spread proxies where coverage and licensing notes support use.
@@ -237,6 +239,13 @@ Data rows should separate the following timestamps:
 - `release_ts_utc`, when using scheduled macro or event data
 - `vintage_date`, when using revised macro series
 
+Fields required for the DST absorption design:
+
+- `dst_regime`
+- `us_close_to_ose_night_close_minutes`
+- `absorption_regime`
+- `alpha_absorb_group`, optional reporting group for absorption-coefficient tables
+
 Core invariants:
 
 - `target_open_ts_utc > model_cutoff_ts_utc`.
@@ -257,6 +266,25 @@ The main paper focuses on downside tail risk:
 EVT diagnostics should include mean-excess behavior, Hill or tail-index estimates where appropriate, threshold sensitivity, and shape/scale stability.
 
 Upper-tail labels are optional robustness or appendix work, not first-phase implementation.
+
+## Model-Ready Loss Fields
+
+Processed model tables should carry the fields needed to audit the LightGBM-standardized-loss POT-GPD path:
+
+| Field | Meaning |
+| --- | --- |
+| `gap_t` | Target log gap for the selected target family. |
+| `loss_t` | Downside loss, defined as `-gap_t`. |
+| `baseline_residual_loss_t` | Residual loss from the selected baseline location or location-scale model. |
+| `lgbm_predicted_location_t` | LightGBM conditional location prediction where used. |
+| `lgbm_predicted_scale_t` | LightGBM conditional scale prediction used to standardize losses. |
+| `standardized_loss_t` | Loss divided by predicted scale, after any documented location adjustment. |
+| `evt_threshold_u` | Training-window POT threshold used for the row's forecast. |
+| `exceedance_indicator_t` | Indicator that `standardized_loss_t` exceeds the threshold. |
+| `exceedance_severity_t` | Excess over threshold for EVT severity calibration. |
+| `tail_probability_alpha` | VaR/ES tail probability for the forecast row. |
+| `var_forecast` | VaR forecast transformed back to target scale. |
+| `es_forecast` | ES forecast transformed back to target scale. |
 
 ## Source Notes
 

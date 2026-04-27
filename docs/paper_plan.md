@@ -48,6 +48,14 @@ This DST regime comparison is not a causal design by itself. It is a timestamp-s
 
 The DST absorption test is a headline empirical result, not only a calendar control. The design estimates U.S.-close incremental forecast gains separately in EST and EDT regimes and tests whether those gains are attenuated when the OSE night session has roughly one hour after the U.S. close to absorb information. The main estimand is an absorption pattern: whether the U.S.-close predictor block improves lower-tail loss functions less in EDT than in EST after common controls are held fixed.
 
+### Absorption Coefficient
+
+The headline summary statistic is an absorption coefficient:
+
+`alpha_absorb = 1 - FZ_gain_EDT / FZ_gain_EST`.
+
+`FZ_gain` is the reduction in pre-specified Fissler-Ziegel loss from adding the U.S.-close predictor block to the benchmark information set in a given DST regime. Values near zero indicate that the extra EDT hour does not materially reduce the U.S.-close forecast gain. Values near one indicate that the extra hour absorbs most of the signal measured in EST. If `FZ_gain_EST` is near zero or has the wrong sign, the ratio is not reported as a coefficient; the table reports the two regime-specific gains and confidence intervals instead. The coefficient is descriptive forecast evidence, not a structural absorption parameter.
+
 ## Research Questions
 
 The main question is:
@@ -101,7 +109,15 @@ Volume and open interest are used as liquidity and contract-state proxies when t
 
 ## Prior Literature and Intended Contribution
 
-The closest literature has three strands. U.S.-Japan transmission studies show that Japanese equity and futures markets can respond to foreign-market information, but they do not by themselves define a timestamp-safe OSE day-open tail forecast. Nikkei futures price-discovery studies show that OSE, SGX, CME, and night-session trading form a cross-venue information network, which is exactly why the paper must separate full opening-level risk from residual pre-open risk. Tail-risk forecasting studies define the peer models and scoring language, especially conditional EVT, CAViaR, joint VaR-ES scoring, and semiparametric VaR-ES evaluation.
+This section is a compressed planning placeholder. The manuscript version should expand it into a full literature review rather than leaving the three strands as a short summary.
+
+The closest literature has three strands. U.S.-Japan transmission studies show that Japanese equity and futures markets can respond to foreign-market information, but they do not by themselves define a timestamp-safe OSE day-open tail forecast. Nikkei futures market-integration studies show that OSE, SGX, CME, and night-session trading form a cross-venue information network, which is exactly why the paper must separate full opening-level risk from residual pre-open risk. Tail-risk forecasting studies define the peer models and scoring language, especially conditional EVT, CAViaR, joint VaR-ES scoring, and semiparametric VaR-ES evaluation.
+
+The manuscript literature review should expand three strands:
+
+- U.S.-Japan transmission: Hamao, Masulis, and Ng; Lin, Engle, and Ito; Bae, Karolyi, and Stulz; and Dungey-style contagion and transmission work. These papers motivate cross-market information, but they do not construct a session-aligned lower-tail forecast.
+- Nikkei futures market integration: CME/OSE/SGX Nikkei futures work, intraday futures studies, and opening-auction research. These papers motivate the separation between full opening-gap risk and residual pre-open risk.
+- Tail-risk forecasting: McNeil-Frey GARCH-EVT, Engle-Manganelli CAViaR, Patton-Ziegel-Chen semiparametric ES, Taylor CARE/ALD VaR-ES, Dimitriadis-Bayer regression-based VaR/ES, and Creal-Koopman-Lucas GAS models.
 
 The intended contribution is narrower than those literatures. The paper contributes a session-aligned target construction and forecast-evaluation design for OSE Nikkei 225 Futures pre-open downside risk. It asks whether U.S. close-side variables add lower-tail forecasting content beyond Japan-only and night-session-aware baselines, and whether conditional learning plus EVT calibration improves VaR/ES forecasts relative to credible risk-model peers.
 
@@ -155,9 +171,9 @@ An optional robustness specification uses LightGBM to predict rolling-threshold 
 
 ## EVT Feasibility and Protocol
 
-EVT claims are conditional on the target-data audit. POT-GPD is fitted only on training-window downside exceedances, with losses defined as `L_t = -gap_t`. The threshold grid, exceedance count, mean-excess behavior, tail-index estimates, and shape/scale stability must be reported before VaR/ES claims at extreme levels are made.
+EVT claims are conditional on the target-data audit. POT-GPD is fitted only on training-window downside exceedances, with losses defined as `L_t = -gap_t`. The primary threshold-selection criterion is mean-excess linearity together with GPD shape and scale stability above the threshold. The threshold grid, exceedance count, mean-excess behavior, tail-index estimates, and shape/scale stability must be reported before VaR/ES claims at extreme levels are made.
 
-The default rolling-window gate is a minimum of 30 training-window exceedances before reporting EVT-based ES from that window. If the audit shows that exceedance counts are too thin, EVT results should be restricted to less extreme tail levels, pooled/expanding windows, or diagnostic discussion. No 0.1% VaR/ES or extreme-tail superiority claim should be made without sufficient exceedances and rolling out-of-sample diagnostics.
+Automated threshold checks, such as Danielsson-style double-bootstrap or Beirlant-Goegebeur style sequential diagnostics, are optional robustness tools. Threshold sensitivity is required: the main VaR/ES table should be accompanied by a robustness table or figure showing nearby threshold choices. The default rolling-window gate is a minimum of 30 training-window exceedances before reporting EVT-based ES from that window. If the audit shows that exceedance counts are too thin, EVT results should be restricted to less extreme tail levels, pooled/expanding windows, or diagnostic discussion. No 0.1% VaR/ES or extreme-tail superiority claim should be made without sufficient exceedances and rolling out-of-sample diagnostics.
 
 ## Evaluation Strategy
 
@@ -192,7 +208,7 @@ Tail ranking:
 
 Tail-weighted CRPS is used only if a model produces a full predictive distribution. It should not be reported for VaR/ES-only models as if they were distributional forecasts.
 
-Decision diagnostics are secondary. Fixed hedge-trigger summaries may report missed events, false positives, turnover, and loss avoided under stated assumptions, but they remain risk-management diagnostics rather than trading-alpha evidence.
+Risk-management diagnostics include a main ES severity reduction table. The table reports how much adding U.S. close information reduces realized exceedance severity at the 2.5% ES level, conditional on an exceedance. Fixed hedge-trigger summaries may also report missed events, false positives, turnover, and loss avoided under stated assumptions, but turnover and cost diagnostics remain secondary and are not trading-alpha evidence.
 
 ## Result Presentation Sequence
 
@@ -201,10 +217,11 @@ The empirical section should lead with evidence rather than a model leaderboard:
 1. Target audit: availability, missingness, contract coverage, roll/SQ flags, distribution, autocorrelation, tail counts, and extreme-event tracebacks.
 2. Incremental U.S.-close information: Japan-only versus Japan plus U.S. close predictors.
 3. DST interaction: compare predictive gains across EST and EDT regimes.
-4. Night-session attenuation: compare full-gap targets with night-close residual or night-session-controlled designs.
-5. VaR/ES calibration: coverage, joint scoring, and ES diagnostics.
-6. Model-set comparison: direct FZ/CARE, GARCH/GJR-EVT, LightGBM-only, and LightGBM-EVT under common loss functions.
-7. Robustness: alternative thresholds, windows, contract-roll treatment, holidays, early closes, and stress subperiods.
+4. Absorption coefficient: report EST and EDT gains, `alpha_absorb` where well-defined, and confidence intervals or bootstrap uncertainty.
+5. Night-session attenuation: compare full-gap targets with night-close residual or night-session-controlled designs.
+6. VaR/ES calibration and ES severity reduction: coverage, joint scoring, exceedance severity, and risk-management diagnostics.
+7. Model-set comparison: direct FZ/CARE, GARCH/GJR-EVT, LightGBM-only, and LightGBM-EVT under common loss functions.
+8. Robustness: alternative thresholds, windows, contract-roll treatment, holidays, early closes, and stress subperiods.
 
 ## Manuscript Structure
 

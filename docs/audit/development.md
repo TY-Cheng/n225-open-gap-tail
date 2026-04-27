@@ -95,9 +95,12 @@ Implement the pipeline in this order:
 
 6. Feature builder
    - Build timestamp-safe U.S. close features.
-   - Include U.S. returns, sector dispersion, volatility-index changes, implied-risk proxies where licensed, FX/rates moves, commodity proxies where available, and calendar/event flags.
+   - Include the Tier 1 and Tier 1.5 candidate universe from `docs/data.md`: U.S. ETF returns and ranges, sector returns and dispersion, USD/JPY, TLT, GLD, USO, EEM, FXI, SMH where source coverage passes audit, VIX close/range, SKEW or VIX term-structure proxies where licensed or public source support exists, Treasury rates, yield-curve slope, funding proxies, credit spreads, and calendar/event flags.
+   - Add SPY late-session minute-bar features after timestamp validation: last-30-minute return, last-hour return, late-session range, late-session volume surge, and final-window reversal or momentum. Freeze these features at U.S. close plus the configured vendor-availability lag.
    - Mandate core lagged Japanese variables:
      prior gap, lagged OSE day returns, lagged OSE night returns where available, volume and open-interest changes, roll-window flags, SQ-window flags, Japan holiday-adjacent flags, U.S. holiday-adjacent flags, U.S. early-close flags, and OSE holiday-trading flags.
+   - Add DST absorption fields:
+     `dst_regime`, `us_close_to_ose_night_close_minutes`, `absorption_regime`, and optional `alpha_absorb_group`.
    - Add a feature leakage checklist artifact proving that every feature is available before the model cutoff and that the model cutoff precedes the target open.
 
 7. Baseline models
@@ -106,9 +109,12 @@ Implement the pipeline in this order:
 
 7A. Econometric tail-risk baselines
    - Implement GARCH-t or GJR-GARCH-t if the dependency is available.
-   - Implement GARCH-EVT on standardized residuals where feasible.
-   - Implement a simple CAViaR benchmark or document why it is deferred.
-   - Add ALD or Taylor-style VaR-ES benchmark only if feasible without derailing the first pipeline.
+   - Implement GJR-GARCH-EVT on standardized residuals.
+   - Implement CAViaR as a main pre-LightGBM benchmark gate.
+   - Implement a direct FZ-loss or CARE-style VaR-ES benchmark as a main pre-LightGBM benchmark gate.
+   - Implement Taylor-style ALD VaR-ES as a main advanced benchmark when stable on the audited sample.
+   - Treat GAS-t or score-driven VaR-ES models as appendix or fallback benchmarks unless the implementation is stable and tested.
+   - If a main advanced benchmark is numerically unstable or sample-inadequate, label it unavailable with a reason; do not replace it with weak evidence.
    - Save these metrics before LightGBM tuning.
 
 8. LightGBM model variants
@@ -122,9 +128,12 @@ Implement the pipeline in this order:
    - Keep hyperparameter tuning simple and reproducible in the first pass.
 
 9. EVT layer
-   - Fit POT-GPD on downside losses, filtered residual losses, standardized losses, or conditional exceedance severities.
+   - Use the primary LightGBM-EVT interface from `docs/paper_plan.md`: LightGBM estimates conditional scale or a location-scale pair, losses are standardized by predicted scale, POT-GPD is fit on training-window standardized downside exceedances, and VaR/ES are transformed back to the target scale.
+   - Fit POT-GPD on downside losses, filtered residual losses, standardized losses, or conditional exceedance severities, but make standardized losses the first reported hybrid specification.
    - Use training-window exceedances only.
-   - Store threshold grid diagnostics: exceedance count, mean excess, shape stability, and scale stability.
+   - Select thresholds using mean-excess linearity plus GPD shape and scale stability above the threshold.
+   - Store threshold grid diagnostics: exceedance count, mean excess, Hill or tail-index estimates where appropriate, shape stability, scale stability, and sensitivity across nearby thresholds.
+   - Add optional automated threshold diagnostics such as Danielsson-style double-bootstrap or Beirlant-Goegebeur style sequential checks when implementation is stable.
    - Enforce a minimum exceedance count before reporting an alpha level.
    - Report empirical levels such as 5%, 2.5%, and 1% separately from extrapolated levels.
    - Do not claim 0.1% performance unless the sample size supports meaningful evaluation.
@@ -133,10 +142,14 @@ Implement the pipeline in this order:
 10. Evaluation and manuscript artifacts
     - Produce reproducible tables and figures under ignored report/artifact directories.
     - Report quantile loss, VaR coverage, conditional coverage or independence tests, dynamic quantile diagnostics where feasible, Fissler-Ziegel joint VaR-ES score, ES exceedance severity diagnostics, and tail ranking metrics.
-    - Build model-comparison artifacts with block-bootstrap confidence intervals or Model Confidence Set where feasible.
+    - Build Murphy diagrams for VaR-ES dominance diagnostics; treat them as diagnostic plots, not standalone significance tests.
+    - Build model-comparison artifacts with Giacomini-White where feasible, Diebold-Mariano with HAC or block-bootstrap fallback, and Model Confidence Set when the OOS loss series supports it.
+    - Report quantile-score calibration and sharpness decomposition when implementation is stable.
     - Build incremental-information tables in this order:
       Japan-only, U.S.-only, Japan plus U.S., Japan plus U.S. plus FX, Japan plus U.S. plus risk indicators, night-session-controlled model, and full LightGBM-EVT.
-    - Build hedge-trigger diagnostics with fixed thresholds, fixed cost assumptions, false-positive rate, missed-event rate, turnover, and loss avoided.
+    - Build a DST absorption table with the absorption coefficient and its component gains by EST/EDT regime.
+    - Build a main ES severity reduction table reporting exceedance severity changes at the 2.5% ES level after adding U.S. close information.
+    - Build secondary hedge-trigger diagnostics with fixed thresholds, fixed cost assumptions, false-positive rate, missed-event rate, turnover, and loss avoided.
     - Treat hedge-trigger results as pre-open risk-management diagnostics, not trading-profit claims.
 
 Acceptance criteria for each implementation phase:

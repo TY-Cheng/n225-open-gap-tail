@@ -1,20 +1,21 @@
 site_name: n225-open-gap-tail
 site_description: LightGBM-EVT workflow for Nikkei 225 futures opening-gap tail risk.
+repo_url: https://github.com/TY-Cheng/n225-open-gap-tail
+repo_name: TY-Cheng/n225-open-gap-tail
+edit_uri: ""
 theme:
   name: material
   language: en
   palette:
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      primary: indigo
-      accent: blue
+    - scheme: default
+      primary: teal
+      accent: deep orange
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
-      primary: indigo
-      accent: blue
+    - scheme: slate
+      primary: teal
+      accent: amber
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
@@ -24,35 +25,45 @@ theme:
     - content.code.copy
     - content.tabs.link
     - content.tooltips
+    - header.autohide
+    - navigation.expand
     - navigation.footer
     - navigation.indexes
     - navigation.instant
     - navigation.instant.prefetch
     - navigation.instant.progress
+    - navigation.path
+    - navigation.prune
     - navigation.sections
     - navigation.tabs
     - navigation.tabs.sticky
     - navigation.top
     - navigation.tracking
     - search.highlight
+    - search.share
     - search.suggest
     - toc.follow
 plugins:
   - search
 markdown_extensions:
-  - admonition
+  - abbr
   - attr_list
-  - footnotes
+  - def_list
   - md_in_html
   - tables
   - toc:
       permalink: true
-  - pymdownx.details
+  - pymdownx.betterem:
+      smart_enable: all
   - pymdownx.highlight:
       anchor_linenums: true
       line_spans: __span
       pygments_lang_class: true
   - pymdownx.inlinehilite
+  - pymdownx.magiclink:
+      repo_url_shorthand: true
+      user: TY-Cheng
+      repo: n225-open-gap-tail
   - pymdownx.snippets:
       base_path: .
       check_paths: true

@@ -1,3 +1,8 @@
+---
+hide:
+  - navigation
+---
+
 # Data Design and Contract
 
 This page is the canonical source for data-source roles, forecast origins, target definitions, timestamp fields, and feature families. The paper plan should reference this page rather than restating data definitions.

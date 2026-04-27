@@ -5,29 +5,26 @@ hide:
 
 # Data Design and Contract
 
-This page is the canonical source for data-source roles, forecast origins, target definitions, timestamp fields, and feature families. The paper plan should reference this page rather than restating data definitions.
+This page is the canonical source for source roles, source status, target formulas, timestamp policies, contract-roll treatment, and public data lake tiers. The paper plan should reference this page instead of duplicating vendor fields or processing rules.
 
-## Source Roles
+## Source Status
 
-J-Quants is the primary research source for OSE Nikkei 225 Futures target construction. New development should use J-Quants API V2 with API-key authentication. It should be treated as an ex-post daily/session OHLC source for reproducible historical research, not as a live pre-open production feed.
+| Source | Role | Project status | Timing interpretation |
+| --- | --- | --- | --- |
+| J-Quants Futures OHLC | OSE Nikkei 225 Futures target source and contract metadata source | Requires futures-capable Premium access; current free plan does not support final futures target claims | Ex-post historical research target source, not a live pre-open feed. |
+| Massive.com | U.S. close-side ETF, equity, sector, FX, and index predictors | Configured licensed API | Predictor source with UTC timestamps converted explicitly to ET. |
+| NYSE calendar | U.S. regular close, holiday, and early-close cutoff logic | Core public timing source | Determines the U.S. cash close used for the forecast origin. |
+| JPX calendar and trading-hour rules | OSE business-day, day/night session, holiday-trading, roll/SQ context | Core official timing source | Determines OSE target eligibility and holiday/session flags. |
+| FRED | Treasury yields, selected rates proxies, and public macro series | Configured public API | Historical control source; vintage-safe work requires ALFRED-style handling where needed. |
+| Cboe VIX historical data | U.S. volatility and risk proxy | Core public fallback/check | Daily VIX close is core; high, low, and range are included only when source support is audited. |
+| Nikkei Indexes spot OHLC | Spot-market controls or robustness | Optional public or licensed source | Not the futures target source. |
+| CME/SGX/OSE intraday Nikkei marks | U.S.-close residual reference and cross-venue robustness | Optional licensed extension | Required before using `residual_usclosemark_to_open` or making intraday cross-venue claims. |
 
-Massive.com is the primary source for U.S. close-side predictors. Massive timestamps must be treated as UTC and explicitly converted to ET before U.S. session alignment.
+Core variable definitions should be transparent enough for reader evaluation. Public fallback checks should be provided where feasible, but the documentation should not claim that all core results are reproducible without the licensed target and predictor sources.
 
-Nikkei Indexes spot OHLC can support spot-market controls or robustness checks, but it is not the futures target.
+## Current Environment Contract
 
-The data design separates three roles:
-
-Role | Source | Use | Current boundary
---- | --- | --- | ---
-Target construction | J-Quants futures daily/session OHLC | OSE Nikkei 225 Futures day-open, prior settlement, prior day close, night close, volume, and open interest. | Futures endpoint requires a futures-capable plan.
-U.S. predictors | Massive.com, FRED, and licensed market-data sources | U.S. close-side ETF, sector, FX, VIX, rates, and risk-proxy variables. | Historical research predictors, not live production guarantees.
-Alignment metadata | Exchange calendars, JPX rules, J-Quants/JPX contract metadata | Trading-day joins, holiday flags, roll windows, SQ windows, and contract selection. | Rule-based scaffolding must be reconciled before final empirical claims.
-
-## Target Data
-
-The preferred target source is OSE Nikkei 225 Futures data from JPX/J-Quants. The first implementation should use daily/session-level J-Quants futures OHLC after the subscription includes that endpoint. The current free plan is useful for V2 API smoke tests with equity master and equity daily bars, but it does not include the futures daily OHLC target. J-Quants DataCube or another licensed intraday feed is only needed if the paper implements a U.S.-close Nikkei futures reference mark or validates intraday opening mechanics.
-
-The current `.env` contract for J-Quants is:
+The current local `.env` contract uses J-Quants API V2 and keeps derivatives disabled until the subscription supports the futures endpoint:
 
 ```bash
 JQUANTS_API_VERSION="v2"
@@ -40,51 +37,7 @@ JQUANTS_DERIVATIVES_DAILY_ENABLED="false"
 JQUANTS_DERIVATIVES_INTRADAY_ENABLED="false"
 ```
 
-Required J-Quants fields:
-
-- Trading date, contract code, derivative product category, contract month, and central contract flag.
-- Day-session open, high, low, and close.
-- Night-session open, high, low, and close where available.
-- Whole-day open, high, low, and close.
-- Settlement price, volume, open interest, last trading day, and special quotation day.
-
-The main contract is OSE Nikkei 225 Futures large contract. Mini and micro contracts are robustness or liquidity checks only unless the research design changes.
-
-## Forecast Origins
-
-Every target and feature table must state the forecast origin and model cutoff:
-
-Forecast origin | Nominal timestamp | Known information | Target open | Main use
---- | ---: | --- | --- | ---
-`US_CASH_CLOSE` | 16:00 ET | U.S. ETF/index/FX/risk proxies available at the U.S. cash close. | OSE day open at 8:45 JST. | Main pre-open risk forecast origin.
-`OSE_NIGHT_CLOSE` | 6:00 JST | OSE night close if a live or historical session field is available. | OSE day open at 8:45 JST. | Opening-auction residual robustness.
-`PREV_OSE_DAY_CLOSE` | 15:45 JST | Previous OSE day-session close and settlement context. | Next OSE day open. | Full overnight inventory or margin-risk target.
-
-The research must not claim that U.S. close information mechanically identifies U.S.-to-Japan spillover without accounting for the OSE night session.
-
-## Target Hierarchy
-
-Primary target with daily/session J-Quants:
-
-- `full_gap_settle_to_open`: `log(day_open_t) - log(prev_settlement_{t-1})`.
-
-Secondary full-gap target:
-
-- `full_gap_close_to_open`: `log(day_open_t) - log(prev_day_close_{t-1})`.
-
-Residual robustness target:
-
-- `residual_nightclose_to_day_open`: `log(day_open_t) - log(night_close_t)`, when the night close is available and timestamp-valid.
-
-Ideal pre-open residual target:
-
-- `residual_usclosemark_to_open`: `log(day_open_t) - log(nikkei_futures_mark_at_us_cash_close_t)`.
-
-`residual_usclosemark_to_open` is unavailable unless a licensed intraday OSE, CME, SGX, or equivalent Nikkei futures reference mark is available at the U.S. cash close. It should be documented as an extension until that data exists.
-
-## Predictor Data
-
-The Massive.com API configuration is:
+Massive and FRED predictor settings are:
 
 ```bash
 MASSIVE_API_KEY="replace-me"
@@ -92,57 +45,182 @@ MASSIVE_BASE_URL="https://api.massive.com"
 MASSIVE_DAILY_TICKERS="SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,C:USDJPY"
 MASSIVE_MINUTE_TICKER="SPY"
 MASSIVE_PROBE_TICKERS="I:VIX"
-```
 
-The first Massive data-engineering command is:
-
-```bash
-n225-open-gap-tail massive-smoke
-```
-
-It writes raw API responses to ignored `data/raw/massive/` and normalized parquet files to ignored `data/interim/massive/`. These artifacts are smoke and schema checks only; they are not empirical validation of the paper's forecasting claims.
-
-FRED is the free historical source for VIX and Treasury-rate proxies:
-
-```bash
 FRED_BASE_URL="https://fred.stlouisfed.org"
 FRED_SERIES="VIXCLS,DGS2,DGS10"
 ```
 
+These snippets are current smoke-test defaults, not the full paper predictor universe. Expanded predictor candidates are documented below and should not change `.env.example`, tests, or pipeline defaults until a dedicated data-engineering task updates the ingestion contract.
+
+Planned future candidate lists:
+
 ```bash
+FRED_SERIES="VIXCLS,DGS2,DGS10,T10Y2Y,BAMLH0A0HYM2,BAMLC0A0CM,SOFR,EFFR"
+MASSIVE_DAILY_TICKERS="SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,TLT,GLD,USO,EEM,FXI,SMH,C:USDJPY"
+MASSIVE_PROBE_TICKERS="I:VIX,I:SKEW"
+```
+
+`I:SKEW` and other index probes are candidates only if the subscribed Massive plan supports them.
+
+The existing smoke commands are engineering checks only:
+
+```bash
+n225-open-gap-tail massive-smoke
 n225-open-gap-tail fred-smoke
-```
-
-`VIXCLS` is treated as a historical Cboe-sourced daily close predictor. `DGS2` and `DGS10` are historical rate proxies. These series are acceptable for a historical backtest, but their rows carry a `historical_daily_close_proxy_not_live_availability` note and should not be used to claim real-time deployability.
-
-Calendar and contract scaffolding are built locally:
-
-```bash
-CALENDAR_US_EXCHANGE="XNYS"
-CALENDAR_JPX_EXCHANGE="JPX"
-NIKKEI_CONTRACT_ROLL_DAYS_BEFORE_LAST_TRADE="5"
-NIKKEI_CONTRACT_MONTHS="3,6,9,12"
-```
-
-```bash
 n225-open-gap-tail calendar-build
 n225-open-gap-tail contracts-build
 ```
 
-The calendar table uses `exchange-calendars` for XNYS and JPX/XTKS sessions, U.S. early closes, weekday holidays, and U.S. DST. It is an alignment scaffold; OSE derivatives holiday trading and night-session edge cases still need a futures-source audit.
+They write ignored raw and interim artifacts under `data/`. Smoke artifacts do not constitute empirical validation of the forecasting paper.
 
-The contract metadata table is rule-based: quarterly Nikkei 225 futures months, second-Friday SQ dates, JPX-calendar-adjusted last trading days, a configurable roll window, and a central-contract selector that rolls from the front contract to the next contract during the roll window. It must be reconciled against J-Quants or JPX contract metadata before final empirical results.
+## Forecast Origins
 
-U.S. close-side features should be timestamped and frozen before the model cutoff:
+Every modeling row must state a forecast origin and model cutoff.
 
-- Broad U.S. equity ETFs and indexes: SPY, QQQ, DIA, IWM, and major index proxies.
-- Sector ETFs and cross-sector dispersion signals.
-- Volatility and tail-risk proxies: VIX, VIX futures, VVIX, SKEW, MOVE, or similar proxies where licensed.
-- U.S. futures, rates, FX, and commodities where the subscribed data plan supports them.
-- USD/JPY and U.S. rates proxies where available.
-- Calendar and event controls: U.S./Japan holidays, U.S. early closes, FOMC, CPI, payrolls, BOJ, major Japan macro releases, DST regime, roll windows, SQ windows, and OSE holiday trading.
+| Forecast origin | Nominal timestamp | Known information | Target open | Main use |
+| --- | ---: | --- | --- | --- |
+| `US_CASH_CLOSE` | Official U.S. cash close, normally 16:00 ET and adjusted for early closes | U.S. ETF, index, sector, FX, VIX, rates, and event information available at the cutoff | Next eligible OSE day open at 08:45 JST | Main pre-open risk forecast origin. |
+| `OSE_NIGHT_CLOSE` | 06:00 JST | OSE night close if available as an audited historical field or live licensed feed | Same OSE day open at 08:45 JST | Night-session absorption robustness and residual decomposition. |
+| `PREV_OSE_DAY_CLOSE` | 15:45 JST | Previous OSE day-session close and settlement context | Next eligible OSE day open | Full opening-level risk target. |
 
-Lagged Japanese futures variables should include prior gap, lagged OSE day returns, lagged OSE night returns where available, volume/open-interest changes, and market-structure flags.
+J-Quants futures OHLC can support historical reconstruction of targets and residual decompositions after the subscription is available. It should not be described as a live source for the `US_CASH_CLOSE` or `OSE_NIGHT_CLOSE` production information set.
+
+## Predictor Universe
+
+The first-paper predictor universe is pre-registered by economic role rather than by feature search. Candidate variables must pass timestamp, availability, and sample-coverage checks before they enter the modeling table.
+
+| Block | Candidate variables | Source | Timing status | Economic justification |
+| --- | --- | --- | --- | --- |
+| Broad U.S. beta | SPY, DIA, QQQ, IWM returns and ranges | Massive.com | `US_CASH_CLOSE` after official close plus vendor lag | U.S. equity-market direction and risk appetite. |
+| U.S. sectors | XLK, XLF, XLE, XLV, XLI returns and dispersion | Massive.com | `US_CASH_CLOSE` | Sector composition, growth/cyclical rotation, and risk concentration. |
+| Asia and global risk | EEM, FXI, SMH | Massive.com planned candidates | `US_CASH_CLOSE` after source audit | Emerging-market, China, and semiconductor channels relevant to Japan. |
+| FX | USD/JPY | Massive.com forex | Timestamped bar close converted from UTC | Currency channel for dollar-denominated Japanese risk and exporter exposure. |
+| Safe-haven and commodity proxies | TLT, GLD, USO | Massive.com planned candidates | `US_CASH_CLOSE` after source audit | Flight-to-quality, dollar-rate duration, and commodity-risk channels. |
+| U.S. volatility | VIX close; VIX high/low/range when available | Cboe, FRED, Massive index probe | Historical daily close or audited index timestamp | U.S. implied volatility and volatility-of-risk regime. |
+| U.S. tail/skew proxies | Cboe SKEW, VIX9D, VIX3M, VIX6M | Cboe or licensed source | Tier 1.5/Tier 2 depending access and coverage | Option-implied left-tail and volatility-term-structure information. |
+| Treasury rates | DGS2, DGS10, T10Y2Y, SOFR, EFFR | FRED | Historical daily public series; release/availability timestamps audited | Rate level, curve slope, and funding conditions. |
+| Credit spreads | BAMLH0A0HYM2, BAMLC0A0CM | FRED/ICE BofA | Historical daily series; coverage and license notes audited | Credit-stress proxy for global downside tail risk. |
+| Event flags | FOMC, CPI, payrolls, BOJ, major Japan macro releases | Official calendars | Timestamped event flags, no numeric surprises in core design | Scheduled risk-event controls without macro feature fishing. |
+| Lagged Japanese futures state | Prior gap, lagged day return, lagged night return, volume/OI changes, roll/SQ flags | J-Quants futures after Premium access | Historical target-side variables, lagged before cutoff | Domestic state, liquidity proxy, and contract-state controls. |
+
+The Massive ticker selection covers U.S. market beta, technology and growth exposure, small-cap risk appetite, sector dispersion, FX, duration, safe-haven demand, commodities, Asia/EM risk, and semiconductors. This rationale should be reported before any model uses the expanded ticker set.
+
+## Data Availability Timeline
+
+Before modeling, each predictor block must produce an availability table with:
+
+- source name and vendor;
+- candidate variables;
+- raw coverage start and end;
+- usable coverage after timestamp alignment;
+- missingness rate;
+- frequency and release/update timing;
+- effective sample impact after joining to OSE target dates.
+
+The target audit and predictor timeline jointly determine the final sample period. Variables with short or unstable histories can enter robustness tables, but not the main predictor set if they materially shorten the main sample.
+
+## Target Hierarchy
+
+All target formulas use log gaps.
+
+Main target:
+
+- `full_gap_settle_to_open = log(day_open_t) - log(prev_settlement_{t-1})`.
+
+Secondary target:
+
+- `full_gap_close_to_open = log(day_open_t) - log(prev_day_close_{t-1})`.
+
+Absorption robustness target:
+
+- `residual_nightclose_to_day_open = log(day_open_t) - log(night_close_t)`, when `night_close_t` is available and its timestamp semantics are audited.
+
+Licensed-data extension:
+
+- `residual_usclosemark_to_open = log(day_open_t) - log(nikkei_futures_mark_at_us_cash_close_t)`.
+
+`residual_usclosemark_to_open` is disabled until a licensed intraday OSE, CME, SGX, or equivalent Nikkei futures reference mark exists at the U.S. cash close.
+
+## J-Quants Field-to-Use Contract
+
+| Field | Use | Audit note |
+| --- | --- | --- |
+| `DaySessionOpen` | Target open for all full-gap and residual targets | Must be present and traceable to raw contract rows. |
+| `DaySessionClose` | Reference for `full_gap_close_to_open` and lagged Japanese controls | Must refer to the same contract convention used in target construction. |
+| `NightSessionClose` | Reference for `residual_nightclose_to_day_open` and night-session absorption controls | Historical residual source only unless a live licensed feed exists. |
+| `SettlementPrice` | Main reference for `full_gap_settle_to_open` | Must be matched to the prior eligible contract/session. |
+| `Volume` | Liquidity proxy and data-sanity field | Session-specific volume is used only if available and verified. |
+| `OpenInterest` | Liquidity, contract-state, and roll diagnostics | Used as a proxy, not as direct depth. |
+| `LastTradingDay` | Roll-window flag and expiry exclusion logic | Must be reconciled with JPX contract rules. |
+| `SpecialQuotationDay` | SQ-window flag and robustness/exclusion rule | Used to prevent SQ-driven artifacts from dominating the tail. |
+| `CentralContractMonthFlag` | Main contract selection and roll diagnostics | Must be reconciled against observed liquidity and metadata. |
+
+The main contract is the OSE Nikkei 225 Futures large contract. Mini and micro contracts are robustness or liquidity checks only unless the research design changes.
+
+## Contract Roll Mechanics
+
+Target gaps are calculated intra-contract wherever possible. A target observation should not mechanically join the settlement or close of one contract to the day open of another contract and treat the resulting artificial spread as a market opening gap.
+
+Default policy:
+
+- select the active contract using audited `CentralContractMonthFlag`, contract month, liquidity, and roll metadata;
+- exclude target gaps that cross a contract roll, last-trading-day boundary, or SQ exclusion window from the main specification;
+- keep roll, SQ, and near-expiry flags for audit and robustness tables;
+- use flag-and-include only as a robustness exercise;
+- use ratio-adjusted or Panama-style continuous series only for robustness or long-memory volatility features, not for the main opening-gap target.
+
+The target audit must report how many observations are excluded by the roll/SQ policy and whether extreme gaps are traceable to raw same-contract rows.
+
+## Massive Timestamp Policy
+
+Massive raw timestamps are stored in UTC. Preprocessing must convert them explicitly to U.S. Eastern Time before applying U.S. session cutoffs.
+
+The `US_CASH_CLOSE` cutoff is based on the official U.S. cash-market close:
+
+- regular sessions normally use 16:00 ET;
+- NYSE early-close sessions use the official early-close time;
+- a configurable vendor-availability lag is applied after the close, with a default of 15 minutes for research feature freezing;
+- the lag is a conservative research convention, not a live data guarantee;
+- `is_us_early_close` and DST regime flags must be stored.
+
+No feature may enter a `US_CASH_CLOSE` forecast row unless its `vendor_available_ts_utc` is no later than `model_cutoff_ts_utc`.
+
+## Public Data Lake Tiers
+
+The data lake is intentionally tiered to prevent feature fishing.
+
+### Tier 0: Calendars and Timing
+
+- JPX/OSE trading hours, holidays, holiday trading, and target-session eligibility.
+- NYSE holidays and official early closes.
+- U.S. DST transition dates and UTC/ET/JST conversion tables.
+- Roll windows, SQ windows, and contract-expiry metadata.
+
+### Tier 1: Core Controls and Predictors
+
+- Massive U.S. ETF, sector, equity-index, and USD/JPY predictors.
+- Massive planned additions: TLT, GLD, USO, EEM, FXI, and SMH after source and coverage audit.
+- Cboe or FRED VIX close; VIX high, low, and range only when the source supports them.
+- FRED 2-year and 10-year Treasury yields, T10Y2Y yield-curve slope, SOFR or EFFR funding proxies, and ICE BofA credit-spread proxies where coverage and licensing notes support use.
+- Major event flags: FOMC, CPI, payrolls, BOJ policy events, and major Japan macro releases.
+- Lagged Japanese futures variables: prior gap, lagged OSE day return, lagged OSE night return when available, volume/open-interest changes, roll/SQ flags, and holiday-adjacent flags.
+
+### Tier 1.5: Tail-Risk Proxy Candidates
+
+- Cboe SKEW or a licensed SKEW proxy.
+- VIX term-structure proxies such as VIX9D, VIX3M, and VIX6M.
+- Massive index probes such as `I:VIX` and `I:SKEW` only if the plan supports them.
+
+Tier 1.5 variables are natural for a tail-risk paper but must not shorten the main sample or introduce unclear availability timestamps. If they do, they move to Tier 2 robustness.
+
+### Tier 2: Leakage-Safe Extensions
+
+- ALFRED-style real-time vintage macro series.
+- CME, SGX, or intraday OSE Nikkei futures marks for `residual_usclosemark_to_open`.
+- Options-implied skew, volatility-surface, or tail-risk proxies where licensed.
+- Public-source replication checks where a lower-fidelity but academically accessible substitute exists.
+
+Tier 2 variables do not enter first-paper core claims unless their timestamps, availability, and source definitions are audited.
 
 ## Timestamp Fields
 
@@ -156,26 +234,43 @@ Data rows should separate the following timestamps:
 - `model_cutoff_ts_utc`
 - `target_open_ts_utc`
 - `reference_price_ts_utc`
+- `release_ts_utc`, when using scheduled macro or event data
+- `vintage_date`, when using revised macro series
 
 Core invariants:
 
 - `target_open_ts_utc > model_cutoff_ts_utc`.
 - Feature availability timestamps must be no later than `model_cutoff_ts_utc`.
-- Residual target reference prices must have `reference_price_ts_utc <= model_cutoff_ts_utc`.
+- Residual target reference prices must satisfy `reference_price_ts_utc <= model_cutoff_ts_utc`.
 - Full-gap ex-post reference prices must be labeled as previous-session references, not live U.S.-close residual marks.
 
-## Tail-Risk Labels
+## Tail-Risk Labels and EVT Data Requirements
 
 The main paper focuses on downside tail risk:
 
-- Define losses as `L_t = -gap_t`.
-- Define downside exceedances using training-window thresholds only.
-- Store threshold, exceedance indicator, exceedance severity, VaR forecast, and ES forecast.
+- define losses as `L_t = -gap_t`;
+- define downside exceedances using training-window thresholds only;
+- store threshold, exceedance indicator, exceedance severity, VaR forecast, and ES forecast;
+- report training-window exceedance counts before reporting POT-GPD VaR/ES forecasts;
+- require minimum exceedance diagnostics, with 30 training-window exceedances as the default rolling-window gate for EVT-based ES reporting.
+
+EVT diagnostics should include mean-excess behavior, Hill or tail-index estimates where appropriate, threshold sensitivity, and shape/scale stability.
 
 Upper-tail labels are optional robustness or appendix work, not first-phase implementation.
 
 ## Source Notes
 
+- JPX Nikkei 225 Futures contract specifications: [Nikkei 225 Futures | Japan Exchange Group](https://www.jpx.co.jp/english/derivatives/products/domestic/225futures/01.html)
 - JPX derivatives trading hours: [Trading Hours | Derivatives | Japan Exchange Group](https://www.jpx.co.jp/english/derivatives/rules/trading-hours/index.html)
+- J-Quants plan coverage: [Available APIs and Data Periods per Plan | J-Quants API](https://jpx.gitbook.io/j-quants-en/outline/data-spec)
 - J-Quants update timing: [Update Timing of Provided Data | J-Quants API](https://jpx.gitbook.io/j-quants-en/outline/data-update)
 - Massive.com stocks overview: [Stocks Overview | Massive.com](https://massive.com/docs/rest/stocks/overview)
+- NYSE trading hours and early closes: [Holidays and Trading Hours | NYSE](https://www.nyse.com/trade/hours-calendars)
+- FRED observations API: [fred/series/observations | FRED](https://fred.stlouisfed.org/docs/api/fred/series_observations.html)
+- FRED high-yield credit spread candidate: [BAMLH0A0HYM2](https://fred.stlouisfed.org/series/BAMLH0A0HYM2)
+- FRED investment-grade credit spread candidate: [BAMLC0A0CM](https://fred.stlouisfed.org/series/BAMLC0A0CM)
+- FRED yield-curve slope candidate: [T10Y2Y](https://fred.stlouisfed.org/series/T10Y2Y)
+- FRED funding-rate candidates: [SOFR](https://fred.stlouisfed.org/series/SOFR), [EFFR](https://fred.stlouisfed.org/series/EFFR)
+- Cboe VIX historical data: [VIX Index Historical Data | Cboe](https://www.cboe.com/tradable_products/vix/vix_historical_data)
+- Cboe VIX term-structure dashboard: [VIX9D, VIX3M, VIX6M dashboard](https://www.cboe.com/us/indices/dashboard/VIX-VIX1Y-VIX3M-VIX6M-VIX9D/)
+- CME Nikkei products: [Nikkei 225 futures | CME Group](https://www.cmegroup.com/nikkei)

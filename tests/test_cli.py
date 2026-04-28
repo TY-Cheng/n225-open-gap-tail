@@ -24,24 +24,26 @@ def test_status_reports_environment_without_secret_values(
     tmp_path: Path,
 ) -> None:
     data_dir = tmp_path / "data"
-    raw_dir = data_dir / "raw"
-    interim_dir = data_dir / "interim"
-    processed_dir = data_dir / "processed"
+    bronze_dir = data_dir / "bronze"
+    silver_dir = data_dir / "silver"
+    gold_dir = data_dir / "gold"
     reports_dir = tmp_path / "reports"
-    for directory in (data_dir, raw_dir, interim_dir, processed_dir, reports_dir):
+    for directory in (data_dir, bronze_dir, silver_dir, gold_dir, reports_dir):
         directory.mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", "${HOME}/.venvs/n225-open-gap-tail")
     monkeypatch.setenv("DATA_DIR", str(data_dir))
-    monkeypatch.setenv("RAW_DATA_DIR", str(raw_dir))
-    monkeypatch.setenv("INTERIM_DATA_DIR", str(interim_dir))
-    monkeypatch.setenv("PROCESSED_DATA_DIR", str(processed_dir))
+    monkeypatch.setenv("BRONZE_DATA_DIR", str(bronze_dir))
+    monkeypatch.setenv("SILVER_DATA_DIR", str(silver_dir))
+    monkeypatch.setenv("GOLD_DATA_DIR", str(gold_dir))
     monkeypatch.setenv("REPORTS_DIR", str(reports_dir))
     monkeypatch.setenv("MASSIVE_DAILY_TICKERS", ",".join(CORE_MASSIVE_TICKERS))
     monkeypatch.setenv("FRED_SERIES", ",".join(CORE_FRED_SERIES))
     monkeypatch.setenv("MASSIVE_API_KEY", "massive-secret")
     monkeypatch.setenv("JQUANTS_API_KEY", "jquants-secret")
     monkeypatch.setenv("JQUANTS_API_PLAN", "free")
+    monkeypatch.setenv("JQUANTS_DERIVATIVES_DAILY_ENABLED", "false")
+    monkeypatch.setenv("JQUANTS_DERIVATIVES_INTRADAY_ENABLED", "false")
     monkeypatch.setenv("JPX_DATACUBE_EMAIL", "researcher@example.com")
 
     result = CliRunner().invoke(app, ["status"])
@@ -50,6 +52,12 @@ def test_status_reports_environment_without_secret_values(
     assert "project: n225-open-gap-tail" in result.output
     assert "uv environment: ${HOME}/.venvs/n225-open-gap-tail" in result.output
     assert f"  - {data_dir}: ok" in result.output
+    assert f"  - {bronze_dir}: ok" in result.output
+    assert f"  - {silver_dir}: ok" in result.output
+    assert f"  - {gold_dir}: ok" in result.output
+    assert "data/raw" not in result.output
+    assert "data/interim" not in result.output
+    assert "data/processed" not in result.output
     assert "massive api key configured: True" in result.output
     assert "massive api base url: https://api.massive.com" in result.output
     assert "massive daily ticker count: 23" in result.output
@@ -116,7 +124,7 @@ def test_massive_smoke_command_reports_non_secret_summary(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    raw_path = tmp_path / "massive_smoke.json"
+    bronze_path = tmp_path / "massive_smoke.json"
     daily_path = tmp_path / "massive_daily.parquet"
     minute_path = tmp_path / "massive_minute.parquet"
 
@@ -124,7 +132,7 @@ def test_massive_smoke_command_reports_non_secret_summary(
         assert kwargs["tickers"] == ("SPY", "QQQ")
         assert kwargs["probe_tickers"] == ("I:VIX",)
         return MassiveSmokeResult(
-            raw_output_path=raw_path,
+            bronze_payload_path=bronze_path,
             daily_parquet_path=daily_path,
             minute_parquet_path=minute_path,
             daily_rows=10,
@@ -153,7 +161,7 @@ def test_massive_smoke_command_reports_non_secret_summary(
     )
 
     assert result.exit_code == 0
-    assert f"raw wrote: {raw_path}" in result.output
+    assert f"bronze payload wrote: {bronze_path}" in result.output
     assert f"daily parquet wrote: {daily_path}" in result.output
     assert f"minute parquet wrote: {minute_path}" in result.output
     assert "daily rows: 10" in result.output
@@ -168,13 +176,13 @@ def test_fred_smoke_command_reports_summary(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    raw_path = tmp_path / "fred_smoke.json"
+    bronze_path = tmp_path / "fred_smoke.json"
     parquet_path = tmp_path / "fred.parquet"
 
     def fake_write_fred_smoke_sample(**kwargs: object) -> FredSmokeResult:
         assert kwargs["series_ids"] == ("VIXCLS", "DGS10")
         return FredSmokeResult(
-            raw_output_path=raw_path,
+            bronze_payload_path=bronze_path,
             parquet_path=parquet_path,
             rows=4,
             series_statuses={"VIXCLS": 200, "DGS10": 200},
@@ -197,7 +205,7 @@ def test_fred_smoke_command_reports_summary(
     )
 
     assert result.exit_code == 0
-    assert f"raw wrote: {raw_path}" in result.output
+    assert f"bronze payload wrote: {bronze_path}" in result.output
     assert f"parquet wrote: {parquet_path}" in result.output
     assert "rows: 4" in result.output
     assert "series statuses: VIXCLS=200, DGS10=200" in result.output
@@ -295,7 +303,7 @@ def test_paper_panel_command_reports_summary(
     panel_path = run_dir / "panel" / "modeling_panel.parquet"
 
     def fake_write_paper_panel(**kwargs: object) -> PaperPanelResult:
-        assert kwargs["start"] == "2008-05-07"
+        assert kwargs["start"] == "2016-07-19"
         assert kwargs["end"] is None
         return PaperPanelResult(
             run_id="p2a_test",

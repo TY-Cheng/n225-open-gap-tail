@@ -13,23 +13,26 @@ UV_PROJECT_ENVIRONMENT="${HOME}/.venvs/n225-open-gap-tail"
 ```
 
 ```bash
-just setup
 just status
-just test
+just check
 ```
 
-Do not commit `.env`; put shareable defaults in `.env.example`.
+`just check` syncs the uv environment, formats and fixes `src` and `tests`, runs mypy and
+pytest, and performs a strict docs build. Do not commit `.env`; put shareable defaults in
+`.env.example`.
 
-J-Quants should be configured through the V2 API key flow:
+J-Quants should be configured through the V2 API key flow. The paper-grade futures
+target pipeline requires local Premium futures access:
 
 ```bash
 JQUANTS_API_VERSION="v2"
 JQUANTS_API_KEY="replace-me"
 JQUANTS_API_BASE_URL="https://api.jquants.com/v2"
-JQUANTS_API_PLAN="free"
+JQUANTS_API_PLAN="premium"
 JQUANTS_EQUITY_MASTER_ENABLED="true"
 JQUANTS_EQUITY_DAILY_ENABLED="true"
-JQUANTS_DERIVATIVES_DAILY_ENABLED="false"
+JQUANTS_DERIVATIVES_DAILY_ENABLED="true"
+JQUANTS_DERIVATIVES_INTRADAY_ENABLED="false"
 ```
 
 Massive.com should be configured as the U.S. predictor source:
@@ -81,7 +84,7 @@ reports/                  Local model outputs; ignored by git
 notebooks/                Exploratory notebooks
 ```
 
-## Data Smoke Tests
+## Data Utility Commands
 
 ```bash
 n225-open-gap-tail jquants-smoke
@@ -92,11 +95,13 @@ n225-open-gap-tail contracts-build
 n225-open-gap-tail snapshot
 ```
 
-The J-Quants smoke command downloads a tiny V2 sample and probes the futures endpoint. The snapshot command runs the 2022-present full-smoke target audit and predictor availability pipeline, writes Parquet/JSON artifacts under ignored `reports/snapshots/`, and regenerates `docs/results_snapshot.md`.
+These commands are debugging utilities, not the paper-grade workflow. They now write through
+the same cache vocabulary as the main pipeline: vendor payloads under `data/bronze/` and
+typed normalized outputs under `data/silver/`. The snapshot command writes bounded smoke
+artifacts under ignored `reports/snapshots/` and regenerates `docs/results_snapshot.md`.
 
-The Massive smoke command downloads a small U.S. daily aggregate panel plus a one-day minute aggregate sample. Raw API payloads go under ignored `data/raw/massive/`; normalized parquet files with timestamp audit columns go under ignored `data/interim/massive/`.
-
-The FRED smoke command downloads historical VIX and Treasury-rate proxies. The calendar build command creates U.S./JPX trading-day, early-close, holiday, and DST alignment tables. The contracts build command creates rule-based Nikkei 225 futures quarterly contract metadata and a central-contract selector; this is research scaffolding that must be reconciled against J-Quants or JPX contract metadata before final empirical results.
+For paper-grade work, use `just full`; do not mix utility smoke artifacts with paper-run
+evidence.
 
 ## Paper-Grade P2A Workflow
 
@@ -106,10 +111,26 @@ The unified paper-grade entrypoint is:
 just full
 ```
 
-`full` runs local checks, builds the full-history paper panel, runs the P2A baseline floor,
+`full` runs local checks, builds the cache-first paper panel, runs the P2A baseline floor,
 audits feature leakage timestamps, and exports LaTeX table fragments under ignored
-`reports/paper_runs/`. These outputs are `paper_candidate_not_final_manuscript` until
-manually reviewed.
+`reports/paper_runs/`. The default panel start is `2016-07-19`; the run manifest then
+computes `combined_clean_start = max(J-Quants required-field coverage, Massive entitlement
+start, FRED required-series coverage start)`. These outputs are
+`paper_candidate_not_final_manuscript` until manually reviewed.
+
+The data path is typed and resumable:
+
+- J-Quants, Massive, FRED, calendar, and rule-based contract caches use ignored
+  `data/bronze/` and `data/silver/`.
+- Run-scoped gold artifacts are stored under `reports/paper_runs/<run_id>/panel/`; reserved
+  `data/gold/` is available for future durable cross-run gold tables.
+- Parquet writes are atomic and carry `xxhash64` chunk hashes plus schema hashes.
+- Old orphan `.tmp` files are garbage-collected at run start.
+- FRED current-historical caches are labeled `vintage_safe=false`; their 30-day TTL is
+  evaluated once at run start, not mid-run.
+- SPY minute bars are reduced chunk-by-chunk to late-session features using the official
+  NYSE close or early close; full raw minute history is not retained by default.
+- Derivatives intraday remains disabled, so `residual_usclosemark_to_open` is extension-only.
 
 For custom windows or workers, pass recipe arguments positionally, for example
 `just full 2022-01-01 "" 4`. The lower-level recipes remain available for debugging:

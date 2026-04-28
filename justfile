@@ -18,7 +18,7 @@ check: _require-external-uv-env
     uv run pytest
     uv run mkdocs build --strict
 
-full start="2008-05-07" end="" workers="4" force="false":
+full start="2016-07-19" end="" workers="4" force="false":
     just check
     just _paper-grade "{{ start }}" "{{ end }}" "{{ workers }}" p2a "{{ force }}"
     just _paper-leakage-check
@@ -31,13 +31,13 @@ docs port="8000": _require-external-uv-env
 snapshot start="2022-01-01" end="": _require-external-uv-env
     uv run n225-open-gap-tail snapshot --start "{{ start }}" {{ if end == "" { "" } else { "--end \"" + end + "\"" } }}
 
-_paper-panel start="2008-05-07" end="": _require-external-uv-env
+_paper-panel start="2016-07-19" end="": _require-external-uv-env
     uv run n225-open-gap-tail paper-panel --start "{{ start }}" {{ if end == "" { "" } else { "--end \"" + end + "\"" } }}
 
 _paper-eval run_id="" workers="" stage="p2a" force="false": _require-external-uv-env
     uv run n225-open-gap-tail paper-eval {{ if run_id == "" { "" } else { "--run-id \"" + run_id + "\"" } }} {{ if workers == "" { "" } else { "--workers " + workers } }} --stage "{{ stage }}" {{ if force == "true" { "--force" } else { "" } }}
 
-_paper-grade start="2008-05-07" end="" workers="" stage="p2a" force="false": _require-external-uv-env
+_paper-grade start="2016-07-19" end="" workers="" stage="p2a" force="false": _require-external-uv-env
     uv run n225-open-gap-tail paper-grade --start "{{ start }}" {{ if end == "" { "" } else { "--end \"" + end + "\"" } }} {{ if workers == "" { "" } else { "--workers " + workers } }} --stage "{{ stage }}" {{ if force == "true" { "--force" } else { "" } }}
 
 _paper-latex-tables run_id="": _require-external-uv-env

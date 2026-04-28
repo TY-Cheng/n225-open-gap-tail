@@ -20,13 +20,10 @@ htmlcov/
 .ipynb_checkpoints/
 
 # Local data and outputs
-data/raw/*
-data/interim/*
-data/processed/*
+data/bronze/*
+data/silver/*
+data/gold/*
 reports/*
-!data/raw/.gitkeep
-!data/interim/.gitkeep
-!data/processed/.gitkeep
 !reports/.gitkeep
 
 # Docs build

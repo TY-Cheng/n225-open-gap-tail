@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,6 +8,7 @@ from typing import Any
 import httpx
 
 from n225_open_gap_tail.config import Settings
+from n225_open_gap_tail.datalake import write_json_atomic
 
 
 class JQuantsApiError(RuntimeError):
@@ -202,9 +202,15 @@ def write_jquants_smoke_sample(
         if should_close:
             active_client.close()
 
-    output_dir = settings.raw_data_dir / "jquants" / "smoke"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / f"jquants_v2_smoke_{code}_{start}_{end}.json"
+    output_path = (
+        settings.bronze_data_dir
+        / "jquants_smoke"
+        / "schema_version=1"
+        / f"code={code}"
+        / f"start={start}"
+        / f"end={end}"
+        / "payload.json"
+    )
 
     document = {
         "metadata": {
@@ -245,7 +251,7 @@ def write_jquants_smoke_sample(
             },
         ],
     }
-    output_path.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_json_atomic(output_path, document)
 
     return JQuantsSmokeResult(
         output_path=output_path,

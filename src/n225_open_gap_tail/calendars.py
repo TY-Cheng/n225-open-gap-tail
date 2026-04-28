@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
@@ -8,9 +7,9 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import exchange_calendars as xcals  # type: ignore[import-untyped]
-import polars as pl
 
 from n225_open_gap_tail.config import Settings
+from n225_open_gap_tail.datalake import atomic_write_parquet, write_json_atomic
 
 
 @dataclass(frozen=True)
@@ -109,12 +108,22 @@ def write_calendar_table(
         jpx_timezone=settings.project_timezone_jp,
     )
 
-    raw_dir = settings.raw_data_dir / "calendars"
-    interim_dir = settings.interim_data_dir / "calendars"
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    interim_dir.mkdir(parents=True, exist_ok=True)
-    metadata_path = raw_dir / f"session_calendar_metadata_{start}_{end}.json"
-    parquet_path = interim_dir / f"session_calendar_{start}_{end}.parquet"
+    bronze_dir = (
+        settings.bronze_data_dir
+        / "calendar_sessions"
+        / "schema_version=1"
+        / f"start={start}"
+        / f"end={end}"
+    )
+    silver_dir = (
+        settings.silver_data_dir
+        / "calendar_sessions"
+        / "schema_version=1"
+        / f"start={start}"
+        / f"end={end}"
+    )
+    metadata_path = bronze_dir / "metadata.json"
+    parquet_path = silver_dir / "data.parquet"
 
     metadata = {
         "source": "exchange_calendars",
@@ -129,8 +138,8 @@ def write_calendar_table(
             "data is licensed."
         ),
     }
-    metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
-    pl.DataFrame(records).write_parquet(parquet_path)
+    write_json_atomic(metadata_path, metadata)
+    atomic_write_parquet(parquet_path, records)
 
     return CalendarBuildResult(
         metadata_path=metadata_path,

@@ -22,9 +22,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     data_dir: Path = Field(default=Path("data"))
-    raw_data_dir: Path = Field(default=Path("data/raw"))
-    interim_data_dir: Path = Field(default=Path("data/interim"))
-    processed_data_dir: Path = Field(default=Path("data/processed"))
+    bronze_data_dir: Path = Field(default=Path("data/bronze"))
+    silver_data_dir: Path = Field(default=Path("data/silver"))
+    gold_data_dir: Path = Field(default=Path("data/gold"))
     reports_dir: Path = Field(default=Path("reports"))
 
     massive_api_key: str = ""
@@ -63,9 +63,9 @@ class Settings(BaseSettings):
     def required_directories(self) -> tuple[Path, ...]:
         return (
             self.data_dir,
-            self.raw_data_dir,
-            self.interim_data_dir,
-            self.processed_data_dir,
+            self.bronze_data_dir,
+            self.silver_data_dir,
+            self.gold_data_dir,
             self.reports_dir,
         )
 

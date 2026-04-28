@@ -13,10 +13,12 @@
 ### Local Setup
 
 ```bash
-just setup
+just status
+just check
 ```
 
-This loads `.env` and creates the uv environment at `${HOME}/.venvs/n225-open-gap-tail`.
+This loads `.env`, syncs the uv environment declared by `UV_PROJECT_ENVIRONMENT`, formats
+and checks the code, runs tests, and performs a strict docs build.
 
 ### Daily Development
 
@@ -34,9 +36,9 @@ available local port at or above `8000`.
 
 Local data is ignored by git:
 
-- `data/raw`: vendor exports or raw API pulls.
-- `data/interim`: cleaned but not final datasets.
-- `data/processed`: modeling tables and train/test splits.
+- `data/bronze`: vendor payloads and first typed vendor caches.
+- `data/silver`: canonical cleaned/cacheable research rows.
+- `data/gold`: reserved durable cross-run gold tables.
 - `reports`: figures, tables, and model diagnostics.
 
 Keep source credentials in `.env` only. Commit only code, schemas, docs, and small synthetic test fixtures.
@@ -47,11 +49,22 @@ Keep source credentials in `.env` only. Commit only code, schemas, docs, and sma
 just full
 ```
 
-The unified path runs local checks, builds the full-history modeling panel, runs the P2A
+The unified path runs local checks, builds the cache-first modeling panel, runs the P2A
 baseline floor, audits leakage timestamps, and exports provenance-bearing table fragments
 under ignored `reports/paper_runs/`. P2B/P2C commands are explicit nonblocking gates until
 their registered model implementations produce evidence. These artifacts are paper
 candidates, not final manuscript claims.
+
+`just full` defaults to `2016-07-19`. The run manifest computes `combined_clean_start`
+from audited J-Quants required-field coverage, Massive entitlement, and required FRED
+coverage. J-Quants target-history audit can still be run from `2008-05-07`, but it is not
+the default clean predictor sample.
+
+The data path is cache-first: Hive-style Parquet partitions under ignored `data/bronze/`
+and `data/silver/`, run-scoped gold panel artifacts under `reports/paper_runs/<run_id>/panel/`,
+atomic writes with `xxhash64` chunk hashes, run-start cleanup of orphan temp files,
+early-close-aware SPY late-session minute features, and FRED current-historical caches
+labeled `vintage_safe=false` with TTL decisions made once at run start.
 
 Custom windows and workers use positional recipe arguments, for example
 `just full 2022-01-01 "" 4`. The lower-level recipes remain available for debugging:

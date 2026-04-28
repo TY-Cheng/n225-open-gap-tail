@@ -26,6 +26,31 @@ class TargetFamily(StrEnum):
     RESIDUAL_NIGHTCLOSE_TO_DAY_OPEN = "residual_nightclose_to_day_open"
 
 
+class MappingStatus(StrEnum):
+    """Calendar-map status for U.S. close to OSE target-date alignment."""
+
+    NORMAL_TRADING = "normal_trading"
+    US_HOLIDAY = "us_holiday"
+    JP_HOLIDAY = "jp_holiday"
+    US_JP_DESYNC = "us_jp_desync"
+    OSE_HOLIDAY_TRADING = "ose_holiday_trading"
+    UNMAPPED = "unmapped"
+
+
+class JoinMissReason(StrEnum):
+    """Typed reasons for predictor-target join gaps in the gold panel."""
+
+    PREDICTOR_UNAVAILABLE_ENTITLEMENT = "predictor_unavailable_entitlement"
+    PREDICTOR_MISSING_IN_CACHE = "predictor_missing_in_cache"
+    FRED_NOT_YET_RELEASED = "fred_not_yet_released"
+    FRED_VINTAGE_UNSAFE = "fred_vintage_not_realtime_safe"
+    US_MARKET_CLOSED = "us_market_closed"
+    JP_MARKET_CLOSED = "jp_market_closed"
+    CALENDAR_DESYNC = "calendar_desync"
+    PREDICTOR_NULL_IN_SILVER = "predictor_null_in_silver"
+    US_EARLY_CLOSE_BEYOND_VENDOR_LAG = "us_early_close_beyond_vendor_lag"
+
+
 REQUIRED_TIMESTAMP_FIELDS = (
     "observation_ts_utc",
     "bar_start_ts_utc",

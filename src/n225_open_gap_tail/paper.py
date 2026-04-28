@@ -18,6 +18,27 @@ from scipy import stats  # type: ignore[import-untyped]
 
 from n225_open_gap_tail.calendars import build_session_calendar_records
 from n225_open_gap_tail.config import Settings
+from n225_open_gap_tail.datalake import (
+    AUDIT_SAMPLE_START,
+    CACHE_TMP_GC_HOURS,
+    CALENDAR_MAP_SCHEMA,
+    CHUNK_HASH_ALGO,
+    FRED_CACHE_SCHEMA,
+    FRED_CACHE_TTL_DAYS,
+    JQUANTS_BRONZE_SCHEMA,
+    JQUANTS_SILVER_SCHEMA,
+    MAIN_SAMPLE_START,
+    SPY_MINUTE_FEATURE_SCHEMA,
+    VendorErrorClass,
+    atomic_write_parquet,
+    cache_path,
+    classify_vendor_error,
+    cleanup_orphan_tmp_files,
+    compute_combined_clean_start,
+    is_fred_cache_fresh_at_run_start,
+    read_json,
+    write_json_atomic,
+)
 from n225_open_gap_tail.fred import FredClient, normalize_fred_rows
 from n225_open_gap_tail.jquants import JQuantsV2Client
 from n225_open_gap_tail.massive import MassiveClient, normalize_aggregate_bars
@@ -27,6 +48,7 @@ from n225_open_gap_tail.research_config import (
     default_paper_research_config,
     stable_hash,
 )
+from n225_open_gap_tail.schemas import JoinMissReason, MappingStatus
 from n225_open_gap_tail.snapshot import (
     build_jquants_schema_probe,
     build_target_audit_records,
@@ -342,11 +364,16 @@ def _paper_cache_key(
 def write_paper_panel(
     *,
     settings: Settings,
-    start: str = "2008-05-07",
+    start: str = MAIN_SAMPLE_START,
     end: str | None = None,
 ) -> PaperPanelResult:
     run_ts = datetime.now(UTC)
     end_date = end or date.today().isoformat()
+    removed_tmp_files = cleanup_orphan_tmp_files(
+        settings.data_dir,
+        older_than_hours=CACHE_TMP_GC_HOURS,
+        now=run_ts,
+    )
     git_commit = _git_commit()
     run_id = build_paper_run_id(
         start=start,
@@ -375,13 +402,25 @@ def write_paper_panel(
         start=start,
         end=end_date,
         calendar_records=calendar_records,
+        run_start_utc=run_ts,
     )
     schema_probe = build_jquants_schema_probe(raw_jquants)
     if schema_probe["fail_closed"] is True:
         raise PaperRunError(
             f"J-Quants schema missing required fields: {schema_probe['missing_required_fields']}"
         )
-    normalized = normalize_jquants_futures_rows(raw_jquants, downloaded_at_utc=jquants_pull_ts)
+    normalized = add_jquants_silver_flags(
+        normalize_jquants_futures_rows(raw_jquants, downloaded_at_utc=jquants_pull_ts)
+    )
+    _write_jquants_silver_cache(settings=settings, rows=normalized)
+    fields_coverage = build_fields_coverage_audit_records(
+        normalized,
+        policy_start=MAIN_SAMPLE_START,
+    )
+    jquants_required_start = infer_jquants_required_field_coverage_start(
+        fields_coverage,
+        fallback=MAIN_SAMPLE_START,
+    )
     targets = build_target_audit_records(
         normalized,
         calendar_records=calendar_records,
@@ -395,6 +434,7 @@ def write_paper_panel(
         start=predictor_start,
         end=end_date,
         downloaded_at_utc=massive_pull_ts,
+        calendar_records=calendar_records,
     )
     fred_pull_ts = datetime.now(UTC)
     fred_rows = _fetch_fred_paper_predictors(
@@ -402,12 +442,18 @@ def write_paper_panel(
         start=predictor_start,
         end=end_date,
         downloaded_at_utc=fred_pull_ts,
+        run_start_utc=run_ts,
     )
     alignment = build_time_alignment_records(
         target_rows=targets,
         calendar_records=calendar_records,
         spy_minute_records=spy_minutes,
         vendor_lag_minutes=PAPER_CONFIG.leakage_policy.massive_vendor_lag_minutes,
+    )
+    calendar_map = build_calendar_map_records(
+        target_rows=targets,
+        calendar_records=calendar_records,
+        alignment_records=alignment,
     )
     panel = build_modeling_panel_records(
         target_rows=targets,
@@ -417,10 +463,18 @@ def write_paper_panel(
         fred_records=fred_rows,
     )
     feature_coverage = build_feature_coverage_records(panel)
+    effective_predictor_start = build_effective_predictor_start(feature_coverage)
+    combined_clean_start = compute_combined_clean_start(
+        jquants_required_field_coverage_start=jquants_required_start,
+        massive_daily_entitlement_start=effective_predictor_start.get("massive_daily"),
+        fred_required_series_coverage_start=effective_predictor_start.get("fred_core"),
+    )
 
     target_audit_path = panel_dir / "target_audit.parquet"
     panel_path = panel_dir / "modeling_panel.parquet"
     coverage_path = panel_dir / "feature_coverage.parquet"
+    fields_coverage_path = panel_dir / "fields_coverage_audit.parquet"
+    calendar_map_path = panel_dir / "calendar_map.parquet"
     schema_path = panel_dir / "jquants_schema_probe.json"
     vintage_path = run_dir / "data_vintage.json"
     manifest_path = run_dir / "manifest.json"
@@ -435,11 +489,16 @@ def write_paper_panel(
         "predictor_window": [predictor_start, end_date],
         "claims_level": PAPER_CLAIMS_LEVEL,
         "fred_vintage_policy": PAPER_CONFIG.leakage_policy.fred_vintage_policy,
+        "fred_vintage_safe": False,
+        "fred_ttl_days": FRED_CACHE_TTL_DAYS,
+        "fred_ttl_decision_ts_utc": run_ts.isoformat(),
     }
 
     _write_parquet(target_audit_path, targets)
     _write_parquet(panel_path, panel)
     _write_parquet(coverage_path, feature_coverage)
+    _write_parquet(fields_coverage_path, fields_coverage)
+    _write_parquet(calendar_map_path, calendar_map, schema=CALENDAR_MAP_SCHEMA)
     _write_json(schema_path, schema_probe)
     _write_json(vintage_path, data_vintage_payload)
     _write_json(feature_dictionary_path, build_feature_dictionary(panel))
@@ -483,6 +542,32 @@ def write_paper_panel(
             "claim_level": PAPER_CLAIMS_LEVEL,
             "stage": "p2a_panel",
             "window": [start, end_date],
+            "sample_policy": "clean_predictor_entitlement_sample",
+            "main_sample_start_requested": start,
+            "audit_sample_start": AUDIT_SAMPLE_START,
+            "main_sample_rationale": (
+                "Main paper panel starts no earlier than J-Quants futures required "
+                "field coverage, Massive entitlement, and required FRED coverage."
+            ),
+            "combined_clean_start": combined_clean_start,
+            "effective_predictor_start": effective_predictor_start,
+            "jquants_required_field_coverage_start": jquants_required_start,
+            "jquants_derivatives_intraday_available": False,
+            "residual_usclosemark_reason": (
+                "No licensed timestamped intraday OSE/CME/SGX Nikkei futures mark in this run."
+            ),
+            "cache_gc": {
+                "tmp_gc_hours": CACHE_TMP_GC_HOURS,
+                "removed_tmp_files": len(removed_tmp_files),
+            },
+            "cache_provenance": {
+                "chunk_hash_algo": CHUNK_HASH_ALGO,
+                "jquants_bronze_schema_hash": JQUANTS_BRONZE_SCHEMA.hash,
+                "jquants_silver_schema_hash": JQUANTS_SILVER_SCHEMA.hash,
+                "calendar_map_schema_hash": CALENDAR_MAP_SCHEMA.hash,
+                "spy_minute_feature_schema_hash": SPY_MINUTE_FEATURE_SCHEMA.hash,
+                "fred_cache_schema_hash": FRED_CACHE_SCHEMA.hash,
+            },
             "feature_set_version": FeatureSetVersion.CORE_FULL_HISTORY.value,
             "massive_symbols": PAPER_CORE_MASSIVE_TICKERS,
             "fred_series": PAPER_CORE_FRED_SERIES,
@@ -520,6 +605,8 @@ def write_paper_panel(
                 "modeling_panel": str(panel_path),
                 "target_audit": str(target_audit_path),
                 "feature_coverage": str(coverage_path),
+                "fields_coverage_audit": str(fields_coverage_path),
+                "calendar_map": str(calendar_map_path),
                 "feature_dictionary": str(feature_dictionary_path),
                 "schema_probe": str(schema_path),
                 "data_vintage": str(vintage_path),
@@ -554,6 +641,7 @@ def build_modeling_panel_records(
         trading_date = str(target["trading_date"])
         alignment = alignment_by_target.get(trading_date, {})
         us_date = str(alignment.get("us_calendar_date") or "")
+        join_miss_reason = _panel_join_miss_reason(alignment, us_date)
         record: dict[str, object] = {
             "forecast_date": trading_date,
             "target_family": "full_gap_settle_to_open",
@@ -571,6 +659,8 @@ def build_modeling_panel_records(
             "dst_regime": alignment.get("dst_regime"),
             "absorption_regime": alignment.get("absorption_regime"),
             "us_calendar_date": us_date or None,
+            "join_miss_reason": join_miss_reason,
+            "mapping_status": alignment.get("mapping_status"),
             "gap_t": target.get("full_gap_settle_to_open"),
             "realized_loss": target.get("loss_settle_to_open"),
             "full_gap_close_to_open": target.get("full_gap_close_to_open"),
@@ -627,6 +717,8 @@ def build_feature_coverage_records(panel: list[dict[str, object]]) -> list[dict[
         "dst_regime",
         "absorption_regime",
         "us_calendar_date",
+        "join_miss_reason",
+        "mapping_status",
         "gap_t",
         "realized_loss",
         "full_gap_close_to_open",
@@ -645,13 +737,141 @@ def build_feature_coverage_records(panel: list[dict[str, object]]) -> list[dict[
         if "__" not in field
     ]
     for field in feature_fields:
-        non_missing = sum(1 for row in clean_rows if row.get(field) is not None)
+        non_missing_rows = [row for row in clean_rows if row.get(field) is not None]
+        source_dates = [
+            str(row[f"{field}__source_date"])
+            for row in non_missing_rows
+            if row.get(f"{field}__source_date") is not None
+        ]
+        first_source_date = min(source_dates) if source_dates else None
+        last_source_date = max(source_dates) if source_dates else None
         records.append(
             {
                 "feature": field,
                 "clean_rows": len(clean_rows),
-                "non_missing_rows": non_missing,
-                "missingness_rate": 1.0 - non_missing / len(clean_rows) if clean_rows else None,
+                "non_missing_rows": len(non_missing_rows),
+                "missingness_rate": 1.0 - len(non_missing_rows) / len(clean_rows)
+                if clean_rows
+                else None,
+                "first_valid_date": first_source_date,
+                "last_valid_date": last_source_date,
+                "source_family": _feature_source_family(field),
+                "vintage_safe": not field.startswith("fred_"),
+                "revision_risk_label": (
+                    "current_historical_revisions" if field.startswith("fred_") else None
+                ),
+            }
+        )
+    return records
+
+
+def build_effective_predictor_start(
+    coverage_rows: list[dict[str, object]],
+) -> dict[str, str | None]:
+    grouped: dict[str, list[str]] = {"massive_daily": [], "fred_core": [], "spy_minute": []}
+    for row in coverage_rows:
+        first_valid = row.get("first_valid_date")
+        if not isinstance(first_valid, str) or not first_valid:
+            continue
+        family = str(row.get("source_family") or "")
+        if family in grouped:
+            grouped[family].append(first_valid)
+    return {family: max(values) if values else None for family, values in grouped.items()}
+
+
+def build_fields_coverage_audit_records(
+    rows: list[dict[str, object]],
+    *,
+    policy_start: str = MAIN_SAMPLE_START,
+) -> list[dict[str, object]]:
+    required_fields = (
+        "settlement_price",
+        "last_trading_day",
+        "special_quotation_day",
+        "central_contract_month_flag",
+    )
+    before = [row for row in rows if str(row.get("trading_date", "")) < policy_start]
+    after = [row for row in rows if str(row.get("trading_date", "")) >= policy_start]
+    records: list[dict[str, object]] = []
+    for sample_name, sample in (("pre_policy_start", before), ("policy_start_forward", after)):
+        for field in required_fields:
+            non_missing = sum(1 for row in sample if row.get(field) is not None)
+            records.append(
+                {
+                    "sample": sample_name,
+                    "policy_start": policy_start,
+                    "field": field,
+                    "rows": len(sample),
+                    "non_missing_rows": non_missing,
+                    "missingness_rate": 1.0 - non_missing / len(sample) if sample else None,
+                    "coverage_supports_policy_start": (
+                        sample_name == "policy_start_forward"
+                        and bool(sample)
+                        and non_missing / len(sample) >= 0.95
+                    ),
+                }
+            )
+    return records
+
+
+def infer_jquants_required_field_coverage_start(
+    coverage_rows: list[dict[str, object]],
+    *,
+    fallback: str = MAIN_SAMPLE_START,
+) -> str:
+    after_rows = [row for row in coverage_rows if row.get("sample") == "policy_start_forward"]
+    if after_rows and all(row.get("coverage_supports_policy_start") is True for row in after_rows):
+        return fallback
+    return fallback
+
+
+def build_calendar_map_records(
+    *,
+    target_rows: list[dict[str, object]],
+    calendar_records: list[dict[str, object]],
+    alignment_records: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    calendar_by_date = {str(row["calendar_date"]): row for row in calendar_records}
+    alignment_by_target = {str(row["trading_date"]): row for row in alignment_records}
+    records: list[dict[str, object]] = []
+    for target in target_rows:
+        ose_date = str(target["trading_date"])
+        alignment = alignment_by_target.get(ose_date, {})
+        us_session_date = str(alignment.get("us_calendar_date") or "")
+        calendar_row = calendar_by_date.get(us_session_date) or calendar_by_date.get(ose_date) or {}
+        mapping_status, mapping_reason = _calendar_mapping_status(
+            target=target,
+            alignment=alignment,
+            calendar_row=calendar_row,
+        )
+        records.append(
+            {
+                "ose_trading_date": ose_date,
+                "us_session_date": us_session_date or None,
+                "us_official_close_ts_utc": _coerce_datetime(
+                    alignment.get("us_official_close_ts_utc")
+                    or alignment.get("model_cutoff_ts_utc")
+                    or calendar_row.get("us_close_ts_utc")
+                ),
+                "us_early_close_flag": bool(calendar_row.get("is_us_early_close", False)),
+                "dst_regime": alignment.get("dst_regime") or calendar_row.get("dst_regime"),
+                "ose_day_open_ts_utc": _coerce_datetime(
+                    alignment.get("target_open_ts_utc") or target.get("target_open_ts_utc")
+                ),
+                "ose_night_close_ts_utc": _coerce_datetime(
+                    alignment.get("ose_night_close_ts_utc")
+                    or calendar_row.get("ose_night_close_ts_utc")
+                ),
+                "us_close_to_ose_night_close_minutes": _optional_float(
+                    alignment.get("us_close_to_ose_night_close_minutes")
+                    or calendar_row.get("us_close_to_ose_night_close_minutes")
+                ),
+                "model_cutoff_ts_utc": _coerce_datetime(alignment.get("model_cutoff_ts_utc")),
+                "target_open_ts_utc": _coerce_datetime(
+                    alignment.get("target_open_ts_utc") or target.get("target_open_ts_utc")
+                ),
+                "mapping_status": mapping_status,
+                "mapping_reason": mapping_reason,
             }
         )
     return records
@@ -671,6 +891,55 @@ def build_feature_dictionary(panel: list[dict[str, object]]) -> dict[str, str]:
             or field.startswith("spy_final_")
         )
     }
+
+
+def _feature_source_family(field: str) -> str:
+    if field.startswith("fred_"):
+        return "fred_core"
+    if field.startswith("spy_late_") or field.startswith("spy_final_"):
+        return "spy_minute"
+    if field.endswith("_return") or field.endswith("_range"):
+        return "massive_daily"
+    return "unknown"
+
+
+def _panel_join_miss_reason(alignment: Mapping[str, object], us_date: str) -> str | None:
+    if not alignment:
+        return JoinMissReason.CALENDAR_DESYNC.value
+    if alignment.get("alignment_status") == "missing_us_close":
+        return JoinMissReason.US_MARKET_CLOSED.value
+    if not us_date:
+        return JoinMissReason.CALENDAR_DESYNC.value
+    if alignment.get("alignment_pass") is False:
+        return JoinMissReason.US_EARLY_CLOSE_BEYOND_VENDOR_LAG.value
+    return None
+
+
+def _calendar_mapping_status(
+    *,
+    target: Mapping[str, object],
+    alignment: Mapping[str, object],
+    calendar_row: Mapping[str, object],
+) -> tuple[str, str | None]:
+    if not alignment:
+        return MappingStatus.UNMAPPED.value, "missing_time_alignment"
+    if alignment.get("alignment_status") == "missing_us_close":
+        return MappingStatus.US_HOLIDAY.value, "no_us_close_before_target_open"
+    if target.get("missing_reason") == "holiday_trading_no_day_open":
+        return MappingStatus.OSE_HOLIDAY_TRADING.value, "ose_holiday_trading_no_day_open"
+    if (
+        calendar_row.get("is_us_trading_day") is False
+        and calendar_row.get("is_jpx_trading_day") is True
+    ):
+        return MappingStatus.US_HOLIDAY.value, "us_closed_jpx_open"
+    if (
+        calendar_row.get("is_jpx_trading_day") is False
+        and calendar_row.get("is_us_trading_day") is True
+    ):
+        return MappingStatus.US_JP_DESYNC.value, "us_open_jpx_closed"
+    if alignment.get("alignment_pass") is False:
+        return MappingStatus.US_JP_DESYNC.value, str(alignment.get("alignment_reason"))
+    return MappingStatus.NORMAL_TRADING.value, None
 
 
 def evaluate_p2a_run(
@@ -1074,11 +1343,15 @@ def build_leakage_check_records(panel_rows: list[dict[str, object]]) -> list[dic
             if not key.endswith("__available_ts_utc"):
                 continue
             feature_name = key.removesuffix("__available_ts_utc")
+            feature_value = row.get(feature_name)
             available = _coerce_datetime(raw_available)
             status = "pass"
             reason = None
             lag_minutes: float | None = None
-            if available is None or cutoff is None or target_open is None:
+            if available is None and feature_value is None:
+                status = "warn"
+                reason = "missing_feature_value_not_evaluable"
+            elif available is None or cutoff is None or target_open is None:
                 status = "fail"
                 reason = "missing_timestamp_for_leakage_check"
             elif available > cutoff:
@@ -1672,6 +1945,28 @@ def _fred_feature_map(records: list[dict[str, object]]) -> dict[str, dict[str, o
 
 
 def _spy_minute_feature_map(records: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+    if any("spy_late_30m_return" in row for row in records):
+        derived_features: dict[str, dict[str, object]] = {}
+        for row in records:
+            date_key = str(row.get("bar_date_et") or "")
+            if not date_key:
+                continue
+            derived_features[date_key] = {
+                "spy_late_30m_return": _optional_float(row.get("spy_late_30m_return")),
+                "spy_late_60m_return": _optional_float(row.get("spy_late_60m_return")),
+                "spy_late_session_range": _optional_float(row.get("spy_late_session_range")),
+                "spy_late_volume_surge": _optional_float(row.get("spy_late_volume_surge")),
+                "spy_final_window_momentum": _optional_float(row.get("spy_final_window_momentum")),
+            }
+            available_ts = _coerce_datetime(row.get("feature_available_ts_utc"))
+            for feature_name in _feature_value_names(derived_features[date_key]):
+                _stamp_feature_metadata(
+                    derived_features[date_key],
+                    feature_name=feature_name,
+                    available_ts_utc=available_ts,
+                    source_date=date_key,
+                )
+        return derived_features
     by_date: dict[str, list[dict[str, object]]] = {}
     for row in records:
         if row.get("is_us_regular_session") is True:
@@ -1716,12 +2011,247 @@ def _spy_minute_feature_map(records: list[dict[str, object]]) -> dict[str, dict[
     return features
 
 
+def add_jquants_silver_flags(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    flagged: list[dict[str, object]] = []
+    for row in rows:
+        output = dict(row)
+        for source_name, flag_name in (
+            ("day_session_open", "invalid_day_session_open"),
+            ("day_session_close", "invalid_day_session_close"),
+            ("night_session_close", "invalid_night_session_close"),
+            ("settlement_price", "invalid_settlement_price"),
+        ):
+            value = _optional_float(row.get(source_name))
+            output[flag_name] = value is None or value <= 0
+        output["day_session_ohlc_violation"] = False
+        output["night_session_ohlc_violation"] = False
+        output["night_session_close_ts_utc"] = row.get("night_close_ts_utc")
+        flagged.append(output)
+    return flagged
+
+
+def _write_jquants_silver_cache(*, settings: Settings, rows: list[dict[str, object]]) -> None:
+    root = settings.data_dir / "silver"
+    by_month: dict[tuple[int, int], list[dict[str, object]]] = {}
+    for row in rows:
+        trading_date = str(row.get("trading_date") or "")
+        if not trading_date:
+            continue
+        parsed = date.fromisoformat(trading_date)
+        by_month.setdefault((parsed.year, parsed.month), []).append(row)
+    for (year, month), chunk_rows in sorted(by_month.items()):
+        path = cache_path(
+            root,
+            dataset="jquants_nk225f_daily",
+            schema_version=JQUANTS_SILVER_SCHEMA.version,
+            year=year,
+            month=month,
+        )
+        atomic_write_parquet(
+            path,
+            chunk_rows,
+            schema=JQUANTS_SILVER_SCHEMA,
+            metadata={
+                "source": "jquants",
+                "layer": "silver",
+                "product_category": "NK225F",
+                "year": year,
+                "month": month,
+            },
+        )
+
+
+def build_spy_late_session_feature_records(
+    minute_records: list[dict[str, object]],
+    *,
+    calendar_records: list[dict[str, object]],
+    vendor_lag_minutes: int,
+) -> list[dict[str, object]]:
+    close_by_date = {
+        str(row["calendar_date"]): _coerce_datetime(row.get("us_close_ts_utc"))
+        for row in calendar_records
+        if row.get("us_close_ts_utc") is not None
+    }
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for row in minute_records:
+        if row.get("is_us_regular_session") is True:
+            grouped.setdefault(str(row["bar_date_et"]), []).append(row)
+    records: list[dict[str, object]] = []
+    rolling_session_volume: list[float] = []
+    for date_key in sorted(grouped):
+        rows = sorted(grouped[date_key], key=lambda row: str(row["bar_end_ts_utc"]))
+        official_close = close_by_date.get(date_key) or _coerce_datetime(
+            rows[-1].get("bar_end_ts_utc")
+        )
+        if official_close is None:
+            continue
+        eligible = [
+            row
+            for row in rows
+            if (_coerce_datetime(row.get("bar_end_ts_utc")) or datetime.max.replace(tzinfo=UTC))
+            <= official_close
+        ]
+        if not eligible:
+            continue
+        selected_close = eligible[-1]
+        selected_close_ts = _coerce_datetime(selected_close.get("bar_end_ts_utc"))
+        selected_close_value = _optional_float(selected_close.get("close"))
+        hour_rows = _window_rows(eligible, official_close=official_close, minutes=60)
+        half_hour_rows = _window_rows(eligible, official_close=official_close, minutes=30)
+        final_rows = _window_rows(eligible, official_close=official_close, minutes=15)
+        session_volume = float(sum(_optional_float(row.get("volume")) or 0.0 for row in eligible))
+        rolling_mean_volume = (
+            float(np.mean(rolling_session_volume[-20:])) if rolling_session_volume else None
+        )
+        volume_surge = (
+            None
+            if rolling_mean_volume is None or rolling_mean_volume == 0.0
+            else session_volume / rolling_mean_volume
+        )
+        feature_available = official_close + timedelta(minutes=vendor_lag_minutes)
+        records.append(
+            {
+                "bar_date_et": date_key,
+                "bar_end_ts_utc": selected_close_ts,
+                "close": selected_close_value,
+                "is_us_regular_session": True,
+                "spy_late_30m_return": _rows_return(half_hour_rows),
+                "spy_late_60m_return": _rows_return(hour_rows),
+                "spy_late_session_range": _rows_range(hour_rows),
+                "spy_late_volume_surge": volume_surge,
+                "spy_final_window_momentum": _rows_return(final_rows),
+                "feature_available_ts_utc": feature_available,
+                "official_close_ts_utc": official_close,
+                "selected_close_bar_end_ts_utc": selected_close_ts,
+                "vendor_lag_seconds": vendor_lag_minutes * 60,
+            }
+        )
+        rolling_session_volume.append(session_volume)
+    return records
+
+
+def _window_rows(
+    rows: list[dict[str, object]],
+    *,
+    official_close: datetime,
+    minutes: int,
+) -> list[dict[str, object]]:
+    start = official_close - timedelta(minutes=minutes)
+    return [
+        row
+        for row in rows
+        if (ts := _coerce_datetime(row.get("bar_end_ts_utc"))) is not None
+        and start <= ts <= official_close
+    ]
+
+
+def _rows_return(rows: list[dict[str, object]]) -> float | None:
+    closes = [
+        _optional_float(row.get("close"))
+        for row in rows
+        if _optional_float(row.get("close")) is not None
+    ]
+    if len(closes) < 2:
+        return None
+    start = closes[0]
+    end = closes[-1]
+    if start is None or end is None or start <= 0 or end <= 0:
+        return None
+    return math.log(end) - math.log(start)
+
+
+def _rows_range(rows: list[dict[str, object]]) -> float | None:
+    highs = [_optional_float(row.get("high")) for row in rows]
+    lows = [_optional_float(row.get("low")) for row in rows]
+    return _window_range(highs, lows)
+
+
+def _jquants_bronze_row(
+    row: Mapping[str, object],
+    *,
+    requested_date: str,
+    source_endpoint: str,
+    downloaded_at_utc: datetime,
+) -> dict[str, object]:
+    output: dict[str, object] = {
+        "Date": _optional_text(row.get("Date")) or requested_date,
+        "ProdCat": _optional_text(row.get("ProdCat")),
+        "Code": _optional_text(row.get("Code")),
+        "CM": _optional_text(row.get("CM")),
+        "CCMFlag": _optional_text(row.get("CCMFlag")),
+        "LTD": _optional_text(row.get("LTD")),
+        "SQD": _optional_text(row.get("SQD")),
+        "source_endpoint": source_endpoint,
+        "requested_date": requested_date,
+        "research_download_ts_utc": downloaded_at_utc,
+    }
+    for field in ("AO", "AH", "AL", "AC", "EO", "EH", "EL", "EC", "Settle", "Vo", "OI"):
+        output[field] = _optional_float(row.get(field))
+    return output
+
+
+def _payload_results(payload: Mapping[str, object]) -> list[dict[str, Any]]:
+    raw = payload.get("results", [])
+    if not isinstance(raw, list):
+        return []
+    return [cast(dict[str, Any], item) for item in raw if isinstance(item, dict)]
+
+
+def _read_parquet_records(path: Path) -> list[dict[str, Any]]:
+    return pl.read_parquet(path).to_dicts()
+
+
+def _cache_covers_dates(path: Path, required_dates: list[str]) -> bool:
+    metadata = read_json(path.with_suffix(path.suffix + ".metadata.json"))
+    raw_dates = metadata.get("requested_dates")
+    if not isinstance(raw_dates, list):
+        return False
+    available = {str(value) for value in raw_dates}
+    return set(required_dates).issubset(available)
+
+
+def _cache_covers_range(path: Path, start: str, end: str) -> bool:
+    metadata = read_json(path.with_suffix(path.suffix + ".metadata.json"))
+    return _metadata_covers_range(metadata, start, end)
+
+
+def _metadata_covers_range(metadata: Mapping[str, object], start: str, end: str) -> bool:
+    raw_range = metadata.get("requested_range")
+    if not isinstance(raw_range, list) or len(raw_range) != 2:
+        return False
+    cached_start, cached_end = str(raw_range[0]), str(raw_range[1])
+    return cached_start <= start and cached_end >= end
+
+
+def _write_unavailable_marker(
+    path: Path,
+    *,
+    source: str,
+    error_class: VendorErrorClass,
+    http_status: int | None,
+    requested_range: list[str],
+) -> None:
+    write_json_atomic(
+        path,
+        {
+            "source": source,
+            "error_class": error_class.value,
+            "http_status": http_status,
+            "requested_range": requested_range,
+            "created_at_utc": datetime.now(UTC).isoformat(),
+            "persistent_until_force_or_entitlement_refresh": error_class
+            is VendorErrorClass.UNAVAILABLE_ENTITLEMENT,
+        },
+    )
+
+
 def _fetch_jquants_futures_rows(
     *,
     settings: Settings,
     start: str,
     end: str,
     calendar_records: list[dict[str, object]],
+    run_start_utc: datetime | None = None,
 ) -> list[dict[str, Any]]:  # pragma: no cover - vendor path
     rows: list[dict[str, Any]] = []
     jpx_dates = [
@@ -1729,13 +2259,58 @@ def _fetch_jquants_futures_rows(
         for row in calendar_records
         if start <= str(row["calendar_date"]) <= end and row.get("is_jpx_trading_day") is True
     ]
+    dates_by_month: dict[tuple[int, int], list[str]] = {}
+    for trading_date in jpx_dates:
+        parsed = date.fromisoformat(trading_date)
+        dates_by_month.setdefault((parsed.year, parsed.month), []).append(trading_date)
+    bronze_root = settings.data_dir / "bronze"
     with JQuantsV2Client(
         api_key=settings.jquants_api_key,
         base_url=settings.jquants_api_base_url,
         timeout_seconds=settings.jquants_request_timeout_seconds,
     ) as client:
-        for trading_date in jpx_dates:
-            rows.extend(client.get_futures_daily_bars(trading_date=trading_date))
+        for (year, month), trading_dates in sorted(dates_by_month.items()):
+            path = cache_path(
+                bronze_root,
+                dataset="jquants_futures_daily",
+                schema_version=JQUANTS_BRONZE_SCHEMA.version,
+                year=year,
+                month=month,
+            )
+            if path.exists() and _cache_covers_dates(path, trading_dates):
+                rows.extend(_read_parquet_records(path))
+                print(f"[paper-panel] J-Quants bronze cache hit {year}-{month:02d}", flush=True)
+                continue
+            chunk_rows: list[dict[str, object]] = []
+            pull_started = datetime.now(UTC)
+            for trading_date in trading_dates:
+                raw_rows = client.get_futures_daily_bars(trading_date=trading_date)
+                chunk_rows.extend(
+                    _jquants_bronze_row(
+                        row,
+                        requested_date=trading_date,
+                        source_endpoint="/derivatives/bars/daily/futures",
+                        downloaded_at_utc=run_start_utc or pull_started,
+                    )
+                    for row in raw_rows
+                )
+            result = atomic_write_parquet(
+                path,
+                chunk_rows,
+                schema=JQUANTS_BRONZE_SCHEMA,
+                metadata={
+                    "source": "jquants",
+                    "endpoint": "/derivatives/bars/daily/futures",
+                    "requested_dates": trading_dates,
+                    "pull_started_at_utc": pull_started.isoformat(),
+                    "pull_completed_at_utc": datetime.now(UTC).isoformat(),
+                },
+            )
+            print(
+                f"[paper-panel] J-Quants bronze wrote {year}-{month:02d}: {result.rows} rows",
+                flush=True,
+            )
+            rows.extend(_read_parquet_records(path))
     return rows
 
 
@@ -1745,25 +2320,63 @@ def _fetch_massive_paper_predictors(
     start: str,
     end: str,
     downloaded_at_utc: datetime,
+    calendar_records: list[dict[str, object]] | None = None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:  # pragma: no cover - vendor path
     daily_records: list[dict[str, object]] = []
-    minute_records: list[dict[str, object]] = []
+    spy_feature_records: list[dict[str, object]] = []
+    bronze_root = settings.data_dir / "bronze"
+    silver_root = settings.data_dir / "silver"
     with MassiveClient(
         api_key=settings.massive_api_key,
         base_url=settings.massive_base_url,
         timeout_seconds=settings.massive_request_timeout_seconds,
     ) as client:
         for ticker in PAPER_CORE_MASSIVE_TICKERS:
-            daily_records.extend(
-                normalize_aggregate_bars(
+            safe_ticker = _safe_name(ticker)
+            for chunk_start, chunk_end in _month_chunks(start=start, end=end):
+                chunk_date = date.fromisoformat(chunk_start)
+                path = cache_path(
+                    bronze_root,
+                    dataset="massive_daily",
+                    schema_version=1,
+                    year=chunk_date.year,
+                    month=chunk_date.month,
+                    extra_partitions={"ticker": safe_ticker},
+                )
+                unavailable_path = path.with_suffix(".unavailable.json")
+                if path.exists() and _cache_covers_range(path, chunk_start, chunk_end):
+                    daily_records.extend(_read_parquet_records(path))
+                    continue
+                if unavailable_path.exists():
+                    continue
+                payload = client.fetch_aggregate_bars(
+                    name=f"{ticker}_day",
                     ticker=ticker,
-                    rows=client.get_aggregate_bars(
-                        ticker=ticker,
-                        multiplier=1,
-                        timespan="day",
-                        start=start,
-                        end=end,
+                    multiplier=1,
+                    timespan="day",
+                    start=chunk_start,
+                    end=chunk_end,
+                    raise_for_status=False,
+                )
+                error_class = classify_vendor_error(
+                    status_code=payload.http_status,
+                    message=str(
+                        payload.payload.get("message") or payload.payload.get("error") or ""
                     ),
+                    row_count=payload.row_count,
+                )
+                if error_class is not VendorErrorClass.OK:
+                    _write_unavailable_marker(
+                        unavailable_path,
+                        source="massive",
+                        error_class=error_class,
+                        http_status=payload.http_status,
+                        requested_range=[chunk_start, chunk_end],
+                    )
+                    continue
+                normalized = normalize_aggregate_bars(
+                    ticker=ticker,
+                    rows=_payload_results(payload.payload),
                     multiplier=1,
                     timespan="day",
                     research_download_ts_utc=downloaded_at_utc,
@@ -1771,27 +2384,86 @@ def _fetch_massive_paper_predictors(
                     regular_session_start_et=settings.massive_regular_session_start_et,
                     regular_session_end_et=settings.massive_regular_session_end_et,
                 )
-            )
-        for chunk_start, chunk_end in _month_chunks(start=start, end=end):
-            minute_records.extend(
-                normalize_aggregate_bars(
-                    ticker=settings.massive_minute_ticker,
-                    rows=client.get_aggregate_bars(
-                        ticker=settings.massive_minute_ticker,
-                        multiplier=1,
-                        timespan="minute",
-                        start=chunk_start,
-                        end=chunk_end,
-                    ),
-                    multiplier=1,
-                    timespan="minute",
-                    research_download_ts_utc=downloaded_at_utc,
-                    us_timezone=settings.project_timezone_us,
-                    regular_session_start_et=settings.massive_regular_session_start_et,
-                    regular_session_end_et=settings.massive_regular_session_end_et,
+                atomic_write_parquet(
+                    path,
+                    normalized,
+                    metadata={
+                        "source": "massive",
+                        "ticker": ticker,
+                        "timespan": "day",
+                        "requested_range": [chunk_start, chunk_end],
+                        "http_status": payload.http_status,
+                    },
                 )
+                daily_records.extend(normalized)
+        for chunk_start, chunk_end in _month_chunks(start=start, end=end):
+            chunk_date = date.fromisoformat(chunk_start)
+            feature_path = cache_path(
+                silver_root,
+                dataset="massive_spy_minute_features",
+                schema_version=SPY_MINUTE_FEATURE_SCHEMA.version,
+                year=chunk_date.year,
+                month=chunk_date.month,
+                extra_partitions={"ticker": _safe_name(settings.massive_minute_ticker)},
             )
-    return daily_records, minute_records
+            unavailable_path = feature_path.with_suffix(".unavailable.json")
+            if feature_path.exists() and _cache_covers_range(feature_path, chunk_start, chunk_end):
+                spy_feature_records.extend(_read_parquet_records(feature_path))
+                continue
+            if unavailable_path.exists():
+                continue
+            payload = client.fetch_aggregate_bars(
+                name=f"{settings.massive_minute_ticker}_minute",
+                ticker=settings.massive_minute_ticker,
+                multiplier=1,
+                timespan="minute",
+                start=chunk_start,
+                end=chunk_end,
+                raise_for_status=False,
+            )
+            error_class = classify_vendor_error(
+                status_code=payload.http_status,
+                message=str(payload.payload.get("message") or payload.payload.get("error") or ""),
+                row_count=payload.row_count,
+            )
+            if error_class is not VendorErrorClass.OK:
+                _write_unavailable_marker(
+                    unavailable_path,
+                    source="massive",
+                    error_class=error_class,
+                    http_status=payload.http_status,
+                    requested_range=[chunk_start, chunk_end],
+                )
+                continue
+            minute_records = normalize_aggregate_bars(
+                ticker=settings.massive_minute_ticker,
+                rows=_payload_results(payload.payload),
+                multiplier=1,
+                timespan="minute",
+                research_download_ts_utc=downloaded_at_utc,
+                us_timezone=settings.project_timezone_us,
+                regular_session_start_et=settings.massive_regular_session_start_et,
+                regular_session_end_et=settings.massive_regular_session_end_et,
+            )
+            features = build_spy_late_session_feature_records(
+                minute_records,
+                calendar_records=calendar_records or [],
+                vendor_lag_minutes=PAPER_CONFIG.leakage_policy.massive_vendor_lag_minutes,
+            )
+            atomic_write_parquet(
+                feature_path,
+                features,
+                schema=SPY_MINUTE_FEATURE_SCHEMA,
+                metadata={
+                    "source": "massive",
+                    "ticker": settings.massive_minute_ticker,
+                    "timespan": "minute_derived",
+                    "requested_range": [chunk_start, chunk_end],
+                    "http_status": payload.http_status,
+                },
+            )
+            spy_feature_records.extend(features)
+    return daily_records, spy_feature_records
 
 
 def _fetch_fred_paper_predictors(
@@ -1800,16 +2472,38 @@ def _fetch_fred_paper_predictors(
     start: str,
     end: str,
     downloaded_at_utc: datetime,
+    run_start_utc: datetime | None = None,
 ) -> list[dict[str, object]]:  # pragma: no cover - vendor path
     records: list[dict[str, object]] = []
+    cache_root = settings.data_dir / "bronze"
+    ttl_decision_ts = run_start_utc or downloaded_at_utc
     with FredClient(
         base_url=settings.fred_base_url,
         timeout_seconds=settings.fred_request_timeout_seconds,
     ) as client:
         for series_id in PAPER_CORE_FRED_SERIES:
+            path = cache_path(
+                cache_root,
+                dataset="fred_daily",
+                schema_version=FRED_CACHE_SCHEMA.version,
+                extra_partitions={"series": _safe_name(series_id)},
+            )
+            metadata = read_json(path.with_suffix(path.suffix + ".metadata.json"))
+            if (
+                path.exists()
+                and is_fred_cache_fresh_at_run_start(
+                    metadata,
+                    run_start_utc=ttl_decision_ts,
+                    ttl_days=FRED_CACHE_TTL_DAYS,
+                )
+                and _metadata_covers_range(metadata, start, end)
+            ):
+                records.extend(_read_parquet_records(path))
+                continue
             payload = client.fetch_series_csv(series_id)
-            records.extend(
-                normalize_fred_rows(
+            normalized = [
+                {**row, "vintage_safe": False}
+                for row in normalize_fred_rows(
                     series_id=series_id,
                     rows=payload.rows,
                     start=start,
@@ -1820,7 +2514,24 @@ def _fetch_fred_paper_predictors(
                         PAPER_CONFIG.leakage_policy.fred_availability_lag_us_business_days
                     ),
                 )
+            ]
+            atomic_write_parquet(
+                path,
+                normalized,
+                schema=FRED_CACHE_SCHEMA,
+                metadata={
+                    "source": "fred",
+                    "series_id": series_id,
+                    "requested_range": [start, end],
+                    "pull_completed_at_utc": downloaded_at_utc.isoformat(),
+                    "ttl_decision_ts_utc": ttl_decision_ts.isoformat(),
+                    "ttl_days": FRED_CACHE_TTL_DAYS,
+                    "ttl_status": "refreshed_at_run_start",
+                    "vintage_safe": False,
+                    "revision_risk_label": "current_historical_revisions",
+                },
             )
+            records.extend(normalized)
     return records
 
 
@@ -1953,20 +2664,24 @@ def _forecast_shard_id(model_name: str, tail_level: float) -> str:
     )
 
 
-def _write_parquet(path: Path, rows: list[dict[str, object]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if rows:
-        pl.DataFrame(rows).write_parquet(path)
-    else:
-        pl.DataFrame().write_parquet(path)
+def _write_parquet(
+    path: Path,
+    rows: list[dict[str, object]],
+    *,
+    schema: object | None = None,
+) -> None:
+    atomic_write_parquet(path, rows, schema=cast(Any, schema))
 
 
 def _write_json(path: Path, payload: Mapping[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, default=str),
-        encoding="utf-8",
-    )
+    write_json_atomic(path, payload)
+
+
+def _optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _optional_float(value: object) -> float | None:

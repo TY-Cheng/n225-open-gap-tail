@@ -9,6 +9,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
+from pandas.tseries.holiday import USFederalHolidayCalendar  # type: ignore[import-untyped]
 
 from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.datalake import atomic_write_parquet, write_json_atomic
@@ -108,15 +109,22 @@ def normalize_fred_rows(
             time(16, 0),
             tzinfo=us_zone,
         ).astimezone(UTC)
-        available_date = _add_us_business_days(
-            observation_date,
-            availability_lag_us_business_days,
-        )
-        vendor_available_ts_utc = datetime.combine(
-            available_date,
-            time(16, 0),
-            tzinfo=us_zone,
-        ).astimezone(UTC)
+        if series_id.upper() == "DEXJPUS":
+            vendor_available_ts_utc = h10_release_ts_utc(
+                observation_date,
+                us_timezone=us_timezone,
+            )
+            available_date = vendor_available_ts_utc.astimezone(us_zone).date()
+        else:
+            available_date = _add_us_business_days(
+                observation_date,
+                availability_lag_us_business_days,
+            )
+            vendor_available_ts_utc = datetime.combine(
+                available_date,
+                time(16, 0),
+                tzinfo=us_zone,
+            ).astimezone(UTC)
         records.append(
             {
                 "source": "fred",
@@ -137,6 +145,30 @@ def normalize_fred_rows(
         )
 
     return records
+
+
+def h10_release_ts_utc(
+    observation_date: date,
+    *,
+    us_timezone: str = "America/New_York",
+) -> datetime:
+    """Return the H.10 batch-release timestamp for a DEXJPUS observation date."""
+    us_zone = ZoneInfo(us_timezone)
+    days_until_next_monday = (7 - observation_date.weekday()) % 7
+    if days_until_next_monday == 0:
+        days_until_next_monday = 7
+    release_date = observation_date + timedelta(days=days_until_next_monday)
+    holiday_calendar = USFederalHolidayCalendar()
+    holiday_dates = {
+        item.date()
+        for item in holiday_calendar.holidays(
+            start=release_date.isoformat(),
+            end=(release_date + timedelta(days=7)).isoformat(),
+        )
+    }
+    while release_date.weekday() >= 5 or release_date in holiday_dates:
+        release_date += timedelta(days=1)
+    return datetime.combine(release_date, time(16, 15), tzinfo=us_zone).astimezone(UTC)
 
 
 def write_fred_smoke_sample(

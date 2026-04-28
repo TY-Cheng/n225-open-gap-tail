@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import httpx
@@ -12,6 +12,7 @@ from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.fred import (
     FredClient,
     FredDataError,
+    h10_release_ts_utc,
     normalize_fred_rows,
     write_fred_smoke_sample,
 )
@@ -90,6 +91,43 @@ def test_normalize_fred_rows_filters_range_and_marks_missing_values() -> None:
         "current_historical_value_with_conservative_lag_not_alfred_vintage_safe"
     )
     assert records[2]["vintage_policy"] == "not_vintage_safe_without_alfred_realtime_parameters"
+
+
+def test_dexjpus_uses_h10_weekly_batch_release_timestamps() -> None:
+    records = normalize_fred_rows(
+        series_id="DEXJPUS",
+        rows=[
+            {"observation_date": "2026-01-05", "value": "157.0"},
+            {"observation_date": "2026-01-06", "value": "158.0"},
+            {"observation_date": "2026-01-09", "value": "159.0"},
+        ],
+        start="2026-01-05",
+        end="2026-01-09",
+        research_download_ts_utc=datetime(2026, 1, 9, tzinfo=UTC),
+    )
+
+    assert {row["vendor_available_ts_utc"] for row in records} == {
+        datetime(2026, 1, 12, 21, 15, tzinfo=UTC)
+    }
+    assert h10_release_ts_utc(date(2026, 1, 6)) == datetime(
+        2026,
+        1,
+        12,
+        21,
+        15,
+        tzinfo=UTC,
+    )
+
+
+def test_h10_release_moves_when_monday_is_federal_holiday() -> None:
+    assert h10_release_ts_utc(date(2026, 1, 16)) == datetime(
+        2026,
+        1,
+        20,
+        21,
+        15,
+        tzinfo=UTC,
+    )
 
 
 def test_write_fred_smoke_sample_writes_bronze_and_silver(tmp_path: Path) -> None:

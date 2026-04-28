@@ -27,8 +27,6 @@ def test_default_settings_have_project_name() -> None:
         "DGS2",
         "DGS10",
         "T10Y2Y",
-        "BAMLH0A0HYM2",
-        "BAMLC0A0CM",
     )
     assert settings.calendar_us_exchange == "XNYS"
     assert settings.calendar_jpx_exchange == "JPX"
@@ -57,7 +55,6 @@ def test_default_settings_have_project_name() -> None:
         "SMH",
         "HYG",
         "LQD",
-        "C:USDJPY",
     )
     assert settings.massive_probe_ticker_list() == ("I:VIX",)
 

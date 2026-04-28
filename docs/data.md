@@ -44,12 +44,12 @@ Massive and FRED predictor settings are:
 ```bash
 MASSIVE_API_KEY="replace-me"
 MASSIVE_BASE_URL="https://api.massive.com"
-MASSIVE_DAILY_TICKERS="SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,XLY,XLP,XLB,XLU,XLC,TLT,GLD,USO,EEM,FXI,SMH,HYG,LQD,C:USDJPY,EWJ,DXJ,EWY,EWT,EWH"
+MASSIVE_DAILY_TICKERS="SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,XLY,XLP,XLB,XLU,XLC,TLT,GLD,USO,EEM,FXI,SMH,HYG,LQD,EWJ,DXJ,EWY,EWT,EWH"
 MASSIVE_MINUTE_TICKER="SPY"
 MASSIVE_PROBE_TICKERS="I:VIX"
 
 FRED_BASE_URL="https://fred.stlouisfed.org"
-FRED_SERIES="VIXCLS,DGS2,DGS10,T10Y2Y,BAMLH0A0HYM2,BAMLC0A0CM"
+FRED_SERIES="VIXCLS,DGS2,DGS10,T10Y2Y,DEXJPUS"
 ```
 
 These snippets are the paper-grade core defaults. Smoke commands can override them with smaller ticker or series lists.
@@ -58,12 +58,13 @@ Short-history and robustness-only candidates stay out of `core_full_history`:
 
 ```bash
 POST_2018_FRED_SERIES="SOFR,EFFR"
+FRED_CREDIT_ENRICHED_SERIES="BAMLH0A0HYM2,BAMLC0A0CM"
 JAPAN_PROXY_MASSIVE_TICKERS="EWJ,DXJ"
 ASIA_PROXY_MASSIVE_TICKERS="EWY,EWT,EWH"
-OPTIONAL_MASSIVE_TICKERS="UUP"
+OPTIONAL_MASSIVE_TICKERS="C:USDJPY,UUP"
 ```
 
-FRED uses current historical values with a conservative +1 U.S. business-day availability lag by default. This is not ALFRED/vintage-safe unless a future run explicitly records realtime or vintage parameters.
+FRED uses current historical values with conservative availability semantics and is not ALFRED/vintage-safe unless a future run explicitly records realtime or vintage parameters. `DEXJPUS` is handled as a Federal Reserve H.10 weekly-batch as-of FX control: the previous business week's observations are unavailable until the following H.10 release timestamp. Massive `C:USDJPY` is optional fallback/enriched evidence, not a required core sample-start driver.
 
 The utility smoke/build commands are engineering checks only:
 
@@ -102,12 +103,12 @@ The first-paper predictor universe is pre-registered by economic role rather tha
 | Asia and global risk | EEM, FXI, SMH, HYG, LQD | Massive.com core candidates | `US_CASH_CLOSE` after source audit | Emerging-market, China, semiconductor, and credit-risk channels relevant to Japan. |
 | Japan proxy block | EWJ, DXJ | Massive.com P2B proxy block | `US_CASH_CLOSE` after source audit | U.S.-traded Japan equity proxies used to test whether Japan-exposure trading absorbs incremental signal beyond broad U.S. core. |
 | Asia proxy block | EWY, EWT, EWH | Massive.com P2B proxy block | `US_CASH_CLOSE` after source audit | Korea, Taiwan, and Hong Kong proxies used to test regional and supply-chain information beyond Japan proxies. |
-| FX | USD/JPY | Massive.com forex | Timestamped bar close converted from UTC | Currency channel for dollar-denominated Japanese risk and exporter exposure. |
+| FX | Canonical USD/JPY from FRED `DEXJPUS`, with Massive `C:USDJPY` only as timestamp-safe fallback/enriched source | FRED H.10, Massive.com forex | H.10 weekly-batch as-of release for FRED; Massive official close plus vendor lag when available | Currency channel for dollar-denominated Japanese risk and exporter exposure without letting optional Massive FX entitlement determine the main sample. |
 | Safe-haven and commodity proxies | TLT, GLD, USO | Massive.com planned candidates | `US_CASH_CLOSE` after source audit | Flight-to-quality, dollar-rate duration, and commodity-risk channels. |
 | U.S. volatility | VIX close; VIX high/low/range when available | Cboe, FRED, Massive index probe | Historical daily close or audited index timestamp | U.S. implied volatility and volatility-of-risk regime. |
 | U.S. tail/skew proxies | Cboe SKEW, VIX9D, VIX3M, VIX6M | Cboe or licensed source | Tier 1.5/Tier 2 depending access and coverage | Option-implied left-tail and volatility-term-structure information. |
 | Treasury rates | DGS2, DGS10, T10Y2Y | FRED | Current historical values with +1 U.S. business-day availability lag; not ALFRED/vintage-safe by default | Rate level and curve slope. SOFR/EFFR are post-2018 enriched candidates only. |
-| Credit spreads | BAMLH0A0HYM2, BAMLC0A0CM | FRED/ICE BofA | Historical daily series; coverage and license notes audited | Credit-stress proxy for global downside tail risk. |
+| Credit spreads | BAMLH0A0HYM2, BAMLC0A0CM | FRED/ICE BofA | Enriched/robustness block unless coverage supports inclusion | Credit-stress proxy for global downside tail risk without shortening the required core sample by default. |
 | Event flags | FOMC, CPI, payrolls, BOJ, major Japan macro releases | Official calendars | Timestamped event flags, no numeric surprises in core design | Scheduled risk-event controls without macro feature fishing. |
 | Lagged Japanese futures state | Prior gap, lagged day return, lagged night return, volume/OI changes, roll/SQ flags | J-Quants futures after Premium access | Historical target-side variables, lagged before cutoff | Domestic state, liquidity proxy, and contract-state controls. |
 
@@ -136,15 +137,18 @@ The final modeling start is written to the run manifest as:
 ```text
 combined_clean_start = max(
   jquants_required_field_coverage_start,
-  massive_daily_entitlement_start,
-  fred_required_series_coverage_start
+  required_massive_core_coverage_start,
+  required_fred_core_coverage_start,
+  canonical_fx_coverage_start
 )
 ```
 
 `jquants_required_field_coverage_start` defaults to `2016-07-19` only when
 `fields_coverage_audit.parquet` supports required coverage for settlement, last-trading-day,
 SQ-day, and central-contract fields. `2008-05-07` remains available for target-history audit
-or robustness runs, not as the default clean predictor sample.
+or robustness runs, not as the default clean predictor sample. Because XLC remains a
+required U.S. sector control, the final `combined_clean_start` is expected to move to
+XLC's post-inception coverage period rather than remain at the 2016 cache lower bound.
 
 Physical layout uses Hive-style Parquet partitions with schema version in the path:
 
@@ -379,6 +383,8 @@ Processed model tables should carry the fields needed to audit the LightGBM-stan
 - Massive.com stocks overview: [Stocks Overview | Massive.com](https://massive.com/docs/rest/stocks/overview)
 - NYSE trading hours and early closes: [Holidays and Trading Hours | NYSE](https://www.nyse.com/trade/hours-calendars)
 - FRED observations API: [fred/series/observations | FRED](https://fred.stlouisfed.org/docs/api/fred/series_observations.html)
+- FRED USD/JPY H.10 series: [DEXJPUS](https://fred.stlouisfed.org/series/DEXJPUS)
+- Federal Reserve H.10 release timing: [Foreign Exchange Rates - H.10](https://www.federalreserve.gov/releases/h10/)
 - FRED high-yield credit spread candidate: [BAMLH0A0HYM2](https://fred.stlouisfed.org/series/BAMLH0A0HYM2)
 - FRED investment-grade credit spread candidate: [BAMLC0A0CM](https://fred.stlouisfed.org/series/BAMLC0A0CM)
 - FRED yield-curve slope candidate: [T10Y2Y](https://fred.stlouisfed.org/series/T10Y2Y)

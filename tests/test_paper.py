@@ -1234,7 +1234,15 @@ def test_low_level_feature_and_bronze_helpers_cover_edge_cases() -> None:
     assert paper_module._feature_source_family("ewj_return") == "japan_proxy"
     assert paper_module._feature_source_family("ewh_return") == "asia_proxy"
     assert paper_module._feature_source_family("fx_usdjpy_level") == "fx_core"
+    assert paper_module._feature_source_family("fred_bamlh0a0hym2_level") == (
+        "fred_credit_enriched"
+    )
+    assert paper_module._feature_source_family("cboe_vix_close") == "cboe_volatility"
+    assert paper_module._feature_source_family("uup_return") == "massive_optional"
     assert paper_module._feature_source_family("c_usdjpy_return") == "massive_daily"
+    assert paper_module._feature_source_block("fred_bamlh0a0hym2_level") == ("fred_credit_enriched")
+    assert paper_module._feature_source_block("cboe_vix_close") == "fred_core"
+    assert paper_module._feature_source_block("uup_return") == "massive_optional"
     assert paper_module._feature_source_block("qqq_return") == "us_core"
     assert paper_module._panel_join_miss_reason({}, "") == "calendar_desync"
     assert (
@@ -1585,6 +1593,144 @@ def test_p2b_feature_unavailability_artifacts_aggregate_and_explode_dates() -> N
     assert all(row["forecast_date"] == "2026-04-06" for row in exploded)
 
 
+def _synthetic_p2b_location_scale_rows(n: int = 90) -> list[dict[str, object]]:
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    rows: list[dict[str, object]] = []
+    for index in range(n):
+        current = start + timedelta(days=index)
+        seasonal = math.sin(index / 3.0)
+        loss = 0.04 + 0.01 * seasonal + (0.09 if index % 17 == 0 else 0.0)
+        rows.append(
+            {
+                "forecast_date": current.date().isoformat(),
+                "target_family": "full_gap_settle_to_open",
+                "clean_sample": True,
+                "realized_loss": loss,
+                "gap_t": -loss,
+                "dst_regime": "EDT" if index % 2 else "EST",
+                "absorption_regime": "post_us_close_night_absorption",
+                "feature_x": float(index) / 10.0,
+                "feature_cycle": float(index % 5),
+            }
+        )
+    return rows
+
+
+def test_blocked_expanding_oof_folds_are_strictly_past_to_future() -> None:
+    folds = paper_module._blocked_expanding_oof_folds(
+        30,
+        n_splits=4,
+        min_train_rows=10,
+    )
+
+    assert folds
+    for train_index, validation_index in folds:
+        assert train_index
+        assert validation_index
+        assert max(train_index) < min(validation_index)
+    assert folds[0][0] == list(range(10))
+
+
+def test_p2b_oof_location_scale_smearing_is_positive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lightgbm as lgb
+
+    monkeypatch.setattr(paper_module, "P2B_MIN_OOF_TRAIN_ROWS", 10)
+    oof = paper_module._p2b_oof_location_scale(
+        train_rows=_synthetic_p2b_location_scale_rows(70),
+        candidate_features=["feature_x", "feature_cycle"],
+        information_set="japan_only_plus_us_close_core",
+        tail_level=0.95,
+        lgb=lgb,
+    )
+
+    assert cast(int, oof["location_oof_count"]) > 0
+    assert cast(int, oof["scale_oof_count"]) > 0
+    assert cast(float, oof["smearing_factor"]) > 0
+    standardized = cast(np.ndarray, oof["standardized_losses"])
+    assert standardized.size > 0
+    assert np.isfinite(standardized).all()
+
+
+def test_p2b_location_scale_sequence_outputs_valid_forecasts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(paper_module, "DEFAULT_MIN_TRAIN_ROWS", 25)
+    monkeypatch.setattr(paper_module, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 1)
+    monkeypatch.setattr(paper_module, "P2B_MIN_OOF_TRAIN_ROWS", 8)
+
+    result = paper_module._forecast_p2b_lightgbm_sequence(
+        rows=_synthetic_p2b_location_scale_rows(80),
+        model_name=paper_module.P2B_LOCATION_SCALE_MODEL,
+        information_set="japan_only_plus_us_close_core",
+        candidate_features=["feature_x", "feature_cycle"],
+        tail_level=0.95,
+        oos_start="2026-02-10",
+    )
+
+    ok = [row for row in result["forecasts"] if row["fit_status"] == "ok"]
+    assert ok
+    assert ok[0]["es_companion_type"] == "oof_filtered_historical_standardized_es"
+    assert cast(float, ok[0]["es_forecast"]) >= cast(float, ok[0]["var_forecast"])
+    assert cast(float, ok[0]["scale_forecast"]) > 0
+    assert cast(float, ok[0]["scale_smearing_factor"]) > 0
+    assert ok[0]["standardization_method"] == "blocked_expanding_oof_location_scale_duan_smearing"
+
+
+def test_p2b_standardized_pot_gpd_sequence_records_evt_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(paper_module, "DEFAULT_MIN_TRAIN_ROWS", 25)
+    monkeypatch.setattr(paper_module, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 1)
+    monkeypatch.setattr(paper_module, "P2B_MIN_OOF_TRAIN_ROWS", 8)
+    monkeypatch.setattr(
+        "n225_open_gap_tail.paper.stats.genpareto.fit",
+        lambda *args, **kwargs: (0.1, 0.0, 1.0),
+    )
+
+    result = paper_module._forecast_p2b_lightgbm_sequence(
+        rows=_synthetic_p2b_location_scale_rows(90),
+        model_name=paper_module.P2B_STANDARDIZED_POT_GPD_MODEL,
+        information_set="japan_only_plus_us_close_core",
+        candidate_features=["feature_x", "feature_cycle"],
+        tail_level=0.95,
+        oos_start="2026-02-10",
+    )
+
+    ok = [row for row in result["forecasts"] if row["fit_status"] == "ok"]
+    assert ok
+    assert ok[0]["es_companion_type"] == "oof_standardized_loss_pot_gpd"
+    assert ok[0]["evt_shape"] == pytest.approx(0.1)
+    assert ok[0]["evt_scale"] == pytest.approx(1.0)
+    assert ok[0]["threshold_value"] is not None
+    assert cast(float, ok[0]["es_forecast"]) >= cast(float, ok[0]["var_forecast"])
+
+
+def test_p2b_standardized_pot_gpd_shape_above_one_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lightgbm as lgb
+
+    monkeypatch.setattr(paper_module, "DEFAULT_MIN_TRAIN_ROWS", 25)
+    monkeypatch.setattr(paper_module, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 1)
+    monkeypatch.setattr(paper_module, "P2B_MIN_OOF_TRAIN_ROWS", 8)
+    monkeypatch.setattr(
+        "n225_open_gap_tail.paper.stats.genpareto.fit",
+        lambda *args, **kwargs: (1.2, 0.0, 1.0),
+    )
+
+    with pytest.raises(paper_module.PaperRunError, match="unavailable_evt_shape_es_infinite"):
+        paper_module._fit_p2b_location_scale_bundle(
+            train_rows=_synthetic_p2b_location_scale_rows(80),
+            candidate_features=["feature_x", "feature_cycle"],
+            model_name=paper_module.P2B_STANDARDIZED_POT_GPD_MODEL,
+            information_set="japan_only_plus_us_close_core",
+            tail_level=0.95,
+            lgb=lgb,
+        )
+
+
 def test_coverage_tests_return_unavailable_for_degenerate_inputs() -> None:
     assert kupiec_pof_test(breaches=np.array([]), expected_probability=0.05)["status"] == (
         "unavailable_invalid_input"
@@ -1813,7 +1959,7 @@ def test_evaluate_p2b_run_writes_lightgbm_ladder_artifacts(
 
     result = evaluate_p2b_run(run_dir=run_dir, workers=1)
 
-    assert result.status == "completed_lightgbm_direct_quantile"
+    assert result.status == "completed_lightgbm_p2b_models"
     assert (run_dir / "forecasts" / "p2b_forecasts.parquet").exists()
     forecasts = pl.read_parquet(run_dir / "forecasts" / "p2b_forecasts.parquet")
     assert forecasts["information_set"].n_unique() == 4
@@ -1830,7 +1976,8 @@ def test_evaluate_p2b_run_writes_lightgbm_ladder_artifacts(
     assert "GW" not in incremental_text
     assert "GW" not in dst_text
     status = json.loads((run_dir / "metrics" / "p2b_status.json").read_text(encoding="utf-8"))
-    assert status["unavailable_components"]["lightgbm_standardized_loss_pot_gpd"]
+    assert set(status["implemented_components"]) == set(paper_module.P2B_MODEL_NAMES)
+    assert status["unavailable_components"] == {}
     assert status["registered_information_sets"]["model_d"].endswith("plus_asia_proxy")
 
 

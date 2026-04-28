@@ -133,25 +133,26 @@ Implement the pipeline in this order:
 
 8. LightGBM model variants
    - Implement chronological validation only; do not use random train/test splits.
-   - P2B first pass: implement `lightgbm_direct_quantile` over the registered nested ladder:
+   - P2B first pass runs `lightgbm_direct_quantile`, `lightgbm_location_scale`, and
+     `lightgbm_standardized_loss_pot_gpd` over the registered nested ladder:
      `japan_only`,
      `japan_only_plus_us_close_core`,
      `japan_only_plus_us_close_core_plus_japan_proxy`,
      and `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy`.
    - Require `leakage_check_failures = 0` before P2B model evaluation.
-   - Use month-level refits with daily forecasts for the first LightGBM pass; record active feature hashes, dropped features, training missingness, and training variance.
-   - Implement `conditional_location_model`.
-   - Implement `conditional_scale_model`.
-   - Implement `quantile_model` at alpha values `{0.05, 0.025, 0.01}`.
+   - Use month-level refits with daily forecasts for the first LightGBM pass; record active feature hashes, dropped features, training missingness, training variance, target family, information set, tail level, and refit frequency.
+   - `lightgbm_location_scale` uses fully out-of-fold standardized losses, pooled Duan smearing, empirical standardized VaR/ES, and explicit unavailable diagnostics when OOF sample, scale, or ES gates fail.
+   - `lightgbm_standardized_loss_pot_gpd` reuses the same fully OOF standardized losses and fits GPD exceedances with `loc=0`; finite-ES, threshold, and exceedance-count gates must pass before emitting forecast rows.
+   - Keep `lightgbm_direct_quantile` as the unchanged direct quantile benchmark at registered tail levels.
    - Implement `exceedance_probability_model` for rolling lower-tail thresholds.
    - Optionally implement `severity_model` for exceedance magnitudes.
    - Calibrate probability outputs on validation data when they are used as exceedance probabilities.
    - Keep hyperparameter tuning simple and reproducible in the first pass.
 
 9. EVT layer
-   - Use the primary LightGBM-EVT interface from `docs/paper_plan.md`: LightGBM estimates conditional scale or a location-scale pair, losses are standardized by predicted scale, POT-GPD is fit on training-window standardized downside exceedances, and VaR/ES are transformed back to the target scale.
-   - Fit POT-GPD on downside losses, filtered residual losses, standardized losses, or conditional exceedance severities, but make standardized losses the first reported hybrid specification.
-   - Use training-window exceedances only.
+   - Use the primary LightGBM-EVT interface from `docs/paper_plan.md`: LightGBM estimates a location-scale pair, losses are standardized by predicted scale, POT-GPD is fit on fully out-of-fold standardized downside exceedances, and VaR/ES are transformed back to the target scale.
+   - Fit POT-GPD on standardized losses as the first reported hybrid specification; other EVT interfaces remain robustness extensions.
+   - Use timestamp-safe training-window information only; never calibrate EVT tails on in-sample fitted standardized residuals.
    - Select thresholds using mean-excess linearity plus GPD shape and scale stability above the threshold.
    - Store threshold grid diagnostics: exceedance count, mean excess, Hill or tail-index estimates where appropriate, shape stability, scale stability, and sensitivity across nearby thresholds.
    - Add optional automated threshold diagnostics such as Danielsson-style double-bootstrap or Beirlant-Goegebeur style sequential checks when implementation is stable.

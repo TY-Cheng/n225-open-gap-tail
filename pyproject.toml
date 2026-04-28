@@ -5,9 +5,11 @@ description = "LightGBM-EVT framework for forecasting Nikkei 225 futures opening
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [
+    "arch>=7.2.0",
     "duckdb>=1.2.0",
     "exchange-calendars>=4.9",
     "httpx>=0.28.0",
+    "joblib>=1.4.2",
     "lightgbm>=4.5.0",
     "massive>=2.5.0",
     "matplotlib>=3.10.0",

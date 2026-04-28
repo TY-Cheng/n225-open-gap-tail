@@ -97,3 +97,22 @@ The J-Quants smoke command downloads a tiny V2 sample and probes the futures end
 The Massive smoke command downloads a small U.S. daily aggregate panel plus a one-day minute aggregate sample. Raw API payloads go under ignored `data/raw/massive/`; normalized parquet files with timestamp audit columns go under ignored `data/interim/massive/`.
 
 The FRED smoke command downloads historical VIX and Treasury-rate proxies. The calendar build command creates U.S./JPX trading-day, early-close, holiday, and DST alignment tables. The contracts build command creates rule-based Nikkei 225 futures quarterly contract metadata and a central-contract selector; this is research scaffolding that must be reconciled against J-Quants or JPX contract metadata before final empirical results.
+
+## Paper-Grade P2A Workflow
+
+The paper-grade path is separate from smoke outputs:
+
+```bash
+just paper-panel
+just paper-eval
+just paper-latex-tables
+```
+
+`paper-panel` builds the full-history modeling panel under ignored `reports/paper_runs/`.
+`paper-eval` runs the P2A baseline floor and writes sharded Parquet/JSON diagnostics.
+`paper-latex-tables` exports small LaTeX fragments from the run metrics. These outputs are
+`paper_grade_candidate_not_final_manuscript` until manually reviewed.
+
+For custom windows or workers, pass recipe arguments positionally, for example
+`just paper-panel 2022-01-01 2026-04-28` or
+`just paper-eval <run_id> 4 p2a`.

@@ -24,15 +24,17 @@ Respect the existing workflow:
 
 - Use `just status`, `just check`, and `just full` as the main entrypoints.
   Use lower-level recipes such as `just _paper-panel` and `just _paper-eval` only when debugging a specific layer.
-- `just full` defaults to `2016-07-19`. The manifest computes `combined_clean_start` from
-  J-Quants required-field coverage, Massive entitlement, and required FRED coverage. Do not
+- `just full` defaults to `2016-07-19` as a cache lower bound. The manifest computes
+  `combined_clean_start` from required J-Quants field coverage, XLC-inclusive Massive core
+  coverage, required FRED core coverage, and canonical USD/JPY fallback coverage. Do not
   hard-code a later modeling start in model code.
 - Treat the data path as cache-first: Hive-style typed Parquet, atomic writes, `xxhash64`
   chunk hashes, run-start GC of orphan temp files, and layer-aware rebuilds. Rebuilding
   silver/gold must not call vendor APIs unless bronze is missing or refresh was explicitly
   requested.
 - FRED current-historical caches are `vintage_safe=false`; TTL is evaluated once at run
-  start, never mid-run.
+  start, never mid-run. `DEXJPUS` must use H.10 batch-release as-of timing, while Massive
+  `C:USDJPY` remains optional FX fallback/enriched evidence.
 - The intended uv environment comes from `.env` through `UV_PROJECT_ENVIRONMENT`.
 - Treat the sibling `../agent-runner` project as an external sidecar worker pool when delegation is useful. From this repo, call it through `just agent ...`, for example `just agent litellm-status` or `just agent run-worker "Objective" "src/foo.py,tests/test_foo.py"`.
 - External worker outputs remain sidecar artifacts and worktrees until Codex or a human reviews them. Do not treat external worker patches as merged code or empirical evidence.

@@ -201,7 +201,7 @@ def test_build_modeling_panel_records_and_feature_coverage() -> None:
             {
                 "trading_date": "2026-01-05",
                 "us_calendar_date": "2026-01-02",
-                "model_cutoff_ts_utc": datetime(2026, 1, 2, 21, 5, tzinfo=UTC),
+                "model_cutoff_ts_utc": datetime(2026, 1, 2, 21, 30, tzinfo=UTC),
                 "dst_regime": "EST",
                 "absorption_regime": "coincident_close",
             }
@@ -356,6 +356,69 @@ def test_spy_minute_features_use_official_early_close_and_exclude_after_hours() 
     assert features[0]["spy_late_30m_return"] is not None
 
 
+def test_massive_daily_features_use_official_early_close_availability() -> None:
+    panel = build_modeling_panel_records(
+        target_rows=[
+            {
+                "trading_date": "2026-11-30",
+                "contract_code": "c1",
+                "contract_month": "2026-12",
+                "clean_sample": True,
+                "same_contract_only": True,
+                "is_roll_sq_window": False,
+                "missing_reason": None,
+                "target_open_ts_utc": datetime(2026, 11, 29, 23, 45, tzinfo=UTC),
+                "full_gap_settle_to_open": -0.01,
+                "loss_settle_to_open": 0.01,
+            }
+        ],
+        alignment_records=[
+            {
+                "trading_date": "2026-11-30",
+                "us_calendar_date": "2026-11-27",
+                "model_cutoff_ts_utc": datetime(2026, 11, 27, 18, 15, tzinfo=UTC),
+            }
+        ],
+        massive_daily_records=[
+            {
+                "ticker": "SPY",
+                "bar_date_et": "2026-11-25",
+                "bar_end_ts_utc": datetime(2026, 11, 25, 21, 0, tzinfo=UTC),
+                "close": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+            },
+            {
+                "ticker": "SPY",
+                "bar_date_et": "2026-11-27",
+                "bar_end_ts_utc": datetime(2026, 11, 27, 21, 0, tzinfo=UTC),
+                "close": 101.0,
+                "high": 102.0,
+                "low": 100.0,
+            },
+        ],
+        spy_minute_records=[],
+        fred_records=[],
+        calendar_records=[
+            {
+                "calendar_date": "2026-11-27",
+                "us_close_ts_utc": datetime(2026, 11, 27, 18, 0, tzinfo=UTC),
+            }
+        ],
+    )
+
+    assert panel[0]["spy_return"] is not None
+    assert panel[0]["spy_return__available_ts_utc"] == datetime(
+        2026,
+        11,
+        27,
+        18,
+        15,
+        tzinfo=UTC,
+    )
+    assert not [row for row in build_leakage_check_records(panel) if row["status"] == "fail"]
+
+
 def test_modeling_panel_forward_fills_us_holiday_features_and_leakage_gate() -> None:
     panel = build_modeling_panel_records(
         target_rows=[
@@ -449,6 +512,129 @@ def test_modeling_panel_records_calendar_join_miss_reason() -> None:
     )
 
     assert panel[0]["join_miss_reason"] == "calendar_desync"
+
+
+def test_canonical_fx_uses_fred_primary_before_massive_when_asof_available() -> None:
+    context = paper_module._canonical_fx_context(
+        massive_daily_records=[
+            {
+                "ticker": "C:USDJPY",
+                "bar_date_et": "2026-01-12",
+                "close": 161.0,
+                "bar_end_ts_utc": datetime(2026, 1, 12, 21, tzinfo=UTC),
+            }
+        ],
+        fred_records=[
+            {
+                "series_id": "DEXJPUS",
+                "observation_date": "2026-01-09",
+                "vendor_available_ts_utc": datetime(2026, 1, 12, 21, 15, tzinfo=UTC),
+                "value": 160.0,
+            }
+        ],
+        calendar_records=[
+            {
+                "calendar_date": "2026-01-12",
+                "us_close_ts_utc": datetime(2026, 1, 12, 21, tzinfo=UTC),
+            }
+        ],
+    )
+
+    fx = paper_module._canonical_fx_asof(
+        context,
+        us_date="2026-01-12",
+        cutoff=datetime(2026, 1, 12, 21, 30, tzinfo=UTC),
+    )
+
+    assert fx["fx_source"] == "fred_h10_primary"
+    assert fx["fx_usdjpy_level"] == 160.0
+    assert fx["fx_staleness_days"] == 3
+
+
+def test_canonical_fx_routes_fred_null_row_to_massive_then_stale_fred() -> None:
+    fred_rows = [
+        {
+            "series_id": "DEXJPUS",
+            "observation_date": "2026-01-09",
+            "vendor_available_ts_utc": datetime(2026, 1, 12, 21, 15, tzinfo=UTC),
+            "value": 160.0,
+        },
+        {
+            "series_id": "DEXJPUS",
+            "observation_date": "2026-01-12",
+            "vendor_available_ts_utc": datetime(2026, 1, 19, 21, 15, tzinfo=UTC),
+            "value": None,
+        },
+    ]
+    calendar_records = [
+        {
+            "calendar_date": "2026-01-12",
+            "us_close_ts_utc": datetime(2026, 1, 12, 21, tzinfo=UTC),
+        }
+    ]
+    massive_context = paper_module._canonical_fx_context(
+        massive_daily_records=[
+            {
+                "ticker": "C:USDJPY",
+                "bar_date_et": "2026-01-09",
+                "close": 160.0,
+                "bar_end_ts_utc": datetime(2026, 1, 9, 21, tzinfo=UTC),
+            },
+            {
+                "ticker": "C:USDJPY",
+                "bar_date_et": "2026-01-12",
+                "close": 161.0,
+                "bar_end_ts_utc": datetime(2026, 1, 12, 21, tzinfo=UTC),
+            },
+        ],
+        fred_records=fred_rows,
+        calendar_records=calendar_records,
+    )
+    fallback_context = paper_module._canonical_fx_context(
+        massive_daily_records=[],
+        fred_records=fred_rows,
+        calendar_records=calendar_records,
+    )
+
+    massive_fx = paper_module._canonical_fx_asof(
+        massive_context,
+        us_date="2026-01-12",
+        cutoff=datetime(2026, 1, 12, 21, 30, tzinfo=UTC),
+    )
+    stale_fx = paper_module._canonical_fx_asof(
+        fallback_context,
+        us_date="2026-01-12",
+        cutoff=datetime(2026, 1, 12, 21, 30, tzinfo=UTC),
+    )
+
+    assert massive_fx["fx_source"] == "massive_fx_opportunistic"
+    assert massive_fx["fx_fallback_reason"] == "fred_h10_null_or_nonfinite"
+    assert stale_fx["fx_source"] == "fred_h10_stale_fallback"
+    assert stale_fx["fx_staleness_days"] == 3
+
+
+def test_canonical_fx_nulls_beyond_stale_fallback_window() -> None:
+    context = paper_module._canonical_fx_context(
+        massive_daily_records=[],
+        fred_records=[
+            {
+                "series_id": "DEXJPUS",
+                "observation_date": "2026-01-09",
+                "vendor_available_ts_utc": datetime(2026, 1, 12, 21, 15, tzinfo=UTC),
+                "value": 160.0,
+            }
+        ],
+        calendar_records=[],
+    )
+
+    fx = paper_module._canonical_fx_asof(
+        context,
+        us_date="2026-01-15",
+        cutoff=datetime(2026, 1, 15, 21, 30, tzinfo=UTC),
+    )
+
+    assert fx["fx_source"] == "null_unavailable"
+    assert fx["fx_fallback_reason"] == "fred_fx_stale_beyond_fill_window"
 
 
 def test_calendar_map_statuses_cover_desync_and_holiday_trading() -> None:
@@ -564,6 +750,20 @@ def test_vendor_payload_helpers_and_marker(tmp_path: Path) -> None:
     assert json.loads(marker.read_text(encoding="utf-8"))["error_class"] == (
         "unavailable_entitlement"
     )
+    transient = tmp_path / "transient.unavailable.json"
+    paper_module._write_unavailable_marker(
+        transient,
+        source="massive",
+        error_class=VendorErrorClass.RATE_LIMITED,
+        http_status=429,
+        requested_range=["2026-01-01", "2026-01-31"],
+    )
+    assert not transient.exists()
+    old_transient = tmp_path / "old.unavailable.json"
+    old_transient.write_text('{"error_class": "rate_limited"}', encoding="utf-8")
+    removed = paper_module.cleanup_transient_unavailable_markers(tmp_path)
+    assert removed == [old_transient]
+    assert not old_transient.exists()
 
 
 def test_cache_coverage_guards_prevent_partial_month_reuse(tmp_path: Path) -> None:
@@ -594,8 +794,13 @@ def test_low_level_feature_and_bronze_helpers_cover_edge_cases() -> None:
     assert paper_module._feature_source_family("unknown") == "unknown"
     assert "EWH" in paper_module.PAPER_FETCH_MASSIVE_TICKERS
     assert "EWH" not in paper_module.PAPER_CORE_MASSIVE_TICKERS
+    assert "C:USDJPY" in paper_module.PAPER_FETCH_MASSIVE_TICKERS
+    assert "C:USDJPY" not in paper_module.PAPER_CORE_MASSIVE_TICKERS
+    assert "DEXJPUS" in paper_module.PAPER_FETCH_FRED_SERIES
     assert paper_module._feature_source_family("ewj_return") == "japan_proxy"
     assert paper_module._feature_source_family("ewh_return") == "asia_proxy"
+    assert paper_module._feature_source_family("fx_usdjpy_level") == "fx_core"
+    assert paper_module._feature_source_family("c_usdjpy_return") == "fx_optional_massive"
     assert paper_module._feature_source_block("qqq_return") == "us_core"
     assert paper_module._panel_join_miss_reason({}, "") == "calendar_desync"
     assert (
@@ -958,6 +1163,7 @@ def test_private_paper_helpers_cover_defensive_edges(
         math.log(101.0) - math.log(99.0)
     )
     assert paper_module._safe_name("C:USDJPY") == "c_usdjpy"
+    assert paper_module._feature_description("fx_usdjpy_level").startswith("canonical USDJPY")
     assert paper_module._feature_description("spy_late_30m_return").startswith("close-to-close")
     assert paper_module._feature_description("custom_feature") == "paper-grade predictor candidate"
     assert paper_module._safe_mean(np.array([math.nan])) is None

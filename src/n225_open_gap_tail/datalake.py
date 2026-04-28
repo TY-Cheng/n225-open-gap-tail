@@ -168,7 +168,7 @@ SPY_MINUTE_FEATURE_SCHEMA = ParquetSchema(
 
 FRED_CACHE_SCHEMA = ParquetSchema(
     name="fred_series_cache",
-    version=DEFAULT_SCHEMA_VERSION,
+    version=2,
     columns=(
         ("series_id", pl.Utf8),
         ("observation_date", pl.Utf8),

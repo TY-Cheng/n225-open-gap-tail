@@ -48,9 +48,8 @@ CORE_MASSIVE_TICKERS: tuple[str, ...] = (
     "SMH",
     "HYG",
     "LQD",
-    "C:USDJPY",
 )
-OPTIONAL_MASSIVE_TICKERS: tuple[str, ...] = ("UUP",)
+OPTIONAL_MASSIVE_TICKERS: tuple[str, ...] = ("C:USDJPY", "UUP")
 JAPAN_PROXY_MASSIVE_TICKERS: tuple[str, ...] = ("EWJ", "DXJ")
 ASIA_PROXY_MASSIVE_TICKERS: tuple[str, ...] = ("EWY", "EWT", "EWH")
 ROBUSTNESS_MASSIVE_TICKERS: tuple[str, ...] = (
@@ -62,10 +61,9 @@ CORE_FRED_SERIES: tuple[str, ...] = (
     "DGS2",
     "DGS10",
     "T10Y2Y",
-    "BAMLH0A0HYM2",
-    "BAMLC0A0CM",
 )
 FRED_FALLBACK_SERIES: tuple[str, ...] = ("DEXJPUS",)
+FRED_CREDIT_ENRICHED_SERIES: tuple[str, ...] = ("BAMLH0A0HYM2", "BAMLC0A0CM")
 POST_2018_FRED_SERIES: tuple[str, ...] = ("SOFR", "EFFR")
 ROBUSTNESS_FRED_SERIES: tuple[str, ...] = ("NFCI", "ANFCI", "STLFSI4")
 
@@ -80,6 +78,7 @@ class FeatureSetConfig:
     massive_robustness: tuple[str, ...] = ROBUSTNESS_MASSIVE_TICKERS
     fred_core: tuple[str, ...] = CORE_FRED_SERIES
     fred_fallback: tuple[str, ...] = FRED_FALLBACK_SERIES
+    fred_credit_enriched: tuple[str, ...] = FRED_CREDIT_ENRICHED_SERIES
     fred_post_2018: tuple[str, ...] = POST_2018_FRED_SERIES
     fred_robustness: tuple[str, ...] = ROBUSTNESS_FRED_SERIES
     japan_only_features: tuple[str, ...] = (

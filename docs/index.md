@@ -55,16 +55,18 @@ under ignored `reports/paper_runs/`. P2B/P2C commands are explicit nonblocking g
 their registered model implementations produce evidence. These artifacts are paper
 candidates, not final manuscript claims.
 
-`just full` defaults to `2016-07-19`. The run manifest computes `combined_clean_start`
-from audited J-Quants required-field coverage, Massive entitlement, and required FRED
-coverage. J-Quants target-history audit can still be run from `2008-05-07`, but it is not
-the default clean predictor sample.
+`just full` defaults to `2016-07-19` as a cache lower bound. The run manifest computes
+`combined_clean_start` from required J-Quants field coverage, XLC-inclusive Massive core
+coverage, required FRED core coverage, and the canonical USD/JPY fallback. J-Quants
+target-history audit can still be run from `2008-05-07`, but it is not the default clean
+predictor sample.
 
 The data path is cache-first: Hive-style Parquet partitions under ignored `data/bronze/`
 and `data/silver/`, run-scoped gold panel artifacts under `reports/paper_runs/<run_id>/panel/`,
 atomic writes with `xxhash64` chunk hashes, run-start cleanup of orphan temp files,
-early-close-aware SPY late-session minute features, and FRED current-historical caches
-labeled `vintage_safe=false` with TTL decisions made once at run start.
+early-close-aware Massive daily and SPY late-session features, and FRED current-historical
+caches labeled `vintage_safe=false` with TTL decisions made once at run start. `DEXJPUS`
+uses H.10 batch-release as-of timing; Massive `C:USDJPY` is optional FX fallback evidence.
 
 Custom windows and workers use positional recipe arguments, for example
 `just full 2022-01-01 "" 4`. The lower-level recipes remain available for debugging:

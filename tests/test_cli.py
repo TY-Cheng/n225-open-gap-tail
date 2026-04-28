@@ -60,11 +60,11 @@ def test_status_reports_environment_without_secret_values(
     assert "data/processed" not in result.output
     assert "massive api key configured: True" in result.output
     assert "massive api base url: https://api.massive.com" in result.output
-    assert "massive daily ticker count: 23" in result.output
+    assert "massive daily ticker count: 22" in result.output
     assert "massive minute ticker: SPY" in result.output
     assert "massive probe ticker count: 1" in result.output
     assert "fred base url: https://fred.stlouisfed.org" in result.output
-    assert "fred series count: 6" in result.output
+    assert "fred series count: 4" in result.output
     assert "calendar us exchange: XNYS" in result.output
     assert "calendar jpx exchange: JPX" in result.output
     assert "nikkei contract roll days before last trade: 5" in result.output

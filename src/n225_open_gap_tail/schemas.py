@@ -43,6 +43,7 @@ class JoinMissReason(StrEnum):
     PREDICTOR_UNAVAILABLE_ENTITLEMENT = "predictor_unavailable_entitlement"
     PREDICTOR_MISSING_IN_CACHE = "predictor_missing_in_cache"
     FRED_NOT_YET_RELEASED = "fred_not_yet_released"
+    FRED_FX_STALE_BEYOND_FILL_WINDOW = "fred_fx_stale_beyond_fill_window"
     FRED_VINTAGE_UNSAFE = "fred_vintage_not_realtime_safe"
     US_MARKET_CLOSED = "us_market_closed"
     JP_MARKET_CLOSED = "jp_market_closed"

@@ -40,7 +40,7 @@ Massive.com should be configured as the U.S. predictor source:
 ```bash
 MASSIVE_API_KEY="replace-me"
 MASSIVE_BASE_URL="https://api.massive.com"
-MASSIVE_DAILY_TICKERS="SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,XLY,XLP,XLB,XLU,XLC,TLT,GLD,USO,EEM,FXI,SMH,HYG,LQD,C:USDJPY,EWJ,DXJ,EWY,EWT,EWH"
+MASSIVE_DAILY_TICKERS="SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,XLY,XLP,XLB,XLU,XLC,TLT,GLD,USO,EEM,FXI,SMH,HYG,LQD,EWJ,DXJ,EWY,EWT,EWH"
 MASSIVE_MINUTE_TICKER="SPY"
 MASSIVE_PROBE_TICKERS="I:VIX"
 ```
@@ -48,7 +48,7 @@ MASSIVE_PROBE_TICKERS="I:VIX"
 FRED, calendars, and rule-based Nikkei futures metadata use non-secret settings:
 
 ```bash
-FRED_SERIES="VIXCLS,DGS2,DGS10,T10Y2Y,BAMLH0A0HYM2,BAMLC0A0CM"
+FRED_SERIES="VIXCLS,DGS2,DGS10,T10Y2Y,DEXJPUS"
 CALENDAR_US_EXCHANGE="XNYS"
 CALENDAR_JPX_EXCHANGE="JPX"
 NIKKEI_CONTRACT_ROLL_DAYS_BEFORE_LAST_TRADE="5"
@@ -114,8 +114,9 @@ just full
 `full` runs local checks, builds the cache-first paper panel, runs the P2A baseline floor,
 audits feature leakage timestamps, and exports LaTeX table fragments under ignored
 `reports/paper_runs/`. The default panel start is `2016-07-19`; the run manifest then
-computes `combined_clean_start = max(J-Quants required-field coverage, Massive entitlement
-start, FRED required-series coverage start)`. These outputs are
+computes `combined_clean_start` from required features only: J-Quants required-field
+coverage, XLC-inclusive Massive core coverage, FRED core coverage, and the canonical
+USD/JPY fallback. These outputs are
 `paper_candidate_not_final_manuscript` until manually reviewed.
 
 The data path is typed and resumable:
@@ -126,7 +127,10 @@ The data path is typed and resumable:
   `data/gold/` is available for future durable cross-run gold tables.
 - Parquet writes are atomic and carry `xxhash64` chunk hashes plus schema hashes.
 - Old orphan `.tmp` files are garbage-collected at run start.
-- FRED current-historical caches are labeled `vintage_safe=false`; their 30-day TTL is
+- FRED current-historical caches are labeled `vintage_safe=false`; `DEXJPUS` is treated
+  as a Federal Reserve H.10 weekly-batch as-of FX control, not a live FX mark. Massive
+  `C:USDJPY` is optional fallback/enriched evidence when available.
+- FRED current-historical caches use a 30-day TTL that is
   evaluated once at run start, not mid-run.
 - SPY minute bars are reduced chunk-by-chunk to late-session features using the official
   NYSE close or early close; full raw minute history is not retained by default.

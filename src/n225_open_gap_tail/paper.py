@@ -58,19 +58,33 @@ from n225_open_gap_tail.snapshot import (
 
 PAPER_CONFIG = default_paper_research_config()
 PAPER_CLAIMS_LEVEL = ClaimLevel.PAPER_CANDIDATE.value
+PAPER_OPTIONAL_FX_MASSIVE_TICKERS = ("C:USDJPY",)
 PAPER_CORE_MASSIVE_TICKERS = PAPER_CONFIG.feature_sets.massive_core
+PAPER_OPTIONAL_MASSIVE_TICKERS = PAPER_CONFIG.feature_sets.massive_optional
 PAPER_JAPAN_PROXY_MASSIVE_TICKERS = PAPER_CONFIG.feature_sets.massive_japan_proxy
 PAPER_ASIA_PROXY_MASSIVE_TICKERS = PAPER_CONFIG.feature_sets.massive_asia_proxy
 PAPER_FETCH_MASSIVE_TICKERS = tuple(
     dict.fromkeys(
         (
             *PAPER_CORE_MASSIVE_TICKERS,
+            *PAPER_OPTIONAL_MASSIVE_TICKERS,
             *PAPER_JAPAN_PROXY_MASSIVE_TICKERS,
             *PAPER_ASIA_PROXY_MASSIVE_TICKERS,
         )
     )
 )
 PAPER_CORE_FRED_SERIES = PAPER_CONFIG.feature_sets.fred_core
+PAPER_FX_FRED_SERIES = PAPER_CONFIG.feature_sets.fred_fallback
+PAPER_CREDIT_ENRICHED_FRED_SERIES = PAPER_CONFIG.feature_sets.fred_credit_enriched
+PAPER_FETCH_FRED_SERIES = tuple(
+    dict.fromkeys(
+        (
+            *PAPER_CORE_FRED_SERIES,
+            *PAPER_FX_FRED_SERIES,
+            *PAPER_CREDIT_ENRICHED_FRED_SERIES,
+        )
+    )
+)
 PAPER_TAIL_LEVELS = PAPER_CONFIG.model_policy.tail_levels
 EWMA_MAIN_LAMBDA = PAPER_CONFIG.model_policy.ewma_lambda
 EWMA_SENSITIVITY_LAMBDAS = PAPER_CONFIG.model_policy.ewma_sensitivity_lambdas
@@ -82,6 +96,17 @@ NEAR_ZERO_VARIANCE_THRESHOLD = PAPER_CONFIG.model_policy.near_zero_variance_thre
 SHARD_SIZE_FORECAST_DATES = PAPER_CONFIG.model_policy.shard_size_forecast_dates
 EVT_THRESHOLD_QUANTILE = PAPER_CONFIG.model_policy.evt_threshold_quantile
 EVT_THRESHOLD_GRID = PAPER_CONFIG.model_policy.evt_threshold_grid
+TRANSIENT_VENDOR_ERRORS = {
+    VendorErrorClass.RATE_LIMITED.value,
+    VendorErrorClass.VENDOR_5XX.value,
+    VendorErrorClass.NETWORK_ERROR.value,
+    VendorErrorClass.UNKNOWN_ERROR.value,
+}
+PERSISTENT_UNAVAILABLE_ERRORS = {
+    VendorErrorClass.UNAVAILABLE_ENTITLEMENT.value,
+    VendorErrorClass.NO_DATA.value,
+}
+FX_STALE_FALLBACK_MAX_DAYS = 3
 
 
 @dataclass(frozen=True)
@@ -181,6 +206,21 @@ def validate_worker_payload(payload: dict[str, object]) -> None:
         name = type(value).__name__
         if module.startswith("pandas") or name in {"DataFrame", "Series"}:
             raise PaperRunError(f"Worker payload {key!r} must not be a pandas object")
+
+
+def cleanup_transient_unavailable_markers(root: Path) -> list[Path]:
+    """Remove stale retryable vendor-error markers from prior interrupted runs."""
+    removed: list[Path] = []
+    if not root.exists():
+        return removed
+    for marker in root.rglob("*.unavailable.json"):
+        payload = read_json(marker)
+        error_class = str(payload.get("error_class") or "")
+        if error_class not in TRANSIENT_VENDOR_ERRORS:
+            continue
+        marker.unlink(missing_ok=True)
+        removed.append(marker)
+    return removed
 
 
 def find_oos_start_date(
@@ -423,6 +463,8 @@ def write_paper_panel(
         now=run_ts,
     )
     _paper_log(f"tmp gc removed {len(removed_tmp_files)} orphan temp files")
+    removed_transient_markers = cleanup_transient_unavailable_markers(settings.data_dir)
+    _paper_log(f"transient unavailable marker gc removed {len(removed_transient_markers)} files")
     git_commit = _git_commit()
     run_id = build_paper_run_id(
         start=start,
@@ -526,14 +568,19 @@ def write_paper_panel(
         massive_daily_records=massive_daily,
         spy_minute_records=spy_minutes,
         fred_records=fred_rows,
+        calendar_records=calendar_records,
     )
     _paper_log(f"modeling panel rows built: {len(panel)}")
     feature_coverage = build_feature_coverage_records(panel)
     effective_predictor_start = build_effective_predictor_start(feature_coverage)
+    fred_required_start = _max_date_strings(
+        effective_predictor_start.get("fred_core"),
+        effective_predictor_start.get("fx_core"),
+    )
     combined_clean_start = compute_combined_clean_start(
         jquants_required_field_coverage_start=jquants_required_start,
         massive_daily_entitlement_start=effective_predictor_start.get("massive_daily"),
-        fred_required_series_coverage_start=effective_predictor_start.get("fred_core"),
+        fred_required_series_coverage_start=fred_required_start,
     )
     _paper_log(f"combined clean start: {combined_clean_start}")
 
@@ -631,6 +678,7 @@ def write_paper_panel(
             "cache_gc": {
                 "tmp_gc_hours": CACHE_TMP_GC_HOURS,
                 "removed_tmp_files": len(removed_tmp_files),
+                "removed_transient_unavailable_markers": len(removed_transient_markers),
             },
             "cache_provenance": {
                 "chunk_hash_algo": CHUNK_HASH_ALGO,
@@ -642,12 +690,26 @@ def write_paper_panel(
             },
             "feature_set_version": FeatureSetVersion.CORE_FULL_HISTORY.value,
             "massive_core_symbols": PAPER_CORE_MASSIVE_TICKERS,
+            "massive_optional_symbols": PAPER_OPTIONAL_MASSIVE_TICKERS,
             "massive_japan_proxy_symbols": PAPER_JAPAN_PROXY_MASSIVE_TICKERS,
             "massive_asia_proxy_symbols": PAPER_ASIA_PROXY_MASSIVE_TICKERS,
             "massive_fetched_symbols": PAPER_FETCH_MASSIVE_TICKERS,
             "massive_symbols": PAPER_FETCH_MASSIVE_TICKERS,
-            "fred_series": PAPER_CORE_FRED_SERIES,
+            "fred_core_series": PAPER_CORE_FRED_SERIES,
+            "fred_fx_fallback_series": PAPER_FX_FRED_SERIES,
+            "fred_credit_enriched_series": PAPER_CREDIT_ENRICHED_FRED_SERIES,
+            "fred_series": PAPER_FETCH_FRED_SERIES,
             "fred_vintage_policy": PAPER_CONFIG.leakage_policy.fred_vintage_policy,
+            "fx_policy": {
+                "canonical_features": ["fx_usdjpy_level", "fx_usdjpy_return"],
+                "source_precedence": [
+                    "fred_h10_primary",
+                    "massive_fx_opportunistic",
+                    "fred_h10_stale_fallback",
+                    "null_unavailable",
+                ],
+                "stale_fallback_max_calendar_days": FX_STALE_FALLBACK_MAX_DAYS,
+            },
             "target_policy": {
                 "primary_target_family": PAPER_CONFIG.target_policy.primary_target_family,
                 "residual_usclosemark_enabled": (
@@ -708,16 +770,26 @@ def build_modeling_panel_records(
     massive_daily_records: list[dict[str, object]],
     spy_minute_records: list[dict[str, object]],
     fred_records: list[dict[str, object]],
+    calendar_records: list[dict[str, object]] | None = None,
 ) -> list[dict[str, object]]:
     alignment_by_target = {str(row["trading_date"]): row for row in alignment_records}
-    massive_features = _massive_daily_feature_map(massive_daily_records)
+    massive_features = _massive_daily_feature_map(
+        massive_daily_records,
+        calendar_records=calendar_records or [],
+    )
     fred_features = _fred_feature_map(fred_records)
     spy_features = _spy_minute_feature_map(spy_minute_records)
+    fx_context = _canonical_fx_context(
+        massive_daily_records=massive_daily_records,
+        fred_records=fred_records,
+        calendar_records=calendar_records or [],
+    )
     panel: list[dict[str, object]] = []
     for target in target_rows:
         trading_date = str(target["trading_date"])
         alignment = alignment_by_target.get(trading_date, {})
         us_date = str(alignment.get("us_calendar_date") or "")
+        cutoff = _coerce_datetime(alignment.get("model_cutoff_ts_utc"))
         join_miss_reason = _panel_join_miss_reason(alignment, us_date)
         record: dict[str, object] = {
             "forecast_date": trading_date,
@@ -752,6 +824,7 @@ def build_modeling_panel_records(
             _features_asof(
                 massive_features,
                 us_date,
+                cutoff=cutoff,
                 fill_method="forward_fill_us_holiday",
             )
         )
@@ -759,6 +832,7 @@ def build_modeling_panel_records(
             _features_asof(
                 fred_features,
                 us_date,
+                cutoff=cutoff,
                 fill_method="forward_fill_us_holiday",
             )
         )
@@ -766,9 +840,11 @@ def build_modeling_panel_records(
             _features_asof(
                 spy_features,
                 us_date,
+                cutoff=cutoff,
                 fill_method="forward_fill_us_holiday",
             )
         )
+        record.update(_canonical_fx_asof(fx_context, us_date=us_date, cutoff=cutoff))
         panel.append(record)
     panel.sort(key=lambda row: str(row["forecast_date"]))
     return panel
@@ -805,6 +881,15 @@ def build_feature_coverage_records(panel: list[dict[str, object]]) -> list[dict[
         "volume",
         "open_interest",
         "volume_oi_anomaly",
+        "fx_source",
+        "fx_observation_date",
+        "fx_available_ts_utc",
+        "fx_staleness_days",
+        "fx_is_stale",
+        "fx_fallback_reason",
+        "fred_dexjpus_available",
+        "massive_usdjpy_available",
+        "massive_usdjpy_entitlement_status",
     }
     clean_rows = [row for row in panel if row.get("clean_sample") is True]
     records: list[dict[str, object]] = []
@@ -846,7 +931,12 @@ def build_feature_coverage_records(panel: list[dict[str, object]]) -> list[dict[
 def build_effective_predictor_start(
     coverage_rows: list[dict[str, object]],
 ) -> dict[str, str | None]:
-    grouped: dict[str, list[str]] = {"massive_daily": [], "fred_core": [], "spy_minute": []}
+    grouped: dict[str, list[str]] = {
+        "massive_daily": [],
+        "fred_core": [],
+        "fx_core": [],
+        "spy_minute": [],
+    }
     for row in coverage_rows:
         first_valid = row.get("first_valid_date")
         if not isinstance(first_valid, str) or not first_valid:
@@ -855,6 +945,11 @@ def build_effective_predictor_start(
         if family in grouped:
             grouped[family].append(first_valid)
     return {family: max(values) if values else None for family, values in grouped.items()}
+
+
+def _max_date_strings(*values: str | None) -> str | None:
+    valid = [value for value in values if isinstance(value, str) and value]
+    return max(valid) if valid else None
 
 
 def build_fields_coverage_audit_records(
@@ -972,10 +1067,18 @@ def build_feature_dictionary(panel: list[dict[str, object]]) -> dict[str, str]:
 
 
 def _feature_source_family(field: str) -> str:
+    if field.startswith("fx_usdjpy_"):
+        return "fx_core"
     if field.startswith("fred_"):
+        if field.startswith("fred_baml"):
+            return "fred_credit_enriched"
         return "fred_core"
     if field.startswith("spy_late_") or field.startswith("spy_final_"):
         return "spy_minute"
+    if _feature_matches_tickers(field, PAPER_OPTIONAL_FX_MASSIVE_TICKERS):
+        return "fx_optional_massive"
+    if _feature_matches_tickers(field, PAPER_OPTIONAL_MASSIVE_TICKERS):
+        return "massive_optional"
     if _feature_matches_tickers(field, PAPER_JAPAN_PROXY_MASSIVE_TICKERS):
         return "japan_proxy"
     if _feature_matches_tickers(field, PAPER_ASIA_PROXY_MASSIVE_TICKERS):
@@ -986,10 +1089,18 @@ def _feature_source_family(field: str) -> str:
 
 
 def _feature_source_block(field: str) -> str:
+    if field.startswith("fx_usdjpy_"):
+        return "fx_core"
     if field.startswith("fred_"):
+        if field.startswith("fred_baml"):
+            return "fred_credit_enriched"
         return "fred_core"
     if field.startswith("spy_late_") or field.startswith("spy_final_"):
         return "us_late_session"
+    if _feature_matches_tickers(field, PAPER_OPTIONAL_FX_MASSIVE_TICKERS):
+        return "fx_optional_massive"
+    if _feature_matches_tickers(field, PAPER_OPTIONAL_MASSIVE_TICKERS):
+        return "massive_optional"
     if _feature_matches_tickers(field, PAPER_JAPAN_PROXY_MASSIVE_TICKERS):
         return "japan_proxy"
     if _feature_matches_tickers(field, PAPER_ASIA_PROXY_MASSIVE_TICKERS):
@@ -1855,12 +1966,11 @@ def _features_asof(
     features_by_date: dict[str, dict[str, object]],
     date_key: str,
     *,
+    cutoff: datetime | None = None,
     fill_method: str,
 ) -> dict[str, object]:
     if not date_key:
         return {}
-    if date_key in features_by_date:
-        return dict(features_by_date[date_key])
     try:
         target_date = date.fromisoformat(date_key)
     except ValueError:
@@ -1868,20 +1978,42 @@ def _features_asof(
     prior_keys = [key for key in features_by_date if key <= date_key]
     if not prior_keys:
         return {}
-    selected_key = max(prior_keys)
-    try:
-        selected_date = date.fromisoformat(selected_key)
-    except ValueError:
-        return {}
-    if (
-        target_date - selected_date
-    ).days > PAPER_CONFIG.leakage_policy.max_forward_fill_us_close_days:
-        return {}
-    output = dict(features_by_date[selected_key])
-    for feature_name in _feature_value_names(output):
-        output[f"{feature_name}__fill_method"] = fill_method
-        output[f"{feature_name}__source_date"] = selected_key
-    return output
+    for selected_key in sorted(prior_keys, reverse=True):
+        try:
+            selected_date = date.fromisoformat(selected_key)
+        except ValueError:
+            continue
+        if (
+            target_date - selected_date
+        ).days > PAPER_CONFIG.leakage_policy.max_forward_fill_us_close_days:
+            continue
+        output = dict(features_by_date[selected_key])
+        if cutoff is not None and not _feature_record_available_by_cutoff(output, cutoff):
+            continue
+        selected_fill_method = "direct" if selected_key == date_key else fill_method
+        for feature_name in _feature_value_names(output):
+            output[f"{feature_name}__fill_method"] = selected_fill_method
+            output[f"{feature_name}__source_date"] = selected_key
+        return output
+    return {}
+
+
+def _feature_record_available_by_cutoff(
+    record: Mapping[str, object],
+    cutoff: datetime,
+) -> bool:
+    value_names = _feature_value_names(record)
+    if not value_names:
+        return True
+    evaluable = False
+    for feature_name in value_names:
+        if record.get(feature_name) is None:
+            continue
+        available_ts = _coerce_datetime(record.get(f"{feature_name}__available_ts_utc"))
+        if available_ts is None or available_ts > cutoff:
+            return False
+        evaluable = True
+    return evaluable
 
 
 def _feature_value_names(record: Mapping[str, object]) -> list[str]:
@@ -1919,6 +2051,18 @@ def _feature_available_ts(row: Mapping[str, object], *, lag_minutes: int = 0) ->
     if ts is None:
         return None
     return ts + timedelta(minutes=lag_minutes)
+
+
+def _official_us_close_by_date(
+    calendar_records: list[dict[str, object]],
+) -> dict[str, datetime]:
+    closes: dict[str, datetime] = {}
+    for row in calendar_records:
+        date_key = str(row.get("calendar_date") or "")
+        close_ts = _coerce_datetime(row.get("us_close_ts_utc"))
+        if date_key and close_ts is not None:
+            closes[date_key] = close_ts
+    return closes
 
 
 def _coerce_datetime(value: object) -> datetime | None:
@@ -1975,7 +2119,12 @@ def _evt_threshold_diagnostics(values: np.ndarray) -> list[dict[str, object]]:
     return diagnostics
 
 
-def _massive_daily_feature_map(records: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+def _massive_daily_feature_map(
+    records: list[dict[str, object]],
+    *,
+    calendar_records: list[dict[str, object]] | None = None,
+) -> dict[str, dict[str, object]]:
+    official_close_by_date = _official_us_close_by_date(calendar_records or [])
     by_ticker: dict[str, list[dict[str, object]]] = {}
     for row in records:
         by_ticker.setdefault(str(row["ticker"]), []).append(row)
@@ -1990,9 +2139,15 @@ def _massive_daily_feature_map(records: list[dict[str, object]]) -> dict[str, di
             high = _optional_float(row.get("high"))
             low = _optional_float(row.get("low"))
             output = features_by_date.setdefault(date_key, {})
-            available_ts = _feature_available_ts(
-                row,
-                lag_minutes=PAPER_CONFIG.leakage_policy.massive_vendor_lag_minutes,
+            official_close = official_close_by_date.get(date_key)
+            available_ts = (
+                official_close
+                + timedelta(minutes=PAPER_CONFIG.leakage_policy.massive_vendor_lag_minutes)
+                if official_close is not None
+                else _feature_available_ts(
+                    row,
+                    lag_minutes=PAPER_CONFIG.leakage_policy.massive_vendor_lag_minutes,
+                )
             )
             return_name = f"{safe}_return"
             range_name = f"{safe}_range"
@@ -2024,7 +2179,10 @@ def _massive_daily_feature_map(records: list[dict[str, object]]) -> dict[str, di
 def _fred_feature_map(records: list[dict[str, object]]) -> dict[str, dict[str, object]]:
     by_series: dict[str, list[dict[str, object]]] = {}
     for row in records:
-        by_series.setdefault(str(row["series_id"]), []).append(row)
+        series_id = str(row["series_id"])
+        if series_id.upper() in PAPER_FX_FRED_SERIES:
+            continue
+        by_series.setdefault(series_id, []).append(row)
     features_by_date: dict[str, dict[str, object]] = {}
     for series, rows in by_series.items():
         rows.sort(key=lambda row: str(row["observation_date"]))
@@ -2054,6 +2212,303 @@ def _fred_feature_map(records: list[dict[str, object]]) -> dict[str, dict[str, o
             if value is not None:
                 previous = value
     return features_by_date
+
+
+def _canonical_fx_context(
+    *,
+    massive_daily_records: list[dict[str, object]],
+    fred_records: list[dict[str, object]],
+    calendar_records: list[dict[str, object]],
+) -> dict[str, object]:
+    return {
+        "fred": _fred_fx_records(fred_records),
+        "massive": _massive_fx_records(
+            massive_daily_records,
+            calendar_records=calendar_records,
+        ),
+    }
+
+
+def _fred_fx_records(records: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+    rows = [row for row in records if str(row.get("series_id", "")).upper() in PAPER_FX_FRED_SERIES]
+    rows.sort(key=lambda row: str(row.get("observation_date") or ""))
+    output: dict[str, dict[str, object]] = {}
+    previous_value: float | None = None
+    for row in rows:
+        observation_date = str(row.get("observation_date") or "")
+        if not observation_date:
+            continue
+        value = _optional_float(row.get("value"))
+        fx_return = (
+            math.log(value) - math.log(previous_value)
+            if value is not None and previous_value is not None and value > 0 and previous_value > 0
+            else None
+        )
+        output[observation_date] = {
+            "observation_date": observation_date,
+            "value": value,
+            "return": fx_return,
+            "available_ts": _coerce_datetime(row.get("vendor_available_ts_utc")),
+            "source": "fred_h10",
+        }
+        if value is not None and value > 0:
+            previous_value = value
+    return output
+
+
+def _massive_fx_records(
+    records: list[dict[str, object]],
+    *,
+    calendar_records: list[dict[str, object]],
+) -> dict[str, dict[str, object]]:
+    official_close_by_date = _official_us_close_by_date(calendar_records)
+    rows = [row for row in records if str(row.get("ticker", "")).upper() == "C:USDJPY"]
+    rows.sort(key=lambda row: str(row.get("bar_date_et") or ""))
+    output: dict[str, dict[str, object]] = {}
+    previous_value: float | None = None
+    for row in rows:
+        date_key = str(row.get("bar_date_et") or "")
+        if not date_key:
+            continue
+        value = _optional_float(row.get("close"))
+        fx_return = (
+            math.log(value) - math.log(previous_value)
+            if value is not None and previous_value is not None and value > 0 and previous_value > 0
+            else None
+        )
+        official_close = official_close_by_date.get(date_key)
+        available_ts = (
+            official_close
+            + timedelta(minutes=PAPER_CONFIG.leakage_policy.massive_vendor_lag_minutes)
+            if official_close is not None
+            else _feature_available_ts(
+                row,
+                lag_minutes=PAPER_CONFIG.leakage_policy.massive_vendor_lag_minutes,
+            )
+        )
+        output[date_key] = {
+            "observation_date": date_key,
+            "value": value,
+            "return": fx_return,
+            "available_ts": available_ts,
+            "source": "massive_fx",
+        }
+        if value is not None and value > 0:
+            previous_value = value
+    return output
+
+
+def _canonical_fx_asof(
+    context: Mapping[str, object],
+    *,
+    us_date: str,
+    cutoff: datetime | None,
+) -> dict[str, object]:
+    if not us_date or cutoff is None:
+        return {}
+    try:
+        target_date = date.fromisoformat(us_date)
+    except ValueError:
+        return {}
+    fred_rows = cast(dict[str, dict[str, object]], context.get("fred") or {})
+    massive_rows = cast(dict[str, dict[str, object]], context.get("massive") or {})
+    exact_fred = fred_rows.get(us_date)
+    primary_fred = (
+        exact_fred
+        if exact_fred
+        and _fx_candidate_is_usable(
+            exact_fred,
+            cutoff=cutoff,
+            target_date=target_date,
+            max_staleness_days=FX_STALE_FALLBACK_MAX_DAYS,
+        )
+        else None
+    )
+    if exact_fred is None:
+        primary_fred = _latest_usable_fx_candidate(
+            fred_rows,
+            target_date=target_date,
+            cutoff=cutoff,
+            max_staleness_days=FX_STALE_FALLBACK_MAX_DAYS,
+        )
+    if primary_fred is not None:
+        return _fx_output(
+            primary_fred,
+            target_date=target_date,
+            source="fred_h10_primary",
+            reason="fred_h10_primary",
+            fred_available=True,
+            massive_available=_has_usable_fx_candidate(
+                massive_rows,
+                target_date=target_date,
+                cutoff=cutoff,
+                max_staleness_days=PAPER_CONFIG.leakage_policy.max_forward_fill_us_close_days,
+            ),
+        )
+
+    massive_candidate = _latest_usable_fx_candidate(
+        massive_rows,
+        target_date=target_date,
+        cutoff=cutoff,
+        max_staleness_days=PAPER_CONFIG.leakage_policy.max_forward_fill_us_close_days,
+    )
+    if massive_candidate is not None:
+        return _fx_output(
+            massive_candidate,
+            target_date=target_date,
+            source="massive_fx_opportunistic",
+            reason=_fred_fx_unavailable_reason(exact_fred),
+            fred_available=False,
+            massive_available=True,
+        )
+
+    stale_fred = _latest_usable_fx_candidate(
+        fred_rows,
+        target_date=target_date,
+        cutoff=cutoff,
+        max_staleness_days=FX_STALE_FALLBACK_MAX_DAYS,
+    )
+    if stale_fred is not None:
+        return _fx_output(
+            stale_fred,
+            target_date=target_date,
+            source="fred_h10_stale_fallback",
+            reason="massive_fx_unavailable_using_fred_stale_fallback",
+            fred_available=True,
+            massive_available=False,
+        )
+
+    return {
+        "fx_usdjpy_level": None,
+        "fx_usdjpy_return": None,
+        "fx_source": "null_unavailable",
+        "fx_observation_date": None,
+        "fx_available_ts_utc": None,
+        "fx_staleness_days": None,
+        "fx_is_stale": None,
+        "fx_fallback_reason": JoinMissReason.FRED_FX_STALE_BEYOND_FILL_WINDOW.value,
+        "fred_dexjpus_available": False,
+        "massive_usdjpy_available": False,
+        "massive_usdjpy_entitlement_status": "unavailable_or_not_fetched",
+    }
+
+
+def _latest_usable_fx_candidate(
+    rows: dict[str, dict[str, object]],
+    *,
+    target_date: date,
+    cutoff: datetime,
+    max_staleness_days: int,
+) -> dict[str, object] | None:
+    candidates = []
+    for row in rows.values():
+        if not _fx_candidate_is_usable(
+            row,
+            cutoff=cutoff,
+            target_date=target_date,
+            max_staleness_days=max_staleness_days,
+        ):
+            continue
+        candidates.append(row)
+    if not candidates:
+        return None
+    return max(candidates, key=lambda row: str(row["observation_date"]))
+
+
+def _has_usable_fx_candidate(
+    rows: dict[str, dict[str, object]],
+    *,
+    target_date: date,
+    cutoff: datetime,
+    max_staleness_days: int,
+) -> bool:
+    return (
+        _latest_usable_fx_candidate(
+            rows,
+            target_date=target_date,
+            cutoff=cutoff,
+            max_staleness_days=max_staleness_days,
+        )
+        is not None
+    )
+
+
+def _fx_candidate_is_usable(
+    row: Mapping[str, object],
+    *,
+    cutoff: datetime,
+    target_date: date,
+    max_staleness_days: int,
+) -> bool:
+    value = _optional_float(row.get("value"))
+    available_ts = _coerce_datetime(row.get("available_ts"))
+    observation_date = _fx_observation_date(row)
+    if value is None or not math.isfinite(value) or value <= 0:
+        return False
+    if available_ts is None or available_ts > cutoff:
+        return False
+    if observation_date is None:
+        return False
+    staleness_days = (target_date - observation_date).days
+    return 0 <= staleness_days <= max_staleness_days
+
+
+def _fx_output(
+    row: Mapping[str, object],
+    *,
+    target_date: date,
+    source: str,
+    reason: str,
+    fred_available: bool,
+    massive_available: bool,
+) -> dict[str, object]:
+    observation_date = _fx_observation_date(row)
+    available_ts = _coerce_datetime(row.get("available_ts"))
+    staleness_days = None if observation_date is None else (target_date - observation_date).days
+    source_date = observation_date.isoformat() if observation_date else None
+    output: dict[str, object] = {
+        "fx_usdjpy_level": _optional_float(row.get("value")),
+        "fx_usdjpy_return": _optional_float(row.get("return")),
+        "fx_source": source,
+        "fx_observation_date": source_date,
+        "fx_available_ts_utc": available_ts,
+        "fx_staleness_days": staleness_days,
+        "fx_is_stale": staleness_days is not None and staleness_days > 0,
+        "fx_fallback_reason": reason,
+        "fred_dexjpus_available": fred_available,
+        "massive_usdjpy_available": massive_available,
+        "massive_usdjpy_entitlement_status": (
+            "available_in_cache" if massive_available else "unavailable_or_not_fetched"
+        ),
+    }
+    for feature_name in ("fx_usdjpy_level", "fx_usdjpy_return"):
+        _stamp_feature_metadata(
+            output,
+            feature_name=feature_name,
+            available_ts_utc=available_ts,
+            source_date=source_date or "",
+            fill_method=source,
+        )
+    return output
+
+
+def _fx_observation_date(row: Mapping[str, object]) -> date | None:
+    raw = row.get("observation_date")
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _fred_fx_unavailable_reason(exact_fred: Mapping[str, object] | None) -> str:
+    if exact_fred is None:
+        return "fred_h10_missing_for_us_date"
+    value = _optional_float(exact_fred.get("value"))
+    if value is None or not math.isfinite(value):
+        return "fred_h10_null_or_nonfinite"
+    return "fred_h10_not_available_by_cutoff_or_stale"
 
 
 def _spy_minute_feature_map(records: list[dict[str, object]]) -> dict[str, dict[str, object]]:
@@ -2350,6 +2805,8 @@ def _write_unavailable_marker(
     http_status: int | None,
     requested_range: list[str],
 ) -> None:
+    if error_class.value not in PERSISTENT_UNAVAILABLE_ERRORS:
+        return
     write_json_atomic(
         path,
         {
@@ -2643,7 +3100,7 @@ def _fetch_fred_paper_predictors(
         base_url=settings.fred_base_url,
         timeout_seconds=settings.fred_request_timeout_seconds,
     ) as client:
-        for series_id in PAPER_CORE_FRED_SERIES:
+        for series_id in PAPER_FETCH_FRED_SERIES:
             _paper_log(f"FRED series start: {series_id}")
             path = cache_path(
                 cache_root,
@@ -2883,6 +3340,8 @@ def _safe_name(value: str) -> str:
 
 
 def _feature_description(field: str) -> str:
+    if field.startswith("fx_usdjpy_"):
+        return "canonical USDJPY FX control using FRED H.10 primary with Massive fallback"
     if field.endswith("_return"):
         return "close-to-close log return frozen at U.S. close information set"
     if field.endswith("_range"):

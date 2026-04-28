@@ -59,6 +59,17 @@ from n225_open_gap_tail.snapshot import (
 PAPER_CONFIG = default_paper_research_config()
 PAPER_CLAIMS_LEVEL = ClaimLevel.PAPER_CANDIDATE.value
 PAPER_CORE_MASSIVE_TICKERS = PAPER_CONFIG.feature_sets.massive_core
+PAPER_JAPAN_PROXY_MASSIVE_TICKERS = PAPER_CONFIG.feature_sets.massive_japan_proxy
+PAPER_ASIA_PROXY_MASSIVE_TICKERS = PAPER_CONFIG.feature_sets.massive_asia_proxy
+PAPER_FETCH_MASSIVE_TICKERS = tuple(
+    dict.fromkeys(
+        (
+            *PAPER_CORE_MASSIVE_TICKERS,
+            *PAPER_JAPAN_PROXY_MASSIVE_TICKERS,
+            *PAPER_ASIA_PROXY_MASSIVE_TICKERS,
+        )
+    )
+)
 PAPER_CORE_FRED_SERIES = PAPER_CONFIG.feature_sets.fred_core
 PAPER_TAIL_LEVELS = PAPER_CONFIG.model_policy.tail_levels
 EWMA_MAIN_LAMBDA = PAPER_CONFIG.model_policy.ewma_lambda
@@ -109,6 +120,42 @@ class PaperLeakageCheckResult:
 
 class PaperRunError(RuntimeError):
     """Raised when a paper-grade run cannot satisfy an execution gate."""
+
+
+def _paper_log(message: str) -> None:
+    print(f"[paper-panel {_log_ts_utc()}] {message}", flush=True)
+
+
+def _paper_eval_log(message: str) -> None:
+    print(f"[paper-eval {_log_ts_utc()}] {message}", flush=True)
+
+
+def _log_ts_utc() -> str:
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _new_progress_stats() -> dict[str, int]:
+    return {
+        "months": 0,
+        "trading_days": 0,
+        "cache_hits": 0,
+        "fetched": 0,
+        "unavailable": 0,
+        "rows": 0,
+    }
+
+
+def _add_stat(stats: dict[str, int], key: str, amount: int = 1) -> None:
+    stats[key] = stats.get(key, 0) + amount
+
+
+def _log_year_stats(label: str, year: int, stats: Mapping[str, int]) -> None:
+    parts = [f"chunks={stats.get('months', 0)}"]
+    for key in ("trading_days", "cache_hits", "fetched", "unavailable", "rows"):
+        value = stats.get(key, 0)
+        if value:
+            parts.append(f"{key}={value}")
+    _paper_log(f"{label} {year}: {' '.join(parts)}")
 
 
 def build_paper_run_id(
@@ -369,11 +416,13 @@ def write_paper_panel(
 ) -> PaperPanelResult:
     run_ts = datetime.now(UTC)
     end_date = end or date.today().isoformat()
+    _paper_log(f"start window={start}..{end_date}")
     removed_tmp_files = cleanup_orphan_tmp_files(
         settings.data_dir,
         older_than_hours=CACHE_TMP_GC_HOURS,
         now=run_ts,
     )
+    _paper_log(f"tmp gc removed {len(removed_tmp_files)} orphan temp files")
     git_commit = _git_commit()
     run_id = build_paper_run_id(
         start=start,
@@ -382,6 +431,7 @@ def write_paper_panel(
         git_commit=git_commit,
         stage="p2a",
     )
+    _paper_log(f"run id {run_id}")
     run_dir = settings.reports_dir / "paper_runs" / run_id
     panel_dir = run_dir / "panel"
     config_dir = run_dir / "config"
@@ -396,7 +446,9 @@ def write_paper_panel(
         us_timezone=settings.project_timezone_us,
         jpx_timezone=settings.project_timezone_jp,
     )
+    _paper_log(f"calendar records built: {len(calendar_records)}")
     jquants_pull_ts = datetime.now(UTC)
+    _paper_log("J-Quants bronze fetch/cache start")
     raw_jquants = _fetch_jquants_futures_rows(
         settings=settings,
         start=start,
@@ -404,6 +456,7 @@ def write_paper_panel(
         calendar_records=calendar_records,
         run_start_utc=run_ts,
     )
+    _paper_log(f"J-Quants bronze rows available: {len(raw_jquants)}")
     schema_probe = build_jquants_schema_probe(raw_jquants)
     if schema_probe["fail_closed"] is True:
         raise PaperRunError(
@@ -412,6 +465,7 @@ def write_paper_panel(
     normalized = add_jquants_silver_flags(
         normalize_jquants_futures_rows(raw_jquants, downloaded_at_utc=jquants_pull_ts)
     )
+    _paper_log(f"J-Quants normalized NK225F rows: {len(normalized)}")
     _write_jquants_silver_cache(settings=settings, rows=normalized)
     fields_coverage = build_fields_coverage_audit_records(
         normalized,
@@ -426,9 +480,12 @@ def write_paper_panel(
         calendar_records=calendar_records,
         roll_days_before_last_trade=settings.nikkei_contract_roll_days_before_last_trade,
     )
+    clean_targets = sum(1 for row in targets if row.get("clean_sample") is True)
+    _paper_log(f"target audit rows built: {len(targets)} rows, clean={clean_targets}")
 
     predictor_start = (date.fromisoformat(start) - timedelta(days=14)).isoformat()
     massive_pull_ts = datetime.now(UTC)
+    _paper_log(f"Massive predictors fetch/cache start window={predictor_start}..{end_date}")
     massive_daily, spy_minutes = _fetch_massive_paper_predictors(
         settings=settings,
         start=predictor_start,
@@ -436,7 +493,12 @@ def write_paper_panel(
         downloaded_at_utc=massive_pull_ts,
         calendar_records=calendar_records,
     )
+    _paper_log(
+        f"Massive predictors available: daily_rows={len(massive_daily)}, "
+        f"spy_minute_feature_rows={len(spy_minutes)}"
+    )
     fred_pull_ts = datetime.now(UTC)
+    _paper_log(f"FRED predictors fetch/cache start window={predictor_start}..{end_date}")
     fred_rows = _fetch_fred_paper_predictors(
         settings=settings,
         start=predictor_start,
@@ -444,17 +506,20 @@ def write_paper_panel(
         downloaded_at_utc=fred_pull_ts,
         run_start_utc=run_ts,
     )
+    _paper_log(f"FRED predictor rows available: {len(fred_rows)}")
     alignment = build_time_alignment_records(
         target_rows=targets,
         calendar_records=calendar_records,
         spy_minute_records=spy_minutes,
         vendor_lag_minutes=PAPER_CONFIG.leakage_policy.massive_vendor_lag_minutes,
     )
+    _paper_log(f"time alignment rows built: {len(alignment)}")
     calendar_map = build_calendar_map_records(
         target_rows=targets,
         calendar_records=calendar_records,
         alignment_records=alignment,
     )
+    _paper_log(f"calendar map rows built: {len(calendar_map)}")
     panel = build_modeling_panel_records(
         target_rows=targets,
         alignment_records=alignment,
@@ -462,6 +527,7 @@ def write_paper_panel(
         spy_minute_records=spy_minutes,
         fred_records=fred_rows,
     )
+    _paper_log(f"modeling panel rows built: {len(panel)}")
     feature_coverage = build_feature_coverage_records(panel)
     effective_predictor_start = build_effective_predictor_start(feature_coverage)
     combined_clean_start = compute_combined_clean_start(
@@ -469,6 +535,7 @@ def write_paper_panel(
         massive_daily_entitlement_start=effective_predictor_start.get("massive_daily"),
         fred_required_series_coverage_start=effective_predictor_start.get("fred_core"),
     )
+    _paper_log(f"combined clean start: {combined_clean_start}")
 
     target_audit_path = panel_dir / "target_audit.parquet"
     panel_path = panel_dir / "modeling_panel.parquet"
@@ -495,10 +562,15 @@ def write_paper_panel(
     }
 
     _write_parquet(target_audit_path, targets)
+    _paper_log(f"wrote target audit: {target_audit_path}")
     _write_parquet(panel_path, panel)
+    _paper_log(f"wrote modeling panel: {panel_path}")
     _write_parquet(coverage_path, feature_coverage)
+    _paper_log(f"wrote feature coverage: {coverage_path}")
     _write_parquet(fields_coverage_path, fields_coverage)
+    _paper_log(f"wrote fields coverage audit: {fields_coverage_path}")
     _write_parquet(calendar_map_path, calendar_map, schema=CALENDAR_MAP_SCHEMA)
+    _paper_log(f"wrote calendar map: {calendar_map_path}")
     _write_json(schema_path, schema_probe)
     _write_json(vintage_path, data_vintage_payload)
     _write_json(feature_dictionary_path, build_feature_dictionary(panel))
@@ -569,7 +641,11 @@ def write_paper_panel(
                 "fred_cache_schema_hash": FRED_CACHE_SCHEMA.hash,
             },
             "feature_set_version": FeatureSetVersion.CORE_FULL_HISTORY.value,
-            "massive_symbols": PAPER_CORE_MASSIVE_TICKERS,
+            "massive_core_symbols": PAPER_CORE_MASSIVE_TICKERS,
+            "massive_japan_proxy_symbols": PAPER_JAPAN_PROXY_MASSIVE_TICKERS,
+            "massive_asia_proxy_symbols": PAPER_ASIA_PROXY_MASSIVE_TICKERS,
+            "massive_fetched_symbols": PAPER_FETCH_MASSIVE_TICKERS,
+            "massive_symbols": PAPER_FETCH_MASSIVE_TICKERS,
             "fred_series": PAPER_CORE_FRED_SERIES,
             "fred_vintage_policy": PAPER_CONFIG.leakage_policy.fred_vintage_policy,
             "target_policy": {
@@ -615,6 +691,7 @@ def write_paper_panel(
         },
     )
     clean_rows = sum(1 for row in panel if row.get("clean_sample") is True)
+    _paper_log(f"panel complete rows={len(panel)} clean_rows={clean_rows}")
     return PaperPanelResult(
         run_id=run_id,
         run_dir=run_dir,
@@ -756,6 +833,7 @@ def build_feature_coverage_records(panel: list[dict[str, object]]) -> list[dict[
                 "first_valid_date": first_source_date,
                 "last_valid_date": last_source_date,
                 "source_family": _feature_source_family(field),
+                "source_block": _feature_source_block(field),
                 "vintage_safe": not field.startswith("fred_"),
                 "revision_risk_label": (
                     "current_historical_revisions" if field.startswith("fred_") else None
@@ -898,9 +976,31 @@ def _feature_source_family(field: str) -> str:
         return "fred_core"
     if field.startswith("spy_late_") or field.startswith("spy_final_"):
         return "spy_minute"
+    if _feature_matches_tickers(field, PAPER_JAPAN_PROXY_MASSIVE_TICKERS):
+        return "japan_proxy"
+    if _feature_matches_tickers(field, PAPER_ASIA_PROXY_MASSIVE_TICKERS):
+        return "asia_proxy"
     if field.endswith("_return") or field.endswith("_range"):
         return "massive_daily"
     return "unknown"
+
+
+def _feature_source_block(field: str) -> str:
+    if field.startswith("fred_"):
+        return "fred_core"
+    if field.startswith("spy_late_") or field.startswith("spy_final_"):
+        return "us_late_session"
+    if _feature_matches_tickers(field, PAPER_JAPAN_PROXY_MASSIVE_TICKERS):
+        return "japan_proxy"
+    if _feature_matches_tickers(field, PAPER_ASIA_PROXY_MASSIVE_TICKERS):
+        return "asia_proxy"
+    if _feature_matches_tickers(field, PAPER_CORE_MASSIVE_TICKERS):
+        return "us_core"
+    return "unknown"
+
+
+def _feature_matches_tickers(field: str, tickers: tuple[str, ...]) -> bool:
+    return any(field.startswith(f"{_safe_name(ticker)}_") for ticker in tickers)
 
 
 def _panel_join_miss_reason(alignment: Mapping[str, object], us_date: str) -> str | None:
@@ -953,6 +1053,7 @@ def evaluate_p2a_run(
         raise PaperRunError(f"Missing modeling panel: {panel_path}")
     _assert_run_config_compatible(run_dir, force=force)
     _set_nested_thread_limits()
+    _paper_eval_log(f"start run_id={run_dir.name} workers={workers}")
     forecast_root = run_dir / "forecasts"
     metrics_root = run_dir / "metrics"
     forecast_root.mkdir(parents=True, exist_ok=True)
@@ -979,6 +1080,7 @@ def evaluate_p2a_run(
     for payload in jobs:
         validate_worker_payload(payload)
     n_jobs = _bounded_workers(workers)
+    _paper_eval_log(f"P2A shards queued={len(jobs)} n_jobs={n_jobs}")
     if n_jobs == 1:
         outputs = [_evaluate_p2a_shard(payload) for payload in jobs]
     else:
@@ -992,11 +1094,16 @@ def evaluate_p2a_run(
     diagnostics_path = forecast_root / "p2a_fit_diagnostics.parquet"
     failures_path = forecast_root / "p2a_failures.parquet"
     _write_parquet(forecast_path, forecasts)
+    _paper_eval_log(f"wrote forecasts: {forecast_path} rows={len(forecasts)}")
     _write_parquet(diagnostics_path, diagnostics)
+    _paper_eval_log(f"wrote diagnostics: {diagnostics_path} rows={len(diagnostics)}")
     _write_parquet(failures_path, failures)
+    _paper_eval_log(f"wrote failures: {failures_path} rows={len(failures)}")
     _write_forecast_shards(forecast_root, forecasts, diagnostics, failures)
+    _paper_eval_log("wrote forecast shards")
     metrics = build_metric_records(forecasts)
     _write_parquet(metrics_root / "p2a_metrics.parquet", metrics)
+    _paper_eval_log(f"wrote metrics rows={len(metrics)}")
     _write_json(
         metrics_root / "p2a_status.json",
         {
@@ -1010,6 +1117,10 @@ def evaluate_p2a_run(
         },
     )
     _update_manifest(run_dir, {"p2a_eval_status": "completed", "p2a_forecast_rows": len(forecasts)})
+    _paper_eval_log(
+        f"complete run_id={run_dir.name} forecast_rows={len(forecasts)} "
+        f"metric_rows={len(metrics)} failures={len(failures)}"
+    )
     return PaperEvalResult(
         run_id=run_dir.name,
         run_dir=run_dir,
@@ -1054,6 +1165,7 @@ def evaluate_paper_run(
                 "model_a": PAPER_CONFIG.feature_sets.p2b_model_a_information_set,
                 "model_b": PAPER_CONFIG.feature_sets.p2b_model_b_information_set,
                 "model_c": PAPER_CONFIG.feature_sets.p2b_model_c_information_set,
+                "model_d": PAPER_CONFIG.feature_sets.p2b_model_d_information_set,
                 "japan_only_features": PAPER_CONFIG.feature_sets.japan_only_features,
             },
             "message": (
@@ -2039,6 +2151,7 @@ def _write_jquants_silver_cache(*, settings: Settings, rows: list[dict[str, obje
             continue
         parsed = date.fromisoformat(trading_date)
         by_month.setdefault((parsed.year, parsed.month), []).append(row)
+    year_stats_by_year: dict[int, dict[str, int]] = {}
     for (year, month), chunk_rows in sorted(by_month.items()):
         path = cache_path(
             root,
@@ -2047,7 +2160,7 @@ def _write_jquants_silver_cache(*, settings: Settings, rows: list[dict[str, obje
             year=year,
             month=month,
         )
-        atomic_write_parquet(
+        result = atomic_write_parquet(
             path,
             chunk_rows,
             schema=JQUANTS_SILVER_SCHEMA,
@@ -2059,6 +2172,12 @@ def _write_jquants_silver_cache(*, settings: Settings, rows: list[dict[str, obje
                 "month": month,
             },
         )
+        stats = year_stats_by_year.setdefault(year, _new_progress_stats())
+        _add_stat(stats, "months")
+        _add_stat(stats, "fetched")
+        _add_stat(stats, "rows", result.rows)
+    for year, stats in sorted(year_stats_by_year.items()):
+        _log_year_stats("J-Quants silver", year, stats)
 
 
 def build_spy_late_session_feature_records(
@@ -2269,7 +2388,15 @@ def _fetch_jquants_futures_rows(
         base_url=settings.jquants_api_base_url,
         timeout_seconds=settings.jquants_request_timeout_seconds,
     ) as client:
+        current_year: int | None = None
+        year_stats = _new_progress_stats()
         for (year, month), trading_dates in sorted(dates_by_month.items()):
+            if current_year is not None and year != current_year:
+                _log_year_stats("J-Quants bronze", current_year, year_stats)
+                year_stats = _new_progress_stats()
+            current_year = year
+            _add_stat(year_stats, "months")
+            _add_stat(year_stats, "trading_days", len(trading_dates))
             path = cache_path(
                 bronze_root,
                 dataset="jquants_futures_daily",
@@ -2278,8 +2405,10 @@ def _fetch_jquants_futures_rows(
                 month=month,
             )
             if path.exists() and _cache_covers_dates(path, trading_dates):
-                rows.extend(_read_parquet_records(path))
-                print(f"[paper-panel] J-Quants bronze cache hit {year}-{month:02d}", flush=True)
+                cached_records = _read_parquet_records(path)
+                rows.extend(cached_records)
+                _add_stat(year_stats, "cache_hits")
+                _add_stat(year_stats, "rows", len(cached_records))
                 continue
             chunk_rows: list[dict[str, object]] = []
             pull_started = datetime.now(UTC)
@@ -2306,11 +2435,11 @@ def _fetch_jquants_futures_rows(
                     "pull_completed_at_utc": datetime.now(UTC).isoformat(),
                 },
             )
-            print(
-                f"[paper-panel] J-Quants bronze wrote {year}-{month:02d}: {result.rows} rows",
-                flush=True,
-            )
+            _add_stat(year_stats, "fetched")
+            _add_stat(year_stats, "rows", result.rows)
             rows.extend(_read_parquet_records(path))
+        if current_year is not None:
+            _log_year_stats("J-Quants bronze", current_year, year_stats)
     return rows
 
 
@@ -2331,29 +2460,119 @@ def _fetch_massive_paper_predictors(
         base_url=settings.massive_base_url,
         timeout_seconds=settings.massive_request_timeout_seconds,
     ) as client:
-        for ticker in PAPER_CORE_MASSIVE_TICKERS:
-            safe_ticker = _safe_name(ticker)
-            for chunk_start, chunk_end in _month_chunks(start=start, end=end):
+        chunks_by_year: dict[int, list[tuple[str, str]]] = {}
+        for chunk_start, chunk_end in _month_chunks(start=start, end=end):
+            chunks_by_year.setdefault(date.fromisoformat(chunk_start).year, []).append(
+                (chunk_start, chunk_end)
+            )
+
+        for year, year_chunks in sorted(chunks_by_year.items()):
+            year_stats = _new_progress_stats()
+            for ticker in PAPER_FETCH_MASSIVE_TICKERS:
+                safe_ticker = _safe_name(ticker)
+                for chunk_start, chunk_end in year_chunks:
+                    chunk_date = date.fromisoformat(chunk_start)
+                    _add_stat(year_stats, "months")
+                    path = cache_path(
+                        bronze_root,
+                        dataset="massive_daily",
+                        schema_version=1,
+                        year=chunk_date.year,
+                        month=chunk_date.month,
+                        extra_partitions={"ticker": safe_ticker},
+                    )
+                    unavailable_path = path.with_suffix(".unavailable.json")
+                    if path.exists() and _cache_covers_range(path, chunk_start, chunk_end):
+                        cached_records = _read_parquet_records(path)
+                        daily_records.extend(cached_records)
+                        _add_stat(year_stats, "cache_hits")
+                        _add_stat(year_stats, "rows", len(cached_records))
+                        continue
+                    if unavailable_path.exists():
+                        _add_stat(year_stats, "unavailable")
+                        continue
+                    payload = client.fetch_aggregate_bars(
+                        name=f"{ticker}_day",
+                        ticker=ticker,
+                        multiplier=1,
+                        timespan="day",
+                        start=chunk_start,
+                        end=chunk_end,
+                        raise_for_status=False,
+                    )
+                    error_class = classify_vendor_error(
+                        status_code=payload.http_status,
+                        message=str(
+                            payload.payload.get("message") or payload.payload.get("error") or ""
+                        ),
+                        row_count=payload.row_count,
+                    )
+                    if error_class is not VendorErrorClass.OK:
+                        _write_unavailable_marker(
+                            unavailable_path,
+                            source="massive",
+                            error_class=error_class,
+                            http_status=payload.http_status,
+                            requested_range=[chunk_start, chunk_end],
+                        )
+                        _add_stat(year_stats, "unavailable")
+                        continue
+                    normalized = normalize_aggregate_bars(
+                        ticker=ticker,
+                        rows=_payload_results(payload.payload),
+                        multiplier=1,
+                        timespan="day",
+                        research_download_ts_utc=downloaded_at_utc,
+                        us_timezone=settings.project_timezone_us,
+                        regular_session_start_et=settings.massive_regular_session_start_et,
+                        regular_session_end_et=settings.massive_regular_session_end_et,
+                    )
+                    result = atomic_write_parquet(
+                        path,
+                        normalized,
+                        metadata={
+                            "source": "massive",
+                            "ticker": ticker,
+                            "timespan": "day",
+                            "requested_range": [chunk_start, chunk_end],
+                            "http_status": payload.http_status,
+                        },
+                    )
+                    _add_stat(year_stats, "fetched")
+                    _add_stat(year_stats, "rows", result.rows)
+                    daily_records.extend(normalized)
+            _log_year_stats("Massive daily", year, year_stats)
+
+        for year, year_chunks in sorted(chunks_by_year.items()):
+            year_stats = _new_progress_stats()
+            for chunk_start, chunk_end in year_chunks:
                 chunk_date = date.fromisoformat(chunk_start)
-                path = cache_path(
-                    bronze_root,
-                    dataset="massive_daily",
-                    schema_version=1,
+                _add_stat(year_stats, "months")
+                feature_path = cache_path(
+                    silver_root,
+                    dataset="massive_spy_minute_features",
+                    schema_version=SPY_MINUTE_FEATURE_SCHEMA.version,
                     year=chunk_date.year,
                     month=chunk_date.month,
-                    extra_partitions={"ticker": safe_ticker},
+                    extra_partitions={"ticker": _safe_name(settings.massive_minute_ticker)},
                 )
-                unavailable_path = path.with_suffix(".unavailable.json")
-                if path.exists() and _cache_covers_range(path, chunk_start, chunk_end):
-                    daily_records.extend(_read_parquet_records(path))
+                unavailable_path = feature_path.with_suffix(".unavailable.json")
+                if feature_path.exists() and _cache_covers_range(
+                    feature_path, chunk_start, chunk_end
+                ):
+                    cached_records = _read_parquet_records(feature_path)
+                    spy_feature_records.extend(cached_records)
+                    _add_stat(year_stats, "cache_hits")
+                    _add_stat(year_stats, "rows", len(cached_records))
                     continue
                 if unavailable_path.exists():
+                    _add_stat(year_stats, "unavailable")
                     continue
                 payload = client.fetch_aggregate_bars(
-                    name=f"{ticker}_day",
-                    ticker=ticker,
+                    name=f"{settings.massive_minute_ticker}_minute",
+                    ticker=settings.massive_minute_ticker,
                     multiplier=1,
-                    timespan="day",
+                    timespan="minute",
                     start=chunk_start,
                     end=chunk_end,
                     raise_for_status=False,
@@ -2373,96 +2592,39 @@ def _fetch_massive_paper_predictors(
                         http_status=payload.http_status,
                         requested_range=[chunk_start, chunk_end],
                     )
+                    _add_stat(year_stats, "unavailable")
                     continue
-                normalized = normalize_aggregate_bars(
-                    ticker=ticker,
+                minute_records = normalize_aggregate_bars(
+                    ticker=settings.massive_minute_ticker,
                     rows=_payload_results(payload.payload),
                     multiplier=1,
-                    timespan="day",
+                    timespan="minute",
                     research_download_ts_utc=downloaded_at_utc,
                     us_timezone=settings.project_timezone_us,
                     regular_session_start_et=settings.massive_regular_session_start_et,
                     regular_session_end_et=settings.massive_regular_session_end_et,
                 )
-                atomic_write_parquet(
-                    path,
-                    normalized,
+                features = build_spy_late_session_feature_records(
+                    minute_records,
+                    calendar_records=calendar_records or [],
+                    vendor_lag_minutes=PAPER_CONFIG.leakage_policy.massive_vendor_lag_minutes,
+                )
+                result = atomic_write_parquet(
+                    feature_path,
+                    features,
+                    schema=SPY_MINUTE_FEATURE_SCHEMA,
                     metadata={
                         "source": "massive",
-                        "ticker": ticker,
-                        "timespan": "day",
+                        "ticker": settings.massive_minute_ticker,
+                        "timespan": "minute_derived",
                         "requested_range": [chunk_start, chunk_end],
                         "http_status": payload.http_status,
                     },
                 )
-                daily_records.extend(normalized)
-        for chunk_start, chunk_end in _month_chunks(start=start, end=end):
-            chunk_date = date.fromisoformat(chunk_start)
-            feature_path = cache_path(
-                silver_root,
-                dataset="massive_spy_minute_features",
-                schema_version=SPY_MINUTE_FEATURE_SCHEMA.version,
-                year=chunk_date.year,
-                month=chunk_date.month,
-                extra_partitions={"ticker": _safe_name(settings.massive_minute_ticker)},
-            )
-            unavailable_path = feature_path.with_suffix(".unavailable.json")
-            if feature_path.exists() and _cache_covers_range(feature_path, chunk_start, chunk_end):
-                spy_feature_records.extend(_read_parquet_records(feature_path))
-                continue
-            if unavailable_path.exists():
-                continue
-            payload = client.fetch_aggregate_bars(
-                name=f"{settings.massive_minute_ticker}_minute",
-                ticker=settings.massive_minute_ticker,
-                multiplier=1,
-                timespan="minute",
-                start=chunk_start,
-                end=chunk_end,
-                raise_for_status=False,
-            )
-            error_class = classify_vendor_error(
-                status_code=payload.http_status,
-                message=str(payload.payload.get("message") or payload.payload.get("error") or ""),
-                row_count=payload.row_count,
-            )
-            if error_class is not VendorErrorClass.OK:
-                _write_unavailable_marker(
-                    unavailable_path,
-                    source="massive",
-                    error_class=error_class,
-                    http_status=payload.http_status,
-                    requested_range=[chunk_start, chunk_end],
-                )
-                continue
-            minute_records = normalize_aggregate_bars(
-                ticker=settings.massive_minute_ticker,
-                rows=_payload_results(payload.payload),
-                multiplier=1,
-                timespan="minute",
-                research_download_ts_utc=downloaded_at_utc,
-                us_timezone=settings.project_timezone_us,
-                regular_session_start_et=settings.massive_regular_session_start_et,
-                regular_session_end_et=settings.massive_regular_session_end_et,
-            )
-            features = build_spy_late_session_feature_records(
-                minute_records,
-                calendar_records=calendar_records or [],
-                vendor_lag_minutes=PAPER_CONFIG.leakage_policy.massive_vendor_lag_minutes,
-            )
-            atomic_write_parquet(
-                feature_path,
-                features,
-                schema=SPY_MINUTE_FEATURE_SCHEMA,
-                metadata={
-                    "source": "massive",
-                    "ticker": settings.massive_minute_ticker,
-                    "timespan": "minute_derived",
-                    "requested_range": [chunk_start, chunk_end],
-                    "http_status": payload.http_status,
-                },
-            )
-            spy_feature_records.extend(features)
+                _add_stat(year_stats, "fetched")
+                _add_stat(year_stats, "rows", result.rows)
+                spy_feature_records.extend(features)
+            _log_year_stats("SPY minute-derived", year, year_stats)
     return daily_records, spy_feature_records
 
 
@@ -2482,6 +2644,7 @@ def _fetch_fred_paper_predictors(
         timeout_seconds=settings.fred_request_timeout_seconds,
     ) as client:
         for series_id in PAPER_CORE_FRED_SERIES:
+            _paper_log(f"FRED series start: {series_id}")
             path = cache_path(
                 cache_root,
                 dataset="fred_daily",
@@ -2499,7 +2662,20 @@ def _fetch_fred_paper_predictors(
                 and _metadata_covers_range(metadata, start, end)
             ):
                 records.extend(_read_parquet_records(path))
+                _paper_log(f"FRED cache hit {series_id}")
                 continue
+            ttl_status = "missing"
+            if path.exists():
+                ttl_status = (
+                    "stale_at_run_start"
+                    if not is_fred_cache_fresh_at_run_start(
+                        metadata,
+                        run_start_utc=ttl_decision_ts,
+                        ttl_days=FRED_CACHE_TTL_DAYS,
+                    )
+                    else "range_miss"
+                )
+            _paper_log(f"FRED fetching {series_id}: {ttl_status}")
             payload = client.fetch_series_csv(series_id)
             normalized = [
                 {**row, "vintage_safe": False}
@@ -2515,7 +2691,7 @@ def _fetch_fred_paper_predictors(
                     ),
                 )
             ]
-            atomic_write_parquet(
+            result = atomic_write_parquet(
                 path,
                 normalized,
                 schema=FRED_CACHE_SCHEMA,
@@ -2531,6 +2707,7 @@ def _fetch_fred_paper_predictors(
                     "revision_risk_label": "current_historical_revisions",
                 },
             )
+            _paper_log(f"FRED wrote {series_id}: {result.rows} rows")
             records.extend(normalized)
     return records
 

@@ -105,6 +105,18 @@ def test_hive_partition_scan_uses_numeric_partition_schema(tmp_path: Path) -> No
     assert "ticker=spy" in str(extra_path)
 
 
+def test_atomic_parquet_write_infers_full_unspecified_schema(tmp_path: Path) -> None:
+    path = tmp_path / "diagnostics.parquet"
+    rows = [{"threshold_quantile": 0, "model_name": "x"} for _ in range(120)]
+    rows.append({"threshold_quantile": 0.9, "model_name": "x"})
+
+    atomic_write_parquet(path, rows)
+
+    frame = pl.read_parquet(path)
+    assert frame.schema["threshold_quantile"] == pl.Float64
+    assert frame.select(pl.col("threshold_quantile").max()).item() == 0.9
+
+
 def test_vendor_error_and_ttl_policy_are_deterministic() -> None:
     assert classify_vendor_error(exception=TimeoutError()) == VendorErrorClass.NETWORK_ERROR
     assert classify_vendor_error(status_code=None) == VendorErrorClass.UNKNOWN_ERROR

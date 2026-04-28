@@ -51,7 +51,11 @@ CORE_MASSIVE_TICKERS: tuple[str, ...] = (
     "C:USDJPY",
 )
 OPTIONAL_MASSIVE_TICKERS: tuple[str, ...] = ("UUP",)
-ROBUSTNESS_MASSIVE_TICKERS: tuple[str, ...] = ("EWJ", "DXJ")
+JAPAN_PROXY_MASSIVE_TICKERS: tuple[str, ...] = ("EWJ", "DXJ")
+ASIA_PROXY_MASSIVE_TICKERS: tuple[str, ...] = ("EWY", "EWT", "EWH")
+ROBUSTNESS_MASSIVE_TICKERS: tuple[str, ...] = (
+    JAPAN_PROXY_MASSIVE_TICKERS + ASIA_PROXY_MASSIVE_TICKERS
+)
 
 CORE_FRED_SERIES: tuple[str, ...] = (
     "VIXCLS",
@@ -71,6 +75,8 @@ class FeatureSetConfig:
     version: FeatureSetVersion = FeatureSetVersion.CORE_FULL_HISTORY
     massive_core: tuple[str, ...] = CORE_MASSIVE_TICKERS
     massive_optional: tuple[str, ...] = OPTIONAL_MASSIVE_TICKERS
+    massive_japan_proxy: tuple[str, ...] = JAPAN_PROXY_MASSIVE_TICKERS
+    massive_asia_proxy: tuple[str, ...] = ASIA_PROXY_MASSIVE_TICKERS
     massive_robustness: tuple[str, ...] = ROBUSTNESS_MASSIVE_TICKERS
     fred_core: tuple[str, ...] = CORE_FRED_SERIES
     fred_fallback: tuple[str, ...] = FRED_FALLBACK_SERIES
@@ -87,7 +93,10 @@ class FeatureSetConfig:
     )
     p2b_model_a_information_set: str = "japan_only"
     p2b_model_b_information_set: str = "japan_only_plus_us_close_core"
-    p2b_model_c_information_set: str = "japan_only_plus_us_close_core_plus_night_controls"
+    p2b_model_c_information_set: str = "japan_only_plus_us_close_core_plus_japan_proxy"
+    p2b_model_d_information_set: str = (
+        "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy"
+    )
 
 
 @dataclass(frozen=True)

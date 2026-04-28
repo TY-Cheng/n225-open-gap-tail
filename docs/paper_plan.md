@@ -96,8 +96,10 @@ The empirical design tests this null through nested information sets:
 
 1. Japan-only historical and lagged futures variables.
 2. Japan plus U.S. close-side equity, FX, volatility, and rates predictors.
-3. Japan plus U.S. close predictors plus DST and early-close interactions.
-4. Japan plus U.S. close predictors plus night-session controls or the night-close residual target.
+3. Japan plus U.S. core plus U.S.-traded Japan proxy block (`EWJ`, `DXJ`).
+4. Japan plus U.S. core plus Japan proxy plus Asia proxy block (`EWY`, `EWT`, `EWH`).
+
+DST, early-close interactions, and night-session controls are added to the same nested ladder rather than treated as broader feature searches. The Japan and Asia proxy blocks are interpreted as mechanism and robustness layers, not as part of the broad U.S. core signal.
 
 The primary comparison uses chronological rolling or expanding forecasts. Where the rolling design and out-of-sample length are sufficient, model comparisons should use the Giacomini-White conditional predictive ability framework for VaR/ES loss differentials. The project default is that GW testing requires rolling or expanding forecasts, an in-sample rolling window ideally at least 500 observations, and enough out-of-sample loss differentials for inference. If those conditions are not met, the fallback is a documented Diebold-Mariano comparison with HAC or block-bootstrap standard errors.
 
@@ -215,13 +217,14 @@ Risk-management diagnostics include a main ES severity reduction table. The tabl
 The empirical section should lead with evidence rather than a model leaderboard:
 
 1. Target audit: availability, missingness, contract coverage, roll/SQ flags, distribution, autocorrelation, tail counts, and extreme-event tracebacks.
-2. Incremental U.S.-close information: Japan-only versus Japan plus U.S. close predictors.
-3. DST interaction: compare predictive gains across EST and EDT regimes.
-4. Absorption coefficient: report EST and EDT gains, `alpha_absorb` where well-defined, and confidence intervals or bootstrap uncertainty.
-5. Night-session attenuation: compare full-gap targets with night-close residual or night-session-controlled designs.
-6. VaR/ES calibration and ES severity reduction: coverage, joint scoring, exceedance severity, and risk-management diagnostics.
-7. Model-set comparison: direct FZ/CARE, GARCH/GJR-EVT, LightGBM-only, and LightGBM-EVT under common loss functions.
-8. Robustness: alternative thresholds, windows, contract-roll treatment, holidays, early closes, and stress subperiods.
+2. Incremental U.S.-close information: Japan-only versus Japan plus U.S. core predictors.
+3. Proxy-block ladder: add Japan proxy (`EWJ`, `DXJ`) and then Asia proxy (`EWY`, `EWT`, `EWH`) to measure whether proxy trading absorbs or adds signal beyond U.S. core.
+4. DST interaction: compare predictive gains across EST and EDT regimes.
+5. Absorption coefficient: report EST and EDT gains, `alpha_absorb` where well-defined, and confidence intervals or bootstrap uncertainty.
+6. Night-session attenuation: compare full-gap targets with night-close residual or night-session-controlled designs.
+7. VaR/ES calibration and ES severity reduction: coverage, joint scoring, exceedance severity, and risk-management diagnostics.
+8. Model-set comparison: direct FZ/CARE, GARCH/GJR-EVT, LightGBM-only, and LightGBM-EVT under common loss functions.
+9. Robustness: alternative thresholds, windows, contract-roll treatment, holidays, early closes, and stress subperiods.
 
 ## Manuscript Structure
 

@@ -6,8 +6,10 @@ import pytest
 
 from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.research_config import (
+    ASIA_PROXY_MASSIVE_TICKERS,
     CORE_FRED_SERIES,
     CORE_MASSIVE_TICKERS,
+    JAPAN_PROXY_MASSIVE_TICKERS,
     ClaimLevel,
     FeatureSetVersion,
     default_paper_research_config,
@@ -33,7 +35,15 @@ def test_core_feature_sets_exclude_short_history_and_robustness_tickers() -> Non
     assert "SOFR" in config.feature_sets.fred_post_2018
     assert "EWJ" not in config.feature_sets.massive_core
     assert "DXJ" not in config.feature_sets.massive_core
+    assert "EWH" not in config.feature_sets.massive_core
+    assert config.feature_sets.massive_japan_proxy == JAPAN_PROXY_MASSIVE_TICKERS
+    assert config.feature_sets.massive_asia_proxy == ASIA_PROXY_MASSIVE_TICKERS
+    assert "EWH" in config.feature_sets.massive_asia_proxy
+    assert config.feature_sets.massive_robustness == (
+        JAPAN_PROXY_MASSIVE_TICKERS + ASIA_PROXY_MASSIVE_TICKERS
+    )
     assert "C:USDJPY" in config.feature_sets.massive_core
+    assert config.feature_sets.p2b_model_d_information_set.endswith("plus_asia_proxy")
     assert config.leakage_policy.fred_availability_lag_us_business_days == 1
 
 

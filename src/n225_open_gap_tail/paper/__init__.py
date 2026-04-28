@@ -18,6 +18,11 @@ from joblib import Parallel, delayed  # type: ignore[import-untyped]
 from scipy import stats  # type: ignore[import-untyped]
 
 from n225_open_gap_tail.calendars import build_session_calendar_records
+from n225_open_gap_tail.cboe import (
+    CboeClient,
+    build_vix_consistency_records,
+    normalize_cboe_vol_index_rows,
+)
 from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.datalake import (
     AUDIT_SAMPLE_START,
@@ -49,7 +54,7 @@ from n225_open_gap_tail.research_config import (
     default_paper_research_config,
     stable_hash,
 )
-from n225_open_gap_tail.schemas import JoinMissReason, MappingStatus
+from n225_open_gap_tail.schemas import ForecastExclusionReason, JoinMissReason, MappingStatus
 from n225_open_gap_tail.snapshot import (
     build_jquants_schema_probe,
     build_target_audit_records,
@@ -59,9 +64,13 @@ from n225_open_gap_tail.snapshot import (
 
 PAPER_CONFIG = default_paper_research_config()
 PAPER_CLAIMS_LEVEL = ClaimLevel.PAPER_CANDIDATE.value
-PAPER_OPTIONAL_FX_MASSIVE_TICKERS = ("C:USDJPY",)
+PAPER_REMOVED_MASSIVE_FX_TICKERS = ("C:USDJPY",)
 PAPER_CORE_MASSIVE_TICKERS = PAPER_CONFIG.feature_sets.massive_core
-PAPER_OPTIONAL_MASSIVE_TICKERS = PAPER_CONFIG.feature_sets.massive_optional
+PAPER_OPTIONAL_MASSIVE_TICKERS = tuple(
+    ticker
+    for ticker in PAPER_CONFIG.feature_sets.massive_optional
+    if ticker not in PAPER_REMOVED_MASSIVE_FX_TICKERS
+)
 PAPER_JAPAN_PROXY_MASSIVE_TICKERS = PAPER_CONFIG.feature_sets.massive_japan_proxy
 PAPER_ASIA_PROXY_MASSIVE_TICKERS = PAPER_CONFIG.feature_sets.massive_asia_proxy
 PAPER_FETCH_MASSIVE_TICKERS = tuple(
@@ -107,9 +116,29 @@ PERSISTENT_UNAVAILABLE_ERRORS = {
     VendorErrorClass.UNAVAILABLE_ENTITLEMENT.value,
     VendorErrorClass.NO_DATA.value,
 }
-FX_STALE_FALLBACK_MAX_DAYS = 3
+FRED_H10_RELEASE_AGE_CAP_DAYS = PAPER_CONFIG.leakage_policy.fred_h10_release_age_cap_calendar_days
 P2B_DIRECT_QUANTILE_MODEL = "lightgbm_direct_quantile"
 P2B_REFIT_FREQUENCY = "monthly"
+P2A_ANCHOR_MODEL = "historical_quantile"
+P2B_ANCHOR_INFORMATION_SET = PAPER_CONFIG.feature_sets.p2b_model_a_information_set
+MODEL_EVICTION_COVERAGE_THRESHOLD = 0.95
+COMMON_SAMPLE_MIN_ANCHOR_COVERAGE = 0.90
+BOOTSTRAP_REPS = PAPER_CONFIG.evaluation_policy.bootstrap_reps
+INFERENCE_RANDOM_SEED = PAPER_CONFIG.evaluation_policy.inference_random_seed
+MCS_ALPHA = PAPER_CONFIG.evaluation_policy.mcs_alpha
+PANEL_SIGNATURE_HASH_SEED = PAPER_CONFIG.evaluation_policy.panel_signature_hash_seed
+PANEL_SIGNATURE_COLUMNS = (
+    "forecast_date",
+    "target_open_ts_utc",
+    "model_cutoff_ts_utc",
+    "gap_t",
+    "realized_loss",
+    "forecast_sample",
+    "forecast_sample_reason",
+    "target_clean_sample",
+    "join_miss_reason",
+    "mapping_status",
+)
 P2B_HISTORY_FEATURES = (
     "loss_lag_1",
     "loss_lag_2",
@@ -124,6 +153,11 @@ P2B_HISTORY_FEATURES = (
     "calendar_month_cos",
     "calendar_dst_edt",
     "calendar_absorption_post_us_close",
+)
+FRED_RATE_STALENESS_FEATURE = "fred_rates_staleness_days"
+FRED_RATE_STALENESS_SERIES = ("DGS2", "DGS10", "T10Y2Y")
+FRED_RATE_STALENESS_LEVEL_FEATURES = tuple(
+    f"fred_{series.lower()}_level" for series in FRED_RATE_STALENESS_SERIES
 )
 
 
@@ -249,6 +283,26 @@ def find_oos_start_date(
     min_train_exceedances: int | None = None,
     tail_level: float = 0.95,
 ) -> str | None:
+    return cast(
+        str | None,
+        find_oos_start_diagnostics(
+            rows,
+            earliest_oos_start=earliest_oos_start,
+            min_train_rows=min_train_rows,
+            min_train_exceedances=min_train_exceedances,
+            tail_level=tail_level,
+        )["oos_start"],
+    )
+
+
+def find_oos_start_diagnostics(
+    rows: list[dict[str, object]],
+    *,
+    earliest_oos_start: str | None = None,
+    min_train_rows: int | None = None,
+    min_train_exceedances: int | None = None,
+    tail_level: float = 0.95,
+) -> dict[str, object]:
     earliest_oos_start = earliest_oos_start or DEFAULT_EARLIEST_OOS_START
     min_train_rows = min_train_rows if min_train_rows is not None else DEFAULT_MIN_TRAIN_ROWS
     min_train_exceedances = (
@@ -258,6 +312,8 @@ def find_oos_start_date(
     )
     clean = _clean_loss_rows(rows)
     earliest = date.fromisoformat(earliest_oos_start)
+    last_train_n = 0
+    last_exceedances = 0
     for index, row in enumerate(clean):
         forecast_date = date.fromisoformat(str(row["forecast_date"]))
         if forecast_date < earliest:
@@ -266,13 +322,32 @@ def find_oos_start_date(
             [_required_float(item["realized_loss"]) for item in clean[:index]],
             dtype=float,
         )
+        last_train_n = int(train_losses.size)
         if train_losses.size < min_train_rows:
             continue
         threshold = float(np.quantile(train_losses, tail_level))
         exceedances = int(np.sum(train_losses > threshold))
+        last_exceedances = exceedances
         if exceedances >= min_train_exceedances:
-            return forecast_date.isoformat()
-    return None
+            return {
+                "oos_start": forecast_date.isoformat(),
+                "failure_reason": None,
+                "train_n": last_train_n,
+                "train_exceedances": last_exceedances,
+                "min_train_rows": min_train_rows,
+                "min_train_exceedances": min_train_exceedances,
+            }
+    failure_reason = (
+        "train_n_below_1000" if last_train_n < min_train_rows else "train_exceedances_below_50"
+    )
+    return {
+        "oos_start": None,
+        "failure_reason": failure_reason,
+        "train_n": last_train_n,
+        "train_exceedances": last_exceedances,
+        "min_train_rows": min_train_rows,
+        "min_train_exceedances": min_train_exceedances,
+    }
 
 
 def validate_forecast_values(var_forecast: float, es_forecast: float) -> tuple[bool, str | None]:
@@ -567,6 +642,22 @@ def write_paper_panel(
         run_start_utc=run_ts,
     )
     _paper_log(f"FRED predictor rows available: {len(fred_rows)}")
+    cboe_pull_ts = datetime.now(UTC)
+    _paper_log(f"Cboe volatility predictors fetch/cache start window={predictor_start}..{end_date}")
+    cboe_rows = _fetch_cboe_paper_predictors(
+        settings=settings,
+        start=predictor_start,
+        end=end_date,
+        downloaded_at_utc=cboe_pull_ts,
+    )
+    vix_consistency = build_vix_consistency_records(
+        cboe_records=cboe_rows,
+        fred_records=fred_rows,
+    )
+    _paper_log(
+        f"Cboe volatility rows available: {len(cboe_rows)}, "
+        f"VIX consistency warnings={len(vix_consistency)}"
+    )
     alignment = build_time_alignment_records(
         target_rows=targets,
         calendar_records=calendar_records,
@@ -586,11 +677,13 @@ def write_paper_panel(
         massive_daily_records=massive_daily,
         spy_minute_records=spy_minutes,
         fred_records=fred_rows,
+        cboe_records=cboe_rows,
         calendar_records=calendar_records,
+        calendar_map_records=calendar_map,
     )
     _paper_log(f"modeling panel rows built: {len(panel)}")
-    feature_coverage = build_feature_coverage_records(panel)
-    effective_predictor_start = build_effective_predictor_start(feature_coverage)
+    initial_feature_coverage = build_feature_coverage_records(panel)
+    effective_predictor_start = build_effective_predictor_start(initial_feature_coverage)
     fred_required_start = _max_date_strings(
         effective_predictor_start.get("fred_core"),
         effective_predictor_start.get("fx_core"),
@@ -601,12 +694,15 @@ def write_paper_panel(
         fred_required_series_coverage_start=fred_required_start,
     )
     _paper_log(f"combined clean start: {combined_clean_start}")
+    panel = apply_combined_clean_start(panel, combined_clean_start=combined_clean_start)
+    feature_coverage = build_feature_coverage_records(panel)
 
     target_audit_path = panel_dir / "target_audit.parquet"
     panel_path = panel_dir / "modeling_panel.parquet"
     coverage_path = panel_dir / "feature_coverage.parquet"
     fields_coverage_path = panel_dir / "fields_coverage_audit.parquet"
     calendar_map_path = panel_dir / "calendar_map.parquet"
+    vix_consistency_path = panel_dir / "vix_consistency_audit.parquet"
     schema_path = panel_dir / "jquants_schema_probe.json"
     vintage_path = run_dir / "data_vintage.json"
     manifest_path = run_dir / "manifest.json"
@@ -617,6 +713,7 @@ def write_paper_panel(
         "jquants_pull_ts_utc": jquants_pull_ts.isoformat(),
         "massive_pull_ts_utc": massive_pull_ts.isoformat(),
         "fred_pull_ts_utc": fred_pull_ts.isoformat(),
+        "cboe_pull_ts_utc": cboe_pull_ts.isoformat(),
         "window": [start, end_date],
         "predictor_window": [predictor_start, end_date],
         "claims_level": PAPER_CLAIMS_LEVEL,
@@ -636,6 +733,8 @@ def write_paper_panel(
     _paper_log(f"wrote fields coverage audit: {fields_coverage_path}")
     _write_parquet(calendar_map_path, calendar_map, schema=CALENDAR_MAP_SCHEMA)
     _paper_log(f"wrote calendar map: {calendar_map_path}")
+    _write_parquet(vix_consistency_path, vix_consistency)
+    _paper_log(f"wrote VIX consistency audit: {vix_consistency_path}")
     _write_json(schema_path, schema_probe)
     _write_json(vintage_path, data_vintage_payload)
     _write_json(feature_dictionary_path, build_feature_dictionary(panel))
@@ -720,13 +819,8 @@ def write_paper_panel(
             "fred_vintage_policy": PAPER_CONFIG.leakage_policy.fred_vintage_policy,
             "fx_policy": {
                 "canonical_features": ["fx_usdjpy_level", "fx_usdjpy_return"],
-                "source_precedence": [
-                    "fred_h10_primary",
-                    "massive_fx_opportunistic",
-                    "fred_h10_stale_fallback",
-                    "null_unavailable",
-                ],
-                "stale_fallback_max_calendar_days": FX_STALE_FALLBACK_MAX_DAYS,
+                "source_precedence": ["fred_h10_latest_released", "null_unavailable"],
+                "h10_release_age_cap_calendar_days": FRED_H10_RELEASE_AGE_CAP_DAYS,
             },
             "target_policy": {
                 "primary_target_family": PAPER_CONFIG.target_policy.primary_target_family,
@@ -763,6 +857,7 @@ def write_paper_panel(
                 "feature_coverage": str(coverage_path),
                 "fields_coverage_audit": str(fields_coverage_path),
                 "calendar_map": str(calendar_map_path),
+                "vix_consistency_audit": str(vix_consistency_path),
                 "feature_dictionary": str(feature_dictionary_path),
                 "schema_probe": str(schema_path),
                 "data_vintage": str(vintage_path),
@@ -788,14 +883,20 @@ def build_modeling_panel_records(
     massive_daily_records: list[dict[str, object]],
     spy_minute_records: list[dict[str, object]],
     fred_records: list[dict[str, object]],
+    cboe_records: list[dict[str, object]] | None = None,
     calendar_records: list[dict[str, object]] | None = None,
+    calendar_map_records: list[dict[str, object]] | None = None,
 ) -> list[dict[str, object]]:
     alignment_by_target = {str(row["trading_date"]): row for row in alignment_records}
+    calendar_map_by_target = {
+        str(row["ose_trading_date"]): row for row in (calendar_map_records or [])
+    }
     massive_features = _massive_daily_feature_map(
         massive_daily_records,
         calendar_records=calendar_records or [],
     )
     fred_features = _fred_feature_map(fred_records)
+    cboe_features = _cboe_feature_map(cboe_records or [])
     spy_features = _spy_minute_feature_map(spy_minute_records)
     fx_context = _canonical_fx_context(
         massive_daily_records=massive_daily_records,
@@ -806,9 +907,22 @@ def build_modeling_panel_records(
     for target in target_rows:
         trading_date = str(target["trading_date"])
         alignment = alignment_by_target.get(trading_date, {})
+        calendar_map = calendar_map_by_target.get(trading_date, {})
         us_date = str(alignment.get("us_calendar_date") or "")
         cutoff = _coerce_datetime(alignment.get("model_cutoff_ts_utc"))
+        target_open = _coerce_datetime(
+            alignment.get("target_open_ts_utc") or target.get("target_open_ts_utc")
+        )
         join_miss_reason = _panel_join_miss_reason(alignment, us_date)
+        mapping_status = str(calendar_map.get("mapping_status") or MappingStatus.UNMAPPED.value)
+        forecast_sample_reason = _forecast_sample_exclusion_reason(
+            target_clean=target.get("clean_sample") is True,
+            mapping_status=mapping_status,
+            join_miss_reason=join_miss_reason,
+            cutoff=cutoff,
+            target_open=target_open,
+        )
+        forecast_sample = forecast_sample_reason is None
         record: dict[str, object] = {
             "forecast_date": trading_date,
             "target_family": "full_gap_settle_to_open",
@@ -816,18 +930,22 @@ def build_modeling_panel_records(
             "information_set": "core_full_history",
             "contract_code": target.get("contract_code"),
             "contract_month": target.get("contract_month"),
-            "clean_sample": target.get("clean_sample"),
+            "clean_sample": forecast_sample,
+            "target_clean_sample": target.get("clean_sample"),
+            "forecast_sample": forecast_sample,
+            "forecast_sample_reason": forecast_sample_reason,
             "same_contract_flag": target.get("same_contract_only"),
             "roll_window_flag": target.get("is_roll_sq_window"),
             "sq_window_flag": target.get("is_roll_sq_window"),
             "missing_reason": target.get("missing_reason"),
-            "target_open_ts_utc": target.get("target_open_ts_utc"),
+            "target_open_ts_utc": target_open,
             "model_cutoff_ts_utc": alignment.get("model_cutoff_ts_utc"),
             "dst_regime": alignment.get("dst_regime"),
             "absorption_regime": alignment.get("absorption_regime"),
             "us_calendar_date": us_date or None,
             "join_miss_reason": join_miss_reason,
-            "mapping_status": alignment.get("mapping_status"),
+            "mapping_status": mapping_status,
+            "mapping_reason": calendar_map.get("mapping_reason"),
             "gap_t": target.get("full_gap_settle_to_open"),
             "realized_loss": target.get("loss_settle_to_open"),
             "full_gap_close_to_open": target.get("full_gap_close_to_open"),
@@ -847,8 +965,15 @@ def build_modeling_panel_records(
             )
         )
         record.update(
-            _features_asof(
+            _fred_features_asof(
                 fred_features,
+                us_date,
+                cutoff=cutoff,
+            )
+        )
+        record.update(
+            _features_asof(
+                cboe_features,
                 us_date,
                 cutoff=cutoff,
                 fill_method="forward_fill_us_holiday",
@@ -868,6 +993,41 @@ def build_modeling_panel_records(
     return panel
 
 
+def apply_combined_clean_start(
+    panel: list[dict[str, object]],
+    *,
+    combined_clean_start: str,
+) -> list[dict[str, object]]:
+    """Apply the audited combined clean start as the forecast-sample lower bound."""
+    try:
+        threshold = date.fromisoformat(combined_clean_start)
+    except ValueError:
+        return panel
+    output: list[dict[str, object]] = []
+    for row in panel:
+        forecast_date_raw = str(row.get("forecast_date") or "")
+        try:
+            forecast_date = date.fromisoformat(forecast_date_raw)
+        except ValueError:
+            output.append(row)
+            continue
+        if row.get("forecast_sample") is True and forecast_date < threshold:
+            output.append(
+                {
+                    **row,
+                    "clean_sample": False,
+                    "forecast_sample": False,
+                    "forecast_sample_reason": (
+                        ForecastExclusionReason.BEFORE_COMBINED_CLEAN_START.value
+                    ),
+                    "combined_clean_start": combined_clean_start,
+                }
+            )
+        else:
+            output.append({**row, "combined_clean_start": combined_clean_start})
+    return output
+
+
 def build_feature_coverage_records(panel: list[dict[str, object]]) -> list[dict[str, object]]:
     if not panel:
         return []
@@ -879,6 +1039,10 @@ def build_feature_coverage_records(panel: list[dict[str, object]]) -> list[dict[
         "contract_code",
         "contract_month",
         "clean_sample",
+        "target_clean_sample",
+        "forecast_sample",
+        "forecast_sample_reason",
+        "combined_clean_start",
         "same_contract_flag",
         "roll_window_flag",
         "sq_window_flag",
@@ -890,6 +1054,7 @@ def build_feature_coverage_records(panel: list[dict[str, object]]) -> list[dict[
         "us_calendar_date",
         "join_miss_reason",
         "mapping_status",
+        "mapping_reason",
         "gap_t",
         "realized_loss",
         "full_gap_close_to_open",
@@ -906,8 +1071,6 @@ def build_feature_coverage_records(panel: list[dict[str, object]]) -> list[dict[
         "fx_is_stale",
         "fx_fallback_reason",
         "fred_dexjpus_available",
-        "massive_usdjpy_available",
-        "massive_usdjpy_entitlement_status",
     }
     clean_rows = [row for row in panel if row.get("clean_sample") is True]
     records: list[dict[str, object]] = []
@@ -1118,7 +1281,9 @@ def build_feature_dictionary(panel: list[dict[str, object]]) -> dict[str, str]:
             field.endswith("_return")
             or field.endswith("_range")
             or field.endswith("_diff")
+            or field.endswith("_days")
             or field.startswith("fred_")
+            or field.startswith("cboe_")
             or field.startswith("spy_late_")
             or field.startswith("spy_final_")
         )
@@ -1132,10 +1297,10 @@ def _feature_source_family(field: str) -> str:
         if field.startswith("fred_baml"):
             return "fred_credit_enriched"
         return "fred_core"
+    if field.startswith("cboe_"):
+        return "cboe_volatility"
     if field.startswith("spy_late_") or field.startswith("spy_final_"):
         return "spy_minute"
-    if _feature_matches_tickers(field, PAPER_OPTIONAL_FX_MASSIVE_TICKERS):
-        return "fx_optional_massive"
     if _feature_matches_tickers(field, PAPER_OPTIONAL_MASSIVE_TICKERS):
         return "massive_optional"
     if _feature_matches_tickers(field, PAPER_JAPAN_PROXY_MASSIVE_TICKERS):
@@ -1154,10 +1319,12 @@ def _feature_source_block(field: str) -> str:
         if field.startswith("fred_baml"):
             return "fred_credit_enriched"
         return "fred_core"
+    if field.startswith("cboe_"):
+        # Cboe is the preferred VIX source, but it enters the same volatility block
+        # as FRED VIX in the registered P2B information-set ladder.
+        return "fred_core"
     if field.startswith("spy_late_") or field.startswith("spy_final_"):
         return "us_late_session"
-    if _feature_matches_tickers(field, PAPER_OPTIONAL_FX_MASSIVE_TICKERS):
-        return "fx_optional_massive"
     if _feature_matches_tickers(field, PAPER_OPTIONAL_MASSIVE_TICKERS):
         return "massive_optional"
     if _feature_matches_tickers(field, PAPER_JAPAN_PROXY_MASSIVE_TICKERS):
@@ -1182,6 +1349,27 @@ def _panel_join_miss_reason(alignment: Mapping[str, object], us_date: str) -> st
         return JoinMissReason.CALENDAR_DESYNC.value
     if alignment.get("alignment_pass") is False:
         return JoinMissReason.US_EARLY_CLOSE_BEYOND_VENDOR_LAG.value
+    return None
+
+
+def _forecast_sample_exclusion_reason(
+    *,
+    target_clean: bool,
+    mapping_status: str,
+    join_miss_reason: str | None,
+    cutoff: datetime | None,
+    target_open: datetime | None,
+) -> str | None:
+    if not target_clean:
+        return ForecastExclusionReason.TARGET_NOT_CLEAN.value
+    if mapping_status != MappingStatus.NORMAL_TRADING.value:
+        return ForecastExclusionReason.MAPPING_NOT_NORMAL.value
+    if join_miss_reason:
+        return ForecastExclusionReason.JOIN_MISS.value
+    if cutoff is None or target_open is None:
+        return ForecastExclusionReason.MISSING_CUTOFF_OR_TARGET_OPEN.value
+    if cutoff >= target_open:
+        return ForecastExclusionReason.CUTOFF_AFTER_TARGET_OPEN.value
     return None
 
 
@@ -1222,6 +1410,7 @@ def evaluate_p2a_run(
     if not panel_path.exists():
         raise PaperRunError(f"Missing modeling panel: {panel_path}")
     _assert_run_config_compatible(run_dir, force=force)
+    _assert_leakage_gate(run_dir)
     _set_nested_thread_limits()
     _paper_eval_log(f"start run_id={run_dir.name} workers={workers}")
     forecast_root = run_dir / "forecasts"
@@ -1271,9 +1460,43 @@ def evaluate_p2a_run(
     _paper_eval_log(f"wrote failures: {failures_path} rows={len(failures)}")
     _write_forecast_shards(forecast_root, forecasts, diagnostics, failures)
     _paper_eval_log("wrote forecast shards")
-    metrics = build_metric_records(forecasts)
+    artifacts = build_common_sample_artifacts(
+        forecasts,
+        stage="p2a",
+        anchor_model=P2A_ANCHOR_MODEL,
+        anchor_information_set="target_history_only",
+    )
+    metrics = cast(list[dict[str, object]], artifacts["headline_metrics"])
     _write_parquet(metrics_root / "p2a_metrics.parquet", metrics)
-    _paper_eval_log(f"wrote metrics rows={len(metrics)}")
+    _write_parquet(
+        metrics_root / "p2a_metrics_per_model.parquet",
+        cast(list[dict[str, object]], artifacts["per_model_metrics"]),
+    )
+    _write_parquet(
+        metrics_root / "p2a_model_eviction.parquet",
+        cast(list[dict[str, object]], artifacts["model_eviction"]),
+    )
+    _write_parquet(
+        metrics_root / "p2a_loss_matrix.parquet",
+        cast(list[dict[str, object]], artifacts["loss_matrix"]),
+    )
+    _write_parquet(
+        metrics_root / "p2a_dm_inference.parquet",
+        cast(list[dict[str, object]], artifacts["dm_inference"]),
+    )
+    _write_parquet(
+        metrics_root / "p2a_mcs.parquet",
+        cast(list[dict[str, object]], artifacts["mcs"]),
+    )
+    _write_parquet(
+        metrics_root / "p2a_murphy.parquet",
+        cast(list[dict[str, object]], artifacts["murphy"]),
+    )
+    _write_parquet(
+        metrics_root / "p2a_stress_windows.parquet",
+        cast(list[dict[str, object]], artifacts["stress_windows"]),
+    )
+    _paper_eval_log(f"wrote headline metrics rows={len(metrics)}")
     _write_json(
         metrics_root / "p2a_status.json",
         {
@@ -1283,6 +1506,11 @@ def evaluate_p2a_run(
             "stage": "p2a",
             "forecast_rows": len(forecasts),
             "metric_rows": len(metrics),
+            "per_model_metric_rows": len(
+                cast(list[dict[str, object]], artifacts["per_model_metrics"])
+            ),
+            "loss_matrix_rows": len(cast(list[dict[str, object]], artifacts["loss_matrix"])),
+            "common_sample_status": artifacts["common_sample_status"],
             "failures": len(failures),
         },
     )
@@ -1362,19 +1590,64 @@ def evaluate_p2b_run(
     _write_parquet(failures_path, failures)
     _paper_eval_log(f"wrote P2B failures: {failures_path} rows={len(failures)}")
     _write_forecast_shards(forecast_root, forecasts, diagnostics, failures)
-    metrics = build_metric_records(forecasts)
-    incremental = build_incremental_information_records(
+    artifacts = build_common_sample_artifacts(
         forecasts,
+        stage="p2b",
+        anchor_model=P2B_DIRECT_QUANTILE_MODEL,
+        anchor_information_set=P2B_ANCHOR_INFORMATION_SET,
+    )
+    headline_forecasts = cast(list[dict[str, object]], artifacts["headline_forecasts"])
+    metrics = cast(list[dict[str, object]], artifacts["headline_metrics"])
+    incremental = build_incremental_information_records(
+        headline_forecasts,
         baseline_information_set=PAPER_CONFIG.feature_sets.p2b_model_a_information_set,
     )
     dst_attenuation = build_dst_attenuation_records(
-        forecasts,
+        headline_forecasts,
         baseline_information_set=PAPER_CONFIG.feature_sets.p2b_model_a_information_set,
         expanded_information_set=PAPER_CONFIG.feature_sets.p2b_model_b_information_set,
     )
+    feature_unavailability = build_p2b_feature_unavailability_records(forecasts)
+    feature_unavailability_dates = build_p2b_feature_unavailability_date_records(forecasts)
     _write_parquet(metrics_root / "p2b_metrics.parquet", metrics)
+    _write_parquet(
+        metrics_root / "p2b_metrics_per_model.parquet",
+        cast(list[dict[str, object]], artifacts["per_model_metrics"]),
+    )
+    _write_parquet(
+        metrics_root / "p2b_model_eviction.parquet",
+        cast(list[dict[str, object]], artifacts["model_eviction"]),
+    )
+    _write_parquet(
+        metrics_root / "p2b_loss_matrix.parquet",
+        cast(list[dict[str, object]], artifacts["loss_matrix"]),
+    )
+    _write_parquet(
+        metrics_root / "p2b_dm_inference.parquet",
+        cast(list[dict[str, object]], artifacts["dm_inference"]),
+    )
+    _write_parquet(
+        metrics_root / "p2b_mcs.parquet",
+        cast(list[dict[str, object]], artifacts["mcs"]),
+    )
+    _write_parquet(
+        metrics_root / "p2b_murphy.parquet",
+        cast(list[dict[str, object]], artifacts["murphy"]),
+    )
+    _write_parquet(
+        metrics_root / "p2b_stress_windows.parquet",
+        cast(list[dict[str, object]], artifacts["stress_windows"]),
+    )
     _write_parquet(metrics_root / "p2b_incremental_information.parquet", incremental)
     _write_parquet(metrics_root / "p2b_dst_attenuation.parquet", dst_attenuation)
+    _write_parquet(
+        metrics_root / "p2b_feature_unavailability.parquet",
+        feature_unavailability,
+    )
+    _write_parquet(
+        metrics_root / "p2b_feature_unavailability_dates.parquet",
+        feature_unavailability_dates,
+    )
     _write_json(
         metrics_root / "p2b_status.json",
         {
@@ -1387,13 +1660,19 @@ def evaluate_p2b_run(
             "refit_frequency": P2B_REFIT_FREQUENCY,
             "forecast_rows": len(forecasts),
             "metric_rows": len(metrics),
+            "per_model_metric_rows": len(
+                cast(list[dict[str, object]], artifacts["per_model_metrics"])
+            ),
+            "loss_matrix_rows": len(cast(list[dict[str, object]], artifacts["loss_matrix"])),
+            "feature_unavailability_rows": len(feature_unavailability),
+            "feature_unavailability_date_rows": len(feature_unavailability_dates),
+            "common_sample_status": artifacts["common_sample_status"],
             "failures": len(failures),
             "registered_information_sets": _registered_information_set_payload(),
             "implemented_components": ["lightgbm_direct_quantile"],
             "unavailable_components": {
                 "lightgbm_location_scale": "unavailable_not_implemented_nonblocking",
                 "lightgbm_standardized_loss_pot_gpd": "unavailable_not_implemented_nonblocking",
-                "gw_mcs_dst_formal_inference": "unavailable_not_implemented_nonblocking",
             },
         },
     )
@@ -1475,12 +1754,33 @@ def _assert_leakage_gate(run_dir: Path) -> None:
     summary_path = run_dir / "audits" / "leakage_check_summary.json"
     if not summary_path.exists():
         raise PaperRunError(
-            "P2B requires a leakage check artifact; run `just _paper-leakage-check` first."
+            "Paper evaluation requires a leakage check artifact; "
+            "run `just _paper-leakage-check` first."
         )
     summary = read_json(summary_path)
     failures = int(cast(int | float | str, summary.get("failures") or 0))
     if failures:
-        raise PaperRunError(f"P2B blocked by leakage check failures: {failures}")
+        raise PaperRunError(f"Paper evaluation blocked by leakage check failures: {failures}")
+    expected = _current_leakage_binding(run_dir)
+    keys = (
+        "panel_signature",
+        "panel_signature_hash_seed",
+        "panel_row_count",
+        "panel_forecast_date_min",
+        "panel_forecast_date_max",
+        "panel_target_open_ts_utc_min",
+        "panel_target_open_ts_utc_max",
+        "panel_model_cutoff_ts_utc_min",
+        "panel_model_cutoff_ts_utc_max",
+        "calendar_map_hash",
+        "bound_config_hash",
+    )
+    mismatches = [key for key in keys if summary.get(key) != expected.get(key)]
+    if mismatches:
+        raise PaperRunError(
+            "Paper evaluation blocked by stale leakage check artifact; "
+            f"mismatched fields: {', '.join(mismatches)}"
+        )
 
 
 def _evaluate_p2b_shard(payload: dict[str, object]) -> dict[str, list[dict[str, object]]]:
@@ -1497,7 +1797,8 @@ def _evaluate_p2b_shard(payload: dict[str, object]) -> dict[str, list[dict[str, 
     )
     panel_rows = pl.read_parquet(panel_path).to_dicts()
     rows = build_p2b_modeling_rows(panel_rows, candidate_features)
-    oos_start = find_oos_start_date(rows, tail_level=tail_level)
+    oos_diagnostics = find_oos_start_diagnostics(rows, tail_level=tail_level)
+    oos_start = cast(str | None, oos_diagnostics["oos_start"])
     if oos_start is None:
         return {
             "forecasts": [],
@@ -1512,6 +1813,9 @@ def _evaluate_p2b_shard(payload: dict[str, object]) -> dict[str, list[dict[str, 
                         information_set=information_set,
                     ),
                     "fit_status": "unavailable_insufficient_oos_start",
+                    "oos_failure_reason": oos_diagnostics["failure_reason"],
+                    "train_n": oos_diagnostics["train_n"],
+                    "train_exceedances": oos_diagnostics["train_exceedances"],
                     "min_train_rows": DEFAULT_MIN_TRAIN_ROWS,
                     "min_train_exceedances": DEFAULT_MIN_TRAIN_EXCEEDANCES,
                     "candidate_feature_hash": stable_hash(candidate_features),
@@ -1556,6 +1860,9 @@ def build_p2b_modeling_rows(
             "gap_t": gap,
             "dst_regime": row.get("dst_regime"),
             "absorption_regime": row.get("absorption_regime"),
+            "vix_level": _optional_float(row.get("fred_vixcls_level"))
+            if _optional_float(row.get("fred_vixcls_level")) is not None
+            else _optional_float(row.get("cboe_vix_close")),
         }
         record.update(_history_feature_values(losses=losses, gaps=gaps, forecast_date=parsed_date))
         record["calendar_dst_edt"] = 1.0 if row.get("dst_regime") == "EDT" else 0.0
@@ -1737,6 +2044,36 @@ def _forecast_p2b_lightgbm_sequence(
         if cached_model is None:
             continue
         try:
+            unavailable_features = _unavailable_active_features(row, cached_active_features)
+            if unavailable_features:
+                realized_loss = _required_float(row["realized_loss"])
+                forecasts.append(
+                    {
+                        "forecast_date": row["forecast_date"],
+                        "target_family": row.get("target_family") or "full_gap_settle_to_open",
+                        "model_name": model_name,
+                        "information_set": information_set,
+                        "tail_level": tail_level,
+                        "var_forecast": None,
+                        "es_forecast": None,
+                        "es_companion_type": "empirical_excess_es_companion",
+                        "realized_loss": realized_loss,
+                        "var_breach": None,
+                        "is_valid_forecast": False,
+                        "invalid_reason": "unavailable_feature_not_valid_at_cutoff",
+                        "train_start": cached_train_start,
+                        "train_end": cached_train_end,
+                        "train_n": cached_train_n,
+                        "fit_status": "unavailable_feature_not_valid_at_cutoff",
+                        "failure_reason": ",".join(unavailable_features),
+                        "runtime_seconds": None,
+                        "dst_regime": row.get("dst_regime"),
+                        "absorption_regime": row.get("absorption_regime"),
+                        "vix_level": row.get("vix_level"),
+                        "active_feature_hash": cached_gate.get("active_feature_hash"),
+                    }
+                )
+                continue
             predict_frame = pl.DataFrame([row], infer_schema_length=None)
             x_predict = _feature_matrix(predict_frame, cached_active_features)
             with warnings.catch_warnings():
@@ -1771,6 +2108,7 @@ def _forecast_p2b_lightgbm_sequence(
                     "runtime_seconds": None,
                     "dst_regime": row.get("dst_regime"),
                     "absorption_regime": row.get("absorption_regime"),
+                    "vix_level": row.get("vix_level"),
                     "active_feature_hash": cached_gate.get("active_feature_hash"),
                 }
             )
@@ -1786,6 +2124,102 @@ def _forecast_p2b_lightgbm_sequence(
                 }
             )
     return {"forecasts": forecasts, "diagnostics": diagnostics, "failures": failures}
+
+
+def _unavailable_active_features(
+    row: Mapping[str, object],
+    active_features: list[str],
+) -> list[str]:
+    unavailable: list[str] = []
+    for feature in active_features:
+        value = _optional_float(row.get(feature))
+        if value is None or not math.isfinite(value):
+            unavailable.append(feature)
+    return unavailable
+
+
+def build_p2b_feature_unavailability_date_records(
+    forecasts: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for row in forecasts:
+        if row.get("fit_status") != "unavailable_feature_not_valid_at_cutoff":
+            continue
+        for feature in _missing_feature_names(row.get("failure_reason")):
+            records.append(
+                {
+                    "forecast_date": row.get("forecast_date"),
+                    "target_family": row.get("target_family"),
+                    "model_name": row.get("model_name"),
+                    "information_set": row.get("information_set"),
+                    "tail_level": row.get("tail_level"),
+                    "feature": feature,
+                    "source_family": _feature_source_family(feature),
+                    "source_block": _feature_source_block(feature),
+                    "fit_status": row.get("fit_status"),
+                    "failure_reason": row.get("failure_reason"),
+                    "dst_regime": row.get("dst_regime"),
+                    "absorption_regime": row.get("absorption_regime"),
+                    "active_feature_hash": row.get("active_feature_hash"),
+                }
+            )
+    return sorted(
+        records,
+        key=lambda item: (
+            str(item.get("information_set") or ""),
+            _optional_float(item.get("tail_level")) or 0.0,
+            str(item.get("feature") or ""),
+            str(item.get("forecast_date") or ""),
+        ),
+    )
+
+
+def build_p2b_feature_unavailability_records(
+    forecasts: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    denominators: dict[tuple[str, str, float], int] = {}
+    dates_by_key: dict[tuple[str, str, float, str], list[str]] = {}
+    for row in forecasts:
+        model_name = str(row.get("model_name") or "")
+        information_set = str(row.get("information_set") or "")
+        tail_level = _optional_float(row.get("tail_level"))
+        if not model_name or not information_set or tail_level is None:
+            continue
+        denominator_key = (model_name, information_set, tail_level)
+        denominators[denominator_key] = denominators.get(denominator_key, 0) + 1
+        if row.get("fit_status") != "unavailable_feature_not_valid_at_cutoff":
+            continue
+        for feature in _missing_feature_names(row.get("failure_reason")):
+            key = (*denominator_key, feature)
+            dates_by_key.setdefault(key, []).append(str(row.get("forecast_date") or ""))
+    records: list[dict[str, object]] = []
+    for (model_name, information_set, tail_level, feature), dates in sorted(dates_by_key.items()):
+        denominator = denominators.get((model_name, information_set, tail_level), 0)
+        clean_dates = sorted(date_value for date_value in dates if date_value)
+        records.append(
+            {
+                "model_name": model_name,
+                "information_set": information_set,
+                "tail_level": tail_level,
+                "feature": feature,
+                "source_family": _feature_source_family(feature),
+                "source_block": _feature_source_block(feature),
+                "missing_count": len(clean_dates),
+                "forecast_rows": denominator,
+                "missing_rate": len(clean_dates) / denominator if denominator else None,
+                "first_missing_date": clean_dates[0] if clean_dates else None,
+                "last_missing_date": clean_dates[-1] if clean_dates else None,
+                "missing_dates_json": json.dumps(clean_dates, separators=(",", ":")),
+                "fit_status": "unavailable_feature_not_valid_at_cutoff",
+            }
+        )
+    return records
+
+
+def _missing_feature_names(value: object) -> list[str]:
+    if value is None:
+        return []
+    return [feature.strip() for feature in str(value).split(",") if feature.strip()]
 
 
 def _feature_matrix(frame: pl.DataFrame, active_features: list[str]) -> np.ndarray:
@@ -1876,7 +2310,12 @@ def build_dst_attenuation_records(
                 "mean_fz_gain": None,
                 "alpha_absorb": alpha_absorb,
                 "alpha_absorb_status": "ok" if stable else "unavailable_unstable_est_gain",
-                "inference_status": "unavailable_block_bootstrap_not_implemented",
+                "inference_status": "diagnostic_ratio_no_direct_dm_test",
+                "dm_method": None,
+                "dm_pvalue_one_sided": None,
+                "dm_block_length": None,
+                "dm_reps": None,
+                "dm_seed": None,
             }
         )
     return records
@@ -1932,6 +2371,29 @@ def _incremental_record_from_pairs(
             fz_loss(loss, base_var, base_es, tail_level)
             - fz_loss(loss, expanded_var, expanded_es, tail_level)
         )
+    fz_gain_array = np.array(fz_gains, dtype=float)
+    candidate_minus_base = -fz_gain_array
+    paired_rows = int(candidate_minus_base[np.isfinite(candidate_minus_base)].size)
+    block_length = max(5, round(paired_rows ** (1.0 / 3.0))) if paired_rows else None
+    mean_candidate_minus_base = _safe_mean(candidate_minus_base)
+    dm_pvalue = (
+        _moving_block_one_sided_pvalue(
+            candidate_minus_base[np.isfinite(candidate_minus_base)],
+            observed_mean=mean_candidate_minus_base,
+            reps=BOOTSTRAP_REPS,
+            block_length=int(block_length),
+            rng=np.random.default_rng(INFERENCE_RANDOM_SEED),
+        )
+        if mean_candidate_minus_base is not None
+        and block_length is not None
+        and paired_rows >= PAPER_CONFIG.evaluation_policy.min_common_oos_rows
+        else None
+    )
+    inference_status = (
+        "ok_block_bootstrap_dm"
+        if dm_pvalue is not None
+        else "unavailable_block_bootstrap_dm_insufficient_pairs"
+    )
     return {
         "tail_level": tail_level,
         "base_information_set": base_information_set,
@@ -1940,8 +2402,14 @@ def _incremental_record_from_pairs(
         "paired_rows": len(paired),
         "common_sample_status": common_sample_status([str(i) for i in range(len(paired))]),
         "mean_quantile_gain": _safe_mean(np.array(q_gains, dtype=float)),
-        "mean_fz_gain": _safe_mean(np.array(fz_gains, dtype=float)),
-        "inference_status": "unavailable_gw_block_bootstrap_not_implemented",
+        "mean_fz_gain": _safe_mean(fz_gain_array),
+        "dm_method": PAPER_CONFIG.evaluation_policy.dm_method,
+        "dm_alternative": "expanded_mean_fz_loss_less_than_base",
+        "dm_pvalue_one_sided": dm_pvalue,
+        "dm_block_length": block_length,
+        "dm_reps": BOOTSTRAP_REPS,
+        "dm_seed": INFERENCE_RANDOM_SEED,
+        "inference_status": inference_status,
     }
 
 
@@ -1982,7 +2450,12 @@ def _assert_run_config_compatible(run_dir: Path, *, force: bool = False) -> None
         )
 
 
-def build_metric_records(forecasts: list[dict[str, object]]) -> list[dict[str, object]]:
+def build_metric_records(
+    forecasts: list[dict[str, object]],
+    *,
+    sample_policy: str = "per_model_oos",
+    common_sample_status_value: str | None = None,
+) -> list[dict[str, object]]:
     grouped: dict[tuple[str, str, float], list[dict[str, object]]] = {}
     for row in forecasts:
         if row.get("fit_status") == "ok" and row.get("is_valid_forecast") is True:
@@ -2009,21 +2482,19 @@ def build_metric_records(forecasts: list[dict[str, object]]) -> list[dict[str, o
                 "model_name": model,
                 "information_set": information_set,
                 "tail_level": tail_level,
+                "sample_policy": sample_policy,
+                "common_sample_status": common_sample_status_value,
                 "rows": len(rows),
                 "var_breach_rate": float(np.mean(breaches)) if rows else None,
                 "expected_breach_rate": alpha,
                 "exceedance_count": exceedance_count,
-                "low_exceedance_warning": (
-                    exceedance_count < PAPER_CONFIG.evaluation_policy.one_percent_min_exceedances
-                    if tail_level >= 0.99
-                    else False
-                ),
+                "low_exceedance_warning": exceedance_count < 30,
                 "kupiec_lr_uc": kupiec.get("lr_stat"),
                 "kupiec_pvalue": kupiec.get("pvalue"),
                 "christoffersen_lr_ind": christoffersen.get("lr_stat"),
                 "christoffersen_pvalue": christoffersen.get("pvalue"),
                 "dq_status": "unavailable_not_implemented",
-                "mcs_status": "unavailable_requires_loss_matrix",
+                "mcs_status": "available_in_loss_matrix_artifact",
                 "mean_quantile_loss": _safe_mean(
                     np.array(
                         [
@@ -2051,6 +2522,687 @@ def build_metric_records(forecasts: list[dict[str, object]]) -> list[dict[str, o
             }
         )
     return records
+
+
+def build_common_sample_artifacts(
+    forecasts: list[dict[str, object]],
+    *,
+    stage: str,
+    anchor_model: str,
+    anchor_information_set: str,
+) -> dict[str, object]:
+    valid_rows = _valid_forecast_rows(forecasts)
+    per_model_metrics = build_metric_records(
+        valid_rows,
+        sample_policy="per_model_oos",
+        common_sample_status_value=None,
+    )
+    grouped = _group_forecasts_by_key(valid_rows)
+    evictions: list[dict[str, object]] = []
+    headline_forecasts: list[dict[str, object]] = []
+    status_by_tail: dict[float, str] = {}
+    for tail_level in sorted({key[2] for key in grouped}):
+        keys = sorted(key for key in grouped if key[2] == tail_level)
+        anchor_key = (anchor_model, anchor_information_set, tail_level)
+        anchor_dates = set(grouped.get(anchor_key, {}))
+        if not anchor_dates:
+            status_by_tail[tail_level] = "unavailable_missing_anchor"
+            for key in keys:
+                evictions.append(
+                    _model_eviction_record(
+                        stage=stage,
+                        key=key,
+                        anchor_key=anchor_key,
+                        anchor_rows=0,
+                        overlap_rows=0,
+                        coverage_ratio=0.0,
+                        retained=False,
+                        eviction_reason="missing_anchor_sample",
+                        common_rows=0,
+                        common_anchor_coverage=0.0,
+                        common_sample_status_value="unavailable_missing_anchor",
+                    )
+                )
+            continue
+
+        retained_keys: list[tuple[str, str, float]] = []
+        pending_rows: list[dict[str, object]] = []
+        for key in keys:
+            overlap_rows = len(set(grouped[key]).intersection(anchor_dates))
+            coverage_ratio = overlap_rows / len(anchor_dates)
+            retained = key == anchor_key or coverage_ratio >= MODEL_EVICTION_COVERAGE_THRESHOLD
+            if retained:
+                retained_keys.append(key)
+            pending_rows.append(
+                _model_eviction_record(
+                    stage=stage,
+                    key=key,
+                    anchor_key=anchor_key,
+                    anchor_rows=len(anchor_dates),
+                    overlap_rows=overlap_rows,
+                    coverage_ratio=coverage_ratio,
+                    retained=retained,
+                    eviction_reason=None if retained else "coverage_below_model_eviction_threshold",
+                    common_rows=0,
+                    common_anchor_coverage=0.0,
+                    common_sample_status_value="pending",
+                )
+            )
+        common_dates = (
+            sorted(set.intersection(*(set(grouped[key]) for key in retained_keys)))
+            if retained_keys
+            else []
+        )
+        common_anchor_coverage = len(common_dates) / len(anchor_dates)
+        if common_anchor_coverage < COMMON_SAMPLE_MIN_ANCHOR_COVERAGE:
+            tail_status = "common_sample_unstable"
+        else:
+            tail_status = common_sample_status(common_dates)
+        status_by_tail[tail_level] = tail_status
+        for row in pending_rows:
+            row["common_rows"] = len(common_dates)
+            row["common_anchor_coverage"] = common_anchor_coverage
+            row["common_sample_status"] = tail_status
+            evictions.append(row)
+        for key in retained_keys:
+            date_map = grouped[key]
+            headline_forecasts.extend(date_map[forecast_date] for forecast_date in common_dates)
+
+    headline_metrics = build_metric_records(
+        headline_forecasts,
+        sample_policy="headline_common_sample",
+        common_sample_status_value=_combined_common_sample_status(status_by_tail),
+    )
+    loss_matrix = build_loss_matrix_records(headline_forecasts, stage=stage)
+    return {
+        "headline_forecasts": headline_forecasts,
+        "headline_metrics": headline_metrics,
+        "per_model_metrics": per_model_metrics,
+        "model_eviction": evictions,
+        "loss_matrix": loss_matrix,
+        "dm_inference": build_block_bootstrap_dm_records(
+            loss_matrix,
+            stage=stage,
+            anchor_model=anchor_model,
+            anchor_information_set=anchor_information_set,
+        ),
+        "mcs": build_mcs_records(loss_matrix, stage=stage),
+        "murphy": build_murphy_records(headline_forecasts, stage=stage),
+        "stress_windows": build_stress_window_records(headline_forecasts, stage=stage),
+        "common_sample_status": _combined_common_sample_status(status_by_tail),
+    }
+
+
+def build_loss_matrix_records(
+    forecasts: list[dict[str, object]],
+    *,
+    stage: str,
+) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for row in _valid_forecast_rows(forecasts):
+        tail_level = _required_float(row["tail_level"])
+        loss = _required_float(row["realized_loss"])
+        var_forecast = _required_float(row["var_forecast"])
+        es_forecast = _required_float(row["es_forecast"])
+        q_loss = quantile_loss(loss, var_forecast, tail_level)
+        realized_fz_loss = fz_loss(loss, var_forecast, es_forecast, tail_level)
+        if not math.isfinite(realized_fz_loss):
+            continue
+        records.append(
+            {
+                "stage": stage,
+                "forecast_date": row["forecast_date"],
+                "target_family": row.get("target_family") or "full_gap_settle_to_open",
+                "model_name": row["model_name"],
+                "information_set": row.get("information_set") or "target_history_only",
+                "tail_level": tail_level,
+                "realized_loss": loss,
+                "var_forecast": var_forecast,
+                "es_forecast": es_forecast,
+                "quantile_loss": q_loss,
+                "fz_loss": realized_fz_loss,
+                "dst_regime": row.get("dst_regime"),
+                "absorption_regime": row.get("absorption_regime"),
+                "vix_level": row.get("vix_level"),
+            }
+        )
+    return sorted(
+        records,
+        key=lambda item: (
+            _required_float(item["tail_level"]),
+            str(item["model_name"]),
+            str(item["information_set"]),
+            str(item["forecast_date"]),
+        ),
+    )
+
+
+def build_block_bootstrap_dm_records(
+    loss_matrix: list[dict[str, object]],
+    *,
+    stage: str,
+    anchor_model: str,
+    anchor_information_set: str,
+    reps: int = BOOTSTRAP_REPS,
+    seed: int = INFERENCE_RANDOM_SEED,
+) -> list[dict[str, object]]:
+    grouped = _group_loss_matrix_by_key(loss_matrix)
+    rng = np.random.default_rng(seed)
+    records: list[dict[str, object]] = []
+    for tail_level in sorted({key[2] for key in grouped}):
+        anchor_key = (anchor_model, anchor_information_set, tail_level)
+        anchor_rows = grouped.get(anchor_key, {})
+        for candidate_key in sorted(key for key in grouped if key[2] == tail_level):
+            if candidate_key == anchor_key:
+                continue
+            candidate_rows = grouped[candidate_key]
+            dates = sorted(set(anchor_rows).intersection(candidate_rows))
+            diffs = np.array(
+                [
+                    _required_float(candidate_rows[forecast_date]["fz_loss"])
+                    - _required_float(anchor_rows[forecast_date]["fz_loss"])
+                    for forecast_date in dates
+                ],
+                dtype=float,
+            )
+            diffs = diffs[np.isfinite(diffs)]
+            block_length = max(5, round(len(diffs) ** (1.0 / 3.0))) if len(diffs) else None
+            mean_diff = _safe_mean(diffs)
+            pvalue = (
+                _moving_block_one_sided_pvalue(
+                    diffs,
+                    observed_mean=mean_diff,
+                    reps=reps,
+                    block_length=int(block_length),
+                    rng=rng,
+                )
+                if mean_diff is not None and block_length is not None and len(diffs) >= 2
+                else None
+            )
+            records.append(
+                {
+                    "stage": stage,
+                    "tail_level": tail_level,
+                    "baseline_model_name": anchor_model,
+                    "baseline_information_set": anchor_information_set,
+                    "candidate_model_name": candidate_key[0],
+                    "candidate_information_set": candidate_key[1],
+                    "paired_rows": int(diffs.size),
+                    "mean_fz_loss_diff_candidate_minus_baseline": mean_diff,
+                    "alternative": "candidate_mean_diff_less_than_zero",
+                    "null_hypothesis": "E[FZ_candidate_minus_baseline] >= 0",
+                    "pvalue_one_sided": pvalue,
+                    "reject_10pct": pvalue is not None and pvalue < 0.10,
+                    "bootstrap_reps": reps,
+                    "bootstrap_seed": seed,
+                    "block_length": block_length,
+                    "method_note": PAPER_CONFIG.evaluation_policy.dm_method,
+                    "inference_status": "ok"
+                    if pvalue is not None
+                    else "unavailable_block_bootstrap_dm_insufficient_pairs",
+                }
+            )
+    return records
+
+
+def build_mcs_records(
+    loss_matrix: list[dict[str, object]],
+    *,
+    stage: str,
+    seed: int = INFERENCE_RANDOM_SEED,
+    alpha: float = MCS_ALPHA,
+    reps: int = BOOTSTRAP_REPS,
+) -> list[dict[str, object]]:
+    grouped = _group_loss_matrix_by_key(loss_matrix)
+    rng = np.random.default_rng(seed)
+    records: list[dict[str, object]] = []
+    for tail_level in sorted({key[2] for key in grouped}):
+        keys = sorted(key for key in grouped if key[2] == tail_level)
+        if not keys:
+            continue
+        common_dates = sorted(set.intersection(*(set(grouped[key]) for key in keys)))
+        if len(common_dates) < PAPER_CONFIG.evaluation_policy.min_common_oos_rows:
+            for key in keys:
+                records.append(
+                    _mcs_record(
+                        stage=stage,
+                        key=key,
+                        rows=len(common_dates),
+                        mean_fz_loss=None,
+                        included=False,
+                        alpha=alpha,
+                        reps=reps,
+                        seed=seed,
+                        block_length=None,
+                        status="unavailable_insufficient_global_common_oos",
+                        method_note=PAPER_CONFIG.evaluation_policy.mcs_method,
+                    )
+                )
+            continue
+        losses_by_key = {
+            key: np.array(
+                [
+                    _required_float(grouped[key][forecast_date]["fz_loss"])
+                    for forecast_date in common_dates
+                ],
+                dtype=float,
+            )
+            for key in keys
+        }
+        mean_losses = {key: _safe_mean(values) for key, values in losses_by_key.items()}
+        active = {key for key, value in mean_losses.items() if value is not None}
+        eliminated_step: dict[tuple[str, str, float], int] = {}
+        elimination_pvalue: dict[tuple[str, str, float], float | None] = {}
+        elimination_tmax: dict[tuple[str, str, float], float | None] = {}
+        elimination_active_set: dict[tuple[str, str, float], str | None] = {}
+        model_tmax_component: dict[tuple[str, str, float], float | None] = {}
+        final_tmax_stat: float | None = None
+        final_pvalue: float | None = None
+        block_length = max(5, round(len(common_dates) ** (1.0 / 3.0)))
+        step = 0
+        while len(active) > 1:
+            worst_key = max(active, key=lambda key: (cast(float, mean_losses[key]), key[0], key[1]))
+            ordered_active = sorted(active)
+            active_loss_matrix = np.column_stack([losses_by_key[key] for key in ordered_active])
+            result = _hln_tmax_mcs_step(
+                active_loss_matrix,
+                reps=reps,
+                block_length=block_length,
+                rng=rng,
+            )
+            t_values = cast(np.ndarray, result["t_values"])
+            for key, t_value in zip(ordered_active, t_values, strict=True):
+                model_tmax_component[key] = (
+                    float(t_value) if math.isfinite(float(t_value)) else None
+                )
+            pvalue = _optional_float(result["pvalue"])
+            final_tmax_stat = _optional_float(result["tmax_stat"])
+            final_pvalue = pvalue
+            if pvalue is None or pvalue > alpha:
+                break
+            step += 1
+            eliminated_step[worst_key] = step
+            elimination_pvalue[worst_key] = pvalue
+            elimination_tmax[worst_key] = _optional_float(result["tmax_stat"])
+            elimination_active_set[worst_key] = _mcs_key_set_json(ordered_active)
+            active.remove(worst_key)
+        final_active_set = _mcs_key_set_json(sorted(active))
+        for key in keys:
+            records.append(
+                _mcs_record(
+                    stage=stage,
+                    key=key,
+                    rows=len(common_dates),
+                    mean_fz_loss=mean_losses[key],
+                    included=key in active,
+                    alpha=alpha,
+                    reps=reps,
+                    seed=seed,
+                    block_length=block_length,
+                    status="ok" if active else "unavailable_empty_loss_matrix",
+                    method_note=PAPER_CONFIG.evaluation_policy.mcs_method,
+                    elimination_step=eliminated_step.get(key),
+                    elimination_pvalue=elimination_pvalue.get(key),
+                    tmax_stat=elimination_tmax.get(key)
+                    if key in eliminated_step
+                    else final_tmax_stat,
+                    final_pvalue=final_pvalue,
+                    model_t_stat=model_tmax_component.get(key),
+                    active_model_set=elimination_active_set.get(key)
+                    if key in eliminated_step
+                    else final_active_set,
+                )
+            )
+    return records
+
+
+def _mcs_record(
+    *,
+    stage: str,
+    key: tuple[str, str, float],
+    rows: int,
+    mean_fz_loss: float | None,
+    included: bool,
+    alpha: float,
+    reps: int,
+    seed: int,
+    block_length: int | None,
+    status: str,
+    method_note: str,
+    elimination_step: int | None = None,
+    elimination_pvalue: float | None = None,
+    tmax_stat: float | None = None,
+    final_pvalue: float | None = None,
+    model_t_stat: float | None = None,
+    active_model_set: str | None = None,
+) -> dict[str, object]:
+    return {
+        "stage": stage,
+        "tail_level": key[2],
+        "model_name": key[0],
+        "information_set": key[1],
+        "rows": rows,
+        "mean_fz_loss": mean_fz_loss,
+        "included_in_mcs": included,
+        "elimination_step": elimination_step,
+        "elimination_pvalue": elimination_pvalue,
+        "model_t_stat": model_t_stat,
+        "tmax_stat": tmax_stat,
+        "final_pvalue": final_pvalue,
+        "active_model_set": active_model_set,
+        "mcs_alpha": alpha,
+        "bootstrap_reps": reps,
+        "bootstrap_seed": seed,
+        "block_length": block_length,
+        "mcs_status": status,
+        "method_note": method_note,
+    }
+
+
+def _hln_tmax_mcs_step(
+    losses: np.ndarray,
+    *,
+    reps: int,
+    block_length: int,
+    rng: np.random.Generator,
+) -> dict[str, object]:
+    if losses.ndim != 2 or min(losses.shape) < 2:
+        return {"tmax_stat": None, "pvalue": None, "t_values": np.array([])}
+    centered_against_cross_section = losses - np.mean(losses, axis=1, keepdims=True)
+    dbar = np.mean(centered_against_cross_section, axis=0)
+    null_centered = centered_against_cross_section - dbar
+    bootstrap_means = _moving_block_bootstrap_mean_matrix(
+        null_centered,
+        reps=reps,
+        block_length=block_length,
+        rng=rng,
+    )
+    se = np.std(bootstrap_means, axis=0, ddof=1)
+    tiny_se = se <= 1e-12
+    t_values = np.divide(dbar, se, out=np.zeros_like(dbar), where=~tiny_se)
+    t_values = np.where(tiny_se & (dbar > 1e-12), 1e12, t_values)
+    t_values = np.where(tiny_se & (dbar < -1e-12), -1e12, t_values)
+    if np.all(np.isnan(t_values)):
+        return {"tmax_stat": None, "pvalue": None, "t_values": t_values}
+    tmax_stat = float(np.nanmax(t_values))
+    bootstrap_scaled = np.divide(
+        bootstrap_means,
+        se,
+        out=np.zeros_like(bootstrap_means),
+        where=~tiny_se,
+    )
+    bootstrap_tmax = np.nanmax(bootstrap_scaled, axis=1)
+    bootstrap_tmax = bootstrap_tmax[np.isfinite(bootstrap_tmax)]
+    if bootstrap_tmax.size == 0:
+        return {"tmax_stat": tmax_stat, "pvalue": None, "t_values": t_values}
+    pvalue = float((np.sum(bootstrap_tmax >= tmax_stat) + 1) / (bootstrap_tmax.size + 1))
+    return {"tmax_stat": tmax_stat, "pvalue": pvalue, "t_values": t_values}
+
+
+def _mcs_key_set_json(keys: list[tuple[str, str, float]]) -> str:
+    return json.dumps(
+        [
+            {
+                "model_name": key[0],
+                "information_set": key[1],
+                "tail_level": key[2],
+            }
+            for key in keys
+        ],
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _moving_block_bootstrap_mean_matrix(
+    matrix: np.ndarray,
+    *,
+    reps: int,
+    block_length: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    n, m = matrix.shape
+    starts = np.arange(n)
+    output = np.empty((reps, m), dtype=float)
+    for rep in range(reps):
+        indices: list[int] = []
+        while len(indices) < n:
+            start = int(rng.choice(starts))
+            for offset in range(block_length):
+                indices.append((start + offset) % n)
+                if len(indices) == n:
+                    break
+        output[rep, :] = np.mean(matrix[indices, :], axis=0)
+    return output
+
+
+def build_murphy_records(
+    forecasts: list[dict[str, object]],
+    *,
+    stage: str,
+    grid_size: int = 200,
+) -> list[dict[str, object]]:
+    valid_rows = _valid_forecast_rows(forecasts)
+    losses = np.array([_required_float(row["realized_loss"]) for row in valid_rows], dtype=float)
+    losses = losses[np.isfinite(losses)]
+    if losses.size == 0:
+        return []
+    lower = float(np.quantile(losses, 0.01))
+    upper = float(np.quantile(losses, 0.99))
+    thresholds = np.linspace(lower, upper, grid_size)
+    grouped = _group_forecasts_by_key(valid_rows)
+    records: list[dict[str, object]] = []
+    for key, rows_by_date in sorted(grouped.items()):
+        rows = list(rows_by_date.values())
+        row_losses = np.array([_required_float(row["realized_loss"]) for row in rows], dtype=float)
+        var_values = np.array([_required_float(row["var_forecast"]) for row in rows], dtype=float)
+        alpha = 1.0 - key[2]
+        for threshold_index, threshold in enumerate(thresholds):
+            exceed = (row_losses > threshold).astype(float)
+            elementary = (exceed - alpha) * (var_values - threshold)
+            records.append(
+                {
+                    "stage": stage,
+                    "model_name": key[0],
+                    "information_set": key[1],
+                    "tail_level": key[2],
+                    "threshold_index": threshold_index,
+                    "threshold_value": float(threshold),
+                    "threshold_grid_policy": "pooled_oos_loss_1pct_to_99pct_200_equal_points",
+                    "rows": len(rows),
+                    "mean_elementary_score": _safe_mean(elementary),
+                }
+            )
+    return records
+
+
+def build_stress_window_records(
+    forecasts: list[dict[str, object]],
+    *,
+    stage: str,
+) -> list[dict[str, object]]:
+    loss_by_date: dict[str, float] = {}
+    vix_by_date: dict[str, float] = {}
+    for row in _valid_forecast_rows(forecasts):
+        forecast_date = str(row["forecast_date"])
+        loss = _optional_float(row.get("realized_loss"))
+        if loss is not None and math.isfinite(loss):
+            loss_by_date[forecast_date] = loss
+        vix = _optional_float(row.get("vix_level"))
+        if vix is not None and math.isfinite(vix):
+            vix_by_date[forecast_date] = vix
+    records: list[dict[str, object]] = []
+    if loss_by_date:
+        threshold = float(np.quantile(np.array(list(loss_by_date.values()), dtype=float), 0.90))
+        records.extend(
+            {
+                "stage": stage,
+                "window_name": "loss_top_decile",
+                "forecast_date": forecast_date,
+                "threshold_value": threshold,
+                "realized_loss": loss,
+                "vix_level": vix_by_date.get(forecast_date),
+                "classifier_policy": "full_sample_reproducible_decile",
+                "rolling_classifier_status": "future_work_not_used_in_first_round",
+            }
+            for forecast_date, loss in sorted(loss_by_date.items())
+            if loss >= threshold
+        )
+    if vix_by_date:
+        threshold = float(np.quantile(np.array(list(vix_by_date.values()), dtype=float), 0.90))
+        records.extend(
+            {
+                "stage": stage,
+                "window_name": "vix_top_decile",
+                "forecast_date": forecast_date,
+                "threshold_value": threshold,
+                "realized_loss": loss_by_date.get(forecast_date),
+                "vix_level": vix,
+                "classifier_policy": "full_sample_reproducible_decile",
+                "rolling_classifier_status": "future_work_not_used_in_first_round",
+            }
+            for forecast_date, vix in sorted(vix_by_date.items())
+            if vix >= threshold
+        )
+    return records
+
+
+def _valid_forecast_rows(forecasts: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [
+        row
+        for row in forecasts
+        if row.get("fit_status") == "ok" and row.get("is_valid_forecast") is True
+    ]
+
+
+def _forecast_key(row: Mapping[str, object]) -> tuple[str, str, float]:
+    return (
+        str(row["model_name"]),
+        str(row.get("information_set") or "target_history_only"),
+        _required_float(row["tail_level"]),
+    )
+
+
+def _group_forecasts_by_key(
+    forecasts: list[dict[str, object]],
+) -> dict[tuple[str, str, float], dict[str, dict[str, object]]]:
+    grouped: dict[tuple[str, str, float], dict[str, dict[str, object]]] = {}
+    for row in forecasts:
+        grouped.setdefault(_forecast_key(row), {})[str(row["forecast_date"])] = row
+    return grouped
+
+
+def _group_loss_matrix_by_key(
+    rows: list[dict[str, object]],
+) -> dict[tuple[str, str, float], dict[str, dict[str, object]]]:
+    grouped: dict[tuple[str, str, float], dict[str, dict[str, object]]] = {}
+    for row in rows:
+        key = (
+            str(row["model_name"]),
+            str(row.get("information_set") or "target_history_only"),
+            _required_float(row["tail_level"]),
+        )
+        grouped.setdefault(key, {})[str(row["forecast_date"])] = row
+    return grouped
+
+
+def _model_eviction_record(
+    *,
+    stage: str,
+    key: tuple[str, str, float],
+    anchor_key: tuple[str, str, float],
+    anchor_rows: int,
+    overlap_rows: int,
+    coverage_ratio: float,
+    retained: bool,
+    eviction_reason: str | None,
+    common_rows: int,
+    common_anchor_coverage: float,
+    common_sample_status_value: str,
+) -> dict[str, object]:
+    return {
+        "stage": stage,
+        "model_name": key[0],
+        "information_set": key[1],
+        "tail_level": key[2],
+        "anchor_model_name": anchor_key[0],
+        "anchor_information_set": anchor_key[1],
+        "anchor_rows": anchor_rows,
+        "overlap_rows": overlap_rows,
+        "coverage_ratio": coverage_ratio,
+        "eviction_threshold": MODEL_EVICTION_COVERAGE_THRESHOLD,
+        "retained_for_headline": retained,
+        "eviction_reason": eviction_reason,
+        "common_rows": common_rows,
+        "common_anchor_coverage": common_anchor_coverage,
+        "common_sample_min_anchor_coverage": COMMON_SAMPLE_MIN_ANCHOR_COVERAGE,
+        "common_sample_status": common_sample_status_value,
+    }
+
+
+def _combined_common_sample_status(status_by_tail: Mapping[float, str]) -> str:
+    statuses = set(status_by_tail.values())
+    if not statuses:
+        return "unavailable_empty_forecasts"
+    if "common_sample_unstable" in statuses:
+        return "common_sample_unstable"
+    if statuses == {"ok"}:
+        return "ok"
+    return ",".join(sorted(statuses))
+
+
+def _moving_block_one_sided_pvalue(
+    values: np.ndarray,
+    *,
+    observed_mean: float | None,
+    reps: int,
+    block_length: int,
+    rng: np.random.Generator,
+) -> float | None:
+    if observed_mean is None or values.size < 2:
+        return None
+    centered = values - float(np.mean(values))
+    n = int(centered.size)
+    starts = np.arange(n)
+    count = 0
+    for _ in range(reps):
+        sample: list[float] = []
+        while len(sample) < n:
+            start = int(rng.choice(starts))
+            for offset in range(block_length):
+                sample.append(float(centered[(start + offset) % n]))
+                if len(sample) == n:
+                    break
+        if float(np.mean(np.array(sample, dtype=float))) <= observed_mean:
+            count += 1
+    return float((count + 1) / (reps + 1))
+
+
+def _moving_block_greater_pvalue(
+    values: np.ndarray,
+    *,
+    observed_mean: float | None,
+    reps: int,
+    block_length: int,
+    rng: np.random.Generator,
+) -> float | None:
+    if observed_mean is None or values.size < 2:
+        return None
+    centered = values - float(np.mean(values))
+    n = int(centered.size)
+    starts = np.arange(n)
+    count = 0
+    for _ in range(reps):
+        sample: list[float] = []
+        while len(sample) < n:
+            start = int(rng.choice(starts))
+            for offset in range(block_length):
+                sample.append(float(centered[(start + offset) % n]))
+                if len(sample) == n:
+                    break
+        if float(np.mean(np.array(sample, dtype=float))) >= observed_mean:
+            count += 1
+    return float((count + 1) / (reps + 1))
 
 
 def kupiec_pof_test(*, breaches: np.ndarray, expected_probability: float) -> dict[str, object]:
@@ -2177,7 +3329,9 @@ def write_paper_leakage_check(*, run_dir: Path) -> PaperLeakageCheckResult:
     panel_path = run_dir / "panel" / "modeling_panel.parquet"
     if not panel_path.exists():
         raise PaperRunError(f"Missing modeling panel: {panel_path}")
-    rows = build_leakage_check_records(pl.read_parquet(panel_path).to_dicts())
+    panel_frame = pl.read_parquet(panel_path)
+    rows = build_leakage_check_records(panel_frame.to_dicts())
+    binding = _current_leakage_binding(run_dir, panel_frame=panel_frame)
     output_path = run_dir / "audits" / "leakage_check.parquet"
     summary_path = run_dir / "audits" / "leakage_check_summary.json"
     _write_parquet(output_path, rows)
@@ -2189,6 +3343,7 @@ def write_paper_leakage_check(*, run_dir: Path) -> PaperLeakageCheckResult:
             "run_id": run_dir.name,
             "claims_level": PAPER_CLAIMS_LEVEL,
             "config_hash": _read_manifest(run_dir).get("config_hash"),
+            **binding,
             "rows": len(rows),
             "failures": failures,
             "warnings": warnings,
@@ -2210,6 +3365,104 @@ def write_paper_leakage_check(*, run_dir: Path) -> PaperLeakageCheckResult:
         failures=failures,
         warnings=warnings,
     )
+
+
+def _current_leakage_binding(
+    run_dir: Path,
+    *,
+    panel_frame: pl.DataFrame | None = None,
+) -> dict[str, object]:
+    panel = (
+        panel_frame
+        if panel_frame is not None
+        else pl.read_parquet(run_dir / "panel" / "modeling_panel.parquet")
+    )
+    calendar_path = run_dir / "panel" / "calendar_map.parquet"
+    calendar_hash = None
+    if calendar_path.exists():
+        calendar_hash = _deterministic_frame_signature(
+            pl.read_parquet(calendar_path),
+            columns=(
+                "ose_trading_date",
+                "us_session_date",
+                "model_cutoff_ts_utc",
+                "target_open_ts_utc",
+                "mapping_status",
+                "mapping_reason",
+            ),
+            sort_columns=("ose_trading_date",),
+        )
+    manifest = _read_manifest(run_dir)
+    forecast_bounds = _column_bounds(panel, "forecast_date")
+    target_bounds = _column_bounds(panel, "target_open_ts_utc")
+    cutoff_bounds = _column_bounds(panel, "model_cutoff_ts_utc")
+    return {
+        "panel_signature": _deterministic_frame_signature(
+            panel,
+            columns=PANEL_SIGNATURE_COLUMNS,
+            sort_columns=("forecast_date",),
+        ),
+        "panel_signature_columns": list(PANEL_SIGNATURE_COLUMNS),
+        "panel_signature_hash_seed": PANEL_SIGNATURE_HASH_SEED,
+        "panel_row_count": panel.height,
+        "panel_forecast_date_min": forecast_bounds[0],
+        "panel_forecast_date_max": forecast_bounds[1],
+        "panel_target_open_ts_utc_min": target_bounds[0],
+        "panel_target_open_ts_utc_max": target_bounds[1],
+        "panel_model_cutoff_ts_utc_min": cutoff_bounds[0],
+        "panel_model_cutoff_ts_utc_max": cutoff_bounds[1],
+        "calendar_map_hash": calendar_hash,
+        "bound_config_hash": manifest.get("config_hash"),
+    }
+
+
+def _deterministic_frame_signature(
+    frame: pl.DataFrame,
+    *,
+    columns: tuple[str, ...],
+    sort_columns: tuple[str, ...],
+) -> str:
+    working = frame
+    for column in columns:
+        if column not in working.columns:
+            working = working.with_columns(pl.lit(None).alias(column))
+    selected = working.select(
+        [
+            pl.col(column).cast(pl.Utf8, strict=False).fill_null("<NULL>").alias(column)
+            for column in columns
+        ]
+    )
+    available_sort = [column for column in sort_columns if column in selected.columns]
+    if available_sort:
+        selected = selected.sort(available_sort)
+    row_hashes = [
+        int(value) for value in selected.hash_rows(seed=PANEL_SIGNATURE_HASH_SEED).to_list()
+    ]
+    return stable_hash(
+        {
+            "columns": columns,
+            "hash_seed": PANEL_SIGNATURE_HASH_SEED,
+            "row_count": selected.height,
+            "row_hashes": row_hashes,
+        }
+    )
+
+
+def _column_bounds(frame: pl.DataFrame, column: str) -> tuple[str | None, str | None]:
+    if column not in frame.columns or frame.height == 0:
+        return None, None
+    series = frame.get_column(column).drop_nulls()
+    if series.is_empty():
+        return None, None
+    return _bound_value_to_string(series.min()), _bound_value_to_string(series.max())
+
+
+def _bound_value_to_string(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime | date):
+        return value.isoformat()
+    return str(value)
 
 
 def build_leakage_check_records(panel_rows: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -2291,7 +3544,8 @@ def _evaluate_p2a_shard(payload: dict[str, object]) -> dict[str, list[dict[str, 
         .collect()
     )
     rows = frame.to_dicts()
-    oos_start = find_oos_start_date(rows, tail_level=tail_level)
+    oos_diagnostics = find_oos_start_diagnostics(rows, tail_level=tail_level)
+    oos_start = cast(str | None, oos_diagnostics["oos_start"])
     if oos_start is None:
         return {
             "forecasts": [],
@@ -2301,6 +3555,9 @@ def _evaluate_p2a_shard(payload: dict[str, object]) -> dict[str, list[dict[str, 
                     "tail_level": tail_level,
                     "shard_id": _forecast_shard_id(model_name, tail_level),
                     "fit_status": "unavailable_insufficient_oos_start",
+                    "oos_failure_reason": oos_diagnostics["failure_reason"],
+                    "train_n": oos_diagnostics["train_n"],
+                    "train_exceedances": oos_diagnostics["train_exceedances"],
                     "min_train_rows": DEFAULT_MIN_TRAIN_ROWS,
                     "min_train_exceedances": DEFAULT_MIN_TRAIN_EXCEEDANCES,
                 }
@@ -2543,6 +3800,21 @@ def _standardized_student_t_loss_var_es(
     nu: float,
     tail_level: float,
 ) -> tuple[float, float]:
+    """Convert return-space Student-t forecasts into loss-space VaR and ES.
+
+    The ARCH model is fit on negative returns for numerical convenience, but this
+    helper receives the forecast mean in return units. Let return R = mu + sigma Z
+    and loss L = -R. For a right-tail loss level tau, alpha = 1 - tau and the
+    return cutoff is the lower alpha quantile q_alpha of the standardized
+    Student-t innovation. Therefore VaR_tau(L) = -(mu + sigma q_alpha).
+
+    For Student-t innovations standardized to unit variance, q_alpha is
+    sqrt((nu - 2) / nu) * t_nu^{-1}(alpha). The left-tail return ES is the
+    negative of the symmetric right-tail standardized ES,
+    sqrt((nu - 2) / nu) * f_nu(t_nu^{-1}(alpha)) / alpha
+    * (nu + t_nu^{-1}(alpha)^2) / (nu - 1), so loss ES is
+    -mu + sigma * standardized_upper_es.
+    """
     alpha = 1.0 - tail_level
     raw_quantile = float(stats.t.ppf(alpha, df=nu))
     variance_scale = math.sqrt((nu - 2.0) / nu) if nu > 2.0 else 1.0
@@ -2654,6 +3926,158 @@ def _features_asof(
     return {}
 
 
+def _fred_features_asof(
+    features_by_date: dict[str, dict[str, object]],
+    date_key: str,
+    *,
+    cutoff: datetime | None = None,
+) -> dict[str, object]:
+    """Select FRED predictors feature-by-feature using timestamp-safe as-of logic."""
+    if not date_key or cutoff is None:
+        return {}
+    try:
+        date.fromisoformat(date_key)
+    except ValueError:
+        return {}
+    feature_names = sorted(
+        {
+            feature
+            for record in features_by_date.values()
+            for feature in _feature_value_names(record)
+            if feature.startswith("fred_")
+        }
+    )
+    output: dict[str, object] = {}
+    rate_source_ages: list[int] = []
+    rate_available_ts: list[datetime] = []
+    rate_source_dates: list[str] = []
+    for feature_name in feature_names:
+        selected = _fred_feature_candidate_asof(
+            features_by_date,
+            date_key=date_key,
+            feature_name=feature_name,
+            cutoff=cutoff,
+        )
+        if selected is None:
+            continue
+        is_forward_fill = selected["date_key"] != date_key
+        is_filled_diff = bool(is_forward_fill and feature_name.endswith("_diff"))
+        output[feature_name] = 0.0 if is_filled_diff else selected["value"]
+        _stamp_feature_metadata(
+            output,
+            feature_name=feature_name,
+            available_ts_utc=cast(datetime | None, selected["available_ts_utc"]),
+            source_date=str(selected["source_date"]),
+            fill_method="forward_fill_fred_release_lag" if is_forward_fill else "direct",
+        )
+        output[f"{feature_name}__forward_fill_fred_release_lag"] = is_forward_fill
+        output[f"{feature_name}__fill_source_obs_date"] = selected["source_date"]
+        output[f"{feature_name}__fill_feature_available_ts_utc"] = selected["available_ts_utc"]
+        output[f"{feature_name}__is_filled_diff"] = is_filled_diff
+        output[f"{feature_name}__fred_release_lag_days"] = selected["release_lag_days"]
+        output[f"{feature_name}__fred_source_age_days"] = selected["source_age_days"]
+        if (
+            feature_name in FRED_RATE_STALENESS_LEVEL_FEATURES
+            and selected["source_age_days"] is not None
+        ):
+            rate_source_ages.append(int(cast(int, selected["source_age_days"])))
+            if selected["available_ts_utc"] is not None:
+                rate_available_ts.append(cast(datetime, selected["available_ts_utc"]))
+            if selected["source_date"]:
+                rate_source_dates.append(str(selected["source_date"]))
+    _synthesize_forward_filled_fred_diffs(output, feature_names)
+    if rate_source_ages:
+        output[FRED_RATE_STALENESS_FEATURE] = float(max(rate_source_ages))
+        latest_rate_available = max(rate_available_ts) if rate_available_ts else None
+        latest_source_date = max(rate_source_dates) if rate_source_dates else date_key
+        _stamp_feature_metadata(
+            output,
+            feature_name=FRED_RATE_STALENESS_FEATURE,
+            available_ts_utc=latest_rate_available,
+            source_date=latest_source_date,
+            fill_method="fred_rates_staleness",
+        )
+    return output
+
+
+def _synthesize_forward_filled_fred_diffs(
+    output: dict[str, object],
+    feature_names: list[str],
+) -> None:
+    for level_feature in [
+        key for key in output if key.startswith("fred_") and key.endswith("_level")
+    ]:
+        diff_feature = f"{level_feature.removesuffix('_level')}_diff"
+        if diff_feature not in feature_names or diff_feature in output:
+            continue
+        if output.get(f"{level_feature}__fill_method") != "forward_fill_fred_release_lag":
+            continue
+        available_ts = _coerce_datetime(output.get(f"{level_feature}__available_ts_utc"))
+        source_date = str(output.get(f"{level_feature}__source_date") or "")
+        output[diff_feature] = 0.0
+        _stamp_feature_metadata(
+            output,
+            feature_name=diff_feature,
+            available_ts_utc=available_ts,
+            source_date=source_date,
+            fill_method="forward_fill_fred_release_lag",
+        )
+        for suffix in (
+            "forward_fill_fred_release_lag",
+            "fill_source_obs_date",
+            "fill_feature_available_ts_utc",
+            "fred_release_lag_days",
+            "fred_source_age_days",
+        ):
+            output[f"{diff_feature}__{suffix}"] = output.get(f"{level_feature}__{suffix}")
+        output[f"{diff_feature}__is_filled_diff"] = True
+
+
+def _fred_feature_candidate_asof(
+    features_by_date: dict[str, dict[str, object]],
+    *,
+    date_key: str,
+    feature_name: str,
+    cutoff: datetime,
+) -> dict[str, object] | None:
+    try:
+        target_date = date.fromisoformat(date_key)
+    except ValueError:
+        return None
+    prior_keys = [key for key in features_by_date if key <= date_key]
+    for selected_key in sorted(prior_keys, reverse=True):
+        try:
+            selected_date = date.fromisoformat(selected_key)
+        except ValueError:
+            continue
+        release_lag_days = (target_date - selected_date).days
+        if release_lag_days > PAPER_CONFIG.leakage_policy.max_forward_fill_us_close_days:
+            continue
+        record = features_by_date[selected_key]
+        value = _optional_float(record.get(feature_name))
+        if value is None:
+            continue
+        available_ts = _coerce_datetime(record.get(f"{feature_name}__available_ts_utc"))
+        if available_ts is None or available_ts > cutoff:
+            continue
+        source_date_text = str(record.get(f"{feature_name}__source_date") or selected_key)
+        try:
+            source_date = date.fromisoformat(source_date_text)
+        except ValueError:
+            source_date = selected_date
+            source_date_text = selected_key
+        source_age_days = max(0, (target_date - source_date).days)
+        return {
+            "date_key": selected_key,
+            "value": value,
+            "available_ts_utc": available_ts,
+            "source_date": source_date_text,
+            "release_lag_days": release_lag_days,
+            "source_age_days": source_age_days,
+        }
+    return None
+
+
 def _feature_record_available_by_cutoff(
     record: Mapping[str, object],
     cutoff: datetime,
@@ -2682,6 +4106,7 @@ def _feature_value_names(record: Mapping[str, object]) -> list[str]:
             or key.endswith("_range")
             or key.endswith("_diff")
             or key.endswith("_level")
+            or key.endswith("_days")
             or key.startswith("spy_late_")
             or key.startswith("spy_final_")
         )
@@ -2870,19 +4295,41 @@ def _fred_feature_map(records: list[dict[str, object]]) -> dict[str, dict[str, o
     return features_by_date
 
 
+def _cboe_feature_map(records: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+    features_by_date: dict[str, dict[str, object]] = {}
+    for row in sorted(records, key=lambda item: str(item.get("observation_date") or "")):
+        if str(row.get("symbol", "")).upper() != "VIX":
+            continue
+        date_key = str(row["observation_date"])
+        output = features_by_date.setdefault(date_key, {})
+        close = _optional_float(row.get("close"))
+        range_value = _optional_float(row.get("range"))
+        available_ts = _coerce_datetime(row.get("vendor_available_ts_utc"))
+        output["cboe_vix_close"] = close
+        output["cboe_vix_range"] = range_value
+        _stamp_feature_metadata(
+            output,
+            feature_name="cboe_vix_close",
+            available_ts_utc=available_ts,
+            source_date=date_key,
+        )
+        _stamp_feature_metadata(
+            output,
+            feature_name="cboe_vix_range",
+            available_ts_utc=available_ts,
+            source_date=date_key,
+        )
+    return features_by_date
+
+
 def _canonical_fx_context(
     *,
     massive_daily_records: list[dict[str, object]],
     fred_records: list[dict[str, object]],
     calendar_records: list[dict[str, object]],
 ) -> dict[str, object]:
-    return {
-        "fred": _fred_fx_records(fred_records),
-        "massive": _massive_fx_records(
-            massive_daily_records,
-            calendar_records=calendar_records,
-        ),
-    }
+    _ = massive_daily_records, calendar_records
+    return {"fred": _fred_fx_records(fred_records)}
 
 
 def _fred_fx_records(records: list[dict[str, object]]) -> dict[str, dict[str, object]]:
@@ -2912,48 +4359,6 @@ def _fred_fx_records(records: list[dict[str, object]]) -> dict[str, dict[str, ob
     return output
 
 
-def _massive_fx_records(
-    records: list[dict[str, object]],
-    *,
-    calendar_records: list[dict[str, object]],
-) -> dict[str, dict[str, object]]:
-    official_close_by_date = _official_us_close_by_date(calendar_records)
-    rows = [row for row in records if str(row.get("ticker", "")).upper() == "C:USDJPY"]
-    rows.sort(key=lambda row: str(row.get("bar_date_et") or ""))
-    output: dict[str, dict[str, object]] = {}
-    previous_value: float | None = None
-    for row in rows:
-        date_key = str(row.get("bar_date_et") or "")
-        if not date_key:
-            continue
-        value = _optional_float(row.get("close"))
-        fx_return = (
-            math.log(value) - math.log(previous_value)
-            if value is not None and previous_value is not None and value > 0 and previous_value > 0
-            else None
-        )
-        official_close = official_close_by_date.get(date_key)
-        available_ts = (
-            official_close
-            + timedelta(minutes=PAPER_CONFIG.leakage_policy.massive_vendor_lag_minutes)
-            if official_close is not None
-            else _feature_available_ts(
-                row,
-                lag_minutes=PAPER_CONFIG.leakage_policy.massive_vendor_lag_minutes,
-            )
-        )
-        output[date_key] = {
-            "observation_date": date_key,
-            "value": value,
-            "return": fx_return,
-            "available_ts": available_ts,
-            "source": "massive_fx",
-        }
-        if value is not None and value > 0:
-            previous_value = value
-    return output
-
-
 def _canonical_fx_asof(
     context: Mapping[str, object],
     *,
@@ -2967,71 +4372,21 @@ def _canonical_fx_asof(
     except ValueError:
         return {}
     fred_rows = cast(dict[str, dict[str, object]], context.get("fred") or {})
-    massive_rows = cast(dict[str, dict[str, object]], context.get("massive") or {})
     exact_fred = fred_rows.get(us_date)
-    primary_fred = (
-        exact_fred
-        if exact_fred
-        and _fx_candidate_is_usable(
-            exact_fred,
-            cutoff=cutoff,
-            target_date=target_date,
-            max_staleness_days=FX_STALE_FALLBACK_MAX_DAYS,
-        )
-        else None
-    )
-    if exact_fred is None:
-        primary_fred = _latest_usable_fx_candidate(
-            fred_rows,
-            target_date=target_date,
-            cutoff=cutoff,
-            max_staleness_days=FX_STALE_FALLBACK_MAX_DAYS,
-        )
-    if primary_fred is not None:
-        return _fx_output(
-            primary_fred,
-            target_date=target_date,
-            source="fred_h10_primary",
-            reason="fred_h10_primary",
-            fred_available=True,
-            massive_available=_has_usable_fx_candidate(
-                massive_rows,
-                target_date=target_date,
-                cutoff=cutoff,
-                max_staleness_days=PAPER_CONFIG.leakage_policy.max_forward_fill_us_close_days,
-            ),
-        )
-
-    massive_candidate = _latest_usable_fx_candidate(
-        massive_rows,
-        target_date=target_date,
-        cutoff=cutoff,
-        max_staleness_days=PAPER_CONFIG.leakage_policy.max_forward_fill_us_close_days,
-    )
-    if massive_candidate is not None:
-        return _fx_output(
-            massive_candidate,
-            target_date=target_date,
-            source="massive_fx_opportunistic",
-            reason=_fred_fx_unavailable_reason(exact_fred),
-            fred_available=False,
-            massive_available=True,
-        )
-
-    stale_fred = _latest_usable_fx_candidate(
+    latest_fred = _latest_usable_fx_candidate(
         fred_rows,
         target_date=target_date,
         cutoff=cutoff,
-        max_staleness_days=FX_STALE_FALLBACK_MAX_DAYS,
+        max_release_age_days=FRED_H10_RELEASE_AGE_CAP_DAYS,
     )
-    if stale_fred is not None:
+    if latest_fred is not None:
         return _fx_output(
-            stale_fred,
+            latest_fred,
             target_date=target_date,
-            source="fred_h10_stale_fallback",
-            reason="massive_fx_unavailable_using_fred_stale_fallback",
+            cutoff=cutoff,
+            source="fred_h10_latest_released",
+            reason="fred_h10_latest_released",
             fred_available=True,
-            massive_available=False,
         )
 
     return {
@@ -3041,11 +4396,16 @@ def _canonical_fx_asof(
         "fx_observation_date": None,
         "fx_available_ts_utc": None,
         "fx_staleness_days": None,
+        "fx_observation_age_days": None,
+        "fx_release_age_days": None,
         "fx_is_stale": None,
-        "fx_fallback_reason": JoinMissReason.FRED_FX_STALE_BEYOND_FILL_WINDOW.value,
+        "fx_fallback_reason": _fred_fx_unavailable_reason(
+            exact_fred,
+            fred_rows=fred_rows,
+            target_date=target_date,
+            cutoff=cutoff,
+        ),
         "fred_dexjpus_available": False,
-        "massive_usdjpy_available": False,
-        "massive_usdjpy_entitlement_status": "unavailable_or_not_fetched",
     }
 
 
@@ -3054,7 +4414,7 @@ def _latest_usable_fx_candidate(
     *,
     target_date: date,
     cutoff: datetime,
-    max_staleness_days: int,
+    max_release_age_days: int,
 ) -> dict[str, object] | None:
     candidates = []
     for row in rows.values():
@@ -3062,7 +4422,7 @@ def _latest_usable_fx_candidate(
             row,
             cutoff=cutoff,
             target_date=target_date,
-            max_staleness_days=max_staleness_days,
+            max_release_age_days=max_release_age_days,
         ):
             continue
         candidates.append(row)
@@ -3071,30 +4431,12 @@ def _latest_usable_fx_candidate(
     return max(candidates, key=lambda row: str(row["observation_date"]))
 
 
-def _has_usable_fx_candidate(
-    rows: dict[str, dict[str, object]],
-    *,
-    target_date: date,
-    cutoff: datetime,
-    max_staleness_days: int,
-) -> bool:
-    return (
-        _latest_usable_fx_candidate(
-            rows,
-            target_date=target_date,
-            cutoff=cutoff,
-            max_staleness_days=max_staleness_days,
-        )
-        is not None
-    )
-
-
 def _fx_candidate_is_usable(
     row: Mapping[str, object],
     *,
     cutoff: datetime,
     target_date: date,
-    max_staleness_days: int,
+    max_release_age_days: int,
 ) -> bool:
     value = _optional_float(row.get("value"))
     available_ts = _coerce_datetime(row.get("available_ts"))
@@ -3105,22 +4447,29 @@ def _fx_candidate_is_usable(
         return False
     if observation_date is None:
         return False
-    staleness_days = (target_date - observation_date).days
-    return 0 <= staleness_days <= max_staleness_days
+    if observation_date > target_date:
+        return False
+    release_age_days = max(0, (cutoff.date() - available_ts.date()).days)
+    return release_age_days <= max_release_age_days
 
 
 def _fx_output(
     row: Mapping[str, object],
     *,
     target_date: date,
+    cutoff: datetime,
     source: str,
     reason: str,
     fred_available: bool,
-    massive_available: bool,
 ) -> dict[str, object]:
     observation_date = _fx_observation_date(row)
     available_ts = _coerce_datetime(row.get("available_ts"))
-    staleness_days = None if observation_date is None else (target_date - observation_date).days
+    observation_age_days = (
+        None if observation_date is None else (target_date - observation_date).days
+    )
+    release_age_days = (
+        None if available_ts is None else max(0, (cutoff.date() - available_ts.date()).days)
+    )
     source_date = observation_date.isoformat() if observation_date else None
     output: dict[str, object] = {
         "fx_usdjpy_level": _optional_float(row.get("value")),
@@ -3128,14 +4477,12 @@ def _fx_output(
         "fx_source": source,
         "fx_observation_date": source_date,
         "fx_available_ts_utc": available_ts,
-        "fx_staleness_days": staleness_days,
-        "fx_is_stale": staleness_days is not None and staleness_days > 0,
+        "fx_staleness_days": observation_age_days,
+        "fx_observation_age_days": observation_age_days,
+        "fx_release_age_days": release_age_days,
+        "fx_is_stale": observation_age_days is not None and observation_age_days > 0,
         "fx_fallback_reason": reason,
         "fred_dexjpus_available": fred_available,
-        "massive_usdjpy_available": massive_available,
-        "massive_usdjpy_entitlement_status": (
-            "available_in_cache" if massive_available else "unavailable_or_not_fetched"
-        ),
     }
     for feature_name in ("fx_usdjpy_level", "fx_usdjpy_return"):
         _stamp_feature_metadata(
@@ -3158,17 +4505,40 @@ def _fx_observation_date(row: Mapping[str, object]) -> date | None:
         return None
 
 
-def _fred_fx_unavailable_reason(exact_fred: Mapping[str, object] | None) -> str:
+def _fred_fx_unavailable_reason(
+    exact_fred: Mapping[str, object] | None,
+    *,
+    fred_rows: Mapping[str, Mapping[str, object]],
+    target_date: date,
+    cutoff: datetime,
+) -> str:
     if exact_fred is None:
-        return "fred_h10_missing_for_us_date"
-    value = _optional_float(exact_fred.get("value"))
-    if value is None or not math.isfinite(value):
-        return "fred_h10_null_or_nonfinite"
-    return "fred_h10_not_available_by_cutoff_or_stale"
+        pass
+    else:
+        value = _optional_float(exact_fred.get("value"))
+        available = _coerce_datetime(exact_fred.get("available_ts"))
+        if value is None or not math.isfinite(value):
+            return JoinMissReason.FRED_FX_NULL_OBSERVATION.value
+        if available is None or available > cutoff:
+            return JoinMissReason.FRED_H10_RELEASE_DELAY.value
+    released_values = [
+        row
+        for row in fred_rows.values()
+        if (value := _optional_float(row.get("value"))) is not None
+        and math.isfinite(value)
+        and (available := _coerce_datetime(row.get("available_ts"))) is not None
+        and available <= cutoff
+        and (observation_date := _fx_observation_date(row)) is not None
+        and observation_date <= target_date
+    ]
+    if released_values:
+        return JoinMissReason.FRED_FX_STALE_BEYOND_FILL_WINDOW.value
+    return JoinMissReason.FRED_H10_RELEASE_DELAY.value
 
 
 def _spy_minute_feature_map(records: list[dict[str, object]]) -> dict[str, dict[str, object]]:
     if any("spy_late_30m_return" in row for row in records):
+        records = _records_with_recomputed_spy_late_volume_surge(records)
         derived_features: dict[str, dict[str, object]] = {}
         for row in records:
             date_key = str(row.get("bar_date_et") or "")
@@ -3195,7 +4565,7 @@ def _spy_minute_feature_map(records: list[dict[str, object]]) -> dict[str, dict[
         if row.get("is_us_regular_session") is True:
             by_date.setdefault(str(row["bar_date_et"]), []).append(row)
     features: dict[str, dict[str, object]] = {}
-    rolling_session_volume: list[float] = []
+    rolling_late_volume: list[float] = []
     for date_key in sorted(by_date):
         rows = sorted(by_date[date_key], key=lambda row: str(row["bar_end_ts_utc"]))
         closes = [_optional_float(row.get("close")) for row in rows]
@@ -3203,14 +4573,14 @@ def _spy_minute_feature_map(records: list[dict[str, object]]) -> dict[str, dict[
         lows = [_optional_float(row.get("low")) for row in rows]
         volumes = [_optional_float(row.get("volume")) or 0.0 for row in rows]
         valid_closes = [value for value in closes if value is not None and value > 0]
-        session_volume = float(sum(volumes))
+        late_volume = float(sum(volumes[-60:]))
         rolling_mean_volume = (
-            float(np.mean(rolling_session_volume[-20:])) if rolling_session_volume else None
+            float(np.mean(rolling_late_volume[-20:])) if rolling_late_volume else None
         )
         volume_surge = (
             None
             if rolling_mean_volume is None or rolling_mean_volume == 0.0
-            else session_volume / rolling_mean_volume
+            else late_volume / rolling_mean_volume
         )
         last_available_ts = _feature_available_ts(
             rows[-1],
@@ -3230,7 +4600,7 @@ def _spy_minute_feature_map(records: list[dict[str, object]]) -> dict[str, dict[
                 available_ts_utc=last_available_ts,
                 source_date=date_key,
             )
-        rolling_session_volume.append(session_volume)
+        rolling_late_volume.append(late_volume)
     return features
 
 
@@ -3307,7 +4677,6 @@ def build_spy_late_session_feature_records(
         if row.get("is_us_regular_session") is True:
             grouped.setdefault(str(row["bar_date_et"]), []).append(row)
     records: list[dict[str, object]] = []
-    rolling_session_volume: list[float] = []
     for date_key in sorted(grouped):
         rows = sorted(grouped[date_key], key=lambda row: str(row["bar_end_ts_utc"]))
         official_close = close_by_date.get(date_key) or _coerce_datetime(
@@ -3330,14 +4699,7 @@ def build_spy_late_session_feature_records(
         half_hour_rows = _window_rows(eligible, official_close=official_close, minutes=30)
         final_rows = _window_rows(eligible, official_close=official_close, minutes=15)
         session_volume = float(sum(_optional_float(row.get("volume")) or 0.0 for row in eligible))
-        rolling_mean_volume = (
-            float(np.mean(rolling_session_volume[-20:])) if rolling_session_volume else None
-        )
-        volume_surge = (
-            None
-            if rolling_mean_volume is None or rolling_mean_volume == 0.0
-            else session_volume / rolling_mean_volume
-        )
+        late_volume = float(sum(_optional_float(row.get("volume")) or 0.0 for row in hour_rows))
         feature_available = official_close + timedelta(minutes=vendor_lag_minutes)
         records.append(
             {
@@ -3348,16 +4710,47 @@ def build_spy_late_session_feature_records(
                 "spy_late_30m_return": _rows_return(half_hour_rows),
                 "spy_late_60m_return": _rows_return(hour_rows),
                 "spy_late_session_range": _rows_range(hour_rows),
-                "spy_late_volume_surge": volume_surge,
+                "spy_late_volume_surge": None,
                 "spy_final_window_momentum": _rows_return(final_rows),
+                "late_60m_volume_for_surge": late_volume,
+                "regular_session_volume_for_surge": session_volume,
                 "feature_available_ts_utc": feature_available,
                 "official_close_ts_utc": official_close,
                 "selected_close_bar_end_ts_utc": selected_close_ts,
                 "vendor_lag_seconds": vendor_lag_minutes * 60,
             }
         )
-        rolling_session_volume.append(session_volume)
-    return records
+    return _records_with_recomputed_spy_late_volume_surge(records)
+
+
+def _records_with_recomputed_spy_late_volume_surge(
+    records: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Recompute SPY volume surge over the full supplied date sequence.
+
+    The silver cache is partitioned monthly, but the 20-session baseline is a
+    time-series feature. Recomputing after all cache chunks are loaded prevents
+    each month boundary from manufacturing a missing first-day surge value.
+    """
+    rolling_late_volume: list[float] = []
+    output: list[dict[str, object]] = []
+    for row in sorted(records, key=lambda item: str(item.get("bar_date_et") or "")):
+        enriched = dict(row)
+        late_volume = _optional_float(enriched.get("late_60m_volume_for_surge"))
+        if late_volume is None:
+            output.append(enriched)
+            continue
+        rolling_mean_volume = (
+            float(np.mean(rolling_late_volume[-20:])) if rolling_late_volume else None
+        )
+        enriched["spy_late_volume_surge"] = (
+            None
+            if rolling_mean_volume is None or rolling_mean_volume == 0.0
+            else late_volume / rolling_mean_volume
+        )
+        rolling_late_volume.append(late_volume)
+        output.append(enriched)
+    return output
 
 
 def _window_rows(
@@ -3453,6 +4846,48 @@ def _metadata_covers_range(metadata: Mapping[str, object], start: str, end: str)
     return cached_start <= start and cached_end >= end
 
 
+def _filter_records_by_range(
+    records: list[dict[str, object]],
+    *,
+    start: str,
+    end: str,
+    date_fields: tuple[str, ...],
+) -> list[dict[str, object]]:
+    filtered: list[dict[str, object]] = []
+    for row in records:
+        date_value = _first_row_date_value(row, date_fields)
+        if date_value is not None and start <= date_value <= end:
+            filtered.append(row)
+    return filtered
+
+
+def _filter_records_by_dates(
+    records: list[dict[str, object]],
+    *,
+    allowed_dates: list[str],
+    date_fields: tuple[str, ...],
+) -> list[dict[str, object]]:
+    allowed = set(allowed_dates)
+    return [
+        row
+        for row in records
+        if (date_value := _first_row_date_value(row, date_fields)) is not None
+        and date_value in allowed
+    ]
+
+
+def _first_row_date_value(row: Mapping[str, object], date_fields: tuple[str, ...]) -> str | None:
+    for field in date_fields:
+        raw = row.get(field)
+        if raw is not None:
+            return str(raw)[:10]
+    return None
+
+
+def _unavailable_marker_covers(path: Path, start: str, end: str) -> bool:
+    return path.exists() and _metadata_covers_range(read_json(path), start, end)
+
+
 def _write_unavailable_marker(
     path: Path,
     *,
@@ -3518,7 +4953,11 @@ def _fetch_jquants_futures_rows(
                 month=month,
             )
             if path.exists() and _cache_covers_dates(path, trading_dates):
-                cached_records = _read_parquet_records(path)
+                cached_records = _filter_records_by_dates(
+                    _read_parquet_records(path),
+                    allowed_dates=trading_dates,
+                    date_fields=("requested_date", "Date"),
+                )
                 rows.extend(cached_records)
                 _add_stat(year_stats, "cache_hits")
                 _add_stat(year_stats, "rows", len(cached_records))
@@ -3572,6 +5011,9 @@ def _fetch_massive_paper_predictors(
         api_key=settings.massive_api_key,
         base_url=settings.massive_base_url,
         timeout_seconds=settings.massive_request_timeout_seconds,
+        min_request_interval_seconds=settings.massive_min_request_interval_seconds,
+        max_retries=settings.massive_max_retries,
+        rate_limit_backoff_seconds=settings.massive_rate_limit_backoff_seconds,
     ) as client:
         chunks_by_year: dict[int, list[tuple[str, str]]] = {}
         for chunk_start, chunk_end in _month_chunks(start=start, end=end):
@@ -3596,12 +5038,17 @@ def _fetch_massive_paper_predictors(
                     )
                     unavailable_path = path.with_suffix(".unavailable.json")
                     if path.exists() and _cache_covers_range(path, chunk_start, chunk_end):
-                        cached_records = _read_parquet_records(path)
+                        cached_records = _filter_records_by_range(
+                            _read_parquet_records(path),
+                            start=chunk_start,
+                            end=chunk_end,
+                            date_fields=("bar_date_et", "observation_date"),
+                        )
                         daily_records.extend(cached_records)
                         _add_stat(year_stats, "cache_hits")
                         _add_stat(year_stats, "rows", len(cached_records))
                         continue
-                    if unavailable_path.exists():
+                    if _unavailable_marker_covers(unavailable_path, chunk_start, chunk_end):
                         _add_stat(year_stats, "unavailable")
                         continue
                     payload = client.fetch_aggregate_bars(
@@ -3673,12 +5120,17 @@ def _fetch_massive_paper_predictors(
                 if feature_path.exists() and _cache_covers_range(
                     feature_path, chunk_start, chunk_end
                 ):
-                    cached_records = _read_parquet_records(feature_path)
+                    cached_records = _filter_records_by_range(
+                        _read_parquet_records(feature_path),
+                        start=chunk_start,
+                        end=chunk_end,
+                        date_fields=("bar_date_et", "observation_date"),
+                    )
                     spy_feature_records.extend(cached_records)
                     _add_stat(year_stats, "cache_hits")
                     _add_stat(year_stats, "rows", len(cached_records))
                     continue
-                if unavailable_path.exists():
+                if _unavailable_marker_covers(unavailable_path, chunk_start, chunk_end):
                     _add_stat(year_stats, "unavailable")
                     continue
                 payload = client.fetch_aggregate_bars(
@@ -3741,6 +5193,96 @@ def _fetch_massive_paper_predictors(
     return daily_records, spy_feature_records
 
 
+def _fetch_cboe_paper_predictors(
+    *,
+    settings: Settings,
+    start: str,
+    end: str,
+    downloaded_at_utc: datetime,
+) -> list[dict[str, object]]:  # pragma: no cover - vendor path
+    symbols = settings.cboe_vol_index_symbol_list()
+    if not symbols:
+        return []
+    safe_symbols = "_".join(_safe_name(symbol) for symbol in symbols)
+    bronze_path = (
+        settings.data_dir
+        / "bronze"
+        / "cboe_vol_indices"
+        / "schema_version=1"
+        / f"symbols={safe_symbols}"
+        / "payload.json"
+    )
+    silver_path = (
+        settings.data_dir
+        / "silver"
+        / "cboe_vol_indices"
+        / "schema_version=1"
+        / f"symbols={safe_symbols}"
+        / "daily.parquet"
+    )
+    if silver_path.exists() and _cache_covers_range(silver_path, start, end):
+        _paper_log(f"Cboe volatility cache hit symbols={','.join(symbols)}")
+        return _filter_records_by_range(
+            _read_parquet_records(silver_path),
+            start=start,
+            end=end,
+            date_fields=("observation_date",),
+        )
+
+    with CboeClient(
+        base_url=settings.cboe_base_url,
+        timeout_seconds=settings.cboe_request_timeout_seconds,
+    ) as client:
+        payloads = [client.fetch_vol_index_csv(symbol) for symbol in symbols]
+
+    records: list[dict[str, object]] = []
+    for payload in payloads:
+        records.extend(
+            row
+            for row in normalize_cboe_vol_index_rows(
+                symbol=payload.symbol,
+                rows=payload.rows,
+                raw_header=payload.raw_header,
+                research_download_ts_utc=downloaded_at_utc,
+                us_timezone=settings.project_timezone_us,
+            )
+            if start <= str(row["observation_date"]) <= end
+        )
+    _write_json(
+        bronze_path,
+        {
+            "source": "cboe",
+            "base_url": settings.cboe_base_url,
+            "downloaded_at_utc": downloaded_at_utc.isoformat(),
+            "requested_range": [start, end],
+            "symbols": [
+                {
+                    "symbol": payload.symbol,
+                    "path": payload.path,
+                    "http_status": payload.http_status,
+                    "raw_header": payload.raw_header,
+                    "row_count": len(payload.rows),
+                    "raw_csv": payload.raw_csv,
+                }
+                for payload in payloads
+            ],
+            "note": "Raw headers are retained because Cboe historical CSV headers drift.",
+        },
+    )
+    atomic_write_parquet(
+        silver_path,
+        records,
+        metadata={
+            "source": "cboe",
+            "symbols": list(symbols),
+            "requested_range": [start, end],
+            "raw_headers": [payload.raw_header for payload in payloads],
+        },
+    )
+    _paper_log(f"Cboe volatility fetched symbols={','.join(symbols)} rows={len(records)}")
+    return records
+
+
 def _fetch_fred_paper_predictors(
     *,
     settings: Settings,
@@ -3774,7 +5316,14 @@ def _fetch_fred_paper_predictors(
                 )
                 and _metadata_covers_range(metadata, start, end)
             ):
-                records.extend(_read_parquet_records(path))
+                records.extend(
+                    _filter_records_by_range(
+                        _read_parquet_records(path),
+                        start=start,
+                        end=end,
+                        date_fields=("observation_date",),
+                    )
+                )
                 _paper_log(f"FRED cache hit {series_id}")
                 continue
             ttl_status = "missing"
@@ -3828,6 +5377,8 @@ def _fetch_fred_paper_predictors(
 def _clean_loss_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
     clean: list[dict[str, object]] = []
     for row in rows:
+        if "clean_sample" in row and row.get("clean_sample") is not True:
+            continue
         value = _optional_float(row.get("realized_loss"))
         if value is not None and math.isfinite(value):
             clean.append({**row, "realized_loss": value})
@@ -3874,6 +5425,12 @@ def _metrics_to_latex(
             f"{int(row['rows'])} & {_fmt(row['var_breach_rate'])} & "
             f"{_fmt(row['mean_quantile_loss'])} & {_fmt(row['mean_fz_loss'])} \\\\"
         )
+    note = (
+        "Visible notes: paper-candidate artifact; lower FZ loss is better; "
+        "inference artifacts use block-bootstrap DM and HLN Tmax MCS; "
+        "common-sample status is recorded in metrics metadata."
+    )
+    lines.extend(["\\midrule", f"\\multicolumn{{6}}{{l}}{{\\footnotesize {note}}} \\\\"])
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
 
@@ -4018,7 +5575,9 @@ def _safe_name(value: str) -> str:
 
 def _feature_description(field: str) -> str:
     if field.startswith("fx_usdjpy_"):
-        return "canonical USDJPY FX control using FRED H.10 primary with Massive fallback"
+        return "canonical USDJPY FX control using timestamp-safe FRED H.10 availability"
+    if field.endswith("_days"):
+        return "timestamp-safe source staleness or release-lag diagnostic used as a predictor"
     if field.endswith("_return"):
         return "close-to-close log return frozen at U.S. close information set"
     if field.endswith("_range"):
@@ -4028,7 +5587,7 @@ def _feature_description(field: str) -> str:
     if field.endswith("_level"):
         return "daily source level with conservative research availability semantics"
     if field.startswith("spy_late_"):
-        return "SPY regular-session late-window minute-bar feature"
+        return "SPY late-session minute-bar feature frozen at the U.S. close cutoff"
     return "paper-grade predictor candidate"
 
 

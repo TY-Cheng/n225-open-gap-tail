@@ -4,6 +4,7 @@ from pathlib import Path
 import typer
 
 from n225_open_gap_tail.calendars import write_calendar_table
+from n225_open_gap_tail.cboe import write_cboe_smoke_sample
 from n225_open_gap_tail.config import load_settings, split_csv
 from n225_open_gap_tail.contracts import write_contract_metadata
 from n225_open_gap_tail.datalake import MAIN_SAMPLE_START
@@ -50,6 +51,8 @@ def status() -> None:
     typer.echo(f"massive probe ticker count: {len(settings.massive_probe_ticker_list())}")
     typer.echo(f"fred base url: {settings.fred_base_url}")
     typer.echo(f"fred series count: {len(settings.fred_series_list())}")
+    typer.echo(f"cboe base url: {settings.cboe_base_url}")
+    typer.echo(f"cboe vol index symbol count: {len(settings.cboe_vol_index_symbol_list())}")
     typer.echo(f"calendar us exchange: {settings.calendar_us_exchange}")
     typer.echo(f"calendar jpx exchange: {settings.calendar_jpx_exchange}")
     typer.echo(
@@ -162,6 +165,34 @@ def fred_smoke(
     typer.echo(f"series rows: {_format_statuses(result.series_rows)}")
 
 
+@app.command("cboe-smoke")
+def cboe_smoke(
+    symbols: str = typer.Option(
+        "",
+        help="Comma-separated Cboe volatility index symbols. Defaults to CBOE_VOL_INDEX_SYMBOLS.",
+    ),
+    start: str = typer.Option("2026-01-05", help="Start date in YYYY-MM-DD."),
+    end: str = typer.Option("2026-01-09", help="End date in YYYY-MM-DD."),
+) -> None:
+    """Download historical Cboe volatility index data into ignored data folders."""
+    settings = load_settings()
+    symbol_list = split_csv(symbols) or settings.cboe_vol_index_symbol_list()
+    result = write_cboe_smoke_sample(
+        settings=settings,
+        symbols=symbol_list,
+        start=start,
+        end=end,
+    )
+
+    typer.echo(f"bronze payload wrote: {result.bronze_payload_path}")
+    typer.echo(f"parquet wrote: {result.parquet_path}")
+    typer.echo(f"consistency parquet wrote: {result.consistency_path}")
+    typer.echo(f"rows: {result.rows}")
+    typer.echo(f"symbol statuses: {_format_statuses(result.symbols_statuses)}")
+    typer.echo(f"symbol rows: {_format_statuses(result.symbols_rows)}")
+    typer.echo(f"vix consistency warnings: {result.consistency_warnings}")
+
+
 @app.command("calendar-build")
 def calendar_build(
     start: str = typer.Option("2026-01-01", help="Start date in YYYY-MM-DD."),
@@ -262,11 +293,10 @@ def paper_grade(
     """Build the paper panel, run requested evaluation stages, and export LaTeX tables."""
     settings = load_settings()
     panel = write_paper_panel(settings=settings, start=start, end=end or None)
+    write_paper_leakage_check(run_dir=panel.run_dir)
     stages = ("p2a", "p2b", "p2c") if stage == "all" else (stage,)
     evaluation = None
     for active_stage in stages:
-        if active_stage == "p2b":
-            write_paper_leakage_check(run_dir=panel.run_dir)
         evaluation = evaluate_paper_run(
             run_dir=panel.run_dir,
             workers=workers,

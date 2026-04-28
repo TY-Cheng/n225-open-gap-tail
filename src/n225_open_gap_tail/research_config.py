@@ -49,7 +49,7 @@ CORE_MASSIVE_TICKERS: tuple[str, ...] = (
     "HYG",
     "LQD",
 )
-OPTIONAL_MASSIVE_TICKERS: tuple[str, ...] = ("C:USDJPY", "UUP")
+OPTIONAL_MASSIVE_TICKERS: tuple[str, ...] = ("UUP",)
 JAPAN_PROXY_MASSIVE_TICKERS: tuple[str, ...] = ("EWJ", "DXJ")
 ASIA_PROXY_MASSIVE_TICKERS: tuple[str, ...] = ("EWY", "EWT", "EWH")
 ROBUSTNESS_MASSIVE_TICKERS: tuple[str, ...] = (
@@ -104,6 +104,7 @@ class LeakagePolicy:
     massive_vendor_lag_minutes: int = 15
     leakage_warning_min_lag_minutes: int = 30
     max_forward_fill_us_close_days: int = 7
+    fred_h10_release_age_cap_calendar_days: int = 8
     fred_vintage_policy: str = (
         "current_historical_values_with_conservative_lag_not_alfred_vintage_safe"
     )
@@ -134,7 +135,12 @@ class EvaluationPolicy:
     global_headline_sample: str = "headline_only_report_retained_n"
     min_common_oos_rows: int = 120
     one_percent_min_exceedances: int = 10
-    mcs_method: str = "block_bootstrap_fz_loss_matrix"
+    bootstrap_reps: int = 999
+    inference_random_seed: int = 225
+    mcs_alpha: float = 0.10
+    mcs_method: str = "hln_tmax_moving_block_bootstrap"
+    dm_method: str = "moving_block_bootstrap_unconditional_dm"
+    panel_signature_hash_seed: int = 42
 
 
 @dataclass(frozen=True)

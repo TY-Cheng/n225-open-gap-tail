@@ -107,6 +107,37 @@ def test_massive_client_reports_http_and_payload_errors() -> None:
         )
 
 
+def test_massive_client_retries_rate_limits_and_throttles(monkeypatch: pytest.MonkeyPatch) -> None:
+    statuses = [429, 200]
+    sleeps: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        status = statuses.pop(0)
+        payload = {"status": "OK", "results": [_bar("2026-01-05T05:00:00+00:00", close=101.0)]}
+        return httpx.Response(status, json=payload, request=request)
+
+    monkeypatch.setattr("n225_open_gap_tail.massive.time_module.sleep", sleeps.append)
+    with MassiveClient(
+        api_key="secret",
+        base_url="https://api.massive.test",
+        min_request_interval_seconds=0.1,
+        max_retries=1,
+        rate_limit_backoff_seconds=2.0,
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        endpoint = client.fetch_aggregate_bars(
+            name="daily_SPY",
+            ticker="SPY",
+            multiplier=1,
+            timespan="day",
+            start="2026-01-05",
+            end="2026-01-05",
+        )
+
+    assert endpoint.http_status == 200
+    assert 2.0 in sleeps
+
+
 def test_normalize_aggregate_bars_adds_timestamp_audit_fields() -> None:
     rows = [
         _bar("2026-01-05T14:30:00+00:00", close=100.0),

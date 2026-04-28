@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time as time_module
 from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
@@ -55,6 +56,9 @@ class MassiveClient:
         api_key: str,
         base_url: str = "https://api.massive.com",
         timeout_seconds: int = 30,
+        min_request_interval_seconds: float = 0.0,
+        max_retries: int = 2,
+        rate_limit_backoff_seconds: float = 60.0,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         if not api_key:
@@ -62,6 +66,10 @@ class MassiveClient:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._client = httpx.Client(timeout=timeout_seconds, transport=transport)
+        self._min_request_interval_seconds = max(0.0, min_request_interval_seconds)
+        self._max_retries = max(0, max_retries)
+        self._rate_limit_backoff_seconds = max(0.0, rate_limit_backoff_seconds)
+        self._last_request_monotonic: float | None = None
 
     def close(self) -> None:
         self._client.close()
@@ -81,7 +89,22 @@ class MassiveClient:
     ) -> tuple[int, dict[str, Any]]:
         query = dict(params or {})
         query["apiKey"] = self._api_key
-        response = self._client.get(f"{self._base_url}{path}", params=query)
+        attempt = 0
+        while True:
+            self._throttle()
+            response = self._client.get(f"{self._base_url}{path}", params=query)
+            if response.status_code != 429 and response.status_code < 500:
+                break
+            if attempt >= self._max_retries:
+                break
+            attempt += 1
+            backoff = (
+                self._rate_limit_backoff_seconds
+                if response.status_code == 429
+                else min(5.0, attempt)
+            )
+            if backoff > 0:
+                time_module.sleep(backoff)
         payload = self._decode_payload(response)
         if raise_for_status and response.status_code >= 400:
             message = (
@@ -92,6 +115,17 @@ class MassiveClient:
             )
             raise MassiveApiError(str(message), status_code=response.status_code)
         return response.status_code, payload
+
+    def _throttle(self) -> None:
+        if self._min_request_interval_seconds <= 0:
+            return
+        now = time_module.monotonic()
+        if self._last_request_monotonic is not None:
+            elapsed = now - self._last_request_monotonic
+            remaining = self._min_request_interval_seconds - elapsed
+            if remaining > 0:
+                time_module.sleep(remaining)
+        self._last_request_monotonic = time_module.monotonic()
 
     def get_aggregate_bars(
         self,
@@ -252,6 +286,9 @@ def write_massive_smoke_sample(
         api_key=settings.massive_api_key,
         base_url=settings.massive_base_url,
         timeout_seconds=settings.massive_request_timeout_seconds,
+        min_request_interval_seconds=settings.massive_min_request_interval_seconds,
+        max_retries=settings.massive_max_retries,
+        rate_limit_backoff_seconds=settings.massive_rate_limit_backoff_seconds,
     )
     downloaded_at = datetime.now(UTC)
 

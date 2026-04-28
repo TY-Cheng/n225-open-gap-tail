@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import exchange_calendars as xcals  # type: ignore[import-untyped]
-import polars as pl
 
 from n225_open_gap_tail.config import Settings
+from n225_open_gap_tail.datalake import atomic_write_parquet, write_json_atomic
 
 MONTH_CODES = {
     1: "F",
@@ -83,13 +82,23 @@ def write_contract_metadata(
         roll_days_before_last_trade=settings.nikkei_contract_roll_days_before_last_trade,
     )
 
-    raw_dir = settings.raw_data_dir / "contracts"
-    interim_dir = settings.interim_data_dir / "contracts"
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    interim_dir.mkdir(parents=True, exist_ok=True)
-    metadata_path = raw_dir / f"nikkei_futures_contract_metadata_{start}_{end}.json"
-    contracts_path = interim_dir / f"nikkei_futures_contracts_{start}_{end}.parquet"
-    selector_path = interim_dir / f"nikkei_futures_central_contract_{start}_{end}.parquet"
+    bronze_dir = (
+        settings.bronze_data_dir
+        / "nikkei_contracts_rule_based"
+        / "schema_version=1"
+        / f"start={start}"
+        / f"end={end}"
+    )
+    silver_dir = (
+        settings.silver_data_dir
+        / "nikkei_contracts_rule_based"
+        / "schema_version=1"
+        / f"start={start}"
+        / f"end={end}"
+    )
+    metadata_path = bronze_dir / "metadata.json"
+    contracts_path = silver_dir / "contracts.parquet"
+    selector_path = silver_dir / "central_contract.parquet"
 
     metadata = {
         "source": "rule_based_contract_metadata",
@@ -106,9 +115,9 @@ def write_contract_metadata(
             "It must be reconciled against J-Quants or JPX contract metadata before final results."
         ),
     }
-    metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
-    pl.DataFrame(contract_records).write_parquet(contracts_path)
-    pl.DataFrame(selector_records).write_parquet(selector_path)
+    write_json_atomic(metadata_path, metadata)
+    atomic_write_parquet(contracts_path, contract_records)
+    atomic_write_parquet(selector_path, selector_records)
 
     return ContractMetadataResult(
         metadata_path=metadata_path,

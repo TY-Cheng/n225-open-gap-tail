@@ -92,7 +92,7 @@ def test_normalize_fred_rows_filters_range_and_marks_missing_values() -> None:
     assert records[2]["vintage_policy"] == "not_vintage_safe_without_alfred_realtime_parameters"
 
 
-def test_write_fred_smoke_sample_writes_raw_and_parquet(tmp_path: Path) -> None:
+def test_write_fred_smoke_sample_writes_bronze_and_silver(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         series_id = request.url.params["id"]
         return httpx.Response(
@@ -104,8 +104,8 @@ def test_write_fred_smoke_sample_writes_raw_and_parquet(tmp_path: Path) -> None:
         )
 
     settings = Settings(
-        raw_data_dir=tmp_path / "raw",
-        interim_data_dir=tmp_path / "interim",
+        bronze_data_dir=tmp_path / "bronze",
+        silver_data_dir=tmp_path / "silver",
         fred_base_url="https://fred.test",
     )
     client = FredClient(
@@ -122,7 +122,9 @@ def test_write_fred_smoke_sample_writes_raw_and_parquet(tmp_path: Path) -> None:
     )
     client.close()
 
-    raw_payload = json.loads(result.raw_output_path.read_text(encoding="utf-8"))
+    raw_payload = json.loads(result.bronze_payload_path.read_text(encoding="utf-8"))
+    assert "bronze/fred_smoke" in result.bronze_payload_path.as_posix()
+    assert "silver/fred_smoke" in result.parquet_path.as_posix()
     frame = pl.read_parquet(result.parquet_path)
 
     assert raw_payload["metadata"]["source"] == "fred"

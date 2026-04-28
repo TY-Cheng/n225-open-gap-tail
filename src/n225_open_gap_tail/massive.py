@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
@@ -9,9 +8,9 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import httpx
-import polars as pl
 
 from n225_open_gap_tail.config import Settings
+from n225_open_gap_tail.datalake import atomic_write_parquet, write_json_atomic
 
 
 class MassiveApiError(RuntimeError):
@@ -36,7 +35,7 @@ class MassiveEndpointPayload:
 
 @dataclass(frozen=True)
 class MassiveSmokeResult:
-    raw_output_path: Path
+    bronze_payload_path: Path
     daily_parquet_path: Path
     minute_parquet_path: Path
     daily_rows: int
@@ -320,14 +319,23 @@ def write_massive_smoke_sample(
             regular_session_end_et=settings.massive_regular_session_end_et,
         )
 
-    raw_dir = settings.raw_data_dir / "massive" / "smoke"
-    interim_dir = settings.interim_data_dir / "massive" / "smoke"
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    interim_dir.mkdir(parents=True, exist_ok=True)
-
-    raw_output_path = raw_dir / f"massive_smoke_{start}_{end}.json"
-    daily_parquet_path = interim_dir / f"massive_daily_aggs_{start}_{end}.parquet"
-    minute_parquet_path = interim_dir / f"massive_minute_aggs_{minute_ticker}_{minute_date}.parquet"
+    bronze_dir = (
+        settings.bronze_data_dir
+        / "massive_smoke"
+        / "schema_version=1"
+        / f"start={start}"
+        / f"end={end}"
+    )
+    silver_dir = (
+        settings.silver_data_dir
+        / "massive_smoke"
+        / "schema_version=1"
+        / f"start={start}"
+        / f"end={end}"
+    )
+    bronze_payload_path = bronze_dir / "payload.json"
+    daily_parquet_path = silver_dir / "daily_aggs.parquet"
+    minute_parquet_path = silver_dir / f"minute_aggs_{minute_ticker}_{minute_date}.parquet"
 
     document = {
         "metadata": {
@@ -340,15 +348,15 @@ def write_massive_smoke_sample(
         "minute_request": _endpoint_to_document(minute_request),
         "probe_requests": [_endpoint_to_document(request) for request in probe_requests],
     }
-    raw_output_path.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
-    _write_parquet(daily_records, daily_parquet_path)
-    _write_parquet(minute_records, minute_parquet_path)
+    write_json_atomic(bronze_payload_path, document)
+    atomic_write_parquet(daily_parquet_path, daily_records)
+    atomic_write_parquet(minute_parquet_path, minute_records)
 
     regular_session_rows = sum(
         1 for record in minute_records if record["is_us_regular_session"] is True
     )
     return MassiveSmokeResult(
-        raw_output_path=raw_output_path,
+        bronze_payload_path=bronze_payload_path,
         daily_parquet_path=daily_parquet_path,
         minute_parquet_path=minute_parquet_path,
         daily_rows=len(daily_records),
@@ -384,10 +392,6 @@ def _extract_results(payload: dict[str, Any]) -> list[dict[str, Any]]:
             raise MassiveApiError("Massive.com aggregate row was not an object")
         rows.append(row)
     return rows
-
-
-def _write_parquet(records: list[dict[str, object]], output_path: Path) -> None:
-    pl.DataFrame(records).write_parquet(output_path)
 
 
 def _timestamp_from_millis(value: object) -> datetime:

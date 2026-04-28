@@ -48,9 +48,9 @@ def test_config_hash_is_stable_and_env_defaults_sync_with_core_lists(
 
     settings = Settings(
         data_dir=tmp_path / "data",
-        raw_data_dir=tmp_path / "data" / "raw",
-        interim_data_dir=tmp_path / "data" / "interim",
-        processed_data_dir=tmp_path / "data" / "processed",
+        bronze_data_dir=tmp_path / "data" / "bronze",
+        silver_data_dir=tmp_path / "data" / "silver",
+        gold_data_dir=tmp_path / "data" / "gold",
         reports_dir=tmp_path / "reports",
     )
 

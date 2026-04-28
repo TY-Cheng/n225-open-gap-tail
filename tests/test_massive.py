@@ -128,7 +128,7 @@ def test_normalize_aggregate_bars_adds_timestamp_audit_fields() -> None:
     assert records[0]["vendor_available_ts_utc"] is None
 
 
-def test_write_massive_smoke_sample_writes_raw_json_and_normalized_parquet(
+def test_write_massive_smoke_sample_writes_bronze_json_and_silver_parquet(
     tmp_path: Path,
 ) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
@@ -159,8 +159,8 @@ def test_write_massive_smoke_sample_writes_raw_json_and_normalized_parquet(
         return httpx.Response(200, json=payload, request=request)
 
     settings = Settings(
-        raw_data_dir=tmp_path / "raw",
-        interim_data_dir=tmp_path / "interim",
+        bronze_data_dir=tmp_path / "bronze",
+        silver_data_dir=tmp_path / "silver",
         massive_api_key="massive-secret",
         massive_base_url="https://api.massive.test",
     )
@@ -182,11 +182,13 @@ def test_write_massive_smoke_sample_writes_raw_json_and_normalized_parquet(
     )
     client.close()
 
-    raw_text = result.raw_output_path.read_text(encoding="utf-8")
+    raw_text = result.bronze_payload_path.read_text(encoding="utf-8")
     raw_payload = json.loads(raw_text)
     daily_df = pl.read_parquet(result.daily_parquet_path)
     minute_df = pl.read_parquet(result.minute_parquet_path)
 
+    assert "bronze/massive_smoke" in result.bronze_payload_path.as_posix()
+    assert "silver/massive_smoke" in result.daily_parquet_path.as_posix()
     assert "massive-secret" not in raw_text
     assert raw_payload["metadata"]["source"] == "massive"
     assert raw_payload["daily_requests"][0]["params"]["adjusted"] == "true"

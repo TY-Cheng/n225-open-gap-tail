@@ -16,6 +16,7 @@ from scipy import stats  # type: ignore[import-untyped]
 
 from n225_open_gap_tail.calendars import build_session_calendar_records
 from n225_open_gap_tail.config import Settings
+from n225_open_gap_tail.datalake import write_json_atomic
 from n225_open_gap_tail.fred import FredClient, normalize_fred_rows
 from n225_open_gap_tail.jquants import JQuantsV2Client
 from n225_open_gap_tail.massive import MassiveClient, normalize_aggregate_bars
@@ -680,7 +681,11 @@ def _write_snapshot_artifacts(  # pragma: no cover
     data_vintage: dict[str, object],
 ) -> dict[str, str]:
     raw_path = (
-        settings.raw_data_dir / "jquants" / "snapshots" / snapshot_id / "futures_daily_raw.json"
+        settings.bronze_data_dir
+        / "jquants_snapshot_raw"
+        / "schema_version=1"
+        / f"snapshot_id={snapshot_id}"
+        / "futures_daily_raw.json"
     )
     raw_path.parent.mkdir(parents=True, exist_ok=True)
     raw_document = {
@@ -694,8 +699,7 @@ def _write_snapshot_artifacts(  # pragma: no cover
         },
         "data": raw_jquants_rows,
     }
-    raw_text = json.dumps(raw_document, ensure_ascii=False, default=str)
-    raw_path.write_text(raw_text, encoding="utf-8")
+    write_json_atomic(raw_path, raw_document)
 
     artifacts = {
         "manifest": snapshot_dir / "manifest.json",
@@ -751,8 +755,10 @@ def _write_snapshot_artifacts(  # pragma: no cover
         "jpx_calendar_hash": _hash_json(calendar_records),
         "calendar_fallback_triggered": False,
         "jquants_endpoint": "/derivatives/bars/daily/futures",
-        "jquants_raw_path": str(raw_path),
-        "jquants_raw_payload_sha256": hashlib.sha256(raw_text.encode("utf-8")).hexdigest(),
+        "jquants_bronze_payload_path": str(raw_path),
+        "jquants_bronze_payload_sha256": hashlib.sha256(
+            json.dumps(raw_document, ensure_ascii=False, default=str).encode("utf-8")
+        ).hexdigest(),
         "massive_symbols": list(settings.massive_daily_ticker_list()),
         "massive_minute_ticker": settings.massive_minute_ticker,
         "fred_series": list(settings.fred_series_list()),

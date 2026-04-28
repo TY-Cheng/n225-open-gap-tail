@@ -12,12 +12,15 @@ import pytest
 
 import n225_open_gap_tail.paper as paper_module
 from n225_open_gap_tail.config import Settings
+from n225_open_gap_tail.datalake import VendorErrorClass
 from n225_open_gap_tail.paper import (
     build_feature_coverage_records,
     build_feature_matrix_gate_records,
+    build_fields_coverage_audit_records,
     build_leakage_check_records,
     build_modeling_panel_records,
     build_paper_run_id,
+    build_spy_late_session_feature_records,
     drop_low_variance_features,
     empirical_excess_es_companion,
     evaluate_p2a_run,
@@ -241,6 +244,77 @@ def test_build_modeling_panel_records_and_feature_coverage() -> None:
     assert panel[0]["residual_usclosemark_to_open"] is None
     assert panel[0]["residual_usclosemark_status"] == ("disabled_requires_licensed_intraday_mark")
     assert any(row["feature"] == "spy_return" for row in coverage)
+    spy_coverage = next(row for row in coverage if row["feature"] == "spy_return")
+    assert spy_coverage["source_family"] == "massive_daily"
+    assert spy_coverage["vintage_safe"] is True
+
+
+def test_fields_coverage_audit_supports_clean_jquants_start() -> None:
+    rows = [
+        {
+            "trading_date": "2016-07-19",
+            "settlement_price": 100.0,
+            "last_trading_day": "2016-09-08",
+            "special_quotation_day": "2016-09-09",
+            "central_contract_month_flag": True,
+        }
+        for _ in range(20)
+    ]
+
+    audit = build_fields_coverage_audit_records(rows, policy_start="2016-07-19")
+
+    assert audit
+    assert all(
+        row["coverage_supports_policy_start"] is True
+        for row in audit
+        if row["sample"] == "policy_start_forward"
+    )
+
+
+def test_spy_minute_features_use_official_early_close_and_exclude_after_hours() -> None:
+    official_close = datetime(2026, 11, 27, 18, 0, tzinfo=UTC)
+    records = []
+    for minute in range(90):
+        end_ts = official_close - timedelta(minutes=89 - minute)
+        records.append(
+            {
+                "bar_date_et": "2026-11-27",
+                "bar_end_ts_utc": end_ts,
+                "is_us_regular_session": True,
+                "close": 100.0 + minute,
+                "high": 101.0 + minute,
+                "low": 99.0 + minute,
+                "volume": 1000.0,
+            }
+        )
+    records.append(
+        {
+            "bar_date_et": "2026-11-27",
+            "bar_end_ts_utc": official_close + timedelta(hours=3),
+            "is_us_regular_session": False,
+            "close": 999.0,
+            "high": 999.0,
+            "low": 999.0,
+            "volume": 1.0,
+        }
+    )
+
+    features = build_spy_late_session_feature_records(
+        records,
+        calendar_records=[
+            {
+                "calendar_date": "2026-11-27",
+                "us_close_ts_utc": official_close,
+            }
+        ],
+        vendor_lag_minutes=5,
+    )
+
+    assert len(features) == 1
+    assert features[0]["selected_close_bar_end_ts_utc"] == official_close
+    assert features[0]["feature_available_ts_utc"] == official_close + timedelta(minutes=5)
+    assert features[0]["close"] != 999.0
+    assert features[0]["spy_late_30m_return"] is not None
 
 
 def test_modeling_panel_forward_fills_us_holiday_features_and_leakage_gate() -> None:
@@ -296,6 +370,214 @@ def test_modeling_panel_forward_fills_us_holiday_features_and_leakage_gate() -> 
     assert {row["status"] for row in leakage_rows} <= {"pass", "warn"}
 
 
+def test_leakage_check_warns_when_missing_feature_has_no_timestamp() -> None:
+    rows = build_leakage_check_records(
+        [
+            {
+                "forecast_date": "2026-01-05",
+                "target_open_ts_utc": datetime(2026, 1, 4, 23, 45, tzinfo=UTC),
+                "model_cutoff_ts_utc": datetime(2026, 1, 2, 21, 15, tzinfo=UTC),
+                "x_return": None,
+                "x_return__available_ts_utc": None,
+            }
+        ]
+    )
+
+    assert rows[0]["status"] == "warn"
+    assert rows[0]["reason"] == "missing_feature_value_not_evaluable"
+
+
+def test_modeling_panel_records_calendar_join_miss_reason() -> None:
+    panel = build_modeling_panel_records(
+        target_rows=[
+            {
+                "trading_date": "2026-01-06",
+                "contract_code": "c1",
+                "contract_month": "2026-03",
+                "clean_sample": True,
+                "same_contract_only": True,
+                "is_roll_sq_window": False,
+                "missing_reason": None,
+                "target_open_ts_utc": datetime(2026, 1, 5, 23, 45, tzinfo=UTC),
+                "full_gap_settle_to_open": -0.01,
+                "loss_settle_to_open": 0.01,
+            }
+        ],
+        alignment_records=[],
+        massive_daily_records=[],
+        spy_minute_records=[],
+        fred_records=[],
+    )
+
+    assert panel[0]["join_miss_reason"] == "calendar_desync"
+
+
+def test_calendar_map_statuses_cover_desync_and_holiday_trading() -> None:
+    records = paper_module.build_calendar_map_records(
+        target_rows=[
+            {
+                "trading_date": "2026-01-12",
+                "target_open_ts_utc": datetime(2026, 1, 11, 23, 45, tzinfo=UTC),
+                "missing_reason": "holiday_trading_no_day_open",
+            },
+            {
+                "trading_date": "2026-01-13",
+                "target_open_ts_utc": datetime(2026, 1, 12, 23, 45, tzinfo=UTC),
+                "missing_reason": None,
+            },
+        ],
+        calendar_records=[
+            {
+                "calendar_date": "2026-01-09",
+                "is_us_trading_day": True,
+                "is_jpx_trading_day": False,
+                "us_close_ts_utc": datetime(2026, 1, 9, 21, tzinfo=UTC),
+                "ose_night_close_ts_utc": datetime(2026, 1, 9, 21, tzinfo=UTC),
+            }
+        ],
+        alignment_records=[
+            {
+                "trading_date": "2026-01-12",
+                "us_calendar_date": "2026-01-09",
+                "alignment_pass": True,
+                "model_cutoff_ts_utc": datetime(2026, 1, 9, 21, 5, tzinfo=UTC),
+            },
+            {
+                "trading_date": "2026-01-13",
+                "us_calendar_date": "2026-01-09",
+                "alignment_pass": False,
+                "alignment_reason": "outside_dst_tolerance",
+                "model_cutoff_ts_utc": datetime(2026, 1, 9, 21, 5, tzinfo=UTC),
+            },
+        ],
+    )
+
+    assert records[0]["mapping_status"] == "ose_holiday_trading"
+    assert records[1]["mapping_status"] == "us_jp_desync"
+
+
+def test_jquants_silver_flags_and_cache_writer(tmp_path: Path) -> None:
+    row = {
+        "trading_date": "2026-01-05",
+        "product_category": "NK225F",
+        "contract_code": "c1",
+        "contract_month": "2026-03",
+        "central_contract_month_flag": True,
+        "last_trading_day": "2026-03-12",
+        "special_quotation_day": "2026-03-13",
+        "day_session_open": None,
+        "day_session_close": 100.0,
+        "night_session_open": 99.0,
+        "night_session_close": 100.0,
+        "settlement_price": 100.0,
+        "volume": 1.0,
+        "open_interest": 2.0,
+        "target_open_ts_utc": datetime(2026, 1, 4, 23, 45, tzinfo=UTC),
+        "night_close_ts_utc": datetime(2026, 1, 4, 21, tzinfo=UTC),
+        "vendor_available_ts_utc": datetime(2026, 1, 5, 18, tzinfo=UTC),
+        "research_download_ts_utc": datetime(2026, 1, 5, 19, tzinfo=UTC),
+    }
+    flagged = paper_module.add_jquants_silver_flags([row])
+
+    assert flagged[0]["invalid_day_session_open"] is True
+    assert flagged[0]["invalid_settlement_price"] is False
+
+    settings = Settings(data_dir=tmp_path / "data")
+    paper_module._write_jquants_silver_cache(settings=settings, rows=flagged)
+    assert (
+        tmp_path
+        / "data/silver/jquants_nk225f_daily/schema_version=1/year=2026/month=01/data.parquet"
+    ).exists()
+
+
+def test_derived_spy_records_flow_into_feature_map_and_alignment() -> None:
+    available = datetime(2026, 1, 2, 21, 5, tzinfo=UTC)
+    features = paper_module._spy_minute_feature_map(
+        [
+            {
+                "bar_date_et": "2026-01-02",
+                "feature_available_ts_utc": available,
+                "spy_late_30m_return": 0.01,
+                "spy_late_60m_return": 0.02,
+                "spy_late_session_range": 0.03,
+                "spy_late_volume_surge": 1.2,
+                "spy_final_window_momentum": -0.01,
+            }
+        ]
+    )
+
+    assert features["2026-01-02"]["spy_late_30m_return"] == 0.01
+    assert features["2026-01-02"]["spy_late_30m_return__available_ts_utc"] == available
+
+
+def test_vendor_payload_helpers_and_marker(tmp_path: Path) -> None:
+    assert paper_module._payload_results({"results": "bad"}) == []
+    assert paper_module._payload_results({"results": [{"x": 1}, 2]}) == [{"x": 1}]
+
+    marker = tmp_path / "data.unavailable.json"
+    paper_module._write_unavailable_marker(
+        marker,
+        source="massive",
+        error_class=VendorErrorClass.UNAVAILABLE_ENTITLEMENT,
+        http_status=403,
+        requested_range=["2026-01-01", "2026-01-31"],
+    )
+    assert json.loads(marker.read_text(encoding="utf-8"))["error_class"] == (
+        "unavailable_entitlement"
+    )
+
+
+def test_cache_coverage_guards_prevent_partial_month_reuse(tmp_path: Path) -> None:
+    parquet_path = tmp_path / "data.parquet"
+    metadata_path = parquet_path.with_suffix(parquet_path.suffix + ".metadata.json")
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "requested_dates": ["2026-01-05", "2026-01-06"],
+                "requested_range": ["2026-01-05", "2026-01-09"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert paper_module._cache_covers_dates(parquet_path, ["2026-01-05"])
+    assert not paper_module._cache_covers_dates(
+        parquet_path,
+        ["2026-01-05", "2026-01-31"],
+    )
+    assert paper_module._cache_covers_range(parquet_path, "2026-01-06", "2026-01-08")
+    assert not paper_module._cache_covers_range(parquet_path, "2026-01-01", "2026-01-08")
+    assert not paper_module._metadata_covers_range({}, "2026-01-01", "2026-01-08")
+
+
+def test_low_level_feature_and_bronze_helpers_cover_edge_cases() -> None:
+    assert paper_module._feature_description("other") == "paper-grade predictor candidate"
+    assert paper_module._feature_source_family("unknown") == "unknown"
+    assert paper_module._panel_join_miss_reason({}, "") == "calendar_desync"
+    assert (
+        paper_module._panel_join_miss_reason(
+            {"alignment_status": "missing_us_close"},
+            "2026-01-02",
+        )
+        == "us_market_closed"
+    )
+    assert paper_module._panel_join_miss_reason({"alignment_pass": False}, "2026-01-02") == (
+        "us_early_close_beyond_vendor_lag"
+    )
+    assert paper_module._rows_return([]) is None
+    assert paper_module._rows_return([{"close": 0.0}, {"close": 1.0}]) is None
+
+    row = paper_module._jquants_bronze_row(
+        {"Date": "", "ProdCat": "NK225F", "AO": "bad", "Settle": "100"},
+        requested_date="2026-01-05",
+        source_endpoint="/endpoint",
+        downloaded_at_utc=datetime(2026, 1, 5, tzinfo=UTC),
+    )
+    assert row["Date"] == "2026-01-05"
+    assert row["AO"] is None
+    assert row["Settle"] == 100.0
+
+
 def test_quantile_loss_and_fz_loss_are_finite_for_valid_forecasts() -> None:
     assert quantile_loss(2.0, 1.5, 0.95) > 0
     assert math.isfinite(paper_module.fz_loss(2.0, 1.5, 2.5, 0.95))
@@ -306,6 +588,34 @@ def test_quantile_loss_and_fz_loss_are_finite_for_valid_forecasts() -> None:
     )
     assert kupiec["status"] == "ok"
     assert cast(float, kupiec["pvalue"]) <= 1.0
+
+
+def test_coverage_tests_return_unavailable_for_degenerate_inputs() -> None:
+    assert kupiec_pof_test(breaches=np.array([]), expected_probability=0.05)["status"] == (
+        "unavailable_invalid_input"
+    )
+    assert (
+        kupiec_pof_test(
+            breaches=np.array([False, False]),
+            expected_probability=0.05,
+        )["status"]
+        == "unavailable_boundary_exceedance_rate"
+    )
+
+    assert (
+        paper_module.christoffersen_independence_test(breaches=np.array([True]))["status"]
+        == "unavailable_insufficient_oos"
+    )
+    assert (
+        paper_module.christoffersen_independence_test(
+            breaches=np.array([False, False, False]),
+        )["status"]
+        == "unavailable_boundary_transition_rate"
+    )
+    ok = paper_module.christoffersen_independence_test(
+        breaches=np.array([False, True, False, False, True, True, False]),
+    )
+    assert ok["status"] == "ok"
 
 
 def test_closed_form_p2a_forecasts_and_unknown_model() -> None:
@@ -551,9 +861,9 @@ def test_write_paper_panel_with_synthetic_vendor_rows(
 
     settings = Settings(
         reports_dir=tmp_path / "reports",
-        raw_data_dir=tmp_path / "data" / "raw",
-        interim_data_dir=tmp_path / "data" / "interim",
-        processed_data_dir=tmp_path / "data" / "processed",
+        bronze_data_dir=tmp_path / "data" / "bronze",
+        silver_data_dir=tmp_path / "data" / "silver",
+        gold_data_dir=tmp_path / "data" / "gold",
     )
     result = write_paper_panel(settings=settings, start="2026-01-05", end="2026-01-06")
     panel = pl.read_parquet(result.panel_path)

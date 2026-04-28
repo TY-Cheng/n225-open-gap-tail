@@ -131,7 +131,7 @@ def test_jquants_client_rejects_malformed_payloads() -> None:
         client.get_equity_master()
 
 
-def test_write_jquants_smoke_sample_writes_ignored_raw_artifact(tmp_path: Path) -> None:
+def test_write_jquants_smoke_sample_writes_bronze_artifact(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
         if path == "/v2/equities/master":
@@ -151,7 +151,7 @@ def test_write_jquants_smoke_sample_writes_ignored_raw_artifact(tmp_path: Path) 
         return httpx.Response(404, json={"message": "unexpected path"})
 
     settings = Settings(
-        raw_data_dir=tmp_path / "raw",
+        bronze_data_dir=tmp_path / "bronze",
         jquants_api_key="secret",
         jquants_api_base_url="https://example.test/v2",
         jquants_api_plan="free",
@@ -175,6 +175,7 @@ def test_write_jquants_smoke_sample_writes_ignored_raw_artifact(tmp_path: Path) 
     assert result.equity_daily_rows == 2
     assert result.futures_probe_status == 403
     assert result.futures_probe_rows == 0
+    assert "bronze/jquants_smoke" in result.output_path.as_posix()
     document: dict[str, Any] = json.loads(result.output_path.read_text(encoding="utf-8"))
     assert document["metadata"]["api_plan"] == "free"
     assert "secret" not in result.output_path.read_text(encoding="utf-8")

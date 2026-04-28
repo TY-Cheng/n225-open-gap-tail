@@ -24,16 +24,18 @@ Core variable definitions should be transparent enough for reader evaluation. Pu
 
 ## Current Environment Contract
 
-The current local `.env` contract uses J-Quants API V2 and keeps derivatives disabled until the subscription supports the futures endpoint:
+The current local `.env` contract uses J-Quants API V2. The paper-grade futures
+target pipeline requires Premium futures access for the historical derivatives endpoint;
+intraday derivatives remain disabled unless a licensed intraday mark is added:
 
 ```bash
 JQUANTS_API_VERSION="v2"
 JQUANTS_API_KEY="replace-me"
 JQUANTS_API_BASE_URL="https://api.jquants.com/v2"
-JQUANTS_API_PLAN="free"
+JQUANTS_API_PLAN="premium"
 JQUANTS_EQUITY_MASTER_ENABLED="true"
 JQUANTS_EQUITY_DAILY_ENABLED="true"
-JQUANTS_DERIVATIVES_DAILY_ENABLED="false"
+JQUANTS_DERIVATIVES_DAILY_ENABLED="true"
 JQUANTS_DERIVATIVES_INTRADAY_ENABLED="false"
 ```
 
@@ -62,7 +64,7 @@ OPTIONAL_MASSIVE_TICKERS="UUP"
 
 FRED uses current historical values with a conservative +1 U.S. business-day availability lag by default. This is not ALFRED/vintage-safe unless a future run explicitly records realtime or vintage parameters.
 
-The existing smoke commands are engineering checks only:
+The utility smoke/build commands are engineering checks only:
 
 ```bash
 n225-open-gap-tail massive-smoke
@@ -71,7 +73,9 @@ n225-open-gap-tail calendar-build
 n225-open-gap-tail contracts-build
 ```
 
-They write ignored raw and interim artifacts under `data/`. Smoke artifacts do not constitute empirical validation of the forecasting paper.
+They use the same cache vocabulary as the paper-grade workflow: vendor payloads under
+`data/bronze/` and typed normalized outputs under `data/silver/`. Smoke artifacts do not
+constitute empirical validation of the forecasting paper.
 
 ## Forecast Origins
 
@@ -119,6 +123,82 @@ Before modeling, each predictor block must produce an availability table with:
 - effective sample impact after joining to OSE target dates.
 
 The target audit and predictor timeline jointly determine the final sample period. Variables with short or unstable histories can enter robustness tables, but not the main predictor set if they materially shorten the main sample.
+
+## Cache-First Data Lake Contract
+
+`just full` builds a local cache-first data lake before model evaluation. The default start
+is `2016-07-19`, treated as a clean-sample candidate rather than a hard empirical claim.
+The final modeling start is written to the run manifest as:
+
+```text
+combined_clean_start = max(
+  jquants_required_field_coverage_start,
+  massive_daily_entitlement_start,
+  fred_required_series_coverage_start
+)
+```
+
+`jquants_required_field_coverage_start` defaults to `2016-07-19` only when
+`fields_coverage_audit.parquet` supports required coverage for settlement, last-trading-day,
+SQ-day, and central-contract fields. `2008-05-07` remains available for target-history audit
+or robustness runs, not as the default clean predictor sample.
+
+Physical layout uses Hive-style Parquet partitions with schema version in the path:
+
+```text
+data/bronze/jquants_futures_daily/schema_version=1/year=2016/month=07/data.parquet
+data/silver/jquants_nk225f_daily/schema_version=1/year=2016/month=07/data.parquet
+data/silver/massive_spy_minute_features/schema_version=1/ticker=spy/year=2016/month=07/data.parquet
+data/bronze/calendar_sessions/schema_version=1/start=2016-07-19/end=2026-04-28/metadata.json
+data/silver/calendar_sessions/schema_version=1/start=2016-07-19/end=2026-04-28/data.parquet
+data/bronze/nikkei_contracts_rule_based/schema_version=1/start=2016-07-19/end=2026-04-28/metadata.json
+data/silver/nikkei_contracts_rule_based/schema_version=1/start=2016-07-19/end=2026-04-28/contracts.parquet
+```
+
+All Parquet writes are atomic: write to `.tmp.<pid>.<uuid>`, validate row count and schema,
+compute separate `xxhash64` chunk and schema hashes, then `os.replace()` into place. At the
+start of `just full`, orphan `.tmp` files older than two hours are removed. Readers use
+explicit Hive partition schemas so `year` and `month` are numeric, not inferred strings.
+
+Layer boundaries:
+
+- Bronze stores typed vendor-cache rows and provenance: endpoint, requested range, pull
+  timestamps, row counts, schema version, schema hash, and content hash.
+- Silver stores canonical research rows. J-Quants silver filters `NK225F`, stores UTC-aware
+  timestamps, flags zero or negative prices and OHLC violations, and does not impute.
+- Gold joins targets, calendar map, Massive predictors, SPY late-session features, FRED
+  predictors, roll/SQ flags, and audit columns by `ose_trading_date`.
+
+Rebuild semantics are layer-aware. Rebuilding silver or gold uses existing local cache and
+does not call vendor APIs unless bronze is missing or a vendor refresh is explicitly
+requested.
+
+## Calendar Map and Join Diagnostics
+
+`calendar_map.parquet` is built before the gold panel. It maps the relevant U.S. close date
+to each OSE target date and records:
+
+- U.S. official close UTC and early-close flag;
+- EST/EDT regime;
+- OSE day open and night close UTC timestamps;
+- `us_close_to_ose_night_close_minutes`;
+- model cutoff and target open;
+- enum-valued `mapping_status`: `normal_trading`, `us_holiday`, `jp_holiday`,
+  `us_jp_desync`, `ose_holiday_trading`, or `unmapped`.
+
+Gold joins preserve target rows when predictors are missing. Missing predictors are reported
+with enum-valued `join_miss_reason`, including entitlement gaps, missing cache partitions,
+FRED release lag, `fred_vintage_not_realtime_safe`, market-calendar desync, and predictor
+nulls. This keeps structural missingness separate from random data gaps.
+
+## FRED TTL and Vintage Label
+
+Default FRED ingestion uses current historical values with a conservative availability lag
+and is labeled `vintage_safe=false`. The cache has a default 30-day TTL, evaluated exactly
+once at run start. Chunks that are stale at run start refresh before use; chunks that are
+fresh at run start remain valid for that run even if the TTL would expire mid-run. Each FRED
+cache metadata file records the pull timestamp, run-start TTL decision timestamp, vintage
+label, revision-risk label, and refresh status.
 
 ## Target Hierarchy
 

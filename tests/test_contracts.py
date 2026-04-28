@@ -31,8 +31,8 @@ def test_build_nikkei_contract_records_selects_central_contract_around_roll() ->
 
 def test_write_contract_metadata_writes_contract_and_selector_tables(tmp_path: Path) -> None:
     settings = Settings(
-        raw_data_dir=tmp_path / "raw",
-        interim_data_dir=tmp_path / "interim",
+        bronze_data_dir=tmp_path / "bronze",
+        silver_data_dir=tmp_path / "silver",
         nikkei_contract_roll_days_before_last_trade=5,
     )
 
@@ -41,6 +41,8 @@ def test_write_contract_metadata_writes_contract_and_selector_tables(tmp_path: P
     contracts = pl.read_parquet(result.contracts_path)
     selector = pl.read_parquet(result.selector_path)
 
+    assert "bronze/nikkei_contracts_rule_based" in result.metadata_path.as_posix()
+    assert "silver/nikkei_contracts_rule_based" in result.contracts_path.as_posix()
     assert metadata["source"] == "rule_based_contract_metadata"
     assert result.contracts >= 9
     assert result.selector_rows > 200

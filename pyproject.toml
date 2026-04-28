@@ -25,6 +25,7 @@ dependencies = [
     "statsmodels>=0.14.4",
     "typer>=0.15.0",
     "tzdata>=2025.1",
+    "xxhash>=3.5.0",
 ]
 
 [project.scripts]

@@ -22,8 +22,17 @@ Before editing anything, read these files in order:
 
 Respect the existing workflow:
 
-- Use `just setup`, `just status`, `just check`, and `just full` as the main entrypoints.
+- Use `just status`, `just check`, and `just full` as the main entrypoints.
   Use lower-level recipes such as `just _paper-panel` and `just _paper-eval` only when debugging a specific layer.
+- `just full` defaults to `2016-07-19`. The manifest computes `combined_clean_start` from
+  J-Quants required-field coverage, Massive entitlement, and required FRED coverage. Do not
+  hard-code a later modeling start in model code.
+- Treat the data path as cache-first: Hive-style typed Parquet, atomic writes, `xxhash64`
+  chunk hashes, run-start GC of orphan temp files, and layer-aware rebuilds. Rebuilding
+  silver/gold must not call vendor APIs unless bronze is missing or refresh was explicitly
+  requested.
+- FRED current-historical caches are `vintage_safe=false`; TTL is evaluated once at run
+  start, never mid-run.
 - The intended uv environment comes from `.env` through `UV_PROJECT_ENVIRONMENT`.
 - Treat the sibling `../agent-runner` project as an external sidecar worker pool when delegation is useful. From this repo, call it through `just agent ...`, for example `just agent litellm-status` or `just agent run-worker "Objective" "src/foo.py,tests/test_foo.py"`.
 - External worker outputs remain sidecar artifacts and worktrees until Codex or a human reviews them. Do not treat external worker patches as merged code or empirical evidence.
@@ -39,7 +48,7 @@ Audit checklist before adding features:
 - Is the OSE futures target clearly labeled as historical J-Quants Premium research data rather than live pre-open production data?
 - Are raw vendor data, `.env`, `uv.lock`, build outputs, generated data artifacts, and caches ignored?
 - Do all `uv`-based `just` recipes require an external `UV_PROJECT_ENVIRONMENT`?
-- Does `just test` pass with coverage above 95%?
+- Does `just check` pass with coverage above 95% and a strict docs build?
 - Are tests named honestly as unit, schema, smoke, or real-data checks?
 - Are rule-based contract metadata and exchange-calendar outputs clearly labeled as scaffolding that requires vendor reconciliation?
 - Is any claim about model performance, VaR/ES calibration, or hedge usefulness unsupported by current artifacts?
@@ -157,8 +166,7 @@ Implement the pipeline in this order:
 
 Acceptance criteria for each implementation phase:
 
-- `just test` passes with coverage >= 95%.
-- `just lint` passes.
+- `just check` passes with coverage >= 95% and a strict docs build.
 - New outputs are either small tracked synthetic fixtures or ignored local artifacts.
 - No vendor credentials or raw market data are committed.
 - Documentation is updated when behavior, schemas, or workflow entrypoints change.

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from io import StringIO
@@ -10,9 +9,9 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
-import polars as pl
 
 from n225_open_gap_tail.config import Settings
+from n225_open_gap_tail.datalake import atomic_write_parquet, write_json_atomic
 
 
 class FredDataError(RuntimeError):
@@ -35,7 +34,7 @@ class FredSeriesPayload:
 
 @dataclass(frozen=True)
 class FredSmokeResult:
-    raw_output_path: Path
+    bronze_payload_path: Path
     parquet_path: Path
     rows: int
     series_statuses: dict[str, int]
@@ -174,13 +173,22 @@ def write_fred_smoke_sample(
             )
         )
 
-    raw_dir = settings.raw_data_dir / "fred" / "smoke"
-    interim_dir = settings.interim_data_dir / "fred" / "smoke"
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    interim_dir.mkdir(parents=True, exist_ok=True)
-
-    raw_output_path = raw_dir / f"fred_smoke_{start}_{end}.json"
-    parquet_path = interim_dir / f"fred_daily_{start}_{end}.parquet"
+    bronze_dir = (
+        settings.bronze_data_dir
+        / "fred_smoke"
+        / "schema_version=1"
+        / f"start={start}"
+        / f"end={end}"
+    )
+    silver_dir = (
+        settings.silver_data_dir
+        / "fred_smoke"
+        / "schema_version=1"
+        / f"start={start}"
+        / f"end={end}"
+    )
+    bronze_payload_path = bronze_dir / "payload.json"
+    parquet_path = silver_dir / "daily.parquet"
     document = {
         "metadata": {
             "source": "fred",
@@ -193,11 +201,11 @@ def write_fred_smoke_sample(
         },
         "series": [_series_to_document(payload) for payload in series_payloads],
     }
-    raw_output_path.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
-    pl.DataFrame(records).write_parquet(parquet_path)
+    write_json_atomic(bronze_payload_path, document)
+    atomic_write_parquet(parquet_path, records)
 
     return FredSmokeResult(
-        raw_output_path=raw_output_path,
+        bronze_payload_path=bronze_payload_path,
         parquet_path=parquet_path,
         rows=len(records),
         series_statuses={payload.series_id: payload.http_status for payload in series_payloads},

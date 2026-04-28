@@ -6,6 +6,7 @@ import typer
 from n225_open_gap_tail.calendars import write_calendar_table
 from n225_open_gap_tail.config import load_settings, split_csv
 from n225_open_gap_tail.contracts import write_contract_metadata
+from n225_open_gap_tail.datalake import MAIN_SAMPLE_START
 from n225_open_gap_tail.fred import write_fred_smoke_sample
 from n225_open_gap_tail.jquants import write_jquants_smoke_sample
 from n225_open_gap_tail.massive import write_massive_smoke_sample
@@ -124,7 +125,7 @@ def massive_smoke(
         probe_tickers=probe_ticker_list,
     )
 
-    typer.echo(f"raw wrote: {result.raw_output_path}")
+    typer.echo(f"bronze payload wrote: {result.bronze_payload_path}")
     typer.echo(f"daily parquet wrote: {result.daily_parquet_path}")
     typer.echo(f"minute parquet wrote: {result.minute_parquet_path}")
     typer.echo(f"daily rows: {result.daily_rows}")
@@ -154,7 +155,7 @@ def fred_smoke(
         end=end,
     )
 
-    typer.echo(f"raw wrote: {result.raw_output_path}")
+    typer.echo(f"bronze payload wrote: {result.bronze_payload_path}")
     typer.echo(f"parquet wrote: {result.parquet_path}")
     typer.echo(f"rows: {result.rows}")
     typer.echo(f"series statuses: {_format_statuses(result.series_statuses)}")
@@ -217,7 +218,7 @@ def snapshot(
 
 @app.command("paper-panel")
 def paper_panel(
-    start: str = typer.Option("2008-05-07", help="Start date in YYYY-MM-DD."),
+    start: str = typer.Option(MAIN_SAMPLE_START, help="Start date in YYYY-MM-DD."),
     end: str = typer.Option("", help="End date in YYYY-MM-DD. Defaults to today."),
 ) -> None:
     """Build the paper-grade full-history modeling panel."""
@@ -252,7 +253,7 @@ def paper_eval(
 
 @app.command("paper-grade")
 def paper_grade(
-    start: str = typer.Option("2008-05-07", help="Start date in YYYY-MM-DD."),
+    start: str = typer.Option(MAIN_SAMPLE_START, help="Start date in YYYY-MM-DD."),
     end: str = typer.Option("", help="End date in YYYY-MM-DD. Defaults to today."),
     workers: int = typer.Option(0, help="Joblib workers. Defaults to bounded local workers."),
     stage: str = typer.Option("p2a", help="Evaluation stage: p2a, p2b, p2c, or all."),

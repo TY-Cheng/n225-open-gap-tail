@@ -11,6 +11,8 @@ from n225_open_gap_tail.schemas import (
     REQUIRED_TARGET_FIELDS,
     REQUIRED_TIMESTAMP_FIELDS,
     ForecastOrigin,
+    JoinMissReason,
+    MappingStatus,
     SchemaContractError,
     TargetFamily,
     parse_forecast_origin,
@@ -36,6 +38,8 @@ def test_schema_constants_cover_research_contract_terms() -> None:
     assert "is_sq_window" in REQUIRED_MARKET_STRUCTURE_FLAGS
     assert JQUANTS_FUTURES_FIELD_USES["DaySessionOpen"] == "target_open"
     assert "standardized_loss_t" in MODEL_READY_LOSS_FIELDS
+    assert MappingStatus.US_JP_DESYNC.value == "us_jp_desync"
+    assert JoinMissReason.FRED_VINTAGE_UNSAFE.value == "fred_vintage_not_realtime_safe"
 
 
 def test_parse_forecast_origin_and_target_family_are_strict() -> None:

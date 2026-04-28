@@ -379,6 +379,8 @@ Processed model tables should carry the fields needed to audit the LightGBM-stan
 | `baseline_residual_loss_t` | Residual loss from the selected baseline location or location-scale model. |
 | `lgbm_predicted_location_t` | LightGBM conditional location prediction where used. |
 | `lgbm_predicted_scale_t` | LightGBM conditional scale prediction used to standardize losses. |
+| `scale_smearing_factor` | Pooled Duan retransformation factor computed from out-of-fold scale residuals. |
+| `oof_standardized_loss_count` | Number of fully out-of-fold standardized losses available for empirical or EVT tail calibration. |
 | `standardized_loss_t` | Loss divided by predicted scale, after any documented location adjustment. |
 | `evt_threshold_u` | Training-window POT threshold used for the row's forecast. |
 | `exceedance_indicator_t` | Indicator that `standardized_loss_t` exceeds the threshold. |

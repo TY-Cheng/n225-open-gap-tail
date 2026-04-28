@@ -118,7 +118,17 @@ PERSISTENT_UNAVAILABLE_ERRORS = {
 }
 FRED_H10_RELEASE_AGE_CAP_DAYS = PAPER_CONFIG.leakage_policy.fred_h10_release_age_cap_calendar_days
 P2B_DIRECT_QUANTILE_MODEL = "lightgbm_direct_quantile"
+P2B_LOCATION_SCALE_MODEL = "lightgbm_location_scale"
+P2B_STANDARDIZED_POT_GPD_MODEL = "lightgbm_standardized_loss_pot_gpd"
+P2B_MODEL_NAMES = (
+    P2B_DIRECT_QUANTILE_MODEL,
+    P2B_LOCATION_SCALE_MODEL,
+    P2B_STANDARDIZED_POT_GPD_MODEL,
+)
 P2B_REFIT_FREQUENCY = "monthly"
+P2B_SCALE_FLOOR = 1e-6
+P2B_OOF_SPLITS = 5
+P2B_MIN_OOF_TRAIN_ROWS = 250
 P2A_ANCHOR_MODEL = "historical_quantile"
 P2B_ANCHOR_INFORMATION_SET = PAPER_CONFIG.feature_sets.p2b_model_a_information_set
 MODEL_EVICTION_COVERAGE_THRESHOLD = 0.95
@@ -1551,22 +1561,27 @@ def evaluate_p2b_run(
     information_sets = registered_p2b_information_sets()
     jobs: list[dict[str, object]] = []
     for tail_level in PAPER_TAIL_LEVELS:
-        for information_set in information_sets:
-            jobs.append(
-                {
-                    "panel_path": str(panel_path),
-                    "coverage_path": str(coverage_path),
-                    "run_dir": str(run_dir),
-                    "tail_level": tail_level,
-                    "information_set": information_set,
-                    "model_name": P2B_DIRECT_QUANTILE_MODEL,
-                    "shard_id": _forecast_shard_id(
-                        P2B_DIRECT_QUANTILE_MODEL,
-                        tail_level,
-                        information_set=information_set,
-                    ),
-                }
-            )
+        for model_name in P2B_MODEL_NAMES:
+            for information_set in information_sets:
+                jobs.append(
+                    {
+                        "panel_path": str(panel_path),
+                        "coverage_path": str(coverage_path),
+                        "run_dir": str(run_dir),
+                        "tail_level": tail_level,
+                        "target_family": PAPER_CONFIG.target_policy.primary_target_family,
+                        "information_set": information_set,
+                        "model_name": model_name,
+                        "refit_frequency": P2B_REFIT_FREQUENCY,
+                        "shard_id": _forecast_shard_id(
+                            model_name,
+                            tail_level,
+                            information_set=information_set,
+                            target_family=PAPER_CONFIG.target_policy.primary_target_family,
+                            refit_frequency=P2B_REFIT_FREQUENCY,
+                        ),
+                    }
+                )
     for payload in jobs:
         validate_worker_payload(payload)
     n_jobs = _bounded_workers(workers)
@@ -1655,8 +1670,8 @@ def evaluate_p2b_run(
             "claim_level": PAPER_CLAIMS_LEVEL,
             "config_hash": PAPER_CONFIG.config_hash(),
             "stage": "p2b",
-            "status": "completed_lightgbm_direct_quantile",
-            "model_name": P2B_DIRECT_QUANTILE_MODEL,
+            "status": "completed_lightgbm_p2b_models",
+            "model_name": "p2b_lightgbm_model_registry",
             "refit_frequency": P2B_REFIT_FREQUENCY,
             "forecast_rows": len(forecasts),
             "metric_rows": len(metrics),
@@ -1669,17 +1684,14 @@ def evaluate_p2b_run(
             "common_sample_status": artifacts["common_sample_status"],
             "failures": len(failures),
             "registered_information_sets": _registered_information_set_payload(),
-            "implemented_components": ["lightgbm_direct_quantile"],
-            "unavailable_components": {
-                "lightgbm_location_scale": "unavailable_not_implemented_nonblocking",
-                "lightgbm_standardized_loss_pot_gpd": "unavailable_not_implemented_nonblocking",
-            },
+            "implemented_components": list(P2B_MODEL_NAMES),
+            "unavailable_components": {},
         },
     )
     _update_manifest(
         run_dir,
         {
-            "p2b_eval_status": "completed_lightgbm_direct_quantile",
+            "p2b_eval_status": "completed_lightgbm_p2b_models",
             "p2b_forecast_rows": len(forecasts),
             "p2b_metric_rows": len(metrics),
         },
@@ -1693,7 +1705,7 @@ def evaluate_p2b_run(
         run_dir=run_dir,
         forecast_rows=len(forecasts),
         metric_rows=len(metrics),
-        status="completed_lightgbm_direct_quantile",
+        status="completed_lightgbm_p2b_models",
     )
 
 
@@ -1788,8 +1800,12 @@ def _evaluate_p2b_shard(payload: dict[str, object]) -> dict[str, list[dict[str, 
     panel_path = Path(str(payload["panel_path"]))
     coverage_path = Path(str(payload["coverage_path"]))
     tail_level = _required_float(payload["tail_level"])
+    target_family = str(
+        payload.get("target_family") or PAPER_CONFIG.target_policy.primary_target_family
+    )
     information_set = str(payload["information_set"])
     model_name = str(payload["model_name"])
+    refit_frequency = str(payload.get("refit_frequency") or P2B_REFIT_FREQUENCY)
     coverage_rows = pl.read_parquet(coverage_path).to_dicts()
     candidate_features = p2b_feature_columns_for_information_set(
         coverage_rows,
@@ -1810,7 +1826,9 @@ def _evaluate_p2b_shard(payload: dict[str, object]) -> dict[str, list[dict[str, 
                     "shard_id": _forecast_shard_id(
                         model_name,
                         tail_level,
+                        target_family=target_family,
                         information_set=information_set,
+                        refit_frequency=refit_frequency,
                     ),
                     "fit_status": "unavailable_insufficient_oos_start",
                     "oos_failure_reason": oos_diagnostics["failure_reason"],
@@ -1818,6 +1836,8 @@ def _evaluate_p2b_shard(payload: dict[str, object]) -> dict[str, list[dict[str, 
                     "train_exceedances": oos_diagnostics["train_exceedances"],
                     "min_train_rows": DEFAULT_MIN_TRAIN_ROWS,
                     "min_train_exceedances": DEFAULT_MIN_TRAIN_EXCEEDANCES,
+                    "target_family": target_family,
+                    "refit_frequency": refit_frequency,
                     "candidate_feature_hash": stable_hash(candidate_features),
                     "active_feature_hash": stable_hash([]),
                 }
@@ -1936,6 +1956,16 @@ def _forecast_p2b_lightgbm_sequence(
             ],
             "failures": [],
         }
+    if model_name != P2B_DIRECT_QUANTILE_MODEL:
+        return _forecast_p2b_location_scale_sequence(
+            rows=rows,
+            model_name=model_name,
+            information_set=information_set,
+            candidate_features=candidate_features,
+            tail_level=tail_level,
+            oos_start=oos_start,
+            lgb=lgb,
+        )
     clean = [
         row
         for row in rows
@@ -2017,6 +2047,7 @@ def _forecast_p2b_lightgbm_sequence(
                         "train_n": cached_train_n,
                         "optimizer_status": "lightgbm_fit_completed",
                         "convergence_code": 0,
+                        "target_family": row.get("target_family") or "full_gap_settle_to_open",
                         "candidate_feature_hash": gate["candidate_feature_hash"],
                         "active_feature_hash": gate["active_feature_hash"],
                         "dropped_features_json": gate["dropped_features_json"],
@@ -2054,6 +2085,7 @@ def _forecast_p2b_lightgbm_sequence(
                         "model_name": model_name,
                         "information_set": information_set,
                         "tail_level": tail_level,
+                        "refit_frequency": P2B_REFIT_FREQUENCY,
                         "var_forecast": None,
                         "es_forecast": None,
                         "es_companion_type": "empirical_excess_es_companion",
@@ -2071,6 +2103,7 @@ def _forecast_p2b_lightgbm_sequence(
                         "absorption_regime": row.get("absorption_regime"),
                         "vix_level": row.get("vix_level"),
                         "active_feature_hash": cached_gate.get("active_feature_hash"),
+                        **_p2b_extended_forecast_fields(),
                     }
                 )
                 continue
@@ -2093,6 +2126,7 @@ def _forecast_p2b_lightgbm_sequence(
                     "model_name": model_name,
                     "information_set": information_set,
                     "tail_level": tail_level,
+                    "refit_frequency": P2B_REFIT_FREQUENCY,
                     "var_forecast": var_forecast,
                     "es_forecast": es_forecast,
                     "es_companion_type": "empirical_excess_es_companion",
@@ -2110,6 +2144,7 @@ def _forecast_p2b_lightgbm_sequence(
                     "absorption_regime": row.get("absorption_regime"),
                     "vix_level": row.get("vix_level"),
                     "active_feature_hash": cached_gate.get("active_feature_hash"),
+                    **_p2b_extended_forecast_fields(),
                 }
             )
         except Exception as exc:  # pragma: no cover - defensive failure log
@@ -2124,6 +2159,598 @@ def _forecast_p2b_lightgbm_sequence(
                 }
             )
     return {"forecasts": forecasts, "diagnostics": diagnostics, "failures": failures}
+
+
+def _forecast_p2b_location_scale_sequence(
+    *,
+    rows: list[dict[str, object]],
+    model_name: str,
+    information_set: str,
+    candidate_features: list[str],
+    tail_level: float,
+    oos_start: str,
+    lgb: Any,
+) -> dict[str, list[dict[str, object]]]:
+    clean = [
+        row
+        for row in rows
+        if row.get("clean_sample") is True
+        and (loss := _optional_float(row.get("realized_loss"))) is not None
+        and math.isfinite(loss)
+    ]
+    clean.sort(key=lambda row: str(row["forecast_date"]))
+    start_date = date.fromisoformat(oos_start)
+    forecasts: list[dict[str, object]] = []
+    diagnostics: list[dict[str, object]] = []
+    failures: list[dict[str, object]] = []
+    cached_bundle: dict[str, object] | None = None
+    cached_refit_month: str | None = None
+    for index, row in enumerate(clean):
+        forecast_date = date.fromisoformat(str(row["forecast_date"]))
+        if forecast_date < start_date:
+            continue
+        train_rows = clean[:index]
+        if len(train_rows) < DEFAULT_MIN_TRAIN_ROWS:
+            continue
+        refit_month = forecast_date.strftime("%Y-%m")
+        if cached_bundle is None or cached_refit_month != refit_month:
+            cached_refit_month = refit_month
+            try:
+                cached_bundle = _fit_p2b_location_scale_bundle(
+                    train_rows=train_rows,
+                    candidate_features=candidate_features,
+                    model_name=model_name,
+                    information_set=information_set,
+                    tail_level=tail_level,
+                    lgb=lgb,
+                )
+                diagnostics.append(
+                    _p2b_location_scale_diagnostic(
+                        row=row,
+                        model_name=model_name,
+                        information_set=information_set,
+                        tail_level=tail_level,
+                        refit_month=refit_month,
+                        bundle=cached_bundle,
+                    )
+                )
+            except Exception as exc:  # pragma: no cover - defensive path covered by statuses
+                status = _p2b_unavailable_status(exc)
+                cached_bundle = {
+                    "fit_status": status,
+                    "failure_reason": str(exc),
+                    "refit_month": refit_month,
+                    "train_n": len(train_rows),
+                    "train_start": train_rows[0]["forecast_date"],
+                    "train_end": train_rows[-1]["forecast_date"],
+                    "candidate_feature_hash": stable_hash(candidate_features),
+                    "active_feature_hash": stable_hash([]),
+                }
+                diagnostics.append(
+                    {
+                        "forecast_date": row["forecast_date"],
+                        "target_family": row.get("target_family") or "full_gap_settle_to_open",
+                        "model_name": model_name,
+                        "information_set": information_set,
+                        "tail_level": tail_level,
+                        "fit_status": status,
+                        "failure_reason": str(exc),
+                        "train_n": len(train_rows),
+                        "train_start": train_rows[0]["forecast_date"],
+                        "train_end": train_rows[-1]["forecast_date"],
+                        "candidate_feature_hash": stable_hash(candidate_features),
+                        "active_feature_hash": stable_hash([]),
+                        "refit_frequency": P2B_REFIT_FREQUENCY,
+                        "refit_month": refit_month,
+                    }
+                )
+        if cached_bundle is None or cached_bundle.get("fit_status") != "ok":
+            continue
+        try:
+            active_features = cast(list[str], cached_bundle["active_features"])
+            scale_active_features = cast(list[str], cached_bundle["scale_active_features"])
+            unavailable_features = _unavailable_active_features(
+                row,
+                list(dict.fromkeys((*active_features, *scale_active_features))),
+            )
+            if unavailable_features:
+                forecasts.append(
+                    _p2b_unavailable_feature_forecast(
+                        row=row,
+                        model_name=model_name,
+                        information_set=information_set,
+                        tail_level=tail_level,
+                        bundle=cached_bundle,
+                        unavailable_features=unavailable_features,
+                    )
+                )
+                continue
+            forecast = _predict_p2b_location_scale_forecast(
+                row=row,
+                model_name=model_name,
+                information_set=information_set,
+                tail_level=tail_level,
+                bundle=cached_bundle,
+            )
+            forecasts.append(forecast)
+        except Exception as exc:  # pragma: no cover - defensive failure log
+            failures.append(
+                {
+                    "forecast_date": row["forecast_date"],
+                    "model_name": model_name,
+                    "information_set": information_set,
+                    "tail_level": tail_level,
+                    "fit_status": _p2b_unavailable_status(exc),
+                    "failure_reason": str(exc),
+                }
+            )
+    return {"forecasts": forecasts, "diagnostics": diagnostics, "failures": failures}
+
+
+def _fit_p2b_location_scale_bundle(
+    *,
+    train_rows: list[dict[str, object]],
+    candidate_features: list[str],
+    model_name: str,
+    information_set: str,
+    tail_level: float,
+    lgb: Any,
+) -> dict[str, object]:
+    oof = _p2b_oof_location_scale(
+        train_rows=train_rows,
+        candidate_features=candidate_features,
+        information_set=information_set,
+        tail_level=tail_level,
+        lgb=lgb,
+    )
+    z_oof = cast(np.ndarray, oof["standardized_losses"])
+    z_oof = z_oof[np.isfinite(z_oof)]
+    if z_oof.size < P2B_MIN_OOF_TRAIN_ROWS:
+        raise PaperRunError(f"unavailable_oof_standardization_insufficient_sample: {z_oof.size}")
+    standardized_var: float | None = None
+    standardized_es: float | None = None
+    evt_tail: dict[str, object] = {}
+    if model_name == P2B_LOCATION_SCALE_MODEL:
+        standardized_var = float(np.quantile(z_oof, tail_level))
+        exceedances = z_oof[z_oof > standardized_var]
+        if exceedances.size < DEFAULT_MIN_TRAIN_EXCEEDANCES:
+            raise PaperRunError(
+                f"unavailable_oof_standardized_es_insufficient_exceedances: {exceedances.size}"
+            )
+        standardized_es = float(max(standardized_var, np.mean(exceedances)))
+        es_companion_type = "oof_filtered_historical_standardized_es"
+    elif model_name == P2B_STANDARDIZED_POT_GPD_MODEL:
+        if tail_level <= EVT_THRESHOLD_QUANTILE:
+            raise PaperRunError("unavailable_evt_tail_not_above_threshold")
+        try:
+            evt_tail = _pot_gpd_standardized_tail(
+                standardized_losses=z_oof,
+                tail_level=tail_level,
+                require_finite_gpd_es=True,
+            )
+        except PaperRunError as exc:
+            message = str(exc)
+            if "insufficient exceedances" in message:
+                raise PaperRunError(f"unavailable_evt_insufficient_exceedances: {message}") from exc
+            if "shape" in message:
+                raise PaperRunError(f"unavailable_evt_shape_es_infinite: {message}") from exc
+            raise PaperRunError(f"unavailable_evt_calibration_failed: {message}") from exc
+        standardized_var = _required_float(evt_tail["standardized_var"])
+        standardized_es = _required_float(evt_tail["standardized_es"])
+        es_companion_type = "oof_standardized_loss_pot_gpd"
+    else:
+        raise PaperRunError(f"Unknown P2B model: {model_name}")
+
+    y_train = np.array([_required_float(row["realized_loss"]) for row in train_rows], dtype=float)
+    location_model, gate, active_features = _fit_lgb_regression_model(
+        lgb=lgb,
+        rows=train_rows,
+        target=y_train,
+        candidate_features=candidate_features,
+        objective="regression_l2",
+        random_state=_p2b_seed(model_name, information_set, tail_level, "location_final"),
+    )
+    log_abs_resid_oof = cast(np.ndarray, oof["log_abs_resid_oof"])
+    scale_indices = [index for index, value in enumerate(log_abs_resid_oof) if math.isfinite(value)]
+    if len(scale_indices) < P2B_MIN_OOF_TRAIN_ROWS:
+        raise PaperRunError(
+            f"unavailable_oof_standardization_insufficient_sample: {len(scale_indices)}"
+        )
+    scale_rows = [train_rows[index] for index in scale_indices]
+    scale_target = np.array([log_abs_resid_oof[index] for index in scale_indices], dtype=float)
+    scale_model, scale_gate, scale_active_features = _fit_lgb_regression_model(
+        lgb=lgb,
+        rows=scale_rows,
+        target=scale_target,
+        candidate_features=candidate_features,
+        objective="regression_l2",
+        random_state=_p2b_seed(model_name, information_set, tail_level, "scale_final"),
+    )
+    return {
+        "fit_status": "ok",
+        "location_model": location_model,
+        "scale_model": scale_model,
+        "active_features": active_features,
+        "scale_active_features": scale_active_features,
+        "gate": gate,
+        "scale_gate": scale_gate,
+        "train_n": len(train_rows),
+        "train_start": train_rows[0]["forecast_date"],
+        "train_end": train_rows[-1]["forecast_date"],
+        "smearing_factor": oof["smearing_factor"],
+        "scale_floor": P2B_SCALE_FLOOR,
+        "standardized_losses": z_oof,
+        "standardized_var": standardized_var,
+        "standardized_es": standardized_es,
+        "es_companion_type": es_companion_type,
+        "oof_standardized_loss_count": int(z_oof.size),
+        "oof_location_count": oof["location_oof_count"],
+        "oof_scale_count": oof["scale_oof_count"],
+        "standardization_method": "blocked_expanding_oof_location_scale_duan_smearing",
+        "evt_tail": evt_tail,
+        "candidate_feature_hash": gate["candidate_feature_hash"],
+        "active_feature_hash": stable_hash(
+            {
+                "location": active_features,
+                "scale": scale_active_features,
+            }
+        ),
+        "dropped_features_json": gate["dropped_features_json"],
+        "scale_dropped_features_json": scale_gate["dropped_features_json"],
+        "training_missingness_json": gate["training_missingness_json"],
+        "training_variance_json": gate["training_variance_json"],
+    }
+
+
+def _p2b_oof_location_scale(
+    *,
+    train_rows: list[dict[str, object]],
+    candidate_features: list[str],
+    information_set: str,
+    tail_level: float,
+    lgb: Any,
+) -> dict[str, object]:
+    row_count = len(train_rows)
+    folds = _blocked_expanding_oof_folds(
+        row_count,
+        n_splits=P2B_OOF_SPLITS,
+        min_train_rows=P2B_MIN_OOF_TRAIN_ROWS,
+    )
+    if not folds:
+        raise PaperRunError("unavailable_oof_standardization_insufficient_sample: no folds")
+    y = np.array([_required_float(row["realized_loss"]) for row in train_rows], dtype=float)
+    mu_oof = np.full(row_count, np.nan, dtype=float)
+    log_abs_resid_oof = np.full(row_count, np.nan, dtype=float)
+    log_sigma_oof = np.full(row_count, np.nan, dtype=float)
+    for fold_index, (fold_train, fold_validation) in enumerate(folds):
+        fold_rows = [train_rows[index] for index in fold_train]
+        fold_target = y[fold_train]
+        model, _, active_features = _fit_lgb_regression_model(
+            lgb=lgb,
+            rows=fold_rows,
+            target=fold_target,
+            candidate_features=candidate_features,
+            objective="regression_l2",
+            random_state=_p2b_seed(information_set, tail_level, "location_oof", fold_index),
+        )
+        validation_rows = [train_rows[index] for index in fold_validation]
+        mu_oof[fold_validation] = _predict_lgb_rows(model, validation_rows, active_features)
+    for index, value in enumerate(mu_oof):
+        if math.isfinite(value):
+            log_abs_resid_oof[index] = math.log(max(abs(y[index] - value), P2B_SCALE_FLOOR))
+    for fold_index, (fold_train, fold_validation) in enumerate(folds):
+        scale_train = [index for index in fold_train if math.isfinite(log_abs_resid_oof[index])]
+        scale_validation = [
+            index for index in fold_validation if math.isfinite(log_abs_resid_oof[index])
+        ]
+        if len(scale_train) < P2B_MIN_OOF_TRAIN_ROWS or not scale_validation:
+            continue
+        scale_rows = [train_rows[index] for index in scale_train]
+        scale_target = log_abs_resid_oof[scale_train]
+        model, _, active_features = _fit_lgb_regression_model(
+            lgb=lgb,
+            rows=scale_rows,
+            target=scale_target,
+            candidate_features=candidate_features,
+            objective="regression_l2",
+            random_state=_p2b_seed(information_set, tail_level, "scale_oof", fold_index),
+        )
+        validation_rows = [train_rows[index] for index in scale_validation]
+        log_sigma_oof[scale_validation] = _predict_lgb_rows(
+            model,
+            validation_rows,
+            active_features,
+        )
+    valid_smearing = np.isfinite(log_abs_resid_oof) & np.isfinite(log_sigma_oof)
+    if int(np.sum(valid_smearing)) < P2B_MIN_OOF_TRAIN_ROWS:
+        raise PaperRunError(
+            f"unavailable_oof_standardization_insufficient_sample: {int(np.sum(valid_smearing))}"
+        )
+    exp_resid = np.exp(log_abs_resid_oof[valid_smearing] - log_sigma_oof[valid_smearing])
+    exp_resid = exp_resid[np.isfinite(exp_resid)]
+    smearing_factor = float(np.mean(exp_resid)) if exp_resid.size else math.nan
+    if not math.isfinite(smearing_factor) or smearing_factor <= 0:
+        raise PaperRunError("unavailable_invalid_smearing_factor")
+    sigma_oof = np.exp(log_sigma_oof) * smearing_factor
+    valid_z = (
+        np.isfinite(mu_oof)
+        & np.isfinite(sigma_oof)
+        & (sigma_oof > 0)
+        & np.isfinite(log_abs_resid_oof)
+    )
+    standardized = (y[valid_z] - mu_oof[valid_z]) / sigma_oof[valid_z]
+    standardized = standardized[np.isfinite(standardized)]
+    if standardized.size < P2B_MIN_OOF_TRAIN_ROWS:
+        raise PaperRunError(
+            f"unavailable_oof_standardization_insufficient_sample: {standardized.size}"
+        )
+    return {
+        "mu_oof": mu_oof,
+        "log_abs_resid_oof": log_abs_resid_oof,
+        "log_sigma_oof": log_sigma_oof,
+        "smearing_factor": smearing_factor,
+        "standardized_losses": standardized,
+        "location_oof_count": int(np.sum(np.isfinite(mu_oof))),
+        "scale_oof_count": int(np.sum(np.isfinite(log_sigma_oof))),
+    }
+
+
+def _fit_lgb_regression_model(
+    *,
+    lgb: Any,
+    rows: list[dict[str, object]],
+    target: np.ndarray,
+    candidate_features: list[str],
+    objective: str,
+    random_state: int,
+) -> tuple[Any, dict[str, object], list[str]]:
+    frame = pl.DataFrame(rows, infer_schema_length=None)
+    gate = build_feature_matrix_gate_records(frame, candidate_features)
+    active_features = cast(list[str], gate["active_features"])
+    if not active_features:
+        raise PaperRunError("P2B LightGBM has no active features after training gate")
+    x_train = _feature_matrix(frame, active_features)
+    model = lgb.LGBMRegressor(
+        objective=objective,
+        n_estimators=80,
+        learning_rate=0.05,
+        num_leaves=15,
+        min_child_samples=20,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        random_state=random_state,
+        num_threads=1,
+        verbosity=-1,
+    )
+    model.fit(x_train, target)
+    return model, gate, active_features
+
+
+def _predict_lgb_rows(
+    model: Any, rows: list[dict[str, object]], active_features: list[str]
+) -> np.ndarray:
+    frame = pl.DataFrame(rows, infer_schema_length=None)
+    x_predict = _feature_matrix(frame, active_features)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="X does not have valid feature names",
+            category=UserWarning,
+        )
+        return np.asarray(model.predict(x_predict), dtype=float)
+
+
+def _blocked_expanding_oof_folds(
+    row_count: int,
+    *,
+    n_splits: int,
+    min_train_rows: int,
+) -> list[tuple[list[int], list[int]]]:
+    if row_count <= min_train_rows:
+        return []
+    validation_count = row_count - min_train_rows
+    block_size = max(1, math.ceil(validation_count / max(n_splits, 1)))
+    folds: list[tuple[list[int], list[int]]] = []
+    start = min_train_rows
+    while start < row_count:
+        end = min(row_count, start + block_size)
+        folds.append((list(range(start)), list(range(start, end))))
+        start = end
+    return folds
+
+
+def _predict_p2b_location_scale_forecast(
+    *,
+    row: Mapping[str, object],
+    model_name: str,
+    information_set: str,
+    tail_level: float,
+    bundle: Mapping[str, object],
+) -> dict[str, object]:
+    location_model = bundle["location_model"]
+    scale_model = bundle["scale_model"]
+    location_forecast = float(
+        _predict_lgb_rows(
+            location_model,
+            [dict(row)],
+            cast(list[str], bundle["active_features"]),
+        )[0]
+    )
+    log_scale_forecast = float(
+        _predict_lgb_rows(
+            scale_model,
+            [dict(row)],
+            cast(list[str], bundle["scale_active_features"]),
+        )[0]
+    )
+    smearing_factor = _required_float(bundle["smearing_factor"])
+    try:
+        scale_forecast = math.exp(log_scale_forecast) * smearing_factor
+    except OverflowError as exc:
+        raise PaperRunError("unavailable_invalid_scale_forecast") from exc
+    if not math.isfinite(scale_forecast) or scale_forecast <= 0:
+        raise PaperRunError("unavailable_invalid_scale_forecast")
+    standardized_var = _required_float(bundle["standardized_var"])
+    standardized_es = _required_float(bundle["standardized_es"])
+    var_forecast = float(location_forecast + scale_forecast * standardized_var)
+    es_forecast = float(location_forecast + scale_forecast * standardized_es)
+    es_forecast = float(max(var_forecast, es_forecast))
+    realized_loss = _required_float(row["realized_loss"])
+    valid, invalid_reason = validate_forecast_values(var_forecast, es_forecast)
+    evt_tail = cast(Mapping[str, object], bundle.get("evt_tail") or {})
+    return {
+        "forecast_date": row["forecast_date"],
+        "target_family": row.get("target_family") or "full_gap_settle_to_open",
+        "model_name": model_name,
+        "information_set": information_set,
+        "tail_level": tail_level,
+        "refit_frequency": P2B_REFIT_FREQUENCY,
+        "var_forecast": var_forecast,
+        "es_forecast": es_forecast,
+        "es_companion_type": bundle["es_companion_type"],
+        "realized_loss": realized_loss,
+        "var_breach": realized_loss > var_forecast,
+        "is_valid_forecast": valid,
+        "invalid_reason": invalid_reason,
+        "train_start": bundle["train_start"],
+        "train_end": bundle["train_end"],
+        "train_n": bundle["train_n"],
+        "fit_status": "ok" if valid else "invalid_forecast",
+        "failure_reason": invalid_reason,
+        "runtime_seconds": None,
+        "dst_regime": row.get("dst_regime"),
+        "absorption_regime": row.get("absorption_regime"),
+        "vix_level": row.get("vix_level"),
+        "active_feature_hash": bundle.get("active_feature_hash"),
+        "location_forecast": location_forecast,
+        "scale_forecast": scale_forecast,
+        "scale_smearing_factor": smearing_factor,
+        "scale_floor": P2B_SCALE_FLOOR,
+        "standardization_method": bundle.get("standardization_method"),
+        "oof_standardized_loss_count": bundle.get("oof_standardized_loss_count"),
+        "standardized_var": standardized_var,
+        "standardized_es": standardized_es,
+        "evt_shape": evt_tail.get("evt_shape"),
+        "evt_scale": evt_tail.get("evt_scale"),
+        "threshold_quantile": evt_tail.get("threshold_quantile"),
+        "threshold_value": evt_tail.get("threshold_value"),
+        "evt_exceedance_count": evt_tail.get("evt_exceedance_count"),
+    }
+
+
+def _p2b_location_scale_diagnostic(
+    *,
+    row: Mapping[str, object],
+    model_name: str,
+    information_set: str,
+    tail_level: float,
+    refit_month: str,
+    bundle: Mapping[str, object],
+) -> dict[str, object]:
+    evt_tail = cast(Mapping[str, object], bundle.get("evt_tail") or {})
+    return {
+        "forecast_date": row["forecast_date"],
+        "target_family": row.get("target_family") or "full_gap_settle_to_open",
+        "model_name": model_name,
+        "information_set": information_set,
+        "tail_level": tail_level,
+        "train_n": bundle["train_n"],
+        "train_start": bundle["train_start"],
+        "train_end": bundle["train_end"],
+        "optimizer_status": "lightgbm_location_scale_fit_completed",
+        "convergence_code": 0,
+        "candidate_feature_hash": bundle["candidate_feature_hash"],
+        "active_feature_hash": bundle["active_feature_hash"],
+        "dropped_features_json": bundle["dropped_features_json"],
+        "scale_dropped_features_json": bundle["scale_dropped_features_json"],
+        "drop_reason": None,
+        "training_missingness": bundle["training_missingness_json"],
+        "training_variance": bundle["training_variance_json"],
+        "refit_frequency": P2B_REFIT_FREQUENCY,
+        "refit_month": refit_month,
+        "scale_smearing_factor": bundle["smearing_factor"],
+        "scale_floor": P2B_SCALE_FLOOR,
+        "standardization_method": bundle["standardization_method"],
+        "oof_standardized_loss_count": bundle["oof_standardized_loss_count"],
+        "oof_location_count": bundle["oof_location_count"],
+        "oof_scale_count": bundle["oof_scale_count"],
+        "standardized_var": bundle["standardized_var"],
+        "standardized_es": bundle["standardized_es"],
+        "evt_shape": evt_tail.get("evt_shape"),
+        "evt_scale": evt_tail.get("evt_scale"),
+        "threshold_quantile": evt_tail.get("threshold_quantile"),
+        "threshold_value": evt_tail.get("threshold_value"),
+        "evt_exceedance_count": evt_tail.get("evt_exceedance_count"),
+        "threshold_diagnostics_json": evt_tail.get("threshold_diagnostics_json"),
+        "threshold_policy": evt_tail.get("threshold_policy"),
+        "threshold_selection": evt_tail.get("threshold_selection"),
+    }
+
+
+def _p2b_unavailable_feature_forecast(
+    *,
+    row: Mapping[str, object],
+    model_name: str,
+    information_set: str,
+    tail_level: float,
+    bundle: Mapping[str, object],
+    unavailable_features: list[str],
+) -> dict[str, object]:
+    return {
+        "forecast_date": row["forecast_date"],
+        "target_family": row.get("target_family") or "full_gap_settle_to_open",
+        "model_name": model_name,
+        "information_set": information_set,
+        "tail_level": tail_level,
+        "refit_frequency": P2B_REFIT_FREQUENCY,
+        "var_forecast": None,
+        "es_forecast": None,
+        "es_companion_type": bundle.get("es_companion_type"),
+        "realized_loss": _required_float(row["realized_loss"]),
+        "var_breach": None,
+        "is_valid_forecast": False,
+        "invalid_reason": "unavailable_feature_not_valid_at_cutoff",
+        "train_start": bundle.get("train_start"),
+        "train_end": bundle.get("train_end"),
+        "train_n": bundle.get("train_n"),
+        "fit_status": "unavailable_feature_not_valid_at_cutoff",
+        "failure_reason": ",".join(unavailable_features),
+        "runtime_seconds": None,
+        "dst_regime": row.get("dst_regime"),
+        "absorption_regime": row.get("absorption_regime"),
+        "vix_level": row.get("vix_level"),
+        "active_feature_hash": bundle.get("active_feature_hash"),
+        **_p2b_extended_forecast_fields(),
+    }
+
+
+def _p2b_extended_forecast_fields() -> dict[str, object]:
+    return {
+        "location_forecast": None,
+        "scale_forecast": None,
+        "scale_smearing_factor": None,
+        "scale_floor": None,
+        "standardization_method": None,
+        "oof_standardized_loss_count": None,
+        "standardized_var": None,
+        "standardized_es": None,
+        "evt_shape": None,
+        "evt_scale": None,
+        "threshold_quantile": None,
+        "threshold_value": None,
+        "evt_exceedance_count": None,
+    }
+
+
+def _p2b_unavailable_status(exc: BaseException) -> str:
+    message = str(exc)
+    if message.startswith("unavailable_"):
+        return message.split(":", 1)[0]
+    return "unavailable_optimizer_failed"
+
+
+def _p2b_seed(*values: object) -> int:
+    return int(stable_hash(values)[:8], 16)
 
 
 def _unavailable_active_features(
@@ -2240,6 +2867,9 @@ def build_incremental_information_records(
     baseline_information_set: str,
 ) -> list[dict[str, object]]:
     information_sets = registered_p2b_information_sets()
+    model_names = sorted(
+        {str(row.get("model_name") or "") for row in forecasts if row.get("model_name")}
+    )
     comparisons = [
         (information_sets[index], information_sets[index + 1])
         for index in range(len(information_sets) - 1)
@@ -2247,23 +2877,26 @@ def build_incremental_information_records(
     if information_sets:
         comparisons.insert(0, (baseline_information_set, information_sets[-1]))
     records: list[dict[str, object]] = []
-    for tail_level in PAPER_TAIL_LEVELS:
-        for base_info, expanded_info in comparisons:
-            paired = _paired_forecast_rows(
-                forecasts,
-                tail_level=tail_level,
-                base_information_set=base_info,
-                expanded_information_set=expanded_info,
-            )
-            records.append(
-                _incremental_record_from_pairs(
-                    paired,
+    for model_name in model_names:
+        for tail_level in PAPER_TAIL_LEVELS:
+            for base_info, expanded_info in comparisons:
+                paired = _paired_forecast_rows(
+                    forecasts,
+                    model_name=model_name,
                     tail_level=tail_level,
                     base_information_set=base_info,
                     expanded_information_set=expanded_info,
-                    dst_regime=None,
                 )
-            )
+                records.append(
+                    _incremental_record_from_pairs(
+                        paired,
+                        model_name=model_name,
+                        tail_level=tail_level,
+                        base_information_set=base_info,
+                        expanded_information_set=expanded_info,
+                        dst_regime=None,
+                    )
+                )
     return records
 
 
@@ -2274,56 +2907,64 @@ def build_dst_attenuation_records(
     expanded_information_set: str,
 ) -> list[dict[str, object]]:
     records: list[dict[str, object]] = []
-    for tail_level in PAPER_TAIL_LEVELS:
-        regime_records: dict[str, dict[str, object]] = {}
-        for regime in ("EST", "EDT"):
-            paired = _paired_forecast_rows(
-                forecasts,
-                tail_level=tail_level,
-                base_information_set=baseline_information_set,
-                expanded_information_set=expanded_information_set,
-                dst_regime=regime,
+    model_names = sorted(
+        {str(row.get("model_name") or "") for row in forecasts if row.get("model_name")}
+    )
+    for model_name in model_names:
+        for tail_level in PAPER_TAIL_LEVELS:
+            regime_records: dict[str, dict[str, object]] = {}
+            for regime in ("EST", "EDT"):
+                paired = _paired_forecast_rows(
+                    forecasts,
+                    model_name=model_name,
+                    tail_level=tail_level,
+                    base_information_set=baseline_information_set,
+                    expanded_information_set=expanded_information_set,
+                    dst_regime=regime,
+                )
+                row = _incremental_record_from_pairs(
+                    paired,
+                    model_name=model_name,
+                    tail_level=tail_level,
+                    base_information_set=baseline_information_set,
+                    expanded_information_set=expanded_information_set,
+                    dst_regime=regime,
+                )
+                regime_records[regime] = row
+                records.append(row)
+            est_gain = _optional_float(regime_records.get("EST", {}).get("mean_fz_gain"))
+            edt_gain = _optional_float(regime_records.get("EDT", {}).get("mean_fz_gain"))
+            stable = est_gain is not None and est_gain > 0 and edt_gain is not None
+            alpha_absorb: float | None = None
+            if est_gain is not None and est_gain > 0 and edt_gain is not None:
+                alpha_absorb = float(1.0 - edt_gain / est_gain)
+            records.append(
+                {
+                    "model_name": model_name,
+                    "tail_level": tail_level,
+                    "base_information_set": baseline_information_set,
+                    "expanded_information_set": expanded_information_set,
+                    "dst_regime": "absorption_coefficient",
+                    "paired_rows": None,
+                    "mean_quantile_gain": None,
+                    "mean_fz_gain": None,
+                    "alpha_absorb": alpha_absorb,
+                    "alpha_absorb_status": "ok" if stable else "unavailable_unstable_est_gain",
+                    "inference_status": "diagnostic_ratio_no_direct_dm_test",
+                    "dm_method": None,
+                    "dm_pvalue_one_sided": None,
+                    "dm_block_length": None,
+                    "dm_reps": None,
+                    "dm_seed": None,
+                }
             )
-            row = _incremental_record_from_pairs(
-                paired,
-                tail_level=tail_level,
-                base_information_set=baseline_information_set,
-                expanded_information_set=expanded_information_set,
-                dst_regime=regime,
-            )
-            regime_records[regime] = row
-            records.append(row)
-        est_gain = _optional_float(regime_records.get("EST", {}).get("mean_fz_gain"))
-        edt_gain = _optional_float(regime_records.get("EDT", {}).get("mean_fz_gain"))
-        stable = est_gain is not None and est_gain > 0 and edt_gain is not None
-        alpha_absorb: float | None = None
-        if est_gain is not None and est_gain > 0 and edt_gain is not None:
-            alpha_absorb = float(1.0 - edt_gain / est_gain)
-        records.append(
-            {
-                "tail_level": tail_level,
-                "base_information_set": baseline_information_set,
-                "expanded_information_set": expanded_information_set,
-                "dst_regime": "absorption_coefficient",
-                "paired_rows": None,
-                "mean_quantile_gain": None,
-                "mean_fz_gain": None,
-                "alpha_absorb": alpha_absorb,
-                "alpha_absorb_status": "ok" if stable else "unavailable_unstable_est_gain",
-                "inference_status": "diagnostic_ratio_no_direct_dm_test",
-                "dm_method": None,
-                "dm_pvalue_one_sided": None,
-                "dm_block_length": None,
-                "dm_reps": None,
-                "dm_seed": None,
-            }
-        )
     return records
 
 
 def _paired_forecast_rows(
     forecasts: list[dict[str, object]],
     *,
+    model_name: str,
     tail_level: float,
     base_information_set: str,
     expanded_information_set: str,
@@ -2333,6 +2974,8 @@ def _paired_forecast_rows(
     expanded: dict[str, dict[str, object]] = {}
     for row in forecasts:
         if row.get("fit_status") != "ok" or row.get("is_valid_forecast") is not True:
+            continue
+        if str(row.get("model_name") or "") != model_name:
             continue
         if _required_float(row["tail_level"]) != tail_level:
             continue
@@ -2350,6 +2993,7 @@ def _paired_forecast_rows(
 def _incremental_record_from_pairs(
     paired: list[tuple[dict[str, object], dict[str, object]]],
     *,
+    model_name: str,
     tail_level: float,
     base_information_set: str,
     expanded_information_set: str,
@@ -2395,6 +3039,7 @@ def _incremental_record_from_pairs(
         else "unavailable_block_bootstrap_dm_insufficient_pairs"
     )
     return {
+        "model_name": model_name,
         "tail_level": tail_level,
         "base_information_set": base_information_set,
         "expanded_information_set": expanded_information_set,
@@ -2456,19 +3101,23 @@ def build_metric_records(
     sample_policy: str = "per_model_oos",
     common_sample_status_value: str | None = None,
 ) -> list[dict[str, object]]:
-    grouped: dict[tuple[str, str, float], list[dict[str, object]]] = {}
+    grouped: dict[tuple[str, str, str, float, str | None], list[dict[str, object]]] = {}
     for row in forecasts:
         if row.get("fit_status") == "ok" and row.get("is_valid_forecast") is True:
             grouped.setdefault(
                 (
                     str(row["model_name"]),
+                    str(row.get("target_family") or "full_gap_settle_to_open"),
                     str(row.get("information_set") or "target_history_only"),
                     _required_float(row["tail_level"]),
+                    str(row["refit_frequency"]) if row.get("refit_frequency") else None,
                 ),
                 [],
             ).append(row)
     records: list[dict[str, object]] = []
-    for (model, information_set, tail_level), rows in sorted(grouped.items()):
+    for (model, target_family, information_set, tail_level, refit_frequency), rows in sorted(
+        grouped.items()
+    ):
         losses: Any = np.array([_required_float(row["realized_loss"]) for row in rows], dtype=float)
         var: Any = np.array([_required_float(row["var_forecast"]) for row in rows], dtype=float)
         es: Any = np.array([_required_float(row["es_forecast"]) for row in rows], dtype=float)
@@ -2480,8 +3129,10 @@ def build_metric_records(
         records.append(
             {
                 "model_name": model,
+                "target_family": target_family,
                 "information_set": information_set,
                 "tail_level": tail_level,
+                "refit_frequency": refit_frequency,
                 "sample_policy": sample_policy,
                 "common_sample_status": common_sample_status_value,
                 "rows": len(rows),
@@ -3847,6 +4498,7 @@ def _pot_gpd_standardized_tail(
     standardized_losses: np.ndarray,
     tail_level: float,
     threshold_quantile: float = EVT_THRESHOLD_QUANTILE,
+    require_finite_gpd_es: bool = False,
 ) -> dict[str, object]:
     values = standardized_losses[np.isfinite(standardized_losses)]
     if values.size < DEFAULT_MIN_TRAIN_ROWS:
@@ -3864,6 +4516,8 @@ def _pot_gpd_standardized_tail(
         shape, _, scale = stats.genpareto.fit(excesses, floc=0.0)
         shape = float(shape)
         scale = float(max(scale, 1e-12))
+        if not math.isfinite(scale) or scale <= 0.0:
+            raise PaperRunError("EVT calibration has invalid GPD scale")
         exceedance_probability = excesses.size / values.size
         target_tail_probability = max(1.0 - tail_level, 1e-12)
         ratio = max(exceedance_probability / target_tail_probability, 1.0)
@@ -3873,6 +4527,8 @@ def _pot_gpd_standardized_tail(
             var_z = threshold + scale * (ratio**shape - 1.0) / shape
         if shape < 1.0:
             es_z = var_z + (scale + shape * (var_z - threshold)) / (1.0 - shape)
+        elif require_finite_gpd_es:
+            raise PaperRunError(f"EVT calibration shape >= 1 has infinite ES: {shape}")
         else:
             es_z = static_empirical_es(values, var_z)
         tail_method = "pot_gpd_filtered_es"
@@ -3882,6 +4538,8 @@ def _pot_gpd_standardized_tail(
         "threshold_quantile": threshold_quantile,
         "threshold_value": threshold,
         "evt_exceedance_count": int(excesses.size),
+        "evt_shape": shape if tail_level > threshold_quantile else None,
+        "evt_scale": scale if tail_level > threshold_quantile else None,
         "threshold_diagnostics_json": json.dumps(diagnostics, sort_keys=True),
         "threshold_policy": PAPER_CONFIG.model_policy.evt_threshold_refresh,
         "threshold_smoothing": PAPER_CONFIG.model_policy.evt_threshold_smoothing,
@@ -5459,17 +6117,21 @@ def _write_forecast_shards(
     keys = {
         (
             str(row["model_name"]),
+            str(row.get("target_family") or "full_gap_settle_to_open"),
             str(row.get("information_set") or "target_history_only"),
             _required_float(row["tail_level"]),
+            str(row.get("refit_frequency") or ""),
         )
         for row in [*forecasts, *diagnostics, *failures]
         if "model_name" in row and "tail_level" in row
     }
-    for model_name, information_set, tail_level in sorted(keys):
+    for model_name, target_family, information_set, tail_level, refit_frequency in sorted(keys):
         shard_dir = shard_root / _forecast_shard_id(
             model_name,
             tail_level,
+            target_family=target_family,
             information_set=information_set,
+            refit_frequency=refit_frequency or None,
         )
         _write_parquet(
             shard_dir / "forecasts.parquet",
@@ -5477,8 +6139,10 @@ def _write_forecast_shards(
                 row
                 for row in forecasts
                 if row.get("model_name") == model_name
+                and str(row.get("target_family") or "full_gap_settle_to_open") == target_family
                 and str(row.get("information_set") or "target_history_only") == information_set
                 and _required_float(row["tail_level"]) == tail_level
+                and str(row.get("refit_frequency") or "") == refit_frequency
             ],
         )
         _write_parquet(
@@ -5487,8 +6151,10 @@ def _write_forecast_shards(
                 row
                 for row in diagnostics
                 if row.get("model_name") == model_name
+                and str(row.get("target_family") or "full_gap_settle_to_open") == target_family
                 and str(row.get("information_set") or "target_history_only") == information_set
                 and _required_float(row["tail_level"]) == tail_level
+                and str(row.get("refit_frequency") or "") == refit_frequency
             ],
         )
         _write_parquet(
@@ -5497,8 +6163,10 @@ def _write_forecast_shards(
                 row
                 for row in failures
                 if row.get("model_name") == model_name
+                and str(row.get("target_family") or "full_gap_settle_to_open") == target_family
                 and str(row.get("information_set") or "target_history_only") == information_set
                 and _required_float(row["tail_level"]) == tail_level
+                and str(row.get("refit_frequency") or "") == refit_frequency
             ],
         )
         _write_json(
@@ -5509,12 +6177,16 @@ def _write_forecast_shards(
                 "config_hash": PAPER_CONFIG.config_hash(),
                 "completion_state": "complete",
                 "model_name": model_name,
+                "target_family": target_family,
                 "information_set": information_set,
                 "tail_level": tail_level,
+                "refit_frequency": refit_frequency or None,
                 "shard_id": _forecast_shard_id(
                     model_name,
                     tail_level,
+                    target_family=target_family,
                     information_set=information_set,
+                    refit_frequency=refit_frequency or None,
                 ),
             },
         )
@@ -5524,12 +6196,19 @@ def _forecast_shard_id(
     model_name: str,
     tail_level: float,
     *,
+    target_family: str = "full_gap_settle_to_open",
     information_set: str = "target_history_only",
+    refit_frequency: str | None = None,
 ) -> str:
-    return (
-        f"model={_safe_name(model_name)}/target=full_gap_settle_to_open/"
-        f"info={_safe_name(information_set)}/tail={tail_level:.3f}".replace(".", "_")
-    )
+    parts = [
+        f"model={_safe_name(model_name)}",
+        f"target={_safe_name(target_family)}",
+        f"info={_safe_name(information_set)}",
+        f"tail={tail_level:.3f}".replace(".", "_"),
+    ]
+    if refit_frequency:
+        parts.append(f"refit={_safe_name(refit_frequency)}")
+    return "/".join(parts)
 
 
 def _write_parquet(

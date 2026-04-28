@@ -101,7 +101,7 @@ The empirical design tests this null through nested information sets:
 
 DST, early-close interactions, and night-session controls are added to the same nested ladder rather than treated as broader feature searches. The Japan and Asia proxy blocks are interpreted as mechanism and robustness layers, not as part of the broad U.S. core signal.
 
-The primary comparison uses chronological rolling or expanding forecasts. Where the rolling design and out-of-sample length are sufficient, model comparisons should use the Giacomini-White conditional predictive ability framework for VaR/ES loss differentials. The project default is that GW testing requires rolling or expanding forecasts, an in-sample rolling window ideally at least 500 observations, and enough out-of-sample loss differentials for inference. If those conditions are not met, the fallback is a documented Diebold-Mariano comparison with HAC or block-bootstrap standard errors.
+The primary comparison uses chronological rolling or expanding forecasts. The implemented default is a documented block-bootstrap Diebold-Mariano comparison on paired VaR/ES loss differentials, with common-sample loss matrices used for MCS and related diagnostics. A true instrumented Giacomini-White conditional predictive ability regression remains a future inference layer; it should only be reported after the rolling design, instrument set, and out-of-sample length are sufficient.
 
 ## Economic Mechanism
 
@@ -197,7 +197,8 @@ ES and joint VaR-ES evaluation:
 
 Model comparison:
 
-- Giacomini-White conditional predictive ability when the rolling design is sufficiently long;
+- block-bootstrap Diebold-Mariano paired loss comparisons as the implemented default;
+- instrumented Giacomini-White conditional predictive ability only after a registered instrumented implementation exists and the rolling design is sufficiently long;
 - Diebold-Mariano tests with HAC or block-bootstrap standard errors as a fallback;
 - Model Confidence Set for the main model family when there are enough out-of-sample loss differentials;
 - quantile-score calibration and sharpness decomposition where implementation is stable.

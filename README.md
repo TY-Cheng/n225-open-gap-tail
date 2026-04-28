@@ -112,8 +112,8 @@ just full
 ```
 
 `full` runs local checks, builds the cache-first paper panel, runs the P2A baseline floor,
-audits feature leakage timestamps, runs the P2B LightGBM direct-quantile information-set
-ladder, and exports LaTeX table fragments under ignored
+audits feature leakage timestamps, runs the P2B LightGBM information-set ladder, and
+exports LaTeX table fragments under ignored
 `reports/paper_runs/`. The default panel start is `2016-07-19`; the run manifest then
 computes `combined_clean_start` from required features only: J-Quants required-field
 coverage, XLC-inclusive Massive core coverage, FRED core coverage, and the canonical
@@ -143,10 +143,15 @@ The data path is typed and resumable:
 - P2B writes feature-unavailability diagnostics under
   `reports/paper_runs/<run_id>/metrics/`, including aggregate and date-level Parquet
   tables for missing active features.
+- P2B runs three registered LightGBM model families when the leakage gate passes:
+  direct quantile, fully out-of-fold location-scale with Duan smearing, and
+  fully out-of-fold standardized-loss POT-GPD. Location-scale/POT forecasts that fail
+  sample, scale, or GPD validity gates are recorded as unavailable diagnostics rather than
+  invalid paper-metric rows.
 
 For custom windows or workers, pass recipe arguments positionally, for example
 `just full 2022-01-01 "" 4`. The lower-level recipes remain available for debugging:
 `_paper-panel`, `_paper-eval`, `_paper-leakage-check`, and `_paper-latex-tables`.
 `_paper-eval` uses staged dispatch: `p2a` runs the baseline floor; `p2b` runs the
-LightGBM direct-quantile information-set ladder; `p2c` remains an explicit
-nonblocking gate for advanced econometric models.
+LightGBM direct-quantile, location-scale, and standardized-loss POT-GPD information-set
+ladder; `p2c` remains an explicit nonblocking gate for advanced econometric models.

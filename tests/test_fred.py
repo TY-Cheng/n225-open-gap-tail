@@ -83,7 +83,13 @@ def test_normalize_fred_rows_filters_range_and_marks_missing_values() -> None:
     assert records[1]["value"] is None
     assert records[2]["value"] == 4.20
     assert records[2]["observation_ts_utc"] == datetime(2026, 1, 7, 21, 0, tzinfo=UTC)
-    assert records[2]["availability_note"] == "historical_daily_close_proxy_not_live_availability"
+    assert records[0]["vendor_available_date_et"] == "2026-01-06"
+    assert records[2]["vendor_available_ts_utc"] == datetime(2026, 1, 8, 21, 0, tzinfo=UTC)
+    assert records[2]["availability_lag_us_business_days"] == 1
+    assert records[2]["availability_note"] == (
+        "current_historical_value_with_conservative_lag_not_alfred_vintage_safe"
+    )
+    assert records[2]["vintage_policy"] == "not_vintage_safe_without_alfred_realtime_parameters"
 
 
 def test_write_fred_smoke_sample_writes_raw_and_parquet(tmp_path: Path) -> None:

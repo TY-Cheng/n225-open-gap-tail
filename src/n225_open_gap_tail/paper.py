@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import shutil
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -20,6 +21,12 @@ from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.fred import FredClient, normalize_fred_rows
 from n225_open_gap_tail.jquants import JQuantsV2Client
 from n225_open_gap_tail.massive import MassiveClient, normalize_aggregate_bars
+from n225_open_gap_tail.research_config import (
+    ClaimLevel,
+    FeatureSetVersion,
+    default_paper_research_config,
+    stable_hash,
+)
 from n225_open_gap_tail.snapshot import (
     build_jquants_schema_probe,
     build_target_audit_records,
@@ -27,45 +34,21 @@ from n225_open_gap_tail.snapshot import (
     normalize_jquants_futures_rows,
 )
 
-PAPER_CLAIMS_LEVEL = "paper_grade_candidate_not_final_manuscript"
-PAPER_CORE_MASSIVE_TICKERS = (
-    "SPY",
-    "QQQ",
-    "DIA",
-    "IWM",
-    "XLK",
-    "XLF",
-    "XLE",
-    "XLV",
-    "XLI",
-    "TLT",
-    "GLD",
-    "USO",
-    "EEM",
-    "FXI",
-    "SMH",
-    "C:USDJPY",
-)
-PAPER_CORE_FRED_SERIES = (
-    "VIXCLS",
-    "DGS2",
-    "DGS10",
-    "T10Y2Y",
-    "BAMLH0A0HYM2",
-    "BAMLC0A0CM",
-    "SOFR",
-    "EFFR",
-)
-PAPER_TAIL_LEVELS = (0.95, 0.975)
-EWMA_MAIN_LAMBDA = 0.94
-EWMA_SENSITIVITY_LAMBDAS = (0.90, 0.97)
-DEFAULT_MIN_TRAIN_ROWS = 1000
-DEFAULT_MIN_TRAIN_EXCEEDANCES = 50
-DEFAULT_EARLIEST_OOS_START = "2016-01-01"
-LOW_VARIANCE_THRESHOLD = 1e-8
-SHARD_SIZE_FORECAST_DATES = 50
-EVT_THRESHOLD_QUANTILE = 0.90
-EVT_THRESHOLD_GRID = (0.90, 0.925, 0.95)
+PAPER_CONFIG = default_paper_research_config()
+PAPER_CLAIMS_LEVEL = ClaimLevel.PAPER_CANDIDATE.value
+PAPER_CORE_MASSIVE_TICKERS = PAPER_CONFIG.feature_sets.massive_core
+PAPER_CORE_FRED_SERIES = PAPER_CONFIG.feature_sets.fred_core
+PAPER_TAIL_LEVELS = PAPER_CONFIG.model_policy.tail_levels
+EWMA_MAIN_LAMBDA = PAPER_CONFIG.model_policy.ewma_lambda
+EWMA_SENSITIVITY_LAMBDAS = PAPER_CONFIG.model_policy.ewma_sensitivity_lambdas
+DEFAULT_MIN_TRAIN_ROWS = PAPER_CONFIG.model_policy.min_train_rows
+DEFAULT_MIN_TRAIN_EXCEEDANCES = PAPER_CONFIG.model_policy.min_train_exceedances
+DEFAULT_EARLIEST_OOS_START = PAPER_CONFIG.model_policy.earliest_oos_start
+LOW_VARIANCE_THRESHOLD = PAPER_CONFIG.model_policy.low_variance_threshold
+NEAR_ZERO_VARIANCE_THRESHOLD = PAPER_CONFIG.model_policy.near_zero_variance_threshold
+SHARD_SIZE_FORECAST_DATES = PAPER_CONFIG.model_policy.shard_size_forecast_dates
+EVT_THRESHOLD_QUANTILE = PAPER_CONFIG.model_policy.evt_threshold_quantile
+EVT_THRESHOLD_GRID = PAPER_CONFIG.model_policy.evt_threshold_grid
 
 
 @dataclass(frozen=True)
@@ -91,6 +74,15 @@ class PaperLatexResult:
     run_id: str
     latex_dir: Path
     tables: int
+
+
+@dataclass(frozen=True)
+class PaperLeakageCheckResult:
+    run_id: str
+    output_path: Path
+    rows: int
+    failures: int
+    warnings: int
 
 
 class PaperRunError(RuntimeError):
@@ -177,9 +169,10 @@ def empirical_excess_es_companion(
     train_var_forecasts: np.ndarray,
     forecast_var: float,
 ) -> float:
-    exceedance_excess = train_losses[train_losses > train_var_forecasts] - train_var_forecasts[
-        train_losses > train_var_forecasts
-    ]
+    exceedance_excess = (
+        train_losses[train_losses > train_var_forecasts]
+        - train_var_forecasts[train_losses > train_var_forecasts]
+    )
     if exceedance_excess.size == 0:
         return float(forecast_var)
     return float(max(forecast_var, forecast_var + np.mean(exceedance_excess)))
@@ -219,6 +212,78 @@ def drop_low_variance_features(
     return active, dropped
 
 
+def build_feature_matrix_gate_records(
+    frame: pl.DataFrame,
+    feature_columns: list[str],
+    *,
+    threshold: float = NEAR_ZERO_VARIANCE_THRESHOLD,
+) -> dict[str, object]:
+    """Prefit feature gate shared by P2B/P2C model families.
+
+    The helper records candidate, active, and dropped feature sets using only the
+    supplied training frame. It deliberately avoids any test-window information.
+    """
+    candidate_features = list(dict.fromkeys(feature_columns))
+    active_features: list[str] = []
+    dropped: list[dict[str, object]] = []
+    training_missingness: dict[str, float | None] = {}
+    training_variance: dict[str, float | None] = {}
+    numeric_columns: dict[str, list[float | None]] = {}
+    row_count = frame.height
+    for column in candidate_features:
+        if column not in frame.columns:
+            dropped.append({"feature": column, "drop_reason": "missing_column"})
+            training_missingness[column] = None
+            training_variance[column] = None
+            continue
+        raw_values = frame.get_column(column).to_list()
+        finite_values = [_optional_float(value) for value in raw_values]
+        valid_values = [value for value in finite_values if value is not None]
+        training_missingness[column] = (
+            None if row_count == 0 else 1.0 - len(valid_values) / row_count
+        )
+        if len(valid_values) < 2:
+            reason = "all_null_or_nonfinite" if row_count else "empty_training_window"
+            dropped.append({"feature": column, "drop_reason": reason})
+            training_variance[column] = None
+            continue
+        variance = float(np.var(valid_values, ddof=1))
+        training_variance[column] = variance
+        numeric_columns[column] = finite_values
+
+    if numeric_columns:
+        numeric_frame = pl.DataFrame(numeric_columns)
+        active_after_variance, low_variance = drop_low_variance_features(
+            numeric_frame,
+            list(numeric_columns),
+            threshold=threshold,
+        )
+        active_features.extend(active_after_variance)
+        for column in low_variance:
+            dropped_variance = training_variance.get(column)
+            dropped.append(
+                {
+                    "feature": column,
+                    "drop_reason": "zero_or_low_variance",
+                    "variance": dropped_variance,
+                    "threshold": threshold,
+                }
+            )
+
+    active_features = [feature for feature in candidate_features if feature in set(active_features)]
+    dropped_features = [str(row["feature"]) for row in dropped]
+    return {
+        "candidate_features": candidate_features,
+        "active_features": active_features,
+        "dropped_features": dropped_features,
+        "candidate_feature_hash": stable_hash(candidate_features),
+        "active_feature_hash": stable_hash(active_features),
+        "dropped_features_json": json.dumps(dropped, sort_keys=True, default=str),
+        "training_missingness_json": json.dumps(training_missingness, sort_keys=True, default=str),
+        "training_variance_json": json.dumps(training_variance, sort_keys=True, default=str),
+    }
+
+
 def global_oos_intersection(
     rows: list[dict[str, object]],
     *,
@@ -233,6 +298,45 @@ def global_oos_intersection(
         return []
     common = set.intersection(*(dates for dates in by_model.values()))
     return sorted(common)
+
+
+def pairwise_oos_intersection(
+    rows: list[dict[str, object]],
+    *,
+    left_model: str,
+    right_model: str,
+) -> list[str]:
+    return global_oos_intersection(rows, model_names=(left_model, right_model))
+
+
+def common_sample_status(dates: list[str], *, min_rows: int | None = None) -> str:
+    required = (
+        min_rows if min_rows is not None else PAPER_CONFIG.evaluation_policy.min_common_oos_rows
+    )
+    if len(dates) < required:
+        return "unavailable_insufficient_common_oos"
+    return "ok"
+
+
+def _paper_cache_key(
+    *,
+    git_commit: str,
+    start: str,
+    end: str,
+    data_vintage: Mapping[str, object] | None = None,
+) -> str:
+    return stable_hash(
+        {
+            "git_commit": git_commit,
+            "config_hash": PAPER_CONFIG.config_hash(),
+            "feature_set_config": PAPER_CONFIG.feature_sets,
+            "target_policy": PAPER_CONFIG.target_policy,
+            "leakage_policy": PAPER_CONFIG.leakage_policy,
+            "evaluation_policy": PAPER_CONFIG.evaluation_policy,
+            "sample_window": [start, end],
+            "data_vintage_manifest": data_vintage or {},
+        }
+    )
 
 
 def write_paper_panel(
@@ -284,17 +388,18 @@ def write_paper_panel(
         roll_days_before_last_trade=settings.nikkei_contract_roll_days_before_last_trade,
     )
 
+    predictor_start = (date.fromisoformat(start) - timedelta(days=14)).isoformat()
     massive_pull_ts = datetime.now(UTC)
     massive_daily, spy_minutes = _fetch_massive_paper_predictors(
         settings=settings,
-        start=start,
+        start=predictor_start,
         end=end_date,
         downloaded_at_utc=massive_pull_ts,
     )
     fred_pull_ts = datetime.now(UTC)
     fred_rows = _fetch_fred_paper_predictors(
         settings=settings,
-        start=start,
+        start=predictor_start,
         end=end_date,
         downloaded_at_utc=fred_pull_ts,
     )
@@ -302,6 +407,7 @@ def write_paper_panel(
         target_rows=targets,
         calendar_records=calendar_records,
         spy_minute_records=spy_minutes,
+        vendor_lag_minutes=PAPER_CONFIG.leakage_policy.massive_vendor_lag_minutes,
     )
     panel = build_modeling_panel_records(
         target_rows=targets,
@@ -319,26 +425,36 @@ def write_paper_panel(
     vintage_path = run_dir / "data_vintage.json"
     manifest_path = run_dir / "manifest.json"
     feature_dictionary_path = panel_dir / "feature_dictionary.json"
+    research_config_path = config_dir / "research_config.json"
+    config_hash = PAPER_CONFIG.config_hash()
+    data_vintage_payload: dict[str, object] = {
+        "jquants_pull_ts_utc": jquants_pull_ts.isoformat(),
+        "massive_pull_ts_utc": massive_pull_ts.isoformat(),
+        "fred_pull_ts_utc": fred_pull_ts.isoformat(),
+        "window": [start, end_date],
+        "predictor_window": [predictor_start, end_date],
+        "claims_level": PAPER_CLAIMS_LEVEL,
+        "fred_vintage_policy": PAPER_CONFIG.leakage_policy.fred_vintage_policy,
+    }
 
     _write_parquet(target_audit_path, targets)
     _write_parquet(panel_path, panel)
     _write_parquet(coverage_path, feature_coverage)
     _write_json(schema_path, schema_probe)
+    _write_json(vintage_path, data_vintage_payload)
+    _write_json(feature_dictionary_path, build_feature_dictionary(panel))
     _write_json(
-        vintage_path,
+        research_config_path,
         {
-            "jquants_pull_ts_utc": jquants_pull_ts.isoformat(),
-            "massive_pull_ts_utc": massive_pull_ts.isoformat(),
-            "fred_pull_ts_utc": fred_pull_ts.isoformat(),
-            "window": [start, end_date],
-            "claims_level": PAPER_CLAIMS_LEVEL,
+            "config_hash": config_hash,
+            "research_config": PAPER_CONFIG.to_jsonable(),
         },
     )
-    _write_json(feature_dictionary_path, build_feature_dictionary(panel))
     _write_json(
         config_dir / "model_config.json",
         {
             "stage": "p2a",
+            "config_hash": config_hash,
             "tail_levels": PAPER_TAIL_LEVELS,
             "ewma_lambda": EWMA_MAIN_LAMBDA,
             "ewma_sensitivity_lambdas": EWMA_SENSITIVITY_LAMBDAS,
@@ -356,12 +472,50 @@ def write_paper_panel(
             "created_at_utc": run_ts.isoformat(),
             "git_commit": git_commit,
             "git_dirty": _git_dirty(),
+            "config_hash": config_hash,
+            "cache_key": _paper_cache_key(
+                git_commit=git_commit,
+                start=start,
+                end=end_date,
+                data_vintage=data_vintage_payload,
+            ),
             "claims_level": PAPER_CLAIMS_LEVEL,
+            "claim_level": PAPER_CLAIMS_LEVEL,
             "stage": "p2a_panel",
             "window": [start, end_date],
-            "feature_set_version": "core_full_history",
+            "feature_set_version": FeatureSetVersion.CORE_FULL_HISTORY.value,
             "massive_symbols": PAPER_CORE_MASSIVE_TICKERS,
             "fred_series": PAPER_CORE_FRED_SERIES,
+            "fred_vintage_policy": PAPER_CONFIG.leakage_policy.fred_vintage_policy,
+            "target_policy": {
+                "primary_target_family": PAPER_CONFIG.target_policy.primary_target_family,
+                "residual_usclosemark_enabled": (
+                    PAPER_CONFIG.target_policy.residual_usclosemark_enabled
+                ),
+                "residual_usclosemark_status": (
+                    PAPER_CONFIG.target_policy.residual_usclosemark_status
+                ),
+            },
+            "leakage_policy": {
+                "fred_availability_lag_us_business_days": (
+                    PAPER_CONFIG.leakage_policy.fred_availability_lag_us_business_days
+                ),
+                "max_forward_fill_us_close_days": (
+                    PAPER_CONFIG.leakage_policy.max_forward_fill_us_close_days
+                ),
+                "leakage_warning_min_lag_minutes": (
+                    PAPER_CONFIG.leakage_policy.leakage_warning_min_lag_minutes
+                ),
+            },
+            "evaluation_policy": {
+                "primary_common_sample": PAPER_CONFIG.evaluation_policy.primary_common_sample,
+                "pairwise_inference_sample": (
+                    PAPER_CONFIG.evaluation_policy.pairwise_inference_sample
+                ),
+                "global_headline_sample": PAPER_CONFIG.evaluation_policy.global_headline_sample,
+            },
+            "residual_usclosemark_status": PAPER_CONFIG.target_policy.residual_usclosemark_status,
+            "residual_usclosemark_enabled": PAPER_CONFIG.target_policy.residual_usclosemark_enabled,
             "artifact_paths": {
                 "modeling_panel": str(panel_path),
                 "target_audit": str(target_audit_path),
@@ -369,6 +523,7 @@ def write_paper_panel(
                 "feature_dictionary": str(feature_dictionary_path),
                 "schema_probe": str(schema_path),
                 "data_vintage": str(vintage_path),
+                "research_config": str(research_config_path),
             },
         },
     )
@@ -420,13 +575,33 @@ def build_modeling_panel_records(
             "realized_loss": target.get("loss_settle_to_open"),
             "full_gap_close_to_open": target.get("full_gap_close_to_open"),
             "residual_nightclose_to_day_open": target.get("residual_nightclose_to_day_open"),
+            "residual_usclosemark_to_open": None,
+            "residual_usclosemark_status": PAPER_CONFIG.target_policy.residual_usclosemark_status,
             "volume": target.get("volume"),
             "open_interest": target.get("open_interest"),
             "volume_oi_anomaly": target.get("volume_oi_anomaly"),
         }
-        record.update(massive_features.get(us_date, {}))
-        record.update(fred_features.get(us_date, {}))
-        record.update(spy_features.get(us_date, {}))
+        record.update(
+            _features_asof(
+                massive_features,
+                us_date,
+                fill_method="forward_fill_us_holiday",
+            )
+        )
+        record.update(
+            _features_asof(
+                fred_features,
+                us_date,
+                fill_method="forward_fill_us_holiday",
+            )
+        )
+        record.update(
+            _features_asof(
+                spy_features,
+                us_date,
+                fill_method="forward_fill_us_holiday",
+            )
+        )
         panel.append(record)
     panel.sort(key=lambda row: str(row["forecast_date"]))
     return panel
@@ -456,13 +631,20 @@ def build_feature_coverage_records(panel: list[dict[str, object]]) -> list[dict[
         "realized_loss",
         "full_gap_close_to_open",
         "residual_nightclose_to_day_open",
+        "residual_usclosemark_to_open",
+        "residual_usclosemark_status",
         "volume",
         "open_interest",
         "volume_oi_anomaly",
     }
     clean_rows = [row for row in panel if row.get("clean_sample") is True]
     records: list[dict[str, object]] = []
-    for field in sorted(set().union(*(row.keys() for row in panel)).difference(base_fields)):
+    feature_fields = [
+        field
+        for field in sorted(set().union(*(row.keys() for row in panel)).difference(base_fields))
+        if "__" not in field
+    ]
+    for field in feature_fields:
         non_missing = sum(1 for row in clean_rows if row.get(field) is not None)
         records.append(
             {
@@ -479,12 +661,15 @@ def build_feature_dictionary(panel: list[dict[str, object]]) -> dict[str, str]:
     return {
         field: _feature_description(field)
         for field in sorted(set().union(*(row.keys() for row in panel)) if panel else set())
-        if field.endswith("_return")
-        or field.endswith("_range")
-        or field.endswith("_diff")
-        or field.startswith("fred_")
-        or field.startswith("spy_late_")
-        or field.startswith("spy_final_")
+        if "__" not in field
+        and (
+            field.endswith("_return")
+            or field.endswith("_range")
+            or field.endswith("_diff")
+            or field.startswith("fred_")
+            or field.startswith("spy_late_")
+            or field.startswith("spy_final_")
+        )
     }
 
 
@@ -492,10 +677,12 @@ def evaluate_p2a_run(
     *,
     run_dir: Path,
     workers: int = 1,
+    force: bool = False,
 ) -> PaperEvalResult:
     panel_path = run_dir / "panel" / "modeling_panel.parquet"
     if not panel_path.exists():
         raise PaperRunError(f"Missing modeling panel: {panel_path}")
+    _assert_run_config_compatible(run_dir, force=force)
     _set_nested_thread_limits()
     forecast_root = run_dir / "forecasts"
     metrics_root = run_dir / "metrics"
@@ -526,7 +713,7 @@ def evaluate_p2a_run(
     if n_jobs == 1:
         outputs = [_evaluate_p2a_shard(payload) for payload in jobs]
     else:
-        outputs = Parallel(n_jobs=n_jobs, backend="loky")(
+        outputs = Parallel(n_jobs=n_jobs, backend=PAPER_CONFIG.model_policy.joblib_backend)(
             delayed(_evaluate_p2a_shard)(payload) for payload in jobs
         )
     forecasts = [row for output in outputs for row in output["forecasts"]]
@@ -545,6 +732,8 @@ def evaluate_p2a_run(
         metrics_root / "p2a_status.json",
         {
             "claims_level": PAPER_CLAIMS_LEVEL,
+            "claim_level": PAPER_CLAIMS_LEVEL,
+            "config_hash": PAPER_CONFIG.config_hash(),
             "stage": "p2a",
             "forecast_rows": len(forecasts),
             "metric_rows": len(metrics),
@@ -561,6 +750,97 @@ def evaluate_p2a_run(
     )
 
 
+def evaluate_paper_run(
+    *,
+    run_dir: Path,
+    workers: int = 1,
+    stage: str = "p2a",
+    force: bool = False,
+) -> PaperEvalResult:
+    normalized_stage = stage.lower()
+    if normalized_stage == "p2a":
+        return evaluate_p2a_run(run_dir=run_dir, workers=workers, force=force)
+    if normalized_stage in {"p2b", "p2c"}:
+        _assert_run_config_compatible(run_dir, force=force)
+        _set_nested_thread_limits()
+        status = (
+            "unavailable_stage_not_implemented_nonblocking"
+            if normalized_stage == "p2b"
+            else "unavailable_supplementary_stage_not_implemented_nonblocking"
+        )
+        payload = {
+            "claims_level": ClaimLevel.UNAVAILABLE.value
+            if normalized_stage == "p2b"
+            else ClaimLevel.SUPPLEMENTARY.value,
+            "claim_level": ClaimLevel.UNAVAILABLE.value
+            if normalized_stage == "p2b"
+            else ClaimLevel.SUPPLEMENTARY.value,
+            "config_hash": PAPER_CONFIG.config_hash(),
+            "stage": normalized_stage,
+            "status": status,
+            "forecast_rows": 0,
+            "metric_rows": 0,
+            "nonblocking": True,
+            "registered_information_sets": {
+                "model_a": PAPER_CONFIG.feature_sets.p2b_model_a_information_set,
+                "model_b": PAPER_CONFIG.feature_sets.p2b_model_b_information_set,
+                "model_c": PAPER_CONFIG.feature_sets.p2b_model_c_information_set,
+                "japan_only_features": PAPER_CONFIG.feature_sets.japan_only_features,
+            },
+            "message": (
+                "P2B/P2C interface is wired, but this stage requires the registered "
+                "feature-matrix/model implementation before producing evidence."
+            ),
+        }
+        _write_json(run_dir / "metrics" / f"{normalized_stage}_status.json", payload)
+        _update_manifest(run_dir, {f"{normalized_stage}_eval_status": status})
+        return PaperEvalResult(
+            run_id=run_dir.name,
+            run_dir=run_dir,
+            forecast_rows=0,
+            metric_rows=0,
+            status=status,
+        )
+    raise PaperRunError(f"Unknown paper evaluation stage: {stage}")
+
+
+def _run_has_locked_outputs(run_dir: Path) -> bool:
+    locked_roots = (run_dir / "forecasts", run_dir / "metrics")
+    for root in locked_roots:
+        if root.exists() and any(path.is_file() for path in root.rglob("*")):
+            return True
+    return False
+
+
+def _clear_run_outputs_for_force(run_dir: Path) -> None:
+    for name in ("forecasts", "metrics", "latex", "audits"):
+        path = run_dir / name
+        if path.exists():
+            shutil.rmtree(path)
+
+
+def _assert_run_config_compatible(run_dir: Path, *, force: bool = False) -> None:
+    manifest = _read_manifest(run_dir)
+    stored_hash = manifest.get("config_hash")
+    current_hash = PAPER_CONFIG.config_hash()
+    locked = _run_has_locked_outputs(run_dir)
+    if locked and stored_hash != current_hash:
+        if not force:
+            raise PaperRunError(
+                "Paper run config is locked and differs from current research config; "
+                "use a new run_id or pass --force to clear run outputs."
+            )
+        _clear_run_outputs_for_force(run_dir)
+    if stored_hash != current_hash:
+        _update_manifest(
+            run_dir,
+            {
+                "config_hash": current_hash,
+                "config_lock_status": "locked_after_forecasts_or_metrics",
+            },
+        )
+
+
 def build_metric_records(forecasts: list[dict[str, object]]) -> list[dict[str, object]]:
     grouped: dict[tuple[str, float], list[dict[str, object]]] = {}
     for row in forecasts:
@@ -575,13 +855,29 @@ def build_metric_records(forecasts: list[dict[str, object]]) -> list[dict[str, o
         var: Any = np.array([_required_float(row["var_forecast"]) for row in rows], dtype=float)
         es: Any = np.array([_required_float(row["es_forecast"]) for row in rows], dtype=float)
         breaches = losses > var
+        alpha = 1.0 - tail_level
+        kupiec = kupiec_pof_test(breaches=breaches, expected_probability=alpha)
+        christoffersen = christoffersen_independence_test(breaches=breaches)
+        exceedance_count = int(np.sum(breaches))
         records.append(
             {
                 "model_name": model,
                 "tail_level": tail_level,
                 "rows": len(rows),
                 "var_breach_rate": float(np.mean(breaches)) if rows else None,
-                "expected_breach_rate": 1.0 - tail_level,
+                "expected_breach_rate": alpha,
+                "exceedance_count": exceedance_count,
+                "low_exceedance_warning": (
+                    exceedance_count < PAPER_CONFIG.evaluation_policy.one_percent_min_exceedances
+                    if tail_level >= 0.99
+                    else False
+                ),
+                "kupiec_lr_uc": kupiec.get("lr_stat"),
+                "kupiec_pvalue": kupiec.get("pvalue"),
+                "christoffersen_lr_ind": christoffersen.get("lr_stat"),
+                "christoffersen_pvalue": christoffersen.get("pvalue"),
+                "dq_status": "unavailable_not_implemented",
+                "mcs_status": "unavailable_requires_loss_matrix",
                 "mean_quantile_loss": _safe_mean(
                     np.array(
                         [
@@ -609,6 +905,74 @@ def build_metric_records(forecasts: list[dict[str, object]]) -> list[dict[str, o
             }
         )
     return records
+
+
+def kupiec_pof_test(*, breaches: np.ndarray, expected_probability: float) -> dict[str, object]:
+    n = int(breaches.size)
+    x = int(np.sum(breaches))
+    if n == 0 or expected_probability <= 0.0 or expected_probability >= 1.0:
+        return {"status": "unavailable_invalid_input", "lr_stat": None, "pvalue": None}
+    observed = x / n
+    if observed in {0.0, 1.0}:
+        return {
+            "status": "unavailable_boundary_exceedance_rate",
+            "lr_stat": None,
+            "pvalue": None,
+        }
+    log_likelihood_null = x * math.log(expected_probability) + (n - x) * math.log(
+        1.0 - expected_probability
+    )
+    log_likelihood_alt = x * math.log(observed) + (n - x) * math.log(1.0 - observed)
+    lr_stat = -2.0 * (log_likelihood_null - log_likelihood_alt)
+    return {
+        "status": "ok",
+        "lr_stat": float(lr_stat),
+        "pvalue": float(1.0 - stats.chi2.cdf(lr_stat, 1)),
+    }
+
+
+def christoffersen_independence_test(*, breaches: np.ndarray) -> dict[str, object]:
+    values = [bool(value) for value in breaches.tolist()]
+    if len(values) < 2:
+        return {"status": "unavailable_insufficient_oos", "lr_stat": None, "pvalue": None}
+    n00 = n01 = n10 = n11 = 0
+    for previous, current in zip(values[:-1], values[1:], strict=True):
+        if not previous and not current:
+            n00 += 1
+        elif not previous and current:
+            n01 += 1
+        elif previous and not current:
+            n10 += 1
+        else:
+            n11 += 1
+    if min(n00 + n01, n10 + n11, n00 + n10, n01 + n11) == 0:
+        return {
+            "status": "unavailable_boundary_transition_rate",
+            "lr_stat": None,
+            "pvalue": None,
+        }
+    pi01 = n01 / (n00 + n01)
+    pi11 = n11 / (n10 + n11)
+    pi = (n01 + n11) / (n00 + n01 + n10 + n11)
+    if any(value in {0.0, 1.0} for value in (pi01, pi11, pi)):
+        return {
+            "status": "unavailable_boundary_transition_rate",
+            "lr_stat": None,
+            "pvalue": None,
+        }
+    unrestricted = (
+        n00 * math.log(1.0 - pi01)
+        + n01 * math.log(pi01)
+        + n10 * math.log(1.0 - pi11)
+        + n11 * math.log(pi11)
+    )
+    restricted = (n00 + n10) * math.log(1.0 - pi) + (n01 + n11) * math.log(pi)
+    lr_stat = -2.0 * (restricted - unrestricted)
+    return {
+        "status": "ok",
+        "lr_stat": float(lr_stat),
+        "pvalue": float(1.0 - stats.chi2.cdf(lr_stat, 1)),
+    }
 
 
 def quantile_loss(loss: float, var_forecast: float, tail_level: float) -> float:
@@ -639,17 +1003,112 @@ def write_paper_latex_tables(*, run_dir: Path) -> PaperLatexResult:
     latex_dir = run_dir / "latex" / "tables"
     latex_dir.mkdir(parents=True, exist_ok=True)
     tables = 0
+    manifest = _read_manifest(run_dir)
     if metrics_path.exists():
         metrics = pl.read_parquet(metrics_path)
-        tex = _metrics_to_latex(metrics)
+        tex = _metrics_to_latex(metrics, manifest=manifest)
         (latex_dir / "p2a_metrics_table.tex").write_text(tex, encoding="utf-8")
         tables += 1
     _write_json(
         run_dir / "latex" / "figure_manifest.json",
-        {"claims_level": PAPER_CLAIMS_LEVEL, "tables": tables, "figures": []},
+        {
+            "claims_level": PAPER_CLAIMS_LEVEL,
+            "claim_level": manifest.get("claim_level", PAPER_CLAIMS_LEVEL),
+            "run_id": run_dir.name,
+            "git_commit": manifest.get("git_commit"),
+            "config_hash": manifest.get("config_hash"),
+            "tables": tables,
+            "figures": [],
+        },
     )
     _update_manifest(run_dir, {"latex_tables": tables})
     return PaperLatexResult(run_id=run_dir.name, latex_dir=latex_dir, tables=tables)
+
+
+def write_paper_leakage_check(*, run_dir: Path) -> PaperLeakageCheckResult:
+    panel_path = run_dir / "panel" / "modeling_panel.parquet"
+    if not panel_path.exists():
+        raise PaperRunError(f"Missing modeling panel: {panel_path}")
+    rows = build_leakage_check_records(pl.read_parquet(panel_path).to_dicts())
+    output_path = run_dir / "audits" / "leakage_check.parquet"
+    summary_path = run_dir / "audits" / "leakage_check_summary.json"
+    _write_parquet(output_path, rows)
+    failures = sum(1 for row in rows if row.get("status") == "fail")
+    warnings = sum(1 for row in rows if row.get("status") == "warn")
+    _write_json(
+        summary_path,
+        {
+            "run_id": run_dir.name,
+            "claims_level": PAPER_CLAIMS_LEVEL,
+            "config_hash": _read_manifest(run_dir).get("config_hash"),
+            "rows": len(rows),
+            "failures": failures,
+            "warnings": warnings,
+            "status": "fail" if failures else "pass_with_warnings" if warnings else "pass",
+        },
+    )
+    _update_manifest(
+        run_dir,
+        {
+            "leakage_check_rows": len(rows),
+            "leakage_check_failures": failures,
+            "leakage_check_warnings": warnings,
+        },
+    )
+    return PaperLeakageCheckResult(
+        run_id=run_dir.name,
+        output_path=output_path,
+        rows=len(rows),
+        failures=failures,
+        warnings=warnings,
+    )
+
+
+def build_leakage_check_records(panel_rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    warning_min_lag = PAPER_CONFIG.leakage_policy.leakage_warning_min_lag_minutes
+    for row in panel_rows:
+        cutoff = _coerce_datetime(row.get("model_cutoff_ts_utc"))
+        target_open = _coerce_datetime(row.get("target_open_ts_utc"))
+        for key, raw_available in sorted(row.items()):
+            if not key.endswith("__available_ts_utc"):
+                continue
+            feature_name = key.removesuffix("__available_ts_utc")
+            available = _coerce_datetime(raw_available)
+            status = "pass"
+            reason = None
+            lag_minutes: float | None = None
+            if available is None or cutoff is None or target_open is None:
+                status = "fail"
+                reason = "missing_timestamp_for_leakage_check"
+            elif available > cutoff:
+                status = "fail"
+                reason = "feature_available_after_model_cutoff"
+                lag_minutes = (cutoff - available).total_seconds() / 60.0
+            elif cutoff >= target_open:
+                status = "fail"
+                reason = "model_cutoff_not_before_target_open"
+                lag_minutes = (cutoff - available).total_seconds() / 60.0
+            else:
+                lag_minutes = (cutoff - available).total_seconds() / 60.0
+                if lag_minutes < warning_min_lag:
+                    status = "warn"
+                    reason = "lag_below_conservative_warning_threshold"
+            records.append(
+                {
+                    "forecast_date": row.get("forecast_date"),
+                    "feature_name": feature_name,
+                    "feature_available_ts_utc": available,
+                    "model_cutoff_ts_utc": cutoff,
+                    "target_open_ts_utc": target_open,
+                    "lag_minutes": lag_minutes,
+                    "feature_fill_method": row.get(f"{feature_name}__fill_method"),
+                    "feature_source_date": row.get(f"{feature_name}__source_date"),
+                    "status": status,
+                    "reason": reason,
+                }
+            )
+    return records
 
 
 def resolve_paper_run_dir(settings: Settings, run_id: str) -> Path:
@@ -774,11 +1233,19 @@ def _forecast_model_sequence(
                     "train_n": int(train.size),
                     "optimizer_status": forecast.get("optimizer_status"),
                     "convergence_code": forecast.get("convergence_code"),
+                    "candidate_feature_hash": stable_hash([]),
+                    "active_feature_hash": stable_hash([]),
                     "dropped_features_json": "[]",
+                    "drop_reason": None,
+                    "training_missingness": "{}",
+                    "training_variance": "{}",
                     "threshold_quantile": forecast.get("threshold_quantile"),
                     "threshold_value": forecast.get("threshold_value"),
                     "evt_exceedance_count": forecast.get("evt_exceedance_count"),
                     "threshold_diagnostics_json": forecast.get("threshold_diagnostics_json"),
+                    "threshold_policy": forecast.get("threshold_policy"),
+                    "threshold_smoothing": forecast.get("threshold_smoothing"),
+                    "threshold_selection": forecast.get("threshold_selection"),
                 }
             )
         except Exception as exc:  # pragma: no cover - exercised via synthetic failure tests
@@ -911,6 +1378,9 @@ def _arch_forecast(  # pragma: no cover - numeric optimizer exercised in real P2
         "threshold_value": evt_tail.get("threshold_value"),
         "evt_exceedance_count": evt_tail.get("evt_exceedance_count"),
         "threshold_diagnostics_json": evt_tail.get("threshold_diagnostics_json"),
+        "threshold_policy": evt_tail.get("threshold_policy"),
+        "threshold_smoothing": evt_tail.get("threshold_smoothing"),
+        "threshold_selection": evt_tail.get("threshold_selection"),
     }
 
 
@@ -929,10 +1399,7 @@ def _standardized_student_t_loss_var_es(
     raw_pdf = float(stats.t.pdf(raw_quantile, df=nu))
     if nu > 1.0:
         standardized_upper_es = (
-            variance_scale
-            * ((nu + raw_quantile**2) / (nu - 1.0))
-            * raw_pdf
-            / alpha
+            variance_scale * ((nu + raw_quantile**2) / (nu - 1.0)) * raw_pdf / alpha
         )
     else:
         standardized_upper_es = -standardized_lower_quantile
@@ -964,9 +1431,7 @@ def _pot_gpd_standardized_tail(
     threshold = float(np.quantile(values, threshold_quantile))
     excesses = values[values > threshold] - threshold
     if excesses.size < DEFAULT_MIN_TRAIN_EXCEEDANCES:
-        raise PaperRunError(
-            f"EVT calibration has insufficient exceedances: {excesses.size}"
-        )
+        raise PaperRunError(f"EVT calibration has insufficient exceedances: {excesses.size}")
     if tail_level <= threshold_quantile:
         var_z = float(np.quantile(values, tail_level))
         es_z = static_empirical_es(values, var_z)
@@ -994,8 +1459,93 @@ def _pot_gpd_standardized_tail(
         "threshold_value": threshold,
         "evt_exceedance_count": int(excesses.size),
         "threshold_diagnostics_json": json.dumps(diagnostics, sort_keys=True),
+        "threshold_policy": PAPER_CONFIG.model_policy.evt_threshold_refresh,
+        "threshold_smoothing": PAPER_CONFIG.model_policy.evt_threshold_smoothing,
+        "threshold_selection": "pre_registered_fixed_empirical_quantile",
         "tail_method": tail_method,
     }
+
+
+def _features_asof(
+    features_by_date: dict[str, dict[str, object]],
+    date_key: str,
+    *,
+    fill_method: str,
+) -> dict[str, object]:
+    if not date_key:
+        return {}
+    if date_key in features_by_date:
+        return dict(features_by_date[date_key])
+    try:
+        target_date = date.fromisoformat(date_key)
+    except ValueError:
+        return {}
+    prior_keys = [key for key in features_by_date if key <= date_key]
+    if not prior_keys:
+        return {}
+    selected_key = max(prior_keys)
+    try:
+        selected_date = date.fromisoformat(selected_key)
+    except ValueError:
+        return {}
+    if (
+        target_date - selected_date
+    ).days > PAPER_CONFIG.leakage_policy.max_forward_fill_us_close_days:
+        return {}
+    output = dict(features_by_date[selected_key])
+    for feature_name in _feature_value_names(output):
+        output[f"{feature_name}__fill_method"] = fill_method
+        output[f"{feature_name}__source_date"] = selected_key
+    return output
+
+
+def _feature_value_names(record: Mapping[str, object]) -> list[str]:
+    return sorted(
+        key
+        for key in record
+        if "__" not in key
+        and (
+            key.endswith("_return")
+            or key.endswith("_range")
+            or key.endswith("_diff")
+            or key.endswith("_level")
+            or key.startswith("spy_late_")
+            or key.startswith("spy_final_")
+        )
+    )
+
+
+def _stamp_feature_metadata(
+    output: dict[str, object],
+    *,
+    feature_name: str,
+    available_ts_utc: datetime | None,
+    source_date: str,
+    fill_method: str = "direct",
+) -> None:
+    output[f"{feature_name}__available_ts_utc"] = available_ts_utc
+    output[f"{feature_name}__source_date"] = source_date
+    output[f"{feature_name}__fill_method"] = fill_method
+
+
+def _feature_available_ts(row: Mapping[str, object], *, lag_minutes: int = 0) -> datetime | None:
+    raw = row.get("vendor_available_ts_utc") or row.get("bar_end_ts_utc")
+    ts = _coerce_datetime(raw)
+    if ts is None:
+        return None
+    return ts + timedelta(minutes=lag_minutes)
+
+
+def _coerce_datetime(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)
+    if isinstance(value, str) and value:
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed.astimezone(UTC) if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return None
 
 
 def _evt_threshold_diagnostics(values: np.ndarray) -> list[dict[str, object]]:
@@ -1055,14 +1605,32 @@ def _massive_daily_feature_map(records: list[dict[str, object]]) -> dict[str, di
             high = _optional_float(row.get("high"))
             low = _optional_float(row.get("low"))
             output = features_by_date.setdefault(date_key, {})
+            available_ts = _feature_available_ts(
+                row,
+                lag_minutes=PAPER_CONFIG.leakage_policy.massive_vendor_lag_minutes,
+            )
+            return_name = f"{safe}_return"
+            range_name = f"{safe}_range"
             if close is not None and previous_close and previous_close > 0:
-                output[f"{safe}_return"] = math.log(close) - math.log(previous_close)
+                output[return_name] = math.log(close) - math.log(previous_close)
             else:
-                output[f"{safe}_return"] = None
+                output[return_name] = None
             if high is not None and low is not None and high > 0 and low > 0:
-                output[f"{safe}_range"] = math.log(high) - math.log(low)
+                output[range_name] = math.log(high) - math.log(low)
             else:
-                output[f"{safe}_range"] = None
+                output[range_name] = None
+            _stamp_feature_metadata(
+                output,
+                feature_name=return_name,
+                available_ts_utc=available_ts,
+                source_date=date_key,
+            )
+            _stamp_feature_metadata(
+                output,
+                feature_name=range_name,
+                available_ts_utc=available_ts,
+                source_date=date_key,
+            )
             if close is not None:
                 previous_close = close
     return features_by_date
@@ -1078,12 +1646,25 @@ def _fred_feature_map(records: list[dict[str, object]]) -> dict[str, dict[str, o
         previous: float | None = None
         safe = _safe_name(series)
         for row in rows:
-            date_key = str(row["observation_date"])
+            date_key = str(row.get("vendor_available_date_et") or row["observation_date"])
             value = _optional_float(row.get("value"))
             output = features_by_date.setdefault(date_key, {})
-            output[f"fred_{safe}_level"] = value
-            output[f"fred_{safe}_diff"] = (
-                None if value is None or previous is None else value - previous
+            available_ts = _feature_available_ts(row)
+            level_name = f"fred_{safe}_level"
+            diff_name = f"fred_{safe}_diff"
+            output[level_name] = value
+            output[diff_name] = None if value is None or previous is None else value - previous
+            _stamp_feature_metadata(
+                output,
+                feature_name=level_name,
+                available_ts_utc=available_ts,
+                source_date=str(row["observation_date"]),
+            )
+            _stamp_feature_metadata(
+                output,
+                feature_name=diff_name,
+                available_ts_utc=available_ts,
+                source_date=str(row["observation_date"]),
             )
             if value is not None:
                 previous = value
@@ -1113,6 +1694,10 @@ def _spy_minute_feature_map(records: list[dict[str, object]]) -> dict[str, dict[
             if rolling_mean_volume is None or rolling_mean_volume == 0.0
             else session_volume / rolling_mean_volume
         )
+        last_available_ts = _feature_available_ts(
+            rows[-1],
+            lag_minutes=PAPER_CONFIG.leakage_policy.massive_vendor_lag_minutes,
+        )
         features[date_key] = {
             "spy_late_30m_return": _window_return(valid_closes, 30),
             "spy_late_60m_return": _window_return(valid_closes, 60),
@@ -1120,6 +1705,13 @@ def _spy_minute_feature_map(records: list[dict[str, object]]) -> dict[str, dict[
             "spy_late_volume_surge": volume_surge,
             "spy_final_window_momentum": _window_return(valid_closes, 15),
         }
+        for feature_name in _feature_value_names(features[date_key]):
+            _stamp_feature_metadata(
+                features[date_key],
+                feature_name=feature_name,
+                available_ts_utc=last_available_ts,
+                source_date=date_key,
+            )
         rolling_session_volume.append(session_volume)
     return features
 
@@ -1224,6 +1816,9 @@ def _fetch_fred_paper_predictors(
                     end=end,
                     research_download_ts_utc=downloaded_at_utc,
                     us_timezone=settings.project_timezone_us,
+                    availability_lag_us_business_days=(
+                        PAPER_CONFIG.leakage_policy.fred_availability_lag_us_business_days
+                    ),
                 )
             )
     return records
@@ -1256,9 +1851,17 @@ def _set_nested_thread_limits() -> None:
         os.environ[name] = "1"
 
 
-def _metrics_to_latex(metrics: pl.DataFrame) -> str:
+def _metrics_to_latex(
+    metrics: pl.DataFrame, *, manifest: Mapping[str, object] | None = None
+) -> str:
     headers = ("model", "tail", "rows", "breach", "q_loss", "fz_loss")
+    manifest = manifest or {}
     lines = [
+        f"% run_id: {manifest.get('run_id', '')}",
+        f"% git_commit: {manifest.get('git_commit', '')}",
+        f"% config_hash: {manifest.get('config_hash', '')}",
+        f"% claim_level: {manifest.get('claim_level', manifest.get('claims_level', ''))}",
+        "% loss convention: loss_t = -gap_t; lower FZ loss is better",
         "\\begin{tabular}{lrrrrr}",
         "\\toprule",
         " & ".join(headers) + r" \\",
@@ -1274,9 +1877,16 @@ def _metrics_to_latex(metrics: pl.DataFrame) -> str:
     return "\n".join(lines)
 
 
+def _read_manifest(run_dir: Path) -> dict[str, object]:
+    path = run_dir / "manifest.json"
+    if not path.exists():
+        return {}
+    return cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
+
+
 def _update_manifest(run_dir: Path, updates: dict[str, object]) -> None:
     path = run_dir / "manifest.json"
-    manifest = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    manifest = _read_manifest(run_dir)
     manifest.update(updates)
     _write_json(path, manifest)
 
@@ -1326,6 +1936,9 @@ def _write_forecast_shards(
             shard_dir / "status.json",
             {
                 "claims_level": PAPER_CLAIMS_LEVEL,
+                "claim_level": PAPER_CLAIMS_LEVEL,
+                "config_hash": PAPER_CONFIG.config_hash(),
+                "completion_state": "complete",
                 "model_name": model_name,
                 "tail_level": tail_level,
                 "shard_id": _forecast_shard_id(model_name, tail_level),
@@ -1374,13 +1987,7 @@ def _required_float(value: object) -> float:
 
 
 def _safe_name(value: str) -> str:
-    return (
-        value.replace(":", "_")
-        .replace(".", "_")
-        .replace("-", "_")
-        .replace("/", "_")
-        .lower()
-    )
+    return value.replace(":", "_").replace(".", "_").replace("-", "_").replace("/", "_").lower()
 
 
 def _feature_description(field: str) -> str:

@@ -1,7 +1,7 @@
 [project]
 name = "n225-open-gap-tail"
 version = "0.1.0"
-description = "LightGBM-EVT framework for forecasting Nikkei 225 futures opening-gap tail risk from U.S. close information."
+description = "Paper-grade empirical pipeline for testing the incremental predictive content of U.S. close information for OSE Nikkei 225 futures pre-open downside tail risk."
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [
@@ -31,10 +31,7 @@ dependencies = [
 n225-open-gap-tail = "n225_open_gap_tail.cli:app"
 
 [project.optional-dependencies]
-docs = [
-    "mkdocs>=1.6.1",
-    "mkdocs-material>=9.6.0",
-]
+docs = ["mkdocs>=1.6.1", "mkdocs-material>=9.6.0"]
 
 [dependency-groups]
 dev = [

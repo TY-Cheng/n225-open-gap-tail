@@ -5,7 +5,7 @@ Use this prompt when the LaTeX manuscript exists and needs to be checked against
 ```text
 You are auditing the manuscript for:
 
-"Forecasting Pre-Open Tail Risk in Nikkei 225 Futures Using U.S. Close Information: A Session-Aligned LightGBM-EVT Framework."
+"The Incremental Content of U.S. Close Information for Pre-Open Downside Tail Risk: Evidence from OSE Nikkei 225 Futures."
 
 Read:
 

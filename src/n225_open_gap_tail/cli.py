@@ -10,9 +10,10 @@ from n225_open_gap_tail.fred import write_fred_smoke_sample
 from n225_open_gap_tail.jquants import write_jquants_smoke_sample
 from n225_open_gap_tail.massive import write_massive_smoke_sample
 from n225_open_gap_tail.paper import (
-    evaluate_p2a_run,
+    evaluate_paper_run,
     resolve_paper_run_dir,
     write_paper_latex_tables,
+    write_paper_leakage_check,
     write_paper_panel,
 )
 from n225_open_gap_tail.snapshot import write_full_smoke_snapshot
@@ -234,14 +235,13 @@ def paper_panel(
 def paper_eval(
     run_id: str = typer.Option("", help="Paper run id. Defaults to the latest P2A run."),
     workers: int = typer.Option(0, help="Joblib workers. Defaults to bounded local workers."),
-    stage: str = typer.Option("p2a", help="Evaluation stage. Only p2a is implemented now."),
+    stage: str = typer.Option("p2a", help="Evaluation stage: p2a, p2b, or p2c."),
+    force: bool = typer.Option(False, help="Clear locked outputs when config hash changed."),
 ) -> None:
     """Run paper-grade evaluation for a paper run."""
-    if stage != "p2a":
-        raise typer.BadParameter("Only stage='p2a' is implemented in this pass")
     settings = load_settings()
     run_dir = resolve_paper_run_dir(settings, run_id)
-    result = evaluate_p2a_run(run_dir=run_dir, workers=workers)
+    result = evaluate_paper_run(run_dir=run_dir, workers=workers, stage=stage, force=force)
 
     typer.echo(f"run id: {result.run_id}")
     typer.echo(f"run dir: {result.run_dir}")
@@ -255,21 +255,29 @@ def paper_grade(
     start: str = typer.Option("2008-05-07", help="Start date in YYYY-MM-DD."),
     end: str = typer.Option("", help="End date in YYYY-MM-DD. Defaults to today."),
     workers: int = typer.Option(0, help="Joblib workers. Defaults to bounded local workers."),
-    stage: str = typer.Option("p2a", help="Evaluation stage. Only p2a is implemented now."),
+    stage: str = typer.Option("p2a", help="Evaluation stage: p2a, p2b, p2c, or all."),
+    force: bool = typer.Option(False, help="Clear locked outputs when config hash changed."),
 ) -> None:
     """Build the paper panel, run P2A evaluation, and export LaTeX tables."""
-    if stage != "p2a":
-        raise typer.BadParameter("Only stage='p2a' is implemented in this pass")
     settings = load_settings()
     panel = write_paper_panel(settings=settings, start=start, end=end or None)
-    evaluation = evaluate_p2a_run(run_dir=panel.run_dir, workers=workers)
+    stages = ("p2a", "p2b", "p2c") if stage == "all" else (stage,)
+    evaluation = None
+    for active_stage in stages:
+        evaluation = evaluate_paper_run(
+            run_dir=panel.run_dir,
+            workers=workers,
+            stage=active_stage,
+            force=force,
+        )
     latex = write_paper_latex_tables(run_dir=panel.run_dir)
 
     typer.echo(f"run id: {panel.run_id}")
     typer.echo(f"run dir: {panel.run_dir}")
     typer.echo(f"panel rows: {panel.rows}")
-    typer.echo(f"forecast rows: {evaluation.forecast_rows}")
-    typer.echo(f"metric rows: {evaluation.metric_rows}")
+    typer.echo(f"forecast rows: {evaluation.forecast_rows if evaluation else 0}")
+    typer.echo(f"metric rows: {evaluation.metric_rows if evaluation else 0}")
+    typer.echo(f"eval status: {evaluation.status if evaluation else '<none>'}")
     typer.echo(f"latex tables: {latex.tables}")
 
 
@@ -285,6 +293,22 @@ def paper_latex_tables(
     typer.echo(f"run id: {result.run_id}")
     typer.echo(f"latex dir: {result.latex_dir}")
     typer.echo(f"tables: {result.tables}")
+
+
+@app.command("paper-leakage-check")
+def paper_leakage_check(
+    run_id: str = typer.Argument("", help="Paper run id. Defaults to the latest P2A run."),
+) -> None:
+    """Audit feature timestamp availability against model cutoff and target open."""
+    settings = load_settings()
+    run_dir = resolve_paper_run_dir(settings, run_id)
+    result = write_paper_leakage_check(run_dir=run_dir)
+
+    typer.echo(f"run id: {result.run_id}")
+    typer.echo(f"leakage parquet: {result.output_path}")
+    typer.echo(f"rows: {result.rows}")
+    typer.echo(f"failures: {result.failures}")
+    typer.echo(f"warnings: {result.warnings}")
 
 
 def _format_statuses(statuses: dict[str, int]) -> str:

@@ -10,7 +10,13 @@ from n225_open_gap_tail.contracts import ContractMetadataResult
 from n225_open_gap_tail.fred import FredSmokeResult
 from n225_open_gap_tail.jquants import JQuantsSmokeResult
 from n225_open_gap_tail.massive import MassiveSmokeResult
-from n225_open_gap_tail.paper import PaperEvalResult, PaperLatexResult, PaperPanelResult
+from n225_open_gap_tail.paper import (
+    PaperEvalResult,
+    PaperLatexResult,
+    PaperLeakageCheckResult,
+    PaperPanelResult,
+)
+from n225_open_gap_tail.research_config import CORE_FRED_SERIES, CORE_MASSIVE_TICKERS
 
 
 def test_status_reports_environment_without_secret_values(
@@ -31,6 +37,8 @@ def test_status_reports_environment_without_secret_values(
     monkeypatch.setenv("INTERIM_DATA_DIR", str(interim_dir))
     monkeypatch.setenv("PROCESSED_DATA_DIR", str(processed_dir))
     monkeypatch.setenv("REPORTS_DIR", str(reports_dir))
+    monkeypatch.setenv("MASSIVE_DAILY_TICKERS", ",".join(CORE_MASSIVE_TICKERS))
+    monkeypatch.setenv("FRED_SERIES", ",".join(CORE_FRED_SERIES))
     monkeypatch.setenv("MASSIVE_API_KEY", "massive-secret")
     monkeypatch.setenv("JQUANTS_API_KEY", "jquants-secret")
     monkeypatch.setenv("JQUANTS_API_PLAN", "free")
@@ -44,11 +52,11 @@ def test_status_reports_environment_without_secret_values(
     assert f"  - {data_dir}: ok" in result.output
     assert "massive api key configured: True" in result.output
     assert "massive api base url: https://api.massive.com" in result.output
-    assert "massive daily ticker count: 10" in result.output
+    assert "massive daily ticker count: 23" in result.output
     assert "massive minute ticker: SPY" in result.output
     assert "massive probe ticker count: 1" in result.output
     assert "fred base url: https://fred.stlouisfed.org" in result.output
-    assert "fred series count: 3" in result.output
+    assert "fred series count: 6" in result.output
     assert "calendar us exchange: XNYS" in result.output
     assert "calendar jpx exchange: JPX" in result.output
     assert "nikkei contract roll days before last trade: 5" in result.output
@@ -318,9 +326,11 @@ def test_paper_eval_command_reports_summary(
         assert run_id == "p2a_test"
         return run_dir
 
-    def fake_evaluate_p2a_run(**kwargs: object) -> PaperEvalResult:
+    def fake_evaluate_paper_run(**kwargs: object) -> PaperEvalResult:
         assert kwargs["run_dir"] == run_dir
         assert kwargs["workers"] == 2
+        assert kwargs["stage"] == "p2a"
+        assert kwargs["force"] is False
         return PaperEvalResult(
             run_id="p2a_test",
             run_dir=run_dir,
@@ -330,7 +340,7 @@ def test_paper_eval_command_reports_summary(
         )
 
     monkeypatch.setattr(cli, "resolve_paper_run_dir", fake_resolve_paper_run_dir)
-    monkeypatch.setattr(cli, "evaluate_p2a_run", fake_evaluate_p2a_run)
+    monkeypatch.setattr(cli, "evaluate_paper_run", fake_evaluate_paper_run)
 
     result = CliRunner().invoke(
         app,
@@ -358,7 +368,8 @@ def test_paper_grade_command_runs_panel_eval_and_latex(
             clean_rows=90,
         )
 
-    def fake_evaluate_p2a_run(**kwargs: object) -> PaperEvalResult:
+    def fake_evaluate_paper_run(**kwargs: object) -> PaperEvalResult:
+        assert kwargs["stage"] == "p2a"
         return PaperEvalResult(
             run_id="p2a_test",
             run_dir=run_dir,
@@ -375,7 +386,7 @@ def test_paper_grade_command_runs_panel_eval_and_latex(
         )
 
     monkeypatch.setattr(cli, "write_paper_panel", fake_write_paper_panel)
-    monkeypatch.setattr(cli, "evaluate_p2a_run", fake_evaluate_p2a_run)
+    monkeypatch.setattr(cli, "evaluate_paper_run", fake_evaluate_paper_run)
     monkeypatch.setattr(cli, "write_paper_latex_tables", fake_write_paper_latex_tables)
 
     result = CliRunner().invoke(app, ["paper-grade", "--workers", "1"])
@@ -383,6 +394,7 @@ def test_paper_grade_command_runs_panel_eval_and_latex(
     assert result.exit_code == 0
     assert "panel rows: 100" in result.output
     assert "forecast rows: 50" in result.output
+    assert "eval status: completed" in result.output
     assert "latex tables: 1" in result.output
 
 
@@ -412,3 +424,35 @@ def test_paper_latex_tables_command_reports_summary(
     assert result.exit_code == 0
     assert "run id: p2a_latest" in result.output
     assert "tables: 1" in result.output
+
+
+def test_paper_leakage_check_command_reports_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "paper_run"
+    output_path = run_dir / "audits" / "leakage_check.parquet"
+
+    def fake_resolve_paper_run_dir(settings: object, run_id: str) -> Path:
+        assert run_id == "p2a_test"
+        return run_dir
+
+    def fake_write_paper_leakage_check(**kwargs: object) -> PaperLeakageCheckResult:
+        assert kwargs["run_dir"] == run_dir
+        return PaperLeakageCheckResult(
+            run_id="p2a_test",
+            output_path=output_path,
+            rows=10,
+            failures=0,
+            warnings=2,
+        )
+
+    monkeypatch.setattr(cli, "resolve_paper_run_dir", fake_resolve_paper_run_dir)
+    monkeypatch.setattr(cli, "write_paper_leakage_check", fake_write_paper_leakage_check)
+
+    result = CliRunner().invoke(app, ["paper-leakage-check", "p2a_test"])
+
+    assert result.exit_code == 0
+    assert "run id: p2a_test" in result.output
+    assert "rows: 10" in result.output
+    assert "warnings: 2" in result.output

@@ -14,19 +14,25 @@ import n225_open_gap_tail.paper as paper_module
 from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.paper import (
     build_feature_coverage_records,
+    build_feature_matrix_gate_records,
+    build_leakage_check_records,
     build_modeling_panel_records,
     build_paper_run_id,
     drop_low_variance_features,
     empirical_excess_es_companion,
     evaluate_p2a_run,
+    evaluate_paper_run,
     filtered_historical_es,
     find_oos_start_date,
     global_oos_intersection,
+    kupiec_pof_test,
+    pairwise_oos_intersection,
     quantile_loss,
     static_empirical_es,
     validate_forecast_values,
     validate_worker_payload,
     write_paper_latex_tables,
+    write_paper_leakage_check,
     write_paper_panel,
 )
 
@@ -128,7 +134,37 @@ def test_global_oos_intersection_requires_complete_loss_matrix() -> None:
     ]
 
     assert global_oos_intersection(forecasts, model_names=("a", "b")) == ["2026-01-02"]
+    assert pairwise_oos_intersection(
+        forecasts,
+        left_model="a",
+        right_model="b",
+    ) == ["2026-01-02"]
+    assert paper_module.common_sample_status(["2026-01-02"], min_rows=2) == (
+        "unavailable_insufficient_common_oos"
+    )
     assert global_oos_intersection([], model_names=()) == []
+
+
+def test_feature_matrix_gate_records_candidate_active_and_dropped_sets() -> None:
+    frame = pl.DataFrame(
+        {
+            "good": [1.0, 2.0, 3.0],
+            "constant": [1.0, 1.0, 1.0],
+            "nonfinite": [1.0, math.inf, math.nan],
+        }
+    )
+
+    gate = build_feature_matrix_gate_records(
+        frame,
+        ["good", "constant", "nonfinite", "missing"],
+    )
+
+    assert gate["active_features"] == ["good"]
+    dropped_features = cast(list[str], gate["dropped_features"])
+    assert "constant" in dropped_features
+    assert "missing" in dropped_features
+    assert isinstance(gate["candidate_feature_hash"], str)
+    assert json.loads(str(gate["dropped_features_json"]))
 
 
 def test_worker_payload_rejects_dataframe_objects() -> None:
@@ -171,6 +207,7 @@ def test_build_modeling_panel_records_and_feature_coverage() -> None:
             {
                 "ticker": "SPY",
                 "bar_date_et": "2026-01-01",
+                "bar_end_ts_utc": datetime(2026, 1, 1, 21, 0, tzinfo=UTC),
                 "close": 100.0,
                 "high": 101.0,
                 "low": 99.0,
@@ -178,6 +215,7 @@ def test_build_modeling_panel_records_and_feature_coverage() -> None:
             {
                 "ticker": "SPY",
                 "bar_date_et": "2026-01-02",
+                "bar_end_ts_utc": datetime(2026, 1, 2, 21, 0, tzinfo=UTC),
                 "close": 101.0,
                 "high": 102.0,
                 "low": 100.0,
@@ -185,21 +223,89 @@ def test_build_modeling_panel_records_and_feature_coverage() -> None:
         ],
         spy_minute_records=[],
         fred_records=[
-            {"series_id": "VIXCLS", "observation_date": "2026-01-02", "value": 18.0}
+            {
+                "series_id": "VIXCLS",
+                "observation_date": "2026-01-02",
+                "vendor_available_date_et": "2026-01-02",
+                "vendor_available_ts_utc": datetime(2026, 1, 2, 21, 0, tzinfo=UTC),
+                "value": 18.0,
+            }
         ],
     )
     coverage = build_feature_coverage_records(panel)
 
     assert panel[0]["forecast_date"] == "2026-01-05"
     assert panel[0]["spy_return"] is not None
+    assert panel[0]["spy_return__fill_method"] == "direct"
     assert panel[0]["fred_vixcls_level"] == 18.0
+    assert panel[0]["residual_usclosemark_to_open"] is None
+    assert panel[0]["residual_usclosemark_status"] == ("disabled_requires_licensed_intraday_mark")
     assert any(row["feature"] == "spy_return" for row in coverage)
+
+
+def test_modeling_panel_forward_fills_us_holiday_features_and_leakage_gate() -> None:
+    panel = build_modeling_panel_records(
+        target_rows=[
+            {
+                "trading_date": "2026-01-06",
+                "contract_code": "161030018",
+                "contract_month": "2026-03",
+                "clean_sample": True,
+                "same_contract_only": True,
+                "is_roll_sq_window": False,
+                "missing_reason": None,
+                "target_open_ts_utc": datetime(2026, 1, 5, 23, 45, tzinfo=UTC),
+                "full_gap_settle_to_open": -0.01,
+                "loss_settle_to_open": 0.01,
+            }
+        ],
+        alignment_records=[
+            {
+                "trading_date": "2026-01-06",
+                "us_calendar_date": "2026-01-05",
+                "model_cutoff_ts_utc": datetime(2026, 1, 5, 21, 30, tzinfo=UTC),
+                "dst_regime": "EST",
+                "absorption_regime": "coincident_close",
+            }
+        ],
+        massive_daily_records=[
+            {
+                "ticker": "SPY",
+                "bar_date_et": "2026-01-02",
+                "bar_end_ts_utc": datetime(2026, 1, 2, 21, 0, tzinfo=UTC),
+                "close": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+            },
+            {
+                "ticker": "SPY",
+                "bar_date_et": "2026-01-03",
+                "bar_end_ts_utc": datetime(2026, 1, 3, 21, 0, tzinfo=UTC),
+                "close": 101.0,
+                "high": 102.0,
+                "low": 100.0,
+            },
+        ],
+        spy_minute_records=[],
+        fred_records=[],
+    )
+
+    assert panel[0]["spy_return__fill_method"] == "forward_fill_us_holiday"
+    leakage_rows = build_leakage_check_records(panel)
+    assert leakage_rows
+    assert {row["status"] for row in leakage_rows} <= {"pass", "warn"}
 
 
 def test_quantile_loss_and_fz_loss_are_finite_for_valid_forecasts() -> None:
     assert quantile_loss(2.0, 1.5, 0.95) > 0
     assert math.isfinite(paper_module.fz_loss(2.0, 1.5, 2.5, 0.95))
     assert math.isnan(paper_module.fz_loss(2.0, 1.5, 1.0, 0.95))
+    kupiec = kupiec_pof_test(
+        breaches=np.array([False, False, True, False, False, True]),
+        expected_probability=0.25,
+    )
+    assert kupiec["status"] == "ok"
+    assert cast(float, kupiec["pvalue"]) <= 1.0
 
 
 def test_closed_form_p2a_forecasts_and_unknown_model() -> None:
@@ -342,6 +448,61 @@ def test_evaluate_p2a_run_and_latex_export_with_synthetic_panel(
     assert (run_dir / "metrics" / "p2a_metrics.parquet").exists()
     assert latex.tables == 1
     assert (latex.latex_dir / "p2a_metrics_table.tex").exists()
+    assert "% config_hash:" in (latex.latex_dir / "p2a_metrics_table.tex").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_locked_run_refuses_config_mismatch_without_force(tmp_path: Path) -> None:
+    run_dir = tmp_path / "reports" / "paper_runs" / "p2a_locked"
+    panel_dir = run_dir / "panel"
+    metrics_dir = run_dir / "metrics"
+    panel_dir.mkdir(parents=True)
+    metrics_dir.mkdir(parents=True)
+    pl.DataFrame(
+        [{"forecast_date": "2026-01-01", "clean_sample": True, "realized_loss": 0.01}]
+    ).write_parquet(panel_dir / "modeling_panel.parquet")
+    (metrics_dir / "p2a_status.json").write_text("{}", encoding="utf-8")
+    (run_dir / "manifest.json").write_text('{"config_hash": "stale"}', encoding="utf-8")
+
+    with pytest.raises(paper_module.PaperRunError, match="config is locked"):
+        evaluate_p2a_run(run_dir=run_dir, workers=1)
+
+    result = evaluate_paper_run(run_dir=run_dir, workers=1, stage="p2b", force=True)
+
+    assert result.status == "unavailable_stage_not_implemented_nonblocking"
+    assert not (metrics_dir / "p2a_status.json").exists()
+    assert (run_dir / "metrics" / "p2b_status.json").exists()
+
+
+def test_write_paper_leakage_check_outputs_summary(tmp_path: Path) -> None:
+    run_dir = tmp_path / "reports" / "paper_runs" / "p2a_leakage"
+    panel_dir = run_dir / "panel"
+    panel_dir.mkdir(parents=True)
+    pl.DataFrame(
+        [
+            {
+                "forecast_date": "2026-01-05",
+                "model_cutoff_ts_utc": datetime(2026, 1, 2, 21, 30, tzinfo=UTC),
+                "target_open_ts_utc": datetime(2026, 1, 4, 23, 45, tzinfo=UTC),
+                "spy_return": 0.01,
+                "spy_return__available_ts_utc": datetime(2026, 1, 2, 21, 15, tzinfo=UTC),
+                "spy_return__fill_method": "direct",
+                "spy_return__source_date": "2026-01-02",
+            }
+        ]
+    ).write_parquet(panel_dir / "modeling_panel.parquet")
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"config_hash": paper_module.PAPER_CONFIG.config_hash()}),
+        encoding="utf-8",
+    )
+
+    result = write_paper_leakage_check(run_dir=run_dir)
+
+    assert result.rows == 1
+    assert result.failures == 0
+    assert result.warnings == 1
+    assert result.output_path.exists()
 
 
 def test_write_paper_panel_with_synthetic_vendor_rows(
@@ -444,12 +605,16 @@ def test_private_paper_helpers_cover_defensive_edges(
     assert paper_module._fmt(1.2345678) == "1.234568"
     assert paper_module._optional_float(True) is None
     assert paper_module._optional_float("bad") is None
-    assert paper_module._massive_daily_feature_map(
-        [
-            {"ticker": "SPY", "bar_date_et": "2026-01-02", "close": None},
-            {"ticker": "SPY", "bar_date_et": "2026-01-05", "close": 100.0},
-        ]
-    )["2026-01-02"]["spy_range"] is None
+    assert (
+        paper_module._massive_daily_feature_map(
+            [
+                {"ticker": "SPY", "bar_date_et": "2026-01-02", "close": None},
+                {"ticker": "SPY", "bar_date_et": "2026-01-05", "close": 100.0},
+            ]
+        )["2026-01-02"]["spy_range"]
+        is None
+    )
+
     class Fitted:
         std_resid = np.array([0.1, 0.2, math.nan])
 

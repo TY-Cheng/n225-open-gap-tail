@@ -3,7 +3,7 @@
 Use this as the single handoff for the next coding agent. It combines the development prompt with the audit checklist, so implementation and review use the same research contract.
 
 ```text
-You are working in the n225-open-gap-tail repository. Your task is to build the first reproducible research pipeline for "Forecasting Pre-Open Tail Risk in Nikkei 225 Futures Using U.S. Close Information: A Session-Aligned LightGBM-EVT Framework".
+You are working in the n225-open-gap-tail repository. Your task is to build the first reproducible research pipeline for "The Incremental Content of U.S. Close Information for Pre-Open Downside Tail Risk: Evidence from OSE Nikkei 225 Futures".
 
 The research is about OSE Nikkei 225 Futures downside pre-open tail risk, not generic Japanese equity overnight returns. OSE futures have a night session, so every model, table, and claim must state its forecast origin, reference price, target family, and information cutoff.
 
@@ -22,7 +22,8 @@ Before editing anything, read these files in order:
 
 Respect the existing workflow:
 
-- Use `just setup`, `just status`, `just test`, `just lint`, and `just docs-build` as the main entrypoints.
+- Use `just setup`, `just status`, `just check`, and `just full` as the main entrypoints.
+  Use lower-level recipes such as `just _paper-panel` and `just _paper-eval` only when debugging a specific layer.
 - The intended uv environment comes from `.env` through `UV_PROJECT_ENVIRONMENT`.
 - Treat the sibling `../agent-runner` project as an external sidecar worker pool when delegation is useful. From this repo, call it through `just agent ...`, for example `just agent litellm-status` or `just agent run-worker "Objective" "src/foo.py,tests/test_foo.py"`.
 - External worker outputs remain sidecar artifacts and worktrees until Codex or a human reviews them. Do not treat external worker patches as merged code or empirical evidence.

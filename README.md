@@ -1,6 +1,6 @@
-# n225-open-gap-tail
+# N225 Open Gap Tail Risk
 
-Research code for **Forecasting Tail Risk of Opening Gaps in Nikkei 225 Futures Using U.S. Close Information: A LightGBM-EVT Framework**.
+Research code for **The Incremental Content of U.S. Close Information for Pre-Open Downside Tail Risk: Evidence from OSE Nikkei 225 Futures**.
 
 The intended target is the next Osaka Exchange Nikkei 225 futures day-session opening gap, measured from the prior relevant OSE close or settlement to the next day-session open. The feature set should only use information observable before the Japan day-session open, with special attention to the U.S. cash close, U.S. futures marks, volatility indexes, USD/JPY, and cross-market ETF or sector signals.
 
@@ -37,7 +37,7 @@ Massive.com should be configured as the U.S. predictor source:
 ```bash
 MASSIVE_API_KEY="replace-me"
 MASSIVE_BASE_URL="https://api.massive.com"
-MASSIVE_DAILY_TICKERS="SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,C:USDJPY"
+MASSIVE_DAILY_TICKERS="SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,XLY,XLP,XLB,XLU,XLC,TLT,GLD,USO,EEM,FXI,SMH,HYG,LQD,C:USDJPY"
 MASSIVE_MINUTE_TICKER="SPY"
 MASSIVE_PROBE_TICKERS="I:VIX"
 ```
@@ -45,7 +45,7 @@ MASSIVE_PROBE_TICKERS="I:VIX"
 FRED, calendars, and rule-based Nikkei futures metadata use non-secret settings:
 
 ```bash
-FRED_SERIES="VIXCLS,DGS2,DGS10"
+FRED_SERIES="VIXCLS,DGS2,DGS10,T10Y2Y,BAMLH0A0HYM2,BAMLC0A0CM"
 CALENDAR_US_EXCHANGE="XNYS"
 CALENDAR_JPX_EXCHANGE="JPX"
 NIKKEI_CONTRACT_ROLL_DAYS_BEFORE_LAST_TRADE="5"
@@ -100,19 +100,19 @@ The FRED smoke command downloads historical VIX and Treasury-rate proxies. The c
 
 ## Paper-Grade P2A Workflow
 
-The paper-grade path is separate from smoke outputs:
+The unified paper-grade entrypoint is:
 
 ```bash
-just paper-panel
-just paper-eval
-just paper-latex-tables
+just full
 ```
 
-`paper-panel` builds the full-history modeling panel under ignored `reports/paper_runs/`.
-`paper-eval` runs the P2A baseline floor and writes sharded Parquet/JSON diagnostics.
-`paper-latex-tables` exports small LaTeX fragments from the run metrics. These outputs are
-`paper_grade_candidate_not_final_manuscript` until manually reviewed.
+`full` runs local checks, builds the full-history paper panel, runs the P2A baseline floor,
+audits feature leakage timestamps, and exports LaTeX table fragments under ignored
+`reports/paper_runs/`. These outputs are `paper_candidate_not_final_manuscript` until
+manually reviewed.
 
 For custom windows or workers, pass recipe arguments positionally, for example
-`just paper-panel 2022-01-01 2026-04-28` or
-`just paper-eval <run_id> 4 p2a`.
+`just full 2022-01-01 "" 4`. The lower-level recipes remain available for debugging:
+`_paper-panel`, `_paper-eval`, `_paper-leakage-check`, and `_paper-latex-tables`.
+`_paper-eval` uses staged dispatch: `p2a` runs the baseline floor; `p2b`/`p2c` are
+explicit nonblocking gates until their registered model implementations produce evidence.

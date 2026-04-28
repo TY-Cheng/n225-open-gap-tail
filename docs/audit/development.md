@@ -107,7 +107,7 @@ Implement the pipeline in this order:
 
 6. Feature builder
    - Build timestamp-safe U.S. close features.
-   - Include the Tier 1 and Tier 1.5 candidate universe from `docs/data.md`: U.S. ETF returns and ranges, sector returns and dispersion, USD/JPY, TLT, GLD, USO, EEM, FXI, SMH where source coverage passes audit, VIX close/range, SKEW or VIX term-structure proxies where licensed or public source support exists, Treasury rates, yield-curve slope, funding proxies, credit spreads, and calendar/event flags.
+   - Include the Tier 1 and Tier 1.5 candidate universe from `docs/data.md`: U.S. ETF returns and ranges, sector returns and dispersion, USD/JPY, TLT, GLD, USO, EEM, FXI, SMH where source coverage passes audit, Japan proxy tickers (`EWJ`, `DXJ`) and Asia proxy tickers (`EWY`, `EWT`, `EWH`) as separate P2B information blocks, VIX close/range, SKEW or VIX term-structure proxies where licensed or public source support exists, Treasury rates, yield-curve slope, funding proxies, credit spreads, and calendar/event flags.
    - Add SPY late-session minute-bar features after timestamp validation: last-30-minute return, last-hour return, late-session range, late-session volume surge, and final-window reversal or momentum. Freeze these features at U.S. close plus the configured vendor-availability lag.
    - Mandate core lagged Japanese variables:
      prior gap, lagged OSE day returns, lagged OSE night returns where available, volume and open-interest changes, roll-window flags, SQ-window flags, Japan holiday-adjacent flags, U.S. holiday-adjacent flags, U.S. early-close flags, and OSE holiday-trading flags.

@@ -223,6 +223,38 @@ def test_build_modeling_panel_records_and_feature_coverage() -> None:
                 "high": 102.0,
                 "low": 100.0,
             },
+            {
+                "ticker": "EWJ",
+                "bar_date_et": "2026-01-01",
+                "bar_end_ts_utc": datetime(2026, 1, 1, 21, 0, tzinfo=UTC),
+                "close": 70.0,
+                "high": 71.0,
+                "low": 69.0,
+            },
+            {
+                "ticker": "EWJ",
+                "bar_date_et": "2026-01-02",
+                "bar_end_ts_utc": datetime(2026, 1, 2, 21, 0, tzinfo=UTC),
+                "close": 71.0,
+                "high": 72.0,
+                "low": 70.0,
+            },
+            {
+                "ticker": "EWH",
+                "bar_date_et": "2026-01-01",
+                "bar_end_ts_utc": datetime(2026, 1, 1, 21, 0, tzinfo=UTC),
+                "close": 20.0,
+                "high": 20.5,
+                "low": 19.5,
+            },
+            {
+                "ticker": "EWH",
+                "bar_date_et": "2026-01-02",
+                "bar_end_ts_utc": datetime(2026, 1, 2, 21, 0, tzinfo=UTC),
+                "close": 20.2,
+                "high": 20.4,
+                "low": 19.9,
+            },
         ],
         spy_minute_records=[],
         fred_records=[
@@ -246,7 +278,14 @@ def test_build_modeling_panel_records_and_feature_coverage() -> None:
     assert any(row["feature"] == "spy_return" for row in coverage)
     spy_coverage = next(row for row in coverage if row["feature"] == "spy_return")
     assert spy_coverage["source_family"] == "massive_daily"
+    assert spy_coverage["source_block"] == "us_core"
     assert spy_coverage["vintage_safe"] is True
+    ewj_coverage = next(row for row in coverage if row["feature"] == "ewj_return")
+    assert ewj_coverage["source_family"] == "japan_proxy"
+    assert ewj_coverage["source_block"] == "japan_proxy"
+    ewh_coverage = next(row for row in coverage if row["feature"] == "ewh_return")
+    assert ewh_coverage["source_family"] == "asia_proxy"
+    assert ewh_coverage["source_block"] == "asia_proxy"
 
 
 def test_fields_coverage_audit_supports_clean_jquants_start() -> None:
@@ -553,6 +592,11 @@ def test_cache_coverage_guards_prevent_partial_month_reuse(tmp_path: Path) -> No
 def test_low_level_feature_and_bronze_helpers_cover_edge_cases() -> None:
     assert paper_module._feature_description("other") == "paper-grade predictor candidate"
     assert paper_module._feature_source_family("unknown") == "unknown"
+    assert "EWH" in paper_module.PAPER_FETCH_MASSIVE_TICKERS
+    assert "EWH" not in paper_module.PAPER_CORE_MASSIVE_TICKERS
+    assert paper_module._feature_source_family("ewj_return") == "japan_proxy"
+    assert paper_module._feature_source_family("ewh_return") == "asia_proxy"
+    assert paper_module._feature_source_block("qqq_return") == "us_core"
     assert paper_module._panel_join_miss_reason({}, "") == "calendar_desync"
     assert (
         paper_module._panel_join_miss_reason(
@@ -782,7 +826,15 @@ def test_locked_run_refuses_config_mismatch_without_force(tmp_path: Path) -> Non
 
     assert result.status == "unavailable_stage_not_implemented_nonblocking"
     assert not (metrics_dir / "p2a_status.json").exists()
-    assert (run_dir / "metrics" / "p2b_status.json").exists()
+    p2b_status_path = run_dir / "metrics" / "p2b_status.json"
+    assert p2b_status_path.exists()
+    registered = json.loads(p2b_status_path.read_text(encoding="utf-8"))[
+        "registered_information_sets"
+    ]
+    assert registered["model_c"] == "japan_only_plus_us_close_core_plus_japan_proxy"
+    assert registered["model_d"] == (
+        "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy"
+    )
 
 
 def test_write_paper_leakage_check_outputs_summary(tmp_path: Path) -> None:

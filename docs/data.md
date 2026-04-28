@@ -44,7 +44,7 @@ Massive and FRED predictor settings are:
 ```bash
 MASSIVE_API_KEY="replace-me"
 MASSIVE_BASE_URL="https://api.massive.com"
-MASSIVE_DAILY_TICKERS="SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,XLY,XLP,XLB,XLU,XLC,TLT,GLD,USO,EEM,FXI,SMH,HYG,LQD,C:USDJPY"
+MASSIVE_DAILY_TICKERS="SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,XLY,XLP,XLB,XLU,XLC,TLT,GLD,USO,EEM,FXI,SMH,HYG,LQD,C:USDJPY,EWJ,DXJ,EWY,EWT,EWH"
 MASSIVE_MINUTE_TICKER="SPY"
 MASSIVE_PROBE_TICKERS="I:VIX"
 
@@ -58,7 +58,8 @@ Short-history and robustness-only candidates stay out of `core_full_history`:
 
 ```bash
 POST_2018_FRED_SERIES="SOFR,EFFR"
-ROBUSTNESS_MASSIVE_TICKERS="EWJ,DXJ"
+JAPAN_PROXY_MASSIVE_TICKERS="EWJ,DXJ"
+ASIA_PROXY_MASSIVE_TICKERS="EWY,EWT,EWH"
 OPTIONAL_MASSIVE_TICKERS="UUP"
 ```
 
@@ -99,6 +100,8 @@ The first-paper predictor universe is pre-registered by economic role rather tha
 | U.S. late-session dynamics | SPY last-30-minute return, last-hour return, late-session range, late-session volume surge, final-window reversal or momentum | Massive.com minute bars | `US_CASH_CLOSE` after official close plus vendor lag | Late U.S. trading pressure and closing imbalance proxies that may be more informative than daily close-to-close moves. |
 | U.S. sectors | XLK, XLF, XLE, XLV, XLI, XLY, XLP, XLB, XLU, XLC returns and dispersion | Massive.com | `US_CASH_CLOSE` | Sector composition, growth/cyclical rotation, defensives, utilities, and communications exposure. |
 | Asia and global risk | EEM, FXI, SMH, HYG, LQD | Massive.com core candidates | `US_CASH_CLOSE` after source audit | Emerging-market, China, semiconductor, and credit-risk channels relevant to Japan. |
+| Japan proxy block | EWJ, DXJ | Massive.com P2B proxy block | `US_CASH_CLOSE` after source audit | U.S.-traded Japan equity proxies used to test whether Japan-exposure trading absorbs incremental signal beyond broad U.S. core. |
+| Asia proxy block | EWY, EWT, EWH | Massive.com P2B proxy block | `US_CASH_CLOSE` after source audit | Korea, Taiwan, and Hong Kong proxies used to test regional and supply-chain information beyond Japan proxies. |
 | FX | USD/JPY | Massive.com forex | Timestamped bar close converted from UTC | Currency channel for dollar-denominated Japanese risk and exporter exposure. |
 | Safe-haven and commodity proxies | TLT, GLD, USO | Massive.com planned candidates | `US_CASH_CLOSE` after source audit | Flight-to-quality, dollar-rate duration, and commodity-risk channels. |
 | U.S. volatility | VIX close; VIX high/low/range when available | Cboe, FRED, Massive index probe | Historical daily close or audited index timestamp | U.S. implied volatility and volatility-of-risk regime. |
@@ -108,7 +111,7 @@ The first-paper predictor universe is pre-registered by economic role rather tha
 | Event flags | FOMC, CPI, payrolls, BOJ, major Japan macro releases | Official calendars | Timestamped event flags, no numeric surprises in core design | Scheduled risk-event controls without macro feature fishing. |
 | Lagged Japanese futures state | Prior gap, lagged day return, lagged night return, volume/OI changes, roll/SQ flags | J-Quants futures after Premium access | Historical target-side variables, lagged before cutoff | Domestic state, liquidity proxy, and contract-state controls. |
 
-The Massive ticker selection covers U.S. market beta, technology and growth exposure, small-cap risk appetite, sector dispersion, FX, duration, safe-haven demand, commodities, Asia/EM risk, and semiconductors. This rationale should be reported before any model uses the expanded ticker set.
+The Massive ticker selection covers U.S. market beta, technology and growth exposure, small-cap risk appetite, sector dispersion, FX, duration, safe-haven demand, commodities, Asia/EM risk, and semiconductors. Japan and Asia proxy tickers are cached with the panel but enter the P2B nested information-set ladder separately from the broad U.S. core block.
 
 ## Data Availability Timeline
 
@@ -282,6 +285,7 @@ The data lake is intentionally tiered to prevent feature fishing.
 - Massive U.S. ETF, sector, equity-index, and USD/JPY predictors.
 - SPY minute-bar late-session features: last-30-minute return, last-hour return, late-session range, late-session volume surge, and final-window reversal or momentum, all frozen at U.S. close plus the configured vendor-availability lag.
 - Massive core block additions: XLY, XLP, XLB, XLU, XLC, TLT, GLD, USO, EEM, FXI, SMH, HYG, and LQD after source and coverage audit.
+- Massive P2B proxy blocks: Japan proxy (`EWJ`, `DXJ`) and Asia proxy (`EWY`, `EWT`, `EWH`) are cached now but interpreted separately from the core U.S. close block.
 - Cboe or FRED VIX close; VIX high, low, and range only when the source supports them.
 - FRED 2-year and 10-year Treasury yields, T10Y2Y yield-curve slope, and ICE BofA credit-spread proxies. SOFR/EFFR funding proxies are `post_2018_enriched`, not `core_full_history`.
 - Major event flags: FOMC, CPI, payrolls, BOJ policy events, and major Japan macro releases.

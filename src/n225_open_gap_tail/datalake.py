@@ -220,7 +220,7 @@ def atomic_write_parquet(
         frame = (
             pl.DataFrame(row_list, schema=schema.polars_schema, orient="row")
             if schema is not None
-            else pl.DataFrame(row_list)
+            else pl.DataFrame(row_list, infer_schema_length=None)
         )
         if schema is not None:
             frame = frame.select(

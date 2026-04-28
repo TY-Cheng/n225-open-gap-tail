@@ -1,63 +1,75 @@
----
-hide:
-  - navigation
----
-
 # Results Snapshot
 
-Static snapshot as of 2026-04-26.
+!!! warning "Smoke-only artifact"
+    This page is generated from `20220101_20260428_20260428T034829Z_commit_55d8291c`. It is pipeline evidence only, not manuscript evidence.
 
-This page records the current local data-engineering state. It is not an empirical results page: the OSE Nikkei 225 Futures target data is not yet available under the current J-Quants free plan, so no model performance claim is active.
+## Snapshot
 
-## Run Metadata
+| Field | Value |
+| --- | --- |
+| Snapshot ID | `20220101_20260428_20260428T034829Z_commit_55d8291c` |
+| Artifact root | `reports/snapshots/20220101_20260428_20260428T034829Z_commit_55d8291c` |
+| Claims level | `smoke_only_not_manuscript_evidence` |
+| Window | `['2022-01-01', '2026-04-28']` |
+| Target rows | `1055` |
+| Clean target rows | `969` |
+| Roll/SQ excluded rows | `85` |
+| Time-alignment failures | `0` |
+| Model smoke status | `smoke_metrics_available` |
 
-Field | Value
---- | ---
-Workflow front door | `just`
-Python environment | external `UV_PROJECT_ENVIRONMENT`
-Latest quality gate | `just test`, `just docs-build`
-Test status | 29 passed
-Coverage | 96.68%
-Docs build | strict MkDocs build passed
+## Interpretation Boundary
 
-## Interpretation Summary
+This snapshot validates data access, target construction, timestamp alignment, predictor availability, and smoke-only model wiring. It does **not** support claims about causal spillover, price discovery, trading alpha, live deployment, LightGBM-EVT superiority, or ES improvement.
 
-The repository is ready for target-data ingestion once a futures-capable J-Quants subscription is available. U.S. predictor ingestion, FRED risk proxies, calendar alignment, and rule-based contract scaffolding are implemented and tested. The research pipeline has not yet reached target construction, feature-table construction, baseline modeling, LightGBM, EVT, or VaR-ES evaluation.
+## Model Smoke
 
-## Data Engineering Snapshot
+The model layer is deliberately labeled as smoke-only. If LightGBM or EVT gates are unavailable, that is a valid engineering result rather than weak empirical evidence.
 
-Source | Current command | Current local result | Status
---- | --- | --- | ---
-Massive.com | `n225-open-gap-tail massive-smoke` | 50 daily rows across 10 U.S. ETF/FX predictors; SPY minute sample has 921 rows, including 390 regular-session rows. | Implemented and smoke-tested.
-FRED | `n225-open-gap-tail fred-smoke` | 15 rows for `VIXCLS`, `DGS2`, and `DGS10` over the smoke window. | Implemented and smoke-tested.
-Calendars | `n225-open-gap-tail calendar-build` | 31 January 2026 calendar rows; 20 U.S. trading days and 19 JPX trading days. | Implemented as alignment scaffold.
-Contract metadata | `n225-open-gap-tail contracts-build` | 9 rule-based quarterly contracts; 242 central-contract selector rows; 20 roll-window rows. | Implemented as rule-based scaffold.
-J-Quants | `n225-open-gap-tail jquants-smoke` | Equity smoke works; futures endpoint remains unavailable on the free plan. | Target-data blocker.
+```json
+{
+  "alpha": 0.05,
+  "claims_level": "smoke_only_not_manuscript_evidence",
+  "evt_loc": 0.0,
+  "evt_scale": 0.008869544882098554,
+  "evt_shape": 0.18920402319765245,
+  "evt_status": "smoke_fit_available",
+  "evt_threshold": 0.01609874738650294,
+  "evt_threshold_quantile": 0.95,
+  "evt_threshold_selection": "empirical_95pct_smoke; final paper requires mean-excess and parameter-stability diagnostics",
+  "evt_train_exceedances": 39,
+  "historical_quantile_exception_rate": 0.05154639175257732,
+  "lightgbm_exception_rate": 0.04639175257731959,
+  "lightgbm_status": "smoke_metrics_available",
+  "min_test_rows_for_metrics": 20,
+  "min_total_rows_for_split": 120,
+  "min_train_exceedances_for_evt": 30,
+  "min_train_rows_for_lightgbm": 80,
+  "no_leaderboard": true,
+  "overall_status": "smoke_metrics_available",
+  "rolling_quantile_exception_rate": 0.04639175257731959,
+  "target": "full_gap_settle_to_open",
+  "test_rows": 194,
+  "total_clean_rows": 969,
+  "train_rows": 775,
+  "vol_scaled_exception_rate": 0.05154639175257732
+}
+```
 
 ## Artifact Index
 
-Artifact family | Path pattern | Tracked?
---- | --- | ---
-Massive raw smoke | `data/raw/massive/` | No
-Massive normalized parquet | `data/interim/massive/` | No
-FRED raw and parquet | `data/raw/fred/`, `data/interim/fred/` | No
-Calendar tables | `data/raw/calendars/`, `data/interim/calendars/` | No
-Contract metadata | `data/raw/contracts/`, `data/interim/contracts/` | No
-Docs build | `site/` | No
-Secrets and local environment | `.env`, `uv.lock` | No
-
-## Current Blockers
-
-1. **Futures target access.** The main target requires OSE Nikkei 225 Futures daily/session OHLC, settlement, volume, open interest, contract month, last trading day, and SQ fields. The current J-Quants free plan does not provide the futures endpoint.
-2. **Vendor reconciliation.** Rule-based contract metadata is useful for implementation and tests, but final empirical work must reconcile it with J-Quants or JPX contract metadata.
-3. **No model evidence yet.** Any statement about LightGBM-EVT performance, VaR/ES calibration, or hedge-trigger usefulness remains planned until the target and feature builders are complete.
-
-## Next Evidence Gate
-
-The next gate is the **target data audit**:
-
-- confirm futures subscription access;
-- download a bounded historical futures sample;
-- build and audit `full_gap_settle_to_open`;
-- trace extreme gaps back to raw futures rows;
-- verify roll, SQ, holiday, and missing-session flags.
+| Artifact | Path |
+| --- | --- |
+| `manifest` | `reports/snapshots/20220101_20260428_20260428T034829Z_commit_55d8291c/manifest.json` |
+| `data_vintage` | `reports/snapshots/20220101_20260428_20260428T034829Z_commit_55d8291c/data_vintage.json` |
+| `schema_probe` | `reports/snapshots/20220101_20260428_20260428T034829Z_commit_55d8291c/jquants_schema_probe.json` |
+| `audit_header` | `reports/snapshots/20220101_20260428_20260428T034829Z_commit_55d8291c/audit_header.json` |
+| `normalized_jquants` | `reports/snapshots/20220101_20260428_20260428T034829Z_commit_55d8291c/target_audit/jquants_futures_normalized.parquet` |
+| `target_audit` | `reports/snapshots/20220101_20260428_20260428T034829Z_commit_55d8291c/target_audit/target_audit.parquet` |
+| `time_alignment` | `reports/snapshots/20220101_20260428_20260428T034829Z_commit_55d8291c/target_audit/time_alignment_check.parquet` |
+| `calendar_alignment` | `reports/snapshots/20220101_20260428_20260428T034829Z_commit_55d8291c/target_audit/calendar_alignment.parquet` |
+| `massive_daily` | `reports/snapshots/20220101_20260428_20260428T034829Z_commit_55d8291c/predictors/massive_daily.parquet` |
+| `spy_minutes` | `reports/snapshots/20220101_20260428_20260428T034829Z_commit_55d8291c/predictors/spy_minutes.parquet` |
+| `fred` | `reports/snapshots/20220101_20260428_20260428T034829Z_commit_55d8291c/predictors/fred.parquet` |
+| `predictor_availability` | `reports/snapshots/20220101_20260428_20260428T034829Z_commit_55d8291c/predictors/predictor_availability.parquet` |
+| `model_smoke` | `reports/snapshots/20220101_20260428_20260428T034829Z_commit_55d8291c/model_smoke/model_smoke_status.json` |
+| `narrative` | `reports/snapshots/20220101_20260428_20260428T034829Z_commit_55d8291c/narrative/snapshot_summary.md` |

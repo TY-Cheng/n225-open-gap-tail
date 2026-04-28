@@ -64,7 +64,7 @@ Minimum viable dataset:
 Current source view:
 
 - Massive.com is useful for U.S. close-side predictors, especially U.S. equities, ETFs, indexes, options, and CME-group futures as available by plan. It is not the primary source for OSE/JPX Nikkei 225 futures.
-- JPX/J-Quants API is the right first source for daily OSE futures OHLC if the target is the Japanese Nikkei 225 futures contract. New development should use the V2 API key flow. The current free plan can smoke-test equity master and equity daily bars, but it does not include the futures daily OHLC target.
+- JPX/J-Quants API is the right first source for daily OSE futures OHLC if the target is the Japanese Nikkei 225 futures contract. New development should use the V2 API key flow. The current local setup has Premium futures access for historical target audits; this remains a research source, not a live pre-open feed.
 - JPX/J-Quants DataCube is the escalation path for one-minute or tick data if the opening print or session mechanics need higher-frequency validation.
 - Nikkei Indexes can support spot Nikkei 225 OHLC, but that is not a substitute for the futures open/close target.
 
@@ -89,9 +89,10 @@ n225-open-gap-tail massive-smoke
 n225-open-gap-tail fred-smoke
 n225-open-gap-tail calendar-build
 n225-open-gap-tail contracts-build
+n225-open-gap-tail snapshot
 ```
 
-This downloads a tiny J-Quants V2 free-plan sample for equity master and equity daily bars, then probes the futures endpoint to confirm whether the current subscription can access the project target data. Raw smoke artifacts are written under ignored `data/raw/`.
+The J-Quants smoke command downloads a tiny V2 sample and probes the futures endpoint. The snapshot command runs the 2022-present full-smoke target audit and predictor availability pipeline, writes Parquet/JSON artifacts under ignored `reports/snapshots/`, and regenerates `docs/results_snapshot.md`.
 
 The Massive smoke command downloads a small U.S. daily aggregate panel plus a one-day minute aggregate sample. Raw API payloads go under ignored `data/raw/massive/`; normalized parquet files with timestamp audit columns go under ignored `data/interim/massive/`.
 

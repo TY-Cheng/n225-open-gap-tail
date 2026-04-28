@@ -221,6 +221,6 @@ def _parse_fred_csv(text: str, series_id: str) -> list[dict[str, str]]:
 
 
 def _parse_optional_float(value: str) -> float | None:
-    if value == ".":
+    if value in {"", "."}:
         return None
     return float(value)

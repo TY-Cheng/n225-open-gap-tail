@@ -25,6 +25,9 @@ def test_build_session_calendar_records_marks_holidays_and_dst() -> None:
     assert by_date["2026-01-05"]["us_close_ts_utc"] is not None
     assert by_date["2026-01-05"]["us_close_ts_jst"] is not None
     assert by_date["2026-01-05"]["is_us_dst"] is False
+    assert by_date["2026-01-05"]["dst_regime"] == "EST"
+    assert by_date["2026-01-05"]["us_close_to_ose_night_close_minutes"] == 0
+    assert by_date["2026-01-05"]["absorption_regime"] == "coincident_us_ose_night_close"
 
     summer = build_session_calendar_records(
         start="2026-07-01",
@@ -33,6 +36,9 @@ def test_build_session_calendar_records_marks_holidays_and_dst() -> None:
         jpx_exchange="JPX",
     )
     assert summer[0]["is_us_dst"] is True
+    assert summer[0]["dst_regime"] == "EDT"
+    assert summer[0]["us_close_to_ose_night_close_minutes"] == 60
+    assert summer[0]["absorption_regime"] == "post_us_close_night_absorption"
 
 
 def test_build_session_calendar_records_marks_us_early_close() -> None:
@@ -47,6 +53,8 @@ def test_build_session_calendar_records_marks_us_early_close() -> None:
     assert by_date["2026-11-26"]["is_us_weekday_holiday"] is True
     assert by_date["2026-11-27"]["is_us_trading_day"] is True
     assert by_date["2026-11-27"]["is_us_early_close"] is True
+    assert by_date["2026-11-27"]["us_close_to_ose_night_close_minutes"] == 180
+    assert by_date["2026-11-27"]["absorption_regime"] == "post_us_close_night_absorption"
 
 
 def test_write_calendar_table_writes_metadata_and_parquet(tmp_path: Path) -> None:
@@ -65,3 +73,5 @@ def test_write_calendar_table_writes_metadata_and_parquet(tmp_path: Path) -> Non
     assert result.jpx_trading_days == 5
     assert frame.height == 10
     assert "is_us_early_close" in frame.columns
+    assert "us_close_to_ose_night_close_minutes" in frame.columns
+    assert "absorption_regime" in frame.columns

@@ -58,7 +58,7 @@ artifacts are paper candidates, not final manuscript claims.
 
 `just full` defaults to `2016-07-19` as a cache lower bound. The run manifest computes
 `combined_clean_start` from required J-Quants field coverage, XLC-inclusive Massive core
-coverage, required FRED core coverage, and the canonical USD/JPY fallback. J-Quants
+coverage, required FRED core coverage, and the canonical FRED H.10 USD/JPY control. J-Quants
 target-history audit can still be run from `2008-05-07`, but it is not the default clean
 predictor sample.
 
@@ -67,7 +67,9 @@ and `data/silver/`, run-scoped gold panel artifacts under `reports/paper_runs/<r
 atomic writes with `xxhash64` chunk hashes, run-start cleanup of orphan temp files,
 early-close-aware Massive daily and SPY late-session features, and FRED current-historical
 caches labeled `vintage_safe=false` with TTL decisions made once at run start. `DEXJPUS`
-uses H.10 batch-release as-of timing; Massive `C:USDJPY` is optional FX fallback evidence.
+uses H.10 batch-release as-of timing and is the only default USD/JPY source. Ordinary
+FRED rates/VIX predictors use per-feature timestamp-safe as-of fill, with filled diffs
+marked and `fred_rates_staleness_days` available to the expanded P2B block.
 
 Custom windows and workers use positional recipe arguments, for example
 `just full 2022-01-01 "" 4`. The lower-level recipes remain available for debugging:
@@ -80,7 +82,7 @@ Layer | Current state | Boundary
 U.S. predictors | Massive and FRED smoke ingestion implemented and tested. | These are historical predictor sources, not live production feeds.
 Calendar and contract scaffolding | XNYS/JPX calendars, early closes, DST, quarterly contract metadata, roll windows, and central-contract selector implemented. | Rule-based Nikkei futures metadata must be reconciled against J-Quants or JPX metadata before final empirical results.
 Target data | J-Quants Premium futures daily OHLC is accessible and the 2022-present target audit snapshot runs. | The snapshot is smoke evidence; final paper results need the full paper-grade rolling evaluation.
-Modeling | P2A historical, rolling, vol-scaled, GARCH/GJR, and GJR-EVT baseline floor runs behind gates. P2B LightGBM direct-quantile runs the registered information-set ladder after the leakage gate passes. | P2B location-scale/EVT hybrids, GW/MCS/DST formal inference, and P2C advanced econometric models remain unavailable until their registered implementations complete.
+Modeling | P2A historical, rolling, vol-scaled, GARCH/GJR, and GJR-EVT baseline floor runs behind gates. P2B LightGBM direct-quantile runs the registered information-set ladder after the leakage gate passes. Block-bootstrap DM, HLN Tmax MCS, Murphy, stress-window, and feature-unavailability diagnostics are artifact-level inference outputs. | P2B location-scale/EVT hybrids, instrumented GW regression, DST formal mechanism tests, and P2C advanced econometric models remain unavailable until their registered implementations complete.
 
 ## Reading Order
 

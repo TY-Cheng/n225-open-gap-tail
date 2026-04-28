@@ -43,11 +43,14 @@ def test_core_feature_sets_exclude_short_history_and_robustness_tickers() -> Non
         JAPAN_PROXY_MASSIVE_TICKERS + ASIA_PROXY_MASSIVE_TICKERS
     )
     assert "C:USDJPY" not in config.feature_sets.massive_core
-    assert "C:USDJPY" in config.feature_sets.massive_optional
+    assert "C:USDJPY" not in config.feature_sets.massive_optional
+    assert config.feature_sets.massive_optional == ("UUP",)
     assert "DEXJPUS" in config.feature_sets.fred_fallback
     assert "BAMLH0A0HYM2" in config.feature_sets.fred_credit_enriched
     assert config.feature_sets.p2b_model_d_information_set.endswith("plus_asia_proxy")
     assert config.leakage_policy.fred_availability_lag_us_business_days == 1
+    assert config.leakage_policy.max_forward_fill_us_close_days == 7
+    assert config.leakage_policy.fred_h10_release_age_cap_calendar_days == 8
 
 
 def test_config_hash_is_stable_and_env_defaults_sync_with_core_lists(

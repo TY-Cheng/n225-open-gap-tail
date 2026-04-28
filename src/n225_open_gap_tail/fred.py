@@ -278,9 +278,17 @@ def _parse_fred_csv(text: str, series_id: str) -> list[dict[str, str]]:
 def _add_us_business_days(start_date: date, days: int) -> date:
     current = start_date
     remaining = days
+    holiday_calendar = USFederalHolidayCalendar()
+    holiday_dates = {
+        item.date()
+        for item in holiday_calendar.holidays(
+            start=start_date.isoformat(),
+            end=(start_date + timedelta(days=max(days * 3 + 14, 21))).isoformat(),
+        )
+    }
     while remaining > 0:
         current = current + timedelta(days=1)
-        if current.weekday() < 5:
+        if current.weekday() < 5 and current not in holiday_dates:
             remaining -= 1
     return current
 

@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     massive_api_key: str = ""
     massive_base_url: str = "https://api.massive.com"
     massive_request_timeout_seconds: int = 30
+    massive_min_request_interval_seconds: float = 0.0
+    massive_max_retries: int = 2
+    massive_rate_limit_backoff_seconds: float = 60.0
     massive_daily_tickers: str = ",".join(CORE_MASSIVE_TICKERS)
     massive_minute_ticker: str = "SPY"
     massive_probe_tickers: str = "I:VIX"
@@ -39,6 +42,10 @@ class Settings(BaseSettings):
     fred_base_url: str = "https://fred.stlouisfed.org"
     fred_request_timeout_seconds: int = 30
     fred_series: str = ",".join(CORE_FRED_SERIES)
+
+    cboe_base_url: str = "https://cdn.cboe.com"
+    cboe_vol_index_symbols: str = "VIX"
+    cboe_request_timeout_seconds: int = 30
 
     calendar_us_exchange: str = "XNYS"
     calendar_jpx_exchange: str = "JPX"
@@ -77,6 +84,9 @@ class Settings(BaseSettings):
 
     def fred_series_list(self) -> tuple[str, ...]:
         return split_csv(self.fred_series)
+
+    def cboe_vol_index_symbol_list(self) -> tuple[str, ...]:
+        return split_csv(self.cboe_vol_index_symbols)
 
     def nikkei_contract_month_list(self) -> tuple[int, ...]:
         return tuple(int(month) for month in split_csv(self.nikkei_contract_months))

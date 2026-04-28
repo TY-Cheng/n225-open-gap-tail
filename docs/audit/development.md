@@ -26,15 +26,15 @@ Respect the existing workflow:
   Use lower-level recipes such as `just _paper-panel` and `just _paper-eval` only when debugging a specific layer.
 - `just full` defaults to `2016-07-19` as a cache lower bound. The manifest computes
   `combined_clean_start` from required J-Quants field coverage, XLC-inclusive Massive core
-  coverage, required FRED core coverage, and canonical USD/JPY fallback coverage. Do not
+  coverage, required FRED core coverage, and canonical FRED H.10 USD/JPY coverage. Do not
   hard-code a later modeling start in model code.
 - Treat the data path as cache-first: Hive-style typed Parquet, atomic writes, `xxhash64`
   chunk hashes, run-start GC of orphan temp files, and layer-aware rebuilds. Rebuilding
   silver/gold must not call vendor APIs unless bronze is missing or refresh was explicitly
   requested.
 - FRED current-historical caches are `vintage_safe=false`; TTL is evaluated once at run
-  start, never mid-run. `DEXJPUS` must use H.10 batch-release as-of timing, while Massive
-  `C:USDJPY` remains optional FX fallback/enriched evidence.
+  start, never mid-run. `DEXJPUS` must use H.10 batch-release as-of timing and is the
+  only default USD/JPY source.
 - The intended uv environment comes from `.env` through `UV_PROJECT_ENVIRONMENT`.
 - Treat the sibling `../agent-runner` project as an external sidecar worker pool when delegation is useful. From this repo, call it through `just agent ...`, for example `just agent litellm-status` or `just agent run-worker "Objective" "src/foo.py,tests/test_foo.py"`.
 - External worker outputs remain sidecar artifacts and worktrees until Codex or a human reviews them. Do not treat external worker patches as merged code or empirical evidence.
@@ -110,7 +110,7 @@ Implement the pipeline in this order:
 6. Feature builder
    - Build timestamp-safe U.S. close features.
    - Include the Tier 1 and Tier 1.5 candidate universe from `docs/data.md`: U.S. ETF returns and ranges, sector returns and dispersion, USD/JPY, TLT, GLD, USO, EEM, FXI, SMH where source coverage passes audit, Japan proxy tickers (`EWJ`, `DXJ`) and Asia proxy tickers (`EWY`, `EWT`, `EWH`) as separate P2B information blocks, VIX close/range, SKEW or VIX term-structure proxies where licensed or public source support exists, Treasury rates, yield-curve slope, funding proxies, credit spreads, and calendar/event flags.
-   - Add SPY late-session minute-bar features after timestamp validation: last-30-minute return, last-hour return, late-session range, late-session volume surge, and final-window reversal or momentum. Freeze these features at U.S. close plus the configured vendor-availability lag.
+   - Add SPY late-session minute-bar features after timestamp validation: last-30-minute return, last-hour return, late-session range, late-60-minute volume surge, and final-window reversal or momentum. Freeze these features at U.S. close plus the configured vendor-availability lag, and recompute the volume-surge baseline across loaded cache partitions rather than inside each monthly chunk.
    - Mandate core lagged Japanese variables:
      prior gap, lagged OSE day returns, lagged OSE night returns where available, volume and open-interest changes, roll-window flags, SQ-window flags, Japan holiday-adjacent flags, U.S. holiday-adjacent flags, U.S. early-close flags, and OSE holiday-trading flags.
    - Add DST absorption fields:
@@ -164,7 +164,11 @@ Implement the pipeline in this order:
     - Produce reproducible tables and figures under ignored report/artifact directories.
     - Report quantile loss, VaR coverage, conditional coverage or independence tests, dynamic quantile diagnostics where feasible, Fissler-Ziegel joint VaR-ES score, ES exceedance severity diagnostics, and tail ranking metrics.
     - Build Murphy diagrams for VaR-ES dominance diagnostics; treat them as diagnostic plots, not standalone significance tests.
-    - Build model-comparison artifacts with Giacomini-White where feasible, Diebold-Mariano with HAC or block-bootstrap fallback, and Model Confidence Set when the OOS loss series supports it.
+    - Build model-comparison artifacts with block-bootstrap DM and HLN Tmax MCS when the OOS loss series supports it. True instrumented GW regression remains a separate future implementation.
+    - Inspect `p2b_feature_unavailability.parquet` and
+      `p2b_feature_unavailability_dates.parquet` before changing model-eviction thresholds;
+      release-lagged FRED rates should be handled by timestamp-safe fill metadata, while
+      remaining SPY late-session volume gaps are explicit active-feature exclusions.
     - Report quantile-score calibration and sharpness decomposition when implementation is stable.
     - Build incremental-information tables in this order:
       Japan-only, Japan plus U.S. close core, Japan plus U.S. close core plus Japan proxy,

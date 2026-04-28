@@ -130,6 +130,19 @@ def test_h10_release_moves_when_monday_is_federal_holiday() -> None:
     )
 
 
+def test_normal_fred_lag_skips_us_federal_holidays() -> None:
+    records = normalize_fred_rows(
+        series_id="VIXCLS",
+        rows=[{"observation_date": "2026-01-16", "value": "20.0"}],
+        start="2026-01-16",
+        end="2026-01-16",
+        research_download_ts_utc=datetime(2026, 1, 16, tzinfo=UTC),
+    )
+
+    assert records[0]["vendor_available_date_et"] == "2026-01-20"
+    assert records[0]["vendor_available_ts_utc"] == datetime(2026, 1, 20, 21, 0, tzinfo=UTC)
+
+
 def test_write_fred_smoke_sample_writes_bronze_and_silver(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         series_id = request.url.params["id"]

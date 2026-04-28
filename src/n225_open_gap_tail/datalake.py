@@ -38,6 +38,7 @@ class ParquetSchema:
     name: str
     version: int
     columns: tuple[tuple[str, Any], ...]
+    required_columns: tuple[str, ...] = ()
 
     @property
     def polars_schema(self) -> dict[str, Any]:
@@ -50,6 +51,7 @@ class ParquetSchema:
                 "name": self.name,
                 "version": self.version,
                 "columns": [(name, str(dtype)) for name, dtype in self.columns],
+                "required_columns": self.required_columns,
             },
             sort_keys=True,
         )
@@ -94,6 +96,7 @@ JQUANTS_BRONZE_SCHEMA = ParquetSchema(
         ("requested_date", pl.Utf8),
         ("research_download_ts_utc", pl.Datetime("us", "UTC")),
     ),
+    required_columns=("Date", "ProdCat", "Code", "requested_date", "research_download_ts_utc"),
 )
 
 JQUANTS_SILVER_SCHEMA = ParquetSchema(
@@ -125,6 +128,14 @@ JQUANTS_SILVER_SCHEMA = ParquetSchema(
         ("day_session_ohlc_violation", pl.Boolean),
         ("night_session_ohlc_violation", pl.Boolean),
     ),
+    required_columns=(
+        "trading_date",
+        "product_category",
+        "contract_code",
+        "target_open_ts_utc",
+        "vendor_available_ts_utc",
+        "research_download_ts_utc",
+    ),
 )
 
 CALENDAR_MAP_SCHEMA = ParquetSchema(
@@ -144,11 +155,12 @@ CALENDAR_MAP_SCHEMA = ParquetSchema(
         ("mapping_status", pl.Utf8),
         ("mapping_reason", pl.Utf8),
     ),
+    required_columns=("ose_trading_date", "mapping_status"),
 )
 
 SPY_MINUTE_FEATURE_SCHEMA = ParquetSchema(
     name="spy_minute_derived_features",
-    version=DEFAULT_SCHEMA_VERSION,
+    version=2,
     columns=(
         ("bar_date_et", pl.Utf8),
         ("bar_end_ts_utc", pl.Datetime("us", "UTC")),
@@ -159,10 +171,18 @@ SPY_MINUTE_FEATURE_SCHEMA = ParquetSchema(
         ("spy_late_session_range", pl.Float64),
         ("spy_late_volume_surge", pl.Float64),
         ("spy_final_window_momentum", pl.Float64),
+        ("late_60m_volume_for_surge", pl.Float64),
+        ("regular_session_volume_for_surge", pl.Float64),
         ("feature_available_ts_utc", pl.Datetime("us", "UTC")),
         ("official_close_ts_utc", pl.Datetime("us", "UTC")),
         ("selected_close_bar_end_ts_utc", pl.Datetime("us", "UTC")),
         ("vendor_lag_seconds", pl.Int64),
+    ),
+    required_columns=(
+        "bar_date_et",
+        "bar_end_ts_utc",
+        "feature_available_ts_utc",
+        "official_close_ts_utc",
     ),
 )
 
@@ -178,6 +198,14 @@ FRED_CACHE_SCHEMA = ParquetSchema(
         ("research_download_ts_utc", pl.Datetime("us", "UTC")),
         ("vintage_policy", pl.Utf8),
         ("vintage_safe", pl.Boolean),
+    ),
+    required_columns=(
+        "series_id",
+        "observation_date",
+        "vendor_available_ts_utc",
+        "research_download_ts_utc",
+        "vintage_policy",
+        "vintage_safe",
     ),
 )
 
@@ -225,7 +253,7 @@ def atomic_write_parquet(
         if schema is not None:
             frame = frame.select(
                 [
-                    pl.col(name).cast(dtype, strict=False).alias(name)
+                    pl.col(name).cast(dtype, strict=name in schema.required_columns).alias(name)
                     for name, dtype in schema.columns
                 ]
             )

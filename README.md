@@ -117,7 +117,7 @@ ladder, and exports LaTeX table fragments under ignored
 `reports/paper_runs/`. The default panel start is `2016-07-19`; the run manifest then
 computes `combined_clean_start` from required features only: J-Quants required-field
 coverage, XLC-inclusive Massive core coverage, FRED core coverage, and the canonical
-USD/JPY fallback. These outputs are
+FRED H.10 USD/JPY control. These outputs are
 `paper_candidate_not_final_manuscript` until manually reviewed.
 
 The data path is typed and resumable:
@@ -129,17 +129,24 @@ The data path is typed and resumable:
 - Parquet writes are atomic and carry `xxhash64` chunk hashes plus schema hashes.
 - Old orphan `.tmp` files are garbage-collected at run start.
 - FRED current-historical caches are labeled `vintage_safe=false`; `DEXJPUS` is treated
-  as a Federal Reserve H.10 weekly-batch as-of FX control, not a live FX mark. Massive
-  `C:USDJPY` is optional fallback/enriched evidence when available.
+  as a Federal Reserve H.10 weekly-batch as-of FX control, not a live FX mark.
 - FRED current-historical caches use a 30-day TTL that is
   evaluated once at run start, not mid-run.
+- Non-FX FRED predictors are selected feature-by-feature using timestamp-safe as-of
+  logic. Release-lag fills carry explicit metadata, filled diffs are marked, and
+  `fred_rates_staleness_days` enters the expanded P2B block as an auditable staleness
+  feature.
 - SPY minute bars are reduced chunk-by-chunk to late-session features using the official
-  NYSE close or early close; full raw minute history is not retained by default.
+  NYSE close or early close; the late-volume-surge baseline is recomputed across loaded
+  cache partitions, and full raw minute history is not retained by default.
 - Derivatives intraday remains disabled, so `residual_usclosemark_to_open` is extension-only.
+- P2B writes feature-unavailability diagnostics under
+  `reports/paper_runs/<run_id>/metrics/`, including aggregate and date-level Parquet
+  tables for missing active features.
 
 For custom windows or workers, pass recipe arguments positionally, for example
 `just full 2022-01-01 "" 4`. The lower-level recipes remain available for debugging:
 `_paper-panel`, `_paper-eval`, `_paper-leakage-check`, and `_paper-latex-tables`.
 `_paper-eval` uses staged dispatch: `p2a` runs the baseline floor; `p2b` runs the
 LightGBM direct-quantile information-set ladder; `p2c` remains an explicit
-nonblocking gate for advanced econometric models and formal inference.
+nonblocking gate for advanced econometric models.

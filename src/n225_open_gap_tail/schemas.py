@@ -37,12 +37,25 @@ class MappingStatus(StrEnum):
     UNMAPPED = "unmapped"
 
 
+class ForecastExclusionReason(StrEnum):
+    """First-failure reasons for excluding a row from the forecast sample."""
+
+    BEFORE_COMBINED_CLEAN_START = "before_combined_clean_start"
+    TARGET_NOT_CLEAN = "target_not_clean"
+    MAPPING_NOT_NORMAL = "mapping_status_not_normal_trading"
+    JOIN_MISS = "has_join_miss_reason"
+    MISSING_CUTOFF_OR_TARGET_OPEN = "missing_cutoff_or_target_open"
+    CUTOFF_AFTER_TARGET_OPEN = "cutoff_after_target_open"
+
+
 class JoinMissReason(StrEnum):
     """Typed reasons for predictor-target join gaps in the gold panel."""
 
     PREDICTOR_UNAVAILABLE_ENTITLEMENT = "predictor_unavailable_entitlement"
     PREDICTOR_MISSING_IN_CACHE = "predictor_missing_in_cache"
     FRED_NOT_YET_RELEASED = "fred_not_yet_released"
+    FRED_H10_RELEASE_DELAY = "fred_h10_release_delay"
+    FRED_FX_NULL_OBSERVATION = "fred_fx_null_observation"
     FRED_FX_STALE_BEYOND_FILL_WINDOW = "fred_fx_stale_beyond_fill_window"
     FRED_VINTAGE_UNSAFE = "fred_vintage_not_realtime_safe"
     US_MARKET_CLOSED = "us_market_closed"

@@ -5,6 +5,7 @@ from typer.testing import CliRunner
 
 import n225_open_gap_tail.cli as cli
 from n225_open_gap_tail.calendars import CalendarBuildResult
+from n225_open_gap_tail.cboe import CboeSmokeResult
 from n225_open_gap_tail.cli import app
 from n225_open_gap_tail.contracts import ContractMetadataResult
 from n225_open_gap_tail.fred import FredSmokeResult
@@ -17,6 +18,11 @@ from n225_open_gap_tail.paper import (
     PaperPanelResult,
 )
 from n225_open_gap_tail.research_config import CORE_FRED_SERIES, CORE_MASSIVE_TICKERS
+from n225_open_gap_tail.snapshot import SnapshotResult
+
+
+def test_format_statuses_empty_mapping() -> None:
+    assert cli._format_statuses({}) == "<none>"
 
 
 def test_status_reports_environment_without_secret_values(
@@ -212,6 +218,51 @@ def test_fred_smoke_command_reports_summary(
     assert "series rows: VIXCLS=2, DGS10=2" in result.output
 
 
+def test_cboe_smoke_command_reports_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    bronze_path = tmp_path / "cboe_smoke.json"
+    parquet_path = tmp_path / "cboe.parquet"
+    consistency_path = tmp_path / "cboe_consistency.parquet"
+
+    def fake_write_cboe_smoke_sample(**kwargs: object) -> CboeSmokeResult:
+        assert kwargs["symbols"] == ("VIX", "VIX9D")
+        return CboeSmokeResult(
+            bronze_payload_path=bronze_path,
+            parquet_path=parquet_path,
+            consistency_path=consistency_path,
+            rows=4,
+            symbols_statuses={"VIX": 200, "VIX9D": 200},
+            symbols_rows={"VIX": 2, "VIX9D": 2},
+            consistency_warnings=1,
+        )
+
+    monkeypatch.setattr(cli, "write_cboe_smoke_sample", fake_write_cboe_smoke_sample)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "cboe-smoke",
+            "--symbols",
+            "VIX,VIX9D",
+            "--start",
+            "2026-01-05",
+            "--end",
+            "2026-01-06",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert f"bronze payload wrote: {bronze_path}" in result.output
+    assert f"parquet wrote: {parquet_path}" in result.output
+    assert f"consistency parquet wrote: {consistency_path}" in result.output
+    assert "rows: 4" in result.output
+    assert "symbol statuses: VIX=200, VIX9D=200" in result.output
+    assert "symbol rows: VIX=2, VIX9D=2" in result.output
+    assert "vix consistency warnings: 1" in result.output
+
+
 def test_calendar_build_command_reports_summary(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -293,6 +344,36 @@ def test_contracts_build_command_reports_summary(
     assert "contracts: 16" in result.output
     assert "selector rows: 245" in result.output
     assert "roll-window rows: 20" in result.output
+
+
+def test_snapshot_command_reports_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    snapshot_dir = tmp_path / "snapshot"
+    docs_results = tmp_path / "docs" / "results_snapshot.md"
+
+    def fake_write_full_smoke_snapshot(**kwargs: object) -> SnapshotResult:
+        assert kwargs["start"] == "2022-01-01"
+        assert kwargs["end"] is None
+        return SnapshotResult(
+            snapshot_id="snapshot_1",
+            snapshot_dir=snapshot_dir,
+            docs_results_path=docs_results,
+            target_rows=25,
+            model_status="completed",
+        )
+
+    monkeypatch.setattr(cli, "write_full_smoke_snapshot", fake_write_full_smoke_snapshot)
+
+    result = CliRunner().invoke(app, ["snapshot"])
+
+    assert result.exit_code == 0
+    assert "snapshot id: snapshot_1" in result.output
+    assert f"snapshot dir: {snapshot_dir}" in result.output
+    assert f"docs results snapshot: {docs_results}" in result.output
+    assert "target rows: 25" in result.output
+    assert "model status: completed" in result.output
 
 
 def test_paper_panel_command_reports_summary(
@@ -393,7 +474,18 @@ def test_paper_grade_command_runs_panel_eval_and_latex(
             tables=1,
         )
 
+    def fake_write_paper_leakage_check(**kwargs: object) -> PaperLeakageCheckResult:
+        assert kwargs["run_dir"] == run_dir
+        return PaperLeakageCheckResult(
+            run_id="p2a_test",
+            output_path=run_dir / "audits" / "leakage_check.parquet",
+            rows=100,
+            failures=0,
+            warnings=0,
+        )
+
     monkeypatch.setattr(cli, "write_paper_panel", fake_write_paper_panel)
+    monkeypatch.setattr(cli, "write_paper_leakage_check", fake_write_paper_leakage_check)
     monkeypatch.setattr(cli, "evaluate_paper_run", fake_evaluate_paper_run)
     monkeypatch.setattr(cli, "write_paper_latex_tables", fake_write_paper_latex_tables)
 

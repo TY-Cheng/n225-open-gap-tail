@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import json
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -92,6 +92,7 @@ def normalize_fred_rows(
     end: str,
     research_download_ts_utc: datetime,
     us_timezone: str = "America/New_York",
+    availability_lag_us_business_days: int = 1,
 ) -> list[dict[str, object]]:
     start_date = date.fromisoformat(start)
     end_date = date.fromisoformat(end)
@@ -108,16 +109,30 @@ def normalize_fred_rows(
             time(16, 0),
             tzinfo=us_zone,
         ).astimezone(UTC)
+        available_date = _add_us_business_days(
+            observation_date,
+            availability_lag_us_business_days,
+        )
+        vendor_available_ts_utc = datetime.combine(
+            available_date,
+            time(16, 0),
+            tzinfo=us_zone,
+        ).astimezone(UTC)
         records.append(
             {
                 "source": "fred",
                 "series_id": series_id,
                 "observation_date": observation_date.isoformat(),
                 "observation_ts_utc": observation_ts_utc,
-                "model_cutoff_ts_utc": observation_ts_utc,
-                "vendor_available_ts_utc": None,
+                "model_cutoff_ts_utc": vendor_available_ts_utc,
+                "vendor_available_ts_utc": vendor_available_ts_utc,
+                "vendor_available_date_et": available_date.isoformat(),
                 "research_download_ts_utc": research_download_ts_utc,
-                "availability_note": "historical_daily_close_proxy_not_live_availability",
+                "availability_lag_us_business_days": availability_lag_us_business_days,
+                "availability_note": (
+                    "current_historical_value_with_conservative_lag_not_alfred_vintage_safe"
+                ),
+                "vintage_policy": "not_vintage_safe_without_alfred_realtime_parameters",
                 "value": _parse_optional_float(row["value"]),
             }
         )
@@ -218,6 +233,16 @@ def _parse_fred_csv(text: str, series_id: str) -> list[dict[str, str]]:
             raise FredDataError(f"FRED CSV for {series_id} had an incomplete row")
         rows.append({"observation_date": observation_date, "value": value})
     return rows
+
+
+def _add_us_business_days(start_date: date, days: int) -> date:
+    current = start_date
+    remaining = days
+    while remaining > 0:
+        current = current + timedelta(days=1)
+        if current.weekday() < 5:
+            remaining -= 1
+    return current
 
 
 def _parse_optional_float(value: str) -> float | None:

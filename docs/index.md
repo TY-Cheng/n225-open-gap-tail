@@ -22,12 +22,13 @@ This loads `.env` and creates the uv environment at `${HOME}/.venvs/n225-open-ga
 
 ```bash
 just status
-just test
-just lint
-just docs-build
+just check
+just docs
 ```
 
-`just docs` serves the site on the first available local port at or above `8000`.
+`just check` formats/fixes `src` and `tests`, runs the test suite, and performs a strict docs
+build. `just docs` performs the same strict docs build before serving the site on the first
+available local port at or above `8000`.
 
 ### Data Staging
 
@@ -40,18 +41,21 @@ Local data is ignored by git:
 
 Keep source credentials in `.env` only. Commit only code, schemas, docs, and small synthetic test fixtures.
 
-### Paper-Grade P2A
+### Paper-Grade Workflow
 
 ```bash
-just paper-panel
-just paper-eval
-just paper-latex-tables
+just full
 ```
 
-The P2A path builds the full-history modeling panel and baseline-floor artifacts under ignored
-`reports/paper_runs/`. These artifacts are paper-grade candidates, not final manuscript claims.
+The unified path runs local checks, builds the full-history modeling panel, runs the P2A
+baseline floor, audits leakage timestamps, and exports provenance-bearing table fragments
+under ignored `reports/paper_runs/`. P2B/P2C commands are explicit nonblocking gates until
+their registered model implementations produce evidence. These artifacts are paper
+candidates, not final manuscript claims.
+
 Custom windows and workers use positional recipe arguments, for example
-`just paper-panel 2022-01-01 2026-04-28` or `just paper-eval <run_id> 4 p2a`.
+`just full 2022-01-01 "" 4`. The lower-level recipes remain available for debugging:
+`_paper-panel`, `_paper-eval`, `_paper-leakage-check`, and `_paper-latex-tables`.
 
 ## Readiness Snapshot
 
@@ -60,7 +64,7 @@ Layer | Current state | Boundary
 U.S. predictors | Massive and FRED smoke ingestion implemented and tested. | These are historical predictor sources, not live production feeds.
 Calendar and contract scaffolding | XNYS/JPX calendars, early closes, DST, quarterly contract metadata, roll windows, and central-contract selector implemented. | Rule-based Nikkei futures metadata must be reconciled against J-Quants or JPX metadata before final empirical results.
 Target data | J-Quants Premium futures daily OHLC is accessible and the 2022-present target audit snapshot runs. | The snapshot is smoke evidence; final paper results need the full paper-grade rolling evaluation.
-Modeling | Historical, rolling, vol-scaled, LightGBM direct-quantile, and EVT smoke wiring runs behind gates. | No paper-grade model ranking, VaR/ES claim, or hedge usefulness claim is active.
+Modeling | P2A historical, rolling, vol-scaled, GARCH/GJR, and GJR-EVT baseline floor runs behind gates. | P2B/P2C and inference outputs must be marked unavailable until their registered implementations complete.
 
 ## Reading Order
 

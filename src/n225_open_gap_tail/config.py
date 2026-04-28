@@ -3,6 +3,8 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from n225_open_gap_tail.research_config import CORE_FRED_SERIES, CORE_MASSIVE_TICKERS
+
 
 def split_csv(value: str) -> tuple[str, ...]:
     """Split comma-separated environment values into non-empty tokens."""
@@ -28,7 +30,7 @@ class Settings(BaseSettings):
     massive_api_key: str = ""
     massive_base_url: str = "https://api.massive.com"
     massive_request_timeout_seconds: int = 30
-    massive_daily_tickers: str = "SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,C:USDJPY"
+    massive_daily_tickers: str = ",".join(CORE_MASSIVE_TICKERS)
     massive_minute_ticker: str = "SPY"
     massive_probe_tickers: str = "I:VIX"
     massive_regular_session_start_et: str = "09:30"
@@ -36,7 +38,7 @@ class Settings(BaseSettings):
 
     fred_base_url: str = "https://fred.stlouisfed.org"
     fred_request_timeout_seconds: int = 30
-    fred_series: str = "VIXCLS,DGS2,DGS10"
+    fred_series: str = ",".join(CORE_FRED_SERIES)
 
     calendar_us_exchange: str = "XNYS"
     calendar_jpx_exchange: str = "JPX"

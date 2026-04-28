@@ -103,7 +103,7 @@ artifacts under ignored `reports/snapshots/` and regenerates `docs/results_snaps
 For paper-grade work, use `just full`; do not mix utility smoke artifacts with paper-run
 evidence.
 
-## Paper-Grade P2A Workflow
+## Paper-Grade Workflow
 
 The unified paper-grade entrypoint is:
 
@@ -112,7 +112,8 @@ just full
 ```
 
 `full` runs local checks, builds the cache-first paper panel, runs the P2A baseline floor,
-audits feature leakage timestamps, and exports LaTeX table fragments under ignored
+audits feature leakage timestamps, runs the P2B LightGBM direct-quantile information-set
+ladder, and exports LaTeX table fragments under ignored
 `reports/paper_runs/`. The default panel start is `2016-07-19`; the run manifest then
 computes `combined_clean_start` from required features only: J-Quants required-field
 coverage, XLC-inclusive Massive core coverage, FRED core coverage, and the canonical
@@ -139,5 +140,6 @@ The data path is typed and resumable:
 For custom windows or workers, pass recipe arguments positionally, for example
 `just full 2022-01-01 "" 4`. The lower-level recipes remain available for debugging:
 `_paper-panel`, `_paper-eval`, `_paper-leakage-check`, and `_paper-latex-tables`.
-`_paper-eval` uses staged dispatch: `p2a` runs the baseline floor; `p2b`/`p2c` are
-explicit nonblocking gates until their registered model implementations produce evidence.
+`_paper-eval` uses staged dispatch: `p2a` runs the baseline floor; `p2b` runs the
+LightGBM direct-quantile information-set ladder; `p2c` remains an explicit
+nonblocking gate for advanced econometric models and formal inference.

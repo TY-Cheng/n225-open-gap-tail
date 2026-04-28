@@ -133,6 +133,13 @@ Implement the pipeline in this order:
 
 8. LightGBM model variants
    - Implement chronological validation only; do not use random train/test splits.
+   - P2B first pass: implement `lightgbm_direct_quantile` over the registered nested ladder:
+     `japan_only`,
+     `japan_only_plus_us_close_core`,
+     `japan_only_plus_us_close_core_plus_japan_proxy`,
+     and `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy`.
+   - Require `leakage_check_failures = 0` before P2B model evaluation.
+   - Use month-level refits with daily forecasts for the first LightGBM pass; record active feature hashes, dropped features, training missingness, and training variance.
    - Implement `conditional_location_model`.
    - Implement `conditional_scale_model`.
    - Implement `quantile_model` at alpha values `{0.05, 0.025, 0.01}`.
@@ -160,7 +167,8 @@ Implement the pipeline in this order:
     - Build model-comparison artifacts with Giacomini-White where feasible, Diebold-Mariano with HAC or block-bootstrap fallback, and Model Confidence Set when the OOS loss series supports it.
     - Report quantile-score calibration and sharpness decomposition when implementation is stable.
     - Build incremental-information tables in this order:
-      Japan-only, U.S.-only, Japan plus U.S., Japan plus U.S. plus FX, Japan plus U.S. plus risk indicators, night-session-controlled model, and full LightGBM-EVT.
+      Japan-only, Japan plus U.S. close core, Japan plus U.S. close core plus Japan proxy,
+      and Japan plus U.S. close core plus Japan proxy plus Asia proxy.
     - Build a DST absorption table with the absorption coefficient and its component gains by EST/EDT regime.
     - Build a main ES severity reduction table reporting exceedance severity changes at the 2.5% ES level after adding U.S. close information.
     - Build secondary hedge-trigger diagnostics with fixed thresholds, fixed cost assumptions, false-positive rate, missed-event rate, turnover, and loss avoided.

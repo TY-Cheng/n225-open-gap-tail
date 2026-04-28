@@ -259,12 +259,14 @@ def paper_grade(
     stage: str = typer.Option("p2a", help="Evaluation stage: p2a, p2b, p2c, or all."),
     force: bool = typer.Option(False, help="Clear locked outputs when config hash changed."),
 ) -> None:
-    """Build the paper panel, run P2A evaluation, and export LaTeX tables."""
+    """Build the paper panel, run requested evaluation stages, and export LaTeX tables."""
     settings = load_settings()
     panel = write_paper_panel(settings=settings, start=start, end=end or None)
     stages = ("p2a", "p2b", "p2c") if stage == "all" else (stage,)
     evaluation = None
     for active_stage in stages:
+        if active_stage == "p2b":
+            write_paper_leakage_check(run_dir=panel.run_dir)
         evaluation = evaluate_paper_run(
             run_dir=panel.run_dir,
             workers=workers,

@@ -19,16 +19,19 @@ from n225_open_gap_tail.paper import (
     build_fields_coverage_audit_records,
     build_leakage_check_records,
     build_modeling_panel_records,
+    build_p2b_modeling_rows,
     build_paper_run_id,
     build_spy_late_session_feature_records,
     drop_low_variance_features,
     empirical_excess_es_companion,
     evaluate_p2a_run,
+    evaluate_p2b_run,
     evaluate_paper_run,
     filtered_historical_es,
     find_oos_start_date,
     global_oos_intersection,
     kupiec_pof_test,
+    p2b_feature_columns_for_information_set,
     pairwise_oos_intersection,
     quantile_loss,
     static_empirical_es,
@@ -168,6 +171,73 @@ def test_feature_matrix_gate_records_candidate_active_and_dropped_sets() -> None
     assert "missing" in dropped_features
     assert isinstance(gate["candidate_feature_hash"], str)
     assert json.loads(str(gate["dropped_features_json"]))
+
+
+def test_p2b_information_sets_select_nested_feature_blocks() -> None:
+    coverage_rows: list[dict[str, object]] = [
+        {"feature": "spy_return", "source_block": "us_core"},
+        {"feature": "spy_late_30m_return", "source_block": "us_late_session"},
+        {"feature": "fred_vixcls_level", "source_block": "fred_core"},
+        {"feature": "fx_usdjpy_level", "source_block": "fx_core"},
+        {"feature": "ewj_return", "source_block": "japan_proxy"},
+        {"feature": "ewh_return", "source_block": "asia_proxy"},
+        {"feature": "fred_bamlh0a0hym2_level", "source_block": "fred_credit_enriched"},
+    ]
+
+    japan_only = p2b_feature_columns_for_information_set(
+        coverage_rows,
+        information_set="japan_only",
+    )
+    us_core = p2b_feature_columns_for_information_set(
+        coverage_rows,
+        information_set="japan_only_plus_us_close_core",
+    )
+    japan_proxy = p2b_feature_columns_for_information_set(
+        coverage_rows,
+        information_set="japan_only_plus_us_close_core_plus_japan_proxy",
+    )
+    asia_proxy = p2b_feature_columns_for_information_set(
+        coverage_rows,
+        information_set="japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy",
+    )
+
+    assert "loss_lag_1" in japan_only
+    assert "spy_return" not in japan_only
+    assert "fx_usdjpy_level" in us_core
+    assert "fred_bamlh0a0hym2_level" not in us_core
+    assert "ewj_return" in japan_proxy
+    assert "ewh_return" in asia_proxy
+
+
+def test_build_p2b_modeling_rows_uses_only_lagged_loss_history() -> None:
+    panel_rows = [
+        {
+            "forecast_date": "2026-01-01",
+            "clean_sample": True,
+            "realized_loss": 1.0,
+            "gap_t": -1.0,
+            "dst_regime": "EST",
+            "absorption_regime": "coincident_us_ose_night_close",
+            "spy_return": 0.01,
+        },
+        {
+            "forecast_date": "2026-01-02",
+            "clean_sample": True,
+            "realized_loss": 2.0,
+            "gap_t": -2.0,
+            "dst_regime": "EDT",
+            "absorption_regime": "post_us_close_night_absorption",
+            "spy_return": 0.02,
+        },
+    ]
+
+    rows = build_p2b_modeling_rows(panel_rows, ["loss_lag_1", "spy_return"])
+
+    assert rows[0]["loss_lag_1"] is None
+    assert rows[1]["loss_lag_1"] == 1.0
+    assert rows[1]["calendar_dst_edt"] == 1.0
+    assert rows[1]["calendar_absorption_post_us_close"] == 1.0
+    assert rows[1]["spy_return"] == 0.02
 
 
 def test_worker_payload_rejects_dataframe_objects() -> None:
@@ -1012,6 +1082,69 @@ def test_evaluate_p2a_run_and_latex_export_with_synthetic_panel(
     )
 
 
+def test_evaluate_p2b_run_writes_lightgbm_ladder_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "reports" / "paper_runs" / "p2b_synthetic"
+    panel_dir = run_dir / "panel"
+    audits_dir = run_dir / "audits"
+    panel_dir.mkdir(parents=True)
+    audits_dir.mkdir(parents=True)
+    rows = []
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    for day in range(90):
+        current = start + timedelta(days=day)
+        rows.append(
+            {
+                "forecast_date": current.date().isoformat(),
+                "target_family": "full_gap_settle_to_open",
+                "clean_sample": True,
+                "realized_loss": float(day % 20) / 100.0,
+                "gap_t": -float(day % 20) / 100.0,
+                "dst_regime": "EDT" if day % 2 else "EST",
+                "absorption_regime": "post_us_close_night_absorption"
+                if day % 2
+                else "coincident_us_ose_night_close",
+                "spy_return": float(day) / 1000.0,
+                "ewj_return": float(day % 7) / 1000.0,
+                "ewh_return": float(day % 5) / 1000.0,
+            }
+        )
+    pl.DataFrame(rows).write_parquet(panel_dir / "modeling_panel.parquet")
+    pl.DataFrame(
+        [
+            {"feature": "spy_return", "source_block": "us_core"},
+            {"feature": "ewj_return", "source_block": "japan_proxy"},
+            {"feature": "ewh_return", "source_block": "asia_proxy"},
+        ]
+    ).write_parquet(panel_dir / "feature_coverage.parquet")
+    (audits_dir / "leakage_check_summary.json").write_text(
+        json.dumps({"failures": 0, "warnings": 0, "status": "pass"}),
+        encoding="utf-8",
+    )
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"config_hash": paper_module.PAPER_CONFIG.config_hash()}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(paper_module, "DEFAULT_EARLIEST_OOS_START", "2026-01-01")
+    monkeypatch.setattr(paper_module, "DEFAULT_MIN_TRAIN_ROWS", 30)
+    monkeypatch.setattr(paper_module, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 1)
+    monkeypatch.setattr(paper_module, "PAPER_TAIL_LEVELS", (0.95,))
+
+    result = evaluate_p2b_run(run_dir=run_dir, workers=1)
+
+    assert result.status == "completed_lightgbm_direct_quantile"
+    assert (run_dir / "forecasts" / "p2b_forecasts.parquet").exists()
+    forecasts = pl.read_parquet(run_dir / "forecasts" / "p2b_forecasts.parquet")
+    assert forecasts["information_set"].n_unique() == 4
+    assert (run_dir / "metrics" / "p2b_incremental_information.parquet").exists()
+    assert (run_dir / "metrics" / "p2b_dst_attenuation.parquet").exists()
+    status = json.loads((run_dir / "metrics" / "p2b_status.json").read_text(encoding="utf-8"))
+    assert status["unavailable_components"]["lightgbm_standardized_loss_pot_gpd"]
+    assert status["registered_information_sets"]["model_d"].endswith("plus_asia_proxy")
+
+
 def test_locked_run_refuses_config_mismatch_without_force(tmp_path: Path) -> None:
     run_dir = tmp_path / "reports" / "paper_runs" / "p2a_locked"
     panel_dir = run_dir / "panel"
@@ -1027,13 +1160,13 @@ def test_locked_run_refuses_config_mismatch_without_force(tmp_path: Path) -> Non
     with pytest.raises(paper_module.PaperRunError, match="config is locked"):
         evaluate_p2a_run(run_dir=run_dir, workers=1)
 
-    result = evaluate_paper_run(run_dir=run_dir, workers=1, stage="p2b", force=True)
+    result = evaluate_paper_run(run_dir=run_dir, workers=1, stage="p2c", force=True)
 
-    assert result.status == "unavailable_stage_not_implemented_nonblocking"
+    assert result.status == "unavailable_supplementary_stage_not_implemented_nonblocking"
     assert not (metrics_dir / "p2a_status.json").exists()
-    p2b_status_path = run_dir / "metrics" / "p2b_status.json"
-    assert p2b_status_path.exists()
-    registered = json.loads(p2b_status_path.read_text(encoding="utf-8"))[
+    p2c_status_path = run_dir / "metrics" / "p2c_status.json"
+    assert p2c_status_path.exists()
+    registered = json.loads(p2c_status_path.read_text(encoding="utf-8"))[
         "registered_information_sets"
     ]
     assert registered["model_c"] == "japan_only_plus_us_close_core_plus_japan_proxy"

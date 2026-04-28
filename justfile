@@ -22,6 +22,7 @@ full start="2016-07-19" end="" workers="4" force="false":
     just check
     just _paper-grade "{{ start }}" "{{ end }}" "{{ workers }}" p2a "{{ force }}"
     just _paper-leakage-check
+    just _paper-eval "" "{{ workers }}" p2b "{{ force }}"
     just _paper-latex-tables
 
 docs port="8000": _require-external-uv-env

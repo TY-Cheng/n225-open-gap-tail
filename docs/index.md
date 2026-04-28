@@ -50,10 +50,11 @@ just full
 ```
 
 The unified path runs local checks, builds the cache-first modeling panel, runs the P2A
-baseline floor, audits leakage timestamps, and exports provenance-bearing table fragments
-under ignored `reports/paper_runs/`. P2B/P2C commands are explicit nonblocking gates until
-their registered model implementations produce evidence. These artifacts are paper
-candidates, not final manuscript claims.
+baseline floor, audits leakage timestamps, runs the P2B LightGBM direct-quantile
+information-set ladder, and exports provenance-bearing table fragments under ignored
+`reports/paper_runs/`. P2B location-scale/EVT hybrids and P2C advanced inference remain
+explicit nonblocking gates until their registered implementations produce evidence. These
+artifacts are paper candidates, not final manuscript claims.
 
 `just full` defaults to `2016-07-19` as a cache lower bound. The run manifest computes
 `combined_clean_start` from required J-Quants field coverage, XLC-inclusive Massive core
@@ -79,7 +80,7 @@ Layer | Current state | Boundary
 U.S. predictors | Massive and FRED smoke ingestion implemented and tested. | These are historical predictor sources, not live production feeds.
 Calendar and contract scaffolding | XNYS/JPX calendars, early closes, DST, quarterly contract metadata, roll windows, and central-contract selector implemented. | Rule-based Nikkei futures metadata must be reconciled against J-Quants or JPX metadata before final empirical results.
 Target data | J-Quants Premium futures daily OHLC is accessible and the 2022-present target audit snapshot runs. | The snapshot is smoke evidence; final paper results need the full paper-grade rolling evaluation.
-Modeling | P2A historical, rolling, vol-scaled, GARCH/GJR, and GJR-EVT baseline floor runs behind gates. | P2B/P2C and inference outputs must be marked unavailable until their registered implementations complete.
+Modeling | P2A historical, rolling, vol-scaled, GARCH/GJR, and GJR-EVT baseline floor runs behind gates. P2B LightGBM direct-quantile runs the registered information-set ladder after the leakage gate passes. | P2B location-scale/EVT hybrids, GW/MCS/DST formal inference, and P2C advanced econometric models remain unavailable until their registered implementations complete.
 
 ## Reading Order
 

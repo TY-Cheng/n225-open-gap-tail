@@ -40,6 +40,19 @@ Local data is ignored by git:
 
 Keep source credentials in `.env` only. Commit only code, schemas, docs, and small synthetic test fixtures.
 
+### Paper-Grade P2A
+
+```bash
+just paper-panel
+just paper-eval
+just paper-latex-tables
+```
+
+The P2A path builds the full-history modeling panel and baseline-floor artifacts under ignored
+`reports/paper_runs/`. These artifacts are paper-grade candidates, not final manuscript claims.
+Custom windows and workers use positional recipe arguments, for example
+`just paper-panel 2022-01-01 2026-04-28` or `just paper-eval <run_id> 4 p2a`.
+
 ## Readiness Snapshot
 
 Layer | Current state | Boundary

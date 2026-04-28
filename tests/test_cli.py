@@ -10,6 +10,7 @@ from n225_open_gap_tail.contracts import ContractMetadataResult
 from n225_open_gap_tail.fred import FredSmokeResult
 from n225_open_gap_tail.jquants import JQuantsSmokeResult
 from n225_open_gap_tail.massive import MassiveSmokeResult
+from n225_open_gap_tail.paper import PaperEvalResult, PaperLatexResult, PaperPanelResult
 
 
 def test_status_reports_environment_without_secret_values(
@@ -276,3 +277,138 @@ def test_contracts_build_command_reports_summary(
     assert "contracts: 16" in result.output
     assert "selector rows: 245" in result.output
     assert "roll-window rows: 20" in result.output
+
+
+def test_paper_panel_command_reports_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "paper_run"
+    panel_path = run_dir / "panel" / "modeling_panel.parquet"
+
+    def fake_write_paper_panel(**kwargs: object) -> PaperPanelResult:
+        assert kwargs["start"] == "2008-05-07"
+        assert kwargs["end"] is None
+        return PaperPanelResult(
+            run_id="p2a_test",
+            run_dir=run_dir,
+            panel_path=panel_path,
+            rows=100,
+            clean_rows=90,
+        )
+
+    monkeypatch.setattr(cli, "write_paper_panel", fake_write_paper_panel)
+
+    result = CliRunner().invoke(app, ["paper-panel"])
+
+    assert result.exit_code == 0
+    assert "run id: p2a_test" in result.output
+    assert f"run dir: {run_dir}" in result.output
+    assert "rows: 100" in result.output
+    assert "clean rows: 90" in result.output
+
+
+def test_paper_eval_command_reports_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "paper_run"
+
+    def fake_resolve_paper_run_dir(settings: object, run_id: str) -> Path:
+        assert run_id == "p2a_test"
+        return run_dir
+
+    def fake_evaluate_p2a_run(**kwargs: object) -> PaperEvalResult:
+        assert kwargs["run_dir"] == run_dir
+        assert kwargs["workers"] == 2
+        return PaperEvalResult(
+            run_id="p2a_test",
+            run_dir=run_dir,
+            forecast_rows=50,
+            metric_rows=6,
+            status="completed",
+        )
+
+    monkeypatch.setattr(cli, "resolve_paper_run_dir", fake_resolve_paper_run_dir)
+    monkeypatch.setattr(cli, "evaluate_p2a_run", fake_evaluate_p2a_run)
+
+    result = CliRunner().invoke(
+        app,
+        ["paper-eval", "--run-id", "p2a_test", "--workers", "2"],
+    )
+
+    assert result.exit_code == 0
+    assert "forecast rows: 50" in result.output
+    assert "metric rows: 6" in result.output
+    assert "status: completed" in result.output
+
+
+def test_paper_grade_command_runs_panel_eval_and_latex(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "paper_run"
+
+    def fake_write_paper_panel(**kwargs: object) -> PaperPanelResult:
+        return PaperPanelResult(
+            run_id="p2a_test",
+            run_dir=run_dir,
+            panel_path=run_dir / "panel" / "modeling_panel.parquet",
+            rows=100,
+            clean_rows=90,
+        )
+
+    def fake_evaluate_p2a_run(**kwargs: object) -> PaperEvalResult:
+        return PaperEvalResult(
+            run_id="p2a_test",
+            run_dir=run_dir,
+            forecast_rows=50,
+            metric_rows=6,
+            status="completed",
+        )
+
+    def fake_write_paper_latex_tables(**kwargs: object) -> PaperLatexResult:
+        return PaperLatexResult(
+            run_id="p2a_test",
+            latex_dir=run_dir / "latex" / "tables",
+            tables=1,
+        )
+
+    monkeypatch.setattr(cli, "write_paper_panel", fake_write_paper_panel)
+    monkeypatch.setattr(cli, "evaluate_p2a_run", fake_evaluate_p2a_run)
+    monkeypatch.setattr(cli, "write_paper_latex_tables", fake_write_paper_latex_tables)
+
+    result = CliRunner().invoke(app, ["paper-grade", "--workers", "1"])
+
+    assert result.exit_code == 0
+    assert "panel rows: 100" in result.output
+    assert "forecast rows: 50" in result.output
+    assert "latex tables: 1" in result.output
+
+
+def test_paper_latex_tables_command_reports_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "paper_run"
+
+    def fake_resolve_paper_run_dir(settings: object, run_id: str) -> Path:
+        assert run_id == ""
+        return run_dir
+
+    def fake_write_paper_latex_tables(**kwargs: object) -> PaperLatexResult:
+        assert kwargs["run_dir"] == run_dir
+        return PaperLatexResult(
+            run_id="p2a_latest",
+            latex_dir=run_dir / "latex" / "tables",
+            tables=1,
+        )
+
+    monkeypatch.setattr(cli, "resolve_paper_run_dir", fake_resolve_paper_run_dir)
+    monkeypatch.setattr(cli, "write_paper_latex_tables", fake_write_paper_latex_tables)
+
+    result = CliRunner().invoke(app, ["paper-latex-tables"])
+
+    assert result.exit_code == 0
+    assert "run id: p2a_latest" in result.output
+    assert "tables: 1" in result.output

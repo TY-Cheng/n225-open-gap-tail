@@ -30,5 +30,11 @@ docs port="8000": _require-external-uv-env
 docs-build: _require-external-uv-env
     uv run mkdocs build --strict
 
+snapshot start="2022-01-01" end="": _require-external-uv-env
+    uv run n225-open-gap-tail snapshot --start "{{start}}" {{ if end == "" { "" } else { "--end \"" + end + "\"" } }}
+
 kernel: _require-external-uv-env
     uv run python -m ipykernel install --user --name n225-open-gap-tail --display-name "Python (n225-open-gap-tail)"
+
+agent *args:
+    @runner="{{justfile_directory()}}/../agent-runner"; if [[ ! -d "$runner" ]]; then echo "error: agent-runner not found at $runner" >&2; exit 1; fi; cd "$runner"; env -u UV_PROJECT_ENVIRONMENT just {{args}}

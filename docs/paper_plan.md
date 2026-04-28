@@ -244,7 +244,7 @@ The following boundaries are hard constraints:
 - No claim that LightGBM-EVT is a novel algorithm.
 - No extreme-tail superiority claim without enough exceedances and rolling out-of-sample diagnostics.
 
-Paper-grade empirical claims require completed OSE Nikkei 225 Futures target-data audit. The current free J-Quants plan does not support final futures target evidence. J-Quants futures OHLC should be treated as an ex-post historical research source once the required subscription is available, not as a same-morning production feed.
+Paper-grade empirical claims require completed OSE Nikkei 225 Futures target-data audit and rolling out-of-sample evaluation. J-Quants Premium futures OHLC is now available locally for historical research snapshots, but it remains an ex-post target source, not a same-morning production feed.
 
 Engineering gates, schema checks, and implementation order are maintained in [Development Audit](audit/development.md). The current implementation status is maintained in [Results Snapshot](results_snapshot.md).
 

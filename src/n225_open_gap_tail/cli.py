@@ -9,6 +9,7 @@ from n225_open_gap_tail.contracts import write_contract_metadata
 from n225_open_gap_tail.fred import write_fred_smoke_sample
 from n225_open_gap_tail.jquants import write_jquants_smoke_sample
 from n225_open_gap_tail.massive import write_massive_smoke_sample
+from n225_open_gap_tail.snapshot import write_full_smoke_snapshot
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -185,6 +186,26 @@ def contracts_build(
     typer.echo(f"contracts: {result.contracts}")
     typer.echo(f"selector rows: {result.selector_rows}")
     typer.echo(f"roll-window rows: {result.roll_window_rows}")
+
+
+@app.command("snapshot")
+def snapshot(
+    start: str = typer.Option("2022-01-01", help="Start date in YYYY-MM-DD."),
+    end: str = typer.Option("", help="End date in YYYY-MM-DD. Defaults to today."),
+) -> None:
+    """Run the 2022-present full-smoke results snapshot."""
+    settings = load_settings()
+    result = write_full_smoke_snapshot(
+        settings=settings,
+        start=start,
+        end=end or None,
+    )
+
+    typer.echo(f"snapshot id: {result.snapshot_id}")
+    typer.echo(f"snapshot dir: {result.snapshot_dir}")
+    typer.echo(f"docs results snapshot: {result.docs_results_path}")
+    typer.echo(f"target rows: {result.target_rows}")
+    typer.echo(f"model status: {result.model_status}")
 
 
 def _format_statuses(statuses: dict[str, int]) -> str:

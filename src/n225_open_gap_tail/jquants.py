@@ -130,6 +130,13 @@ class JQuantsV2Client:
             params["to"] = end
         return self.get_paginated("/equities/bars/daily", params)
 
+    def get_futures_daily_bars(self, *, trading_date: str) -> list[dict[str, Any]]:
+        """Fetch daily derivatives futures bars for one exchange trading date."""
+        return self.get_paginated(
+            "/derivatives/bars/daily/futures",
+            {"date": trading_date},
+        )
+
     def probe_endpoint(
         self,
         *,

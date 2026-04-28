@@ -46,8 +46,8 @@ Layer | Current state | Boundary
 --- | --- | ---
 U.S. predictors | Massive and FRED smoke ingestion implemented and tested. | These are historical predictor sources, not live production feeds.
 Calendar and contract scaffolding | XNYS/JPX calendars, early closes, DST, quarterly contract metadata, roll windows, and central-contract selector implemented. | Rule-based Nikkei futures metadata must be reconciled against J-Quants or JPX metadata before final empirical results.
-Target data | J-Quants V2 free-plan smoke works for equity endpoints. | OSE Nikkei 225 Futures target data still requires a futures-capable subscription.
-Modeling | Baselines, LightGBM, EVT, and evaluation are planned. | No paper-grade model result exists until the target builder and feature table are built.
+Target data | J-Quants Premium futures daily OHLC is accessible and the 2022-present target audit snapshot runs. | The snapshot is smoke evidence; final paper results need the full paper-grade rolling evaluation.
+Modeling | Historical, rolling, vol-scaled, LightGBM direct-quantile, and EVT smoke wiring runs behind gates. | No paper-grade model ranking, VaR/ES claim, or hedge usefulness claim is active.
 
 ## Reading Order
 

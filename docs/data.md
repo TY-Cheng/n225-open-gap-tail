@@ -11,7 +11,7 @@ This page is the canonical source for source roles, source status, target formul
 
 | Source | Role | Project status | Timing interpretation |
 | --- | --- | --- | --- |
-| J-Quants Futures OHLC | OSE Nikkei 225 Futures target source and contract metadata source | Requires futures-capable Premium access; current free plan does not support final futures target claims | Ex-post historical research target source, not a live pre-open feed. |
+| J-Quants Futures OHLC | OSE Nikkei 225 Futures target source and contract metadata source | Premium futures access is configured locally for historical audits | Ex-post historical research target source, not a live pre-open feed. |
 | Massive.com | U.S. close-side ETF, equity, sector, FX, and index predictors | Configured licensed API | Predictor source with UTC timestamps converted explicitly to ET. |
 | NYSE calendar | U.S. regular close, holiday, and early-close cutoff logic | Core public timing source | Determines the U.S. cash close used for the forecast origin. |
 | JPX calendar and trading-hour rules | OSE business-day, day/night session, holiday-trading, roll/SQ context | Core official timing source | Determines OSE target eligibility and holiday/session flags. |

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -52,6 +52,9 @@ def build_session_calendar_records(
         us_open, us_close = _session_open_close(us_calendar, current_date, us_sessions)
         jpx_open, jpx_close = _session_open_close(jpx_calendar, current_date, jpx_sessions)
         us_close_jst = us_close.astimezone(jpx_zone) if us_close is not None else None
+        ose_night_close = _ose_night_close_for_us_close(us_close_jst, jpx_zone)
+        ose_night_close_utc = ose_night_close.astimezone(UTC) if ose_night_close else None
+        minutes_to_night_close = _minutes_between(us_close, ose_night_close_utc)
 
         records.append(
             {
@@ -69,10 +72,17 @@ def build_session_calendar_records(
                 "is_us_early_close": current_date in us_early_closes,
                 "is_jpx_early_close": current_date in jpx_early_closes,
                 "is_us_dst": _is_dst(current_date, us_zone),
+                "dst_regime": _dst_regime(current_date, us_zone)
+                if date_key in us_sessions
+                else None,
                 "us_open_ts_utc": us_open,
                 "us_close_ts_utc": us_close,
                 "us_close_ts_et": us_close.astimezone(us_zone) if us_close is not None else None,
                 "us_close_ts_jst": us_close_jst,
+                "ose_night_close_ts_utc": ose_night_close_utc,
+                "ose_night_close_ts_jst": ose_night_close,
+                "us_close_to_ose_night_close_minutes": minutes_to_night_close,
+                "absorption_regime": _absorption_regime(minutes_to_night_close),
                 "jpx_open_ts_utc": jpx_open,
                 "jpx_close_ts_utc": jpx_close,
                 "jpx_open_ts_jst": jpx_open.astimezone(jpx_zone) if jpx_open is not None else None,
@@ -187,6 +197,35 @@ def _is_dst(current_date: date, timezone: ZoneInfo) -> bool:
     noon = datetime.combine(current_date, datetime.min.time(), tzinfo=timezone).replace(hour=12)
     dst_offset = noon.dst()
     return bool(dst_offset and dst_offset != timedelta(0))
+
+
+def _dst_regime(current_date: date, timezone: ZoneInfo) -> str:
+    return "EDT" if _is_dst(current_date, timezone) else "EST"
+
+
+def _ose_night_close_for_us_close(
+    us_close_jst: datetime | None,
+    jpx_timezone: ZoneInfo,
+) -> datetime | None:
+    if us_close_jst is None:
+        return None
+    return datetime.combine(us_close_jst.date(), time(6, 0), tzinfo=jpx_timezone)
+
+
+def _minutes_between(start: datetime | None, end: datetime | None) -> int | None:
+    if start is None or end is None:
+        return None
+    return int((end - start).total_seconds() // 60)
+
+
+def _absorption_regime(minutes_to_night_close: int | None) -> str | None:
+    if minutes_to_night_close is None:
+        return None
+    if minutes_to_night_close == 0:
+        return "coincident_us_ose_night_close"
+    if minutes_to_night_close > 0:
+        return "post_us_close_night_absorption"
+    return "us_close_after_ose_night_close"
 
 
 def _date_range(start_date: date, end_date: date) -> list[date]:

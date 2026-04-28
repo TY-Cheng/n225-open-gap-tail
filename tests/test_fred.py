@@ -70,18 +70,20 @@ def test_normalize_fred_rows_filters_range_and_marks_missing_values() -> None:
         rows=[
             {"observation_date": "2026-01-02", "value": "4.15"},
             {"observation_date": "2026-01-05", "value": "."},
-            {"observation_date": "2026-01-06", "value": "4.20"},
+            {"observation_date": "2026-01-06", "value": ""},
+            {"observation_date": "2026-01-07", "value": "4.20"},
         ],
         start="2026-01-05",
-        end="2026-01-06",
+        end="2026-01-07",
         research_download_ts_utc=datetime(2026, 1, 7, tzinfo=UTC),
     )
 
-    assert len(records) == 2
+    assert len(records) == 3
     assert records[0]["value"] is None
-    assert records[1]["value"] == 4.20
-    assert records[1]["observation_ts_utc"] == datetime(2026, 1, 6, 21, 0, tzinfo=UTC)
-    assert records[1]["availability_note"] == "historical_daily_close_proxy_not_live_availability"
+    assert records[1]["value"] is None
+    assert records[2]["value"] == 4.20
+    assert records[2]["observation_ts_utc"] == datetime(2026, 1, 7, 21, 0, tzinfo=UTC)
+    assert records[2]["availability_note"] == "historical_daily_close_proxy_not_live_availability"
 
 
 def test_write_fred_smoke_sample_writes_raw_and_parquet(tmp_path: Path) -> None:

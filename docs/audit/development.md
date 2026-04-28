@@ -24,6 +24,8 @@ Respect the existing workflow:
 
 - Use `just setup`, `just status`, `just test`, `just lint`, and `just docs-build` as the main entrypoints.
 - The intended uv environment comes from `.env` through `UV_PROJECT_ENVIRONMENT`.
+- Treat the sibling `../agent-runner` project as an external sidecar worker pool when delegation is useful. From this repo, call it through `just agent ...`, for example `just agent litellm-status` or `just agent run-worker "Objective" "src/foo.py,tests/test_foo.py"`.
+- External worker outputs remain sidecar artifacts and worktrees until Codex or a human reviews them. Do not treat external worker patches as merged code or empirical evidence.
 - Do not commit `.env`, `uv.lock`, raw vendor data, credentials, caches, generated reports, or local build artifacts.
 - Keep tests honest: smoke tests, schema tests, and real-data validation tests must be named and documented separately.
 - Maintain at least 95% test coverage. Every new functional module needs focused tests with small synthetic fixtures.
@@ -33,7 +35,7 @@ Audit checklist before adding features:
 - Does every data row distinguish observation time, bar end time, research download time, vendor availability time where known, model cutoff time, and target-open time where relevant?
 - Do Massive, FRED, calendar, and contract metadata outputs remain smoke/schema artifacts rather than empirical validation claims?
 - Is J-Quants V2 the only J-Quants API path, with no V1 residue?
-- Is the OSE futures target still correctly marked as unavailable until a futures-capable subscription is present?
+- Is the OSE futures target clearly labeled as historical J-Quants Premium research data rather than live pre-open production data?
 - Are raw vendor data, `.env`, `uv.lock`, build outputs, generated data artifacts, and caches ignored?
 - Do all `uv`-based `just` recipes require an external `UV_PROJECT_ENVIRONMENT`?
 - Does `just test` pass with coverage above 95%?

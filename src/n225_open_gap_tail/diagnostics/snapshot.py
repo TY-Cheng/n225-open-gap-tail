@@ -379,7 +379,13 @@ def _full_run_results_markdown(
     table_manifest_table = _table_manifest_markdown(table_manifest)
     figure_gallery = _figure_gallery_markdown(figure_manifest=figure_manifest, run_id=run_id)
 
-    return f"""# Results Snapshot
+    return f"""---
+hide:
+  - navigation
+  - toc
+---
+
+# Results Snapshot
 
 > **Research-candidate full-run artifact.** This page is generated from `{run_id}`.
 > It summarizes the durable gold modeling sample and run outputs, not the older

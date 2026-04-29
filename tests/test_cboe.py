@@ -8,6 +8,7 @@ import httpx
 import polars as pl
 import pytest
 
+import n225_open_gap_tail.data_lake.cache_ops as cache_ops
 import n225_open_gap_tail.sources.cboe as cboe_module
 from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.sources.cboe import (
@@ -176,6 +177,60 @@ def test_write_cboe_smoke_sample_writes_bronze_silver_and_consistency(
     assert result.consistency_warnings == 1
     assert frame.select("observation_date").to_series().to_list() == ["2026-01-05"]
     assert consistency.select("status").to_series().to_list() == ["warn"]
+
+
+def test_fetch_cboe_predictors_writes_cache_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class FakeClient:
+        def __init__(self, **kwargs: object) -> None:
+            pass
+
+        def __enter__(self) -> FakeClient:
+            return self
+
+        def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+            pass
+
+        def fetch_vol_index_csv(self, symbol: str) -> cboe_module.CboeVolIndexPayload:
+            return cboe_module.CboeVolIndexPayload(
+                symbol=symbol,
+                path="/fake.csv",
+                http_status=200,
+                raw_csv="DATE,OPEN,HIGH,LOW,CLOSE\n2026-01-05,14,16,13,15\n",
+                raw_header=["DATE", "OPEN", "HIGH", "LOW", "CLOSE"],
+                rows=[
+                    {"DATE": "2026-01-05", "OPEN": "14", "HIGH": "16", "LOW": "13", "CLOSE": "15"}
+                ],
+            )
+
+    monkeypatch.setattr(cache_ops, "CboeClient", FakeClient)
+    settings = Settings(
+        data_dir=tmp_path / "data",
+        cboe_base_url="https://cboe.test",
+        cboe_vol_index_symbols="VIX",
+    )
+
+    records = cache_ops._fetch_cboe_predictors(
+        settings=settings,
+        start="2026-01-05",
+        end="2026-01-05",
+        downloaded_at_utc=datetime(2026, 1, 6, tzinfo=UTC),
+    )
+
+    payload_path = (
+        settings.data_dir
+        / "bronze"
+        / "cboe_vol_indices"
+        / "schema_version=1"
+        / "symbols=vix"
+        / "payload.json"
+    )
+    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    assert len(records) == 1
+    assert payload["source"] == "cboe"
+    assert payload["symbols"][0]["raw_header"] == ["DATE", "OPEN", "HIGH", "LOW", "CLOSE"]
 
 
 def test_write_cboe_smoke_sample_closes_owned_client(

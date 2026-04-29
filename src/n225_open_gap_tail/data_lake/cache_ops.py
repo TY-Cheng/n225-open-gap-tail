@@ -646,7 +646,7 @@ def _fetch_cboe_predictors(
             )
             if start <= str(row["observation_date"]) <= end
         )
-    _write_json(
+    write_json_atomic(
         bronze_path,
         {
             "source": "cboe",

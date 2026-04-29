@@ -116,6 +116,12 @@ def _forecast_stateful_sequence(
     benchmark floor.
     """
     refit_dates = benchmark_advanced_refit_dates(rows, oos_start=oos_start)
+    calibration_metadata = _advanced_model_calibration_metadata(
+        rows=rows,
+        model_name=model_name,
+        tail_level=tail_level,
+        oos_start=oos_start,
+    )
     return (
         [],
         [
@@ -125,12 +131,149 @@ def _forecast_stateful_sequence(
                 "fit_status": "unavailable_advanced_model_not_implemented",
                 "failure_reason": "advanced_stateful_model_scaffold_only",
                 "refit_frequency": BENCHMARK_ADVANCED_REFIT_FREQUENCY,
+                "advanced_runtime_budget_single_threaded": (
+                    BENCHMARK_ADVANCED_RUNTIME_BUDGET_SINGLE_THREADED
+                ),
+                "advanced_parallelism_unit": BENCHMARK_ADVANCED_PARALLELISM_UNIT,
                 "refit_dates_json": json.dumps(refit_dates, separators=(",", ":")),
                 "refit_calendar": "first_valid_panel_forecast_date_per_calendar_month",
                 "state_update_policy": "valid_panel_dates_only_skip_calendar_gaps",
+                **calibration_metadata,
             }
         ],
         [],
+    )
+
+
+def _advanced_model_calibration_metadata(
+    *,
+    rows: list[dict[str, object]],
+    model_name: str,
+    tail_level: float,
+    oos_start: str,
+) -> dict[str, object]:
+    if model_name.startswith("gas_t_"):
+        return {
+            "score_scaling": GAS_SCORE_SCALING,
+            "state_variable": GAS_STATE_VARIABLE,
+            "invalid_state_status": "unavailable_gas_filter_failed",
+        }
+    if model_name.startswith("care_expectile_"):
+        calibration = _calibrate_care_expectile_tau(
+            _training_losses_before_oos(rows, oos_start=oos_start),
+            tail_level=tail_level,
+        )
+        return {
+            "care_model_definition": "conditional_autoregressive_expectile",
+            "care_var_es_mapping": "training_window_expectile_level_calibrated_to_var_coverage",
+            "expectile_grid_json": json.dumps(CARE_EXPECTILE_GRID, separators=(",", ":")),
+            **calibration,
+        }
+    return {}
+
+
+def _training_losses_before_oos(
+    rows: list[dict[str, object]],
+    *,
+    oos_start: str,
+) -> np.ndarray:
+    start_date = date.fromisoformat(oos_start)
+    values = [
+        _required_float(row["realized_loss"])
+        for row in _clean_loss_rows(rows)
+        if date.fromisoformat(str(row["forecast_date"])) < start_date
+    ]
+    return np.asarray(values, dtype=float)
+
+
+def _calibrate_care_expectile_tau(
+    training_losses: np.ndarray,
+    *,
+    tail_level: float,
+) -> dict[str, object]:
+    values = training_losses[np.isfinite(training_losses)]
+    if values.size < DEFAULT_MIN_TRAIN_ROWS:
+        return {
+            "expectile_tau": None,
+            "expectile_calibration_breach_rate": None,
+            "expectile_calibration_objective": None,
+            "expectile_calibration_status": "unavailable_care_expectile_insufficient_training_rows",
+            "expectile_calibration_method": CARE_EXPECTILE_CALIBRATION_METHOD,
+            "expectile_calibration_source": "training_window_before_oos_start",
+        }
+    target_breach_rate = 1.0 - tail_level
+    candidates: list[dict[str, object]] = []
+    for tau in CARE_EXPECTILE_GRID:
+        threshold = _sample_expectile(values, tau=float(tau))
+        if threshold is None:
+            continue
+        breach_rate = float(np.mean(values > threshold))
+        candidates.append(
+            {
+                "tau": float(tau),
+                "threshold": float(threshold),
+                "breach_rate": breach_rate,
+                "objective": abs(breach_rate - target_breach_rate),
+            }
+        )
+    if not candidates:
+        return {
+            "expectile_tau": None,
+            "expectile_calibration_breach_rate": None,
+            "expectile_calibration_objective": None,
+            "expectile_calibration_status": "unavailable_care_expectile_calibration_failed",
+            "expectile_calibration_method": CARE_EXPECTILE_CALIBRATION_METHOD,
+            "expectile_calibration_source": "training_window_before_oos_start",
+        }
+    best = min(candidates, key=lambda row: (row["objective"], -row["tau"]))
+    return {
+        "expectile_tau": best["tau"],
+        "expectile_calibration_threshold": best["threshold"],
+        "expectile_calibration_breach_rate": best["breach_rate"],
+        "expectile_calibration_objective": best["objective"],
+        "expectile_calibration_status": "ok",
+        "expectile_calibration_method": CARE_EXPECTILE_CALIBRATION_METHOD,
+        "expectile_calibration_source": "training_window_before_oos_start",
+    }
+
+
+def _sample_expectile(values: np.ndarray, *, tau: float) -> float | None:
+    finite = values[np.isfinite(values)]
+    if finite.size == 0 or not 0.0 < tau < 1.0:
+        return None
+    lower = float(np.min(finite))
+    upper = float(np.max(finite))
+    if math.isclose(lower, upper):
+        return lower
+    for _ in range(80):
+        midpoint = (lower + upper) / 2.0
+        above = np.maximum(finite - midpoint, 0.0).sum()
+        below = np.maximum(midpoint - finite, 0.0).sum()
+        score = tau * above - (1.0 - tau) * below
+        if score > 0:
+            lower = midpoint
+        else:
+            upper = midpoint
+    return float((lower + upper) / 2.0)
+
+
+def _gas_filter_failure_record(
+    *,
+    model_name: str,
+    tail_level: float,
+    failure_reason: str,
+) -> dict[str, object]:
+    return _advanced_benchmark_record(
+        {
+            "model_name": model_name,
+            "tail_level": tail_level,
+            "fit_status": "unavailable_gas_filter_failed",
+            "failure_reason": failure_reason,
+            "score_scaling": GAS_SCORE_SCALING,
+            "state_variable": GAS_STATE_VARIABLE,
+            "invalid_state_status": "unavailable_gas_filter_failed",
+        },
+        model_name=model_name,
     )
 
 

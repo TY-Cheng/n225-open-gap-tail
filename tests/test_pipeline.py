@@ -255,6 +255,97 @@ def test_advanced_benchmark_monthly_refit_uses_first_valid_panel_date() -> None:
     ) == ["2026-02-03", "2026-03-02"]
 
 
+def test_advanced_gas_contract_records_unit_score_scaling_and_failure_status() -> None:
+    _, diagnostics, _ = benchmark_advanced._forecast_stateful_sequence(
+        rows=[
+            {"forecast_date": "2026-01-02", "clean_sample": True, "realized_loss": 0.01},
+            {"forecast_date": "2026-01-03", "clean_sample": True, "realized_loss": 0.02},
+        ],
+        model_name="gas_t_location_scale",
+        tail_level=0.95,
+        oos_start="2026-01-03",
+    )
+
+    diagnostic = diagnostics[0]
+    assert diagnostic["score_scaling"] == "unit_inverse_fisher"
+    assert diagnostic["state_variable"] == "log_sigma"
+    assert diagnostic["invalid_state_status"] == "unavailable_gas_filter_failed"
+
+    failure = benchmark_advanced._gas_filter_failure_record(
+        model_name="gas_t_location_scale",
+        tail_level=0.95,
+        failure_reason="nonfinite_unit_scaled_score",
+    )
+    assert failure["fit_status"] == "unavailable_gas_filter_failed"
+    assert failure["score_scaling"] == "unit_inverse_fisher"
+    assert failure["state_variable"] == "log_sigma"
+
+
+def test_care_expectile_calibration_uses_training_window_only() -> None:
+    oos_start = "2026-04-16"
+    base_date = datetime(2023, 1, 1, tzinfo=UTC)
+    training_rows = [
+        {
+            "forecast_date": (base_date + timedelta(days=day)).date().isoformat(),
+            "clean_sample": True,
+            "realized_loss": float(day % 37) / 1000.0,
+        }
+        for day in range(1100)
+    ]
+    post_oos_rows = [
+        {
+            "forecast_date": (datetime(2026, 4, 16, tzinfo=UTC) + timedelta(days=day))
+            .date()
+            .isoformat(),
+            "clean_sample": True,
+            "realized_loss": 100.0 + day,
+        }
+        for day in range(5)
+    ]
+    _, diagnostics, _ = benchmark_advanced._forecast_stateful_sequence(
+        rows=[*training_rows, *post_oos_rows],
+        model_name="care_expectile_sav",
+        tail_level=0.95,
+        oos_start=oos_start,
+    )
+    _, mutated_diagnostics, _ = benchmark_advanced._forecast_stateful_sequence(
+        rows=[
+            *training_rows,
+            *[{**row, "realized_loss": -999.0} for row in post_oos_rows],
+        ],
+        model_name="care_expectile_sav",
+        tail_level=0.95,
+        oos_start=oos_start,
+    )
+
+    diagnostic = diagnostics[0]
+    mutated = mutated_diagnostics[0]
+    assert diagnostic["care_model_definition"] == "conditional_autoregressive_expectile"
+    assert diagnostic["expectile_calibration_method"] == (
+        paper_module.CARE_EXPECTILE_CALIBRATION_METHOD
+    )
+    assert diagnostic["expectile_calibration_source"] == "training_window_before_oos_start"
+    assert diagnostic["expectile_calibration_status"] == "ok"
+    assert diagnostic["expectile_tau"] in paper_module.CARE_EXPECTILE_GRID
+    assert diagnostic["expectile_tau"] == mutated["expectile_tau"]
+    assert (
+        diagnostic["expectile_calibration_breach_rate"]
+        == (mutated["expectile_calibration_breach_rate"])
+    )
+
+
+def test_care_expectile_calibration_failure_is_unavailable_not_forecast() -> None:
+    calibration = benchmark_advanced._calibrate_care_expectile_tau(
+        np.array([0.01, 0.02]),
+        tail_level=0.95,
+    )
+
+    assert calibration["expectile_tau"] is None
+    assert calibration["expectile_calibration_status"] == (
+        "unavailable_care_expectile_insufficient_training_rows"
+    )
+
+
 def test_combined_clean_start_excludes_pre_start_forecast_rows() -> None:
     panel = paper_module.apply_combined_clean_start(
         [

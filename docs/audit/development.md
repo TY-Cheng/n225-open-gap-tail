@@ -136,6 +136,9 @@ Implement the pipeline in this order:
    - Implement a direct FZ-loss or CARE/expectile-style VaR-ES benchmark as a main pre-LightGBM benchmark gate; the registry currently records it as unavailable advanced diagnostics.
    - Implement Taylor-style ALD VaR-ES as a main advanced benchmark when stable on the audited sample; the registry currently records it as unavailable advanced diagnostics.
    - Treat GAS-t or score-driven VaR-ES models as appendix or fallback benchmarks unless the implementation is stable and tested; the registry currently records them as unavailable advanced diagnostics.
+   - GAS-t must use unit-scaled Student-t score recursion (`score_scaling=unit_inverse_fisher`) with log-scale state; invalid score scaling, nonfinite score/state, invalid `nu`, or exploding scale must emit `unavailable_gas_filter_failed`.
+   - CARE is expectile-based and separate from Taylor ALD. Its expectile level must be calibrated on the training window by grid search to match the target VaR exception rate, with `expectile_tau`, calibration breach rate, objective, and status recorded.
+   - Full advanced benchmark evaluation is runtime-heavy: expect roughly 4--8 hours single-threaded for all optimizer-based model-by-tail shards; use `benchmark-floor` for fast checks and parallelize only across model/tail shards.
    - If a main advanced benchmark is numerically unstable or sample-inadequate, label it unavailable with a reason; do not replace it with weak evidence.
    - Save these metrics before LightGBM tuning.
 

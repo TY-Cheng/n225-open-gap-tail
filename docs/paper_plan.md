@@ -119,7 +119,7 @@ The manuscript literature review should expand three strands:
 
 - U.S.-Japan transmission: Hamao, Masulis, and Ng; Lin, Engle, and Ito; Bae, Karolyi, and Stulz; and Dungey-style contagion and transmission work. These papers motivate cross-market information, but they do not construct a session-aligned lower-tail forecast.
 - Nikkei futures market integration: CME/OSE/SGX Nikkei futures work, intraday futures studies, and opening-auction research. These papers motivate the separation between full opening-gap risk and residual pre-open risk.
-- Tail-risk forecasting: McNeil-Frey GARCH-EVT, Engle-Manganelli CAViaR, Patton-Ziegel-Chen semiparametric ES, Taylor CARE/ALD VaR-ES, Dimitriadis-Bayer regression-based VaR/ES, and Creal-Koopman-Lucas GAS models.
+- Tail-risk forecasting: McNeil-Frey GARCH-EVT, Engle-Manganelli CAViaR, Patton-Ziegel-Chen semiparametric ES, Taylor CARE and asymmetric-Laplace VaR-ES, Dimitriadis-Bayer regression-based VaR/ES, and Creal-Koopman-Lucas GAS models.
 
 The intended contribution is narrower than those literatures. The paper contributes a session-aligned target construction and forecast-evaluation design for OSE Nikkei 225 Futures pre-open downside risk. It asks whether U.S. close-side variables add lower-tail forecasting content beyond Japan-only and night-session-aware baselines, and whether conditional learning plus EVT calibration improves VaR/ES forecasts relative to credible risk-model peers.
 
@@ -127,11 +127,11 @@ The strongest positive evidence would be stable rolling out-of-sample improvemen
 
 ### Comparison with Related Forecasting Approaches
 
-Direct FZ-loss and semiparametric VaR-ES models provide the closest methodological challenge. They estimate VaR and ES jointly without a separate EVT layer, and they are the natural answer to the question: why not optimize the target score directly? The paper addresses this by including a direct FZ-loss or CARE-style VaR-ES benchmark in the main comparison when implementation and sample size support stable estimation.
+Direct FZ-loss and semiparametric VaR-ES models provide the closest methodological challenge. They estimate VaR and ES jointly without a separate EVT layer, and they are the natural answer to the question: why not optimize the target score directly? The paper addresses this by including direct FZ-loss and expectile/ALD-style advanced benchmarks when implementation and sample size support stable estimation.
 
-Score-driven GAS models are another relevant benchmark family because they update tail-risk parameters through the score of the predictive density. A GAS-t or GAS VaR-ES specification is an advanced benchmark candidate. If the implementation is not stable on the audited sample, the paper should report this as a benchmark limitation rather than substituting an unvalidated implementation.
+Score-driven GAS models are another relevant benchmark family because they update tail-risk parameters through the score of the predictive density. A GAS-t or GAS VaR-ES specification is an advanced benchmark candidate; the registered implementation uses unit-scaled Student-t score recursion for the log-scale state. If the implementation is not stable on the audited sample, the paper should report this as a benchmark limitation rather than substituting an unvalidated implementation.
 
-CAViaR and CARE models are included because they directly model conditional quantiles or expected shortfall dynamics. They help distinguish whether LightGBM-EVT adds value beyond established dynamic tail-risk models.
+CAViaR and CARE models are included because they directly model conditional quantiles or expectile-linked tail dynamics. CARE is treated as expectile-based and separate from Taylor ALD; the expectile level is calibrated on the training window to match the target VaR exception rate. They help distinguish whether LightGBM-EVT adds value beyond established dynamic tail-risk models.
 
 Deep learning is not the first-paper workhorse. The target is daily/session-level, the sample is likely measured in thousands rather than millions of observations, and the predictor set is tabular and economically pre-registered. Neural VaR/ES models can be discussed as future work, but they are not needed to answer the first paper's information-set question.
 
@@ -152,7 +152,7 @@ Required baseline floor:
 
 Main advanced benchmarks, subject to stable implementation on the audited sample:
 
-- direct FZ-loss or CARE-style VaR-ES estimation;
+- direct FZ-loss and CARE/expectile-style tail estimation;
 - CAViaR;
 - Taylor-style semiparametric VaR-ES or asymmetric-Laplace VaR-ES models.
 

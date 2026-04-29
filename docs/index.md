@@ -71,6 +71,8 @@ the restricted `ml_tail_result_matrix*` layer, which compares VaR-only and VaR-E
 explicit common samples without granting headline claims. Richer econometric models
 are wired as explicit nonblocking benchmark diagnostics, but they remain unavailable as
 empirical forecast evidence until their registered optimizers produce valid forecast rows.
+The advanced suite is expected to be runtime-heavy; `benchmark-floor` is the fast
+regression path, while the full benchmark suite parallelizes advanced model-by-tail shards.
 These artifacts are research candidates, not final manuscript claims.
 
 `just full` defaults to `2016-07-19` as a cache lower bound. The run manifest computes

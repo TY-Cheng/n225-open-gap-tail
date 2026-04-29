@@ -168,6 +168,14 @@ BENCHMARK_ADVANCED_MODEL_NAMES = (
     "gas_t_pot_gpd",
 )
 BENCHMARK_ADVANCED_REFIT_FREQUENCY = "monthly_parameter_refit_daily_filter"
+BENCHMARK_ADVANCED_RUNTIME_BUDGET_SINGLE_THREADED = (
+    PIPELINE_CONFIG.model_policy.advanced_runtime_budget_single_threaded
+)
+BENCHMARK_ADVANCED_PARALLELISM_UNIT = PIPELINE_CONFIG.model_policy.advanced_parallelism_unit
+GAS_SCORE_SCALING = PIPELINE_CONFIG.model_policy.gas_score_scaling
+GAS_STATE_VARIABLE = PIPELINE_CONFIG.model_policy.gas_state_variable
+CARE_EXPECTILE_GRID = PIPELINE_CONFIG.model_policy.care_expectile_grid
+CARE_EXPECTILE_CALIBRATION_METHOD = PIPELINE_CONFIG.model_policy.care_expectile_calibration_method
 ML_TAIL_ANCHOR_INFORMATION_SET = PIPELINE_CONFIG.feature_sets.ml_tail_model_a_information_set
 MODEL_EVICTION_COVERAGE_THRESHOLD = 0.95
 COMMON_SAMPLE_MIN_ANCHOR_COVERAGE = 0.90

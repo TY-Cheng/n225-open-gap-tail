@@ -126,6 +126,14 @@ class ModelPolicy:
     evt_threshold_refresh: str = "monthly_locked"
     evt_threshold_smoothing: str = "rolling_median_optional"
     joblib_backend: str = "loky"
+    advanced_runtime_budget_single_threaded: str = "4_to_8_hours_full_suite_estimate"
+    advanced_parallelism_unit: str = "model_name_x_tail_level_shards"
+    gas_score_scaling: str = "unit_inverse_fisher"
+    gas_state_variable: str = "log_sigma"
+    care_expectile_grid: tuple[float, ...] = (0.80, 0.85, 0.90, 0.925, 0.95, 0.975, 0.99)
+    care_expectile_calibration_method: str = (
+        "training_window_grid_search_match_target_var_exception_rate"
+    )
 
 
 @dataclass(frozen=True)

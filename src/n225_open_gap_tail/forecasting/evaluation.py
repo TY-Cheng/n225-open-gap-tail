@@ -2,14 +2,12 @@
 # ruff: noqa: F401,F403,F405,F821,I001,UP035
 from __future__ import annotations
 
-from n225_open_gap_tail.config import runtime as _runtime
+from n225_open_gap_tail.config.runtime import *
 from n225_open_gap_tail.forecasting._benchmark_suite import (
     evaluate_benchmark_floor_suite,
     evaluate_benchmark_suite,
 )
 from n225_open_gap_tail.forecasting._ml_tail_suite import evaluate_ml_tail_suite
-
-globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("__")})
 
 
 def evaluate_suite(

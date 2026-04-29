@@ -2,9 +2,9 @@
 # ruff: noqa: F401,F403,F405,F821,I001,UP035
 from __future__ import annotations
 
-from n225_open_gap_tail.config import runtime as _runtime
-
-globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("__")})
+from n225_open_gap_tail.config.runtime import *
+from n225_open_gap_tail.data_lake.artifacts import _forecast_shard_id
+from n225_open_gap_tail.features.asof import _evt_threshold_diagnostics
 
 
 def resolve_run_dir(settings: Settings, run_id: str) -> Path:

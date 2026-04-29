@@ -145,6 +145,7 @@ def _full_run_snapshot_paths(
         "ml_tail_dm_inference": run_dir / "metrics" / "ml_tail_dm_inference.parquet",
         "ml_tail_mcs": run_dir / "metrics" / "ml_tail_mcs.parquet",
         "ml_tail_cpa_inference": run_dir / "metrics" / "ml_tail_cpa_inference.parquet",
+        "cross_model_cpa_inference": run_dir / "metrics" / "cross_model_cpa_inference.parquet",
         "ml_tail_model_eviction": run_dir / "metrics" / "ml_tail_model_eviction.parquet",
         "ml_tail_dst_attenuation": run_dir / "metrics" / "ml_tail_dst_attenuation.parquet",
         "ml_tail_murphy": run_dir / "metrics" / "ml_tail_murphy.parquet",
@@ -432,7 +433,7 @@ The pipeline is now producing full-run research-candidate evidence from the dura
 
 ## Technical Infrastructure Note
 
-- The runtime compatibility bridge based on `globals().update(runtime)` remains a future architecture cleanup. Its removal is separate from empirical reruns and is not part of the claim boundary for this results snapshot.
+- Runtime imports are explicit at the module boundary; no dynamic runtime namespace bridge is required to generate this snapshot. This infrastructure note is separate from empirical claim boundaries.
 
 ## Pipeline Structure
 

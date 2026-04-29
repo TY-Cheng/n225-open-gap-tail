@@ -2,9 +2,8 @@
 # ruff: noqa: F401,F403,F405,F821,I001,UP035
 from __future__ import annotations
 
-from n225_open_gap_tail.config import runtime as _runtime
-
-globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("__")})
+from n225_open_gap_tail.config.runtime import *
+from n225_open_gap_tail.panel.build import registered_ml_tail_information_sets
 
 
 def _result_matrix_tail_model_groups(

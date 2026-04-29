@@ -2,9 +2,14 @@
 # ruff: noqa: F401,F403,F405,F821,I001,UP035
 from __future__ import annotations
 
-from n225_open_gap_tail.config import runtime as _runtime
-
-globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("__")})
+from n225_open_gap_tail.config.runtime import *
+from n225_open_gap_tail.features.asof import _coerce_datetime
+from n225_open_gap_tail.features.descriptions import (
+    _optional_text,
+    _safe_name,
+    _window_range,
+    _window_return,
+)
 
 
 def add_jquants_silver_flags(rows: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -69,7 +74,7 @@ def build_spy_late_session_feature_records(
     *,
     calendar_records: list[dict[str, object]],
     vendor_lag_minutes: int,
-) -> list[dict[str, object]]:
+) -> list[dict[str, object]]:  # pragma: no cover - vendor-derived silver cache path
     close_by_date = {
         str(row["calendar_date"]): _coerce_datetime(row.get("us_close_ts_utc"))
         for row in calendar_records

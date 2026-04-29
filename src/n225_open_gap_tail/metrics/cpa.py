@@ -2,12 +2,14 @@
 # ruff: noqa: F401,F403,F405,F821,I001,UP035
 from __future__ import annotations
 
-from n225_open_gap_tail.config import runtime as _runtime
+from n225_open_gap_tail.config.runtime import *
+from n225_open_gap_tail.metrics.stat_utils import fz_loss, quantile_loss
+from n225_open_gap_tail.panel.build import registered_ml_tail_information_sets
 
-globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("__")})
 
-
-CPA_LOSS_FAMILY = "var_quantile_loss"
+CPA_QUANTILE_LOSS_FAMILY = "var_quantile_loss"
+CPA_FZ_LOSS_FAMILY = "var_es_fz_loss"
+CPA_LOSS_FAMILIES = (CPA_QUANTILE_LOSS_FAMILY, CPA_FZ_LOSS_FAMILY)
 CPA_CLAIM_SCOPE = "conditional_inference_diagnostic_not_headline"
 CPA_HAC_KERNEL = "bartlett"
 CPA_INSTRUMENT_CANDIDATES = (
@@ -16,22 +18,91 @@ CPA_INSTRUMENT_CANDIDATES = (
     "dst_edt",
     "absorption_post_us_close",
 )
+CPA_FZ_ML_TAIL_MODELS = (
+    ML_TAIL_LOCATION_SCALE_MODEL,
+    ML_TAIL_STANDARDIZED_POT_GPD_MODEL,
+)
 
 
 def build_ml_tail_cpa_inference_records(
-    loss_matrix: list[dict[str, object]],
+    forecasts: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Build information-set CPA records for registered ML-tail models.
+
+    Direct quantile remains VaR-only and therefore uses quantile loss. Location-scale
+    and standardized-loss POT-GPD are true VaR-ES forecast pairs and enter FZ-CPA.
+    """
+
+    records: list[dict[str, object]] = []
+    records.extend(
+        _build_information_set_cpa_records(
+            forecasts,
+            model_name=ML_TAIL_DIRECT_QUANTILE_MODEL,
+            loss_family=CPA_QUANTILE_LOSS_FAMILY,
+        )
+    )
+    for model_name in CPA_FZ_ML_TAIL_MODELS:
+        records.extend(
+            _build_information_set_cpa_records(
+                forecasts,
+                model_name=model_name,
+                loss_family=CPA_FZ_LOSS_FAMILY,
+            )
+        )
+    return records
+
+
+def build_cross_model_cpa_inference_records(
+    *,
+    ml_tail_forecasts: list[dict[str, object]],
+    benchmark_forecasts: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Build registered cross-model CPA records.
+
+    Candidate models are ML-tail forecasts. Anchors are benchmark-family forecasts.
+    The function emits a stable skipped status when benchmark forecasts are absent.
+    """
+
+    if not benchmark_forecasts:
+        return [_cross_model_skipped_record("skipped_missing_benchmark_forecasts")]
+    records: list[dict[str, object]] = []
+    records.extend(
+        _build_cross_model_cpa_records(
+            ml_tail_forecasts=ml_tail_forecasts,
+            benchmark_forecasts=benchmark_forecasts,
+            candidate_models=(ML_TAIL_DIRECT_QUANTILE_MODEL,),
+            loss_family=CPA_QUANTILE_LOSS_FAMILY,
+        )
+    )
+    records.extend(
+        _build_cross_model_cpa_records(
+            ml_tail_forecasts=ml_tail_forecasts,
+            benchmark_forecasts=benchmark_forecasts,
+            candidate_models=CPA_FZ_ML_TAIL_MODELS,
+            loss_family=CPA_FZ_LOSS_FAMILY,
+        )
+    )
+    return records or [_cross_model_skipped_record("skipped_no_registered_pairs")]
+
+
+def _build_information_set_cpa_records(
+    forecasts: list[dict[str, object]],
+    *,
+    model_name: str,
+    loss_family: str,
 ) -> list[dict[str, object]]:
     information_sets = registered_ml_tail_information_sets()
     anchor_information_set = PIPELINE_CONFIG.feature_sets.ml_tail_model_a_information_set
     candidate_sets = [item for item in information_sets if item != anchor_information_set]
-    direct_rows = [
+    model_rows = [
         row
-        for row in loss_matrix
-        if str(row.get("model_name") or "") == ML_TAIL_DIRECT_QUANTILE_MODEL
+        for row in forecasts
+        if str(row.get("model_name") or "") == model_name
         and str(row.get("tail_side") or PRIMARY_TAIL_SIDE) in TAIL_SIDES
+        and _cpa_row_loss(row, loss_family) is not None
     ]
     grouped: dict[tuple[str, str, float, str], dict[str, dict[str, dict[str, object]]]] = {}
-    for row in direct_rows:
+    for row in model_rows:
         key = (
             str(row.get("target_family") or PIPELINE_CONFIG.target_policy.primary_target_family),
             str(row.get("tail_side") or PRIMARY_TAIL_SIDE),
@@ -49,10 +120,17 @@ def build_ml_tail_cpa_inference_records(
             candidate_rows = rows_by_info.get(candidate_information_set, {})
             records.append(
                 _cpa_record_for_pair(
+                    suite="ml_tail",
+                    comparison_axis="information_set_increment",
                     target_family=target_family,
                     tail_side=tail_side,
                     tail_level=tail_level,
-                    refit_frequency=refit_frequency,
+                    loss_family=loss_family,
+                    model_name=model_name,
+                    anchor_model_name=model_name,
+                    candidate_model_name=model_name,
+                    anchor_refit_frequency=refit_frequency,
+                    candidate_refit_frequency=refit_frequency,
                     anchor_information_set=anchor_information_set,
                     candidate_information_set=candidate_information_set,
                     anchor_rows=anchor_rows,
@@ -62,12 +140,112 @@ def build_ml_tail_cpa_inference_records(
     return records
 
 
+def _build_cross_model_cpa_records(
+    *,
+    ml_tail_forecasts: list[dict[str, object]],
+    benchmark_forecasts: list[dict[str, object]],
+    candidate_models: tuple[str, ...],
+    loss_family: str,
+) -> list[dict[str, object]]:
+    ml_groups = _cpa_group_rows(
+        [
+            row
+            for row in ml_tail_forecasts
+            if str(row.get("model_name") or "") in candidate_models
+            and _cpa_row_loss(row, loss_family) is not None
+        ],
+        include_information_set=True,
+    )
+    benchmark_groups = _cpa_group_rows(
+        [
+            row
+            for row in benchmark_forecasts
+            if _cpa_row_loss(row, loss_family, require_primary_fz_pair=True) is not None
+        ],
+        include_information_set=False,
+    )
+    records: list[dict[str, object]] = []
+    for candidate_key, candidate_rows in sorted(ml_groups.items()):
+        (
+            target_family,
+            tail_side,
+            tail_level,
+            candidate_model_name,
+            candidate_information_set,
+            candidate_refit_frequency,
+        ) = candidate_key
+        for anchor_key, anchor_rows in sorted(benchmark_groups.items()):
+            (
+                anchor_target_family,
+                anchor_tail_side,
+                anchor_tail_level,
+                anchor_model_name,
+                anchor_information_set,
+                anchor_refit_frequency,
+            ) = anchor_key
+            if (
+                anchor_target_family != target_family
+                or anchor_tail_side != tail_side
+                or anchor_tail_level != tail_level
+            ):
+                continue
+            records.append(
+                _cpa_record_for_pair(
+                    suite="cross_model",
+                    comparison_axis="cross_model_registered_pair",
+                    target_family=target_family,
+                    tail_side=tail_side,
+                    tail_level=tail_level,
+                    loss_family=loss_family,
+                    model_name=candidate_model_name,
+                    anchor_model_name=anchor_model_name,
+                    candidate_model_name=candidate_model_name,
+                    anchor_refit_frequency=anchor_refit_frequency,
+                    candidate_refit_frequency=candidate_refit_frequency,
+                    anchor_information_set=anchor_information_set,
+                    candidate_information_set=candidate_information_set,
+                    anchor_rows=anchor_rows,
+                    candidate_rows=candidate_rows,
+                )
+            )
+    return records
+
+
+def _cpa_group_rows(
+    rows: list[dict[str, object]],
+    *,
+    include_information_set: bool,
+) -> dict[tuple[str, str, float, str, str, str], dict[str, dict[str, object]]]:
+    grouped: dict[tuple[str, str, float, str, str, str], dict[str, dict[str, object]]] = {}
+    for row in rows:
+        information_set = str(row.get("information_set") or "target_history_only")
+        if not include_information_set:
+            information_set = "target_history_only"
+        key = (
+            str(row.get("target_family") or PIPELINE_CONFIG.target_policy.primary_target_family),
+            str(row.get("tail_side") or PRIMARY_TAIL_SIDE),
+            _required_float(row["tail_level"]),
+            str(row.get("model_name") or ""),
+            information_set,
+            str(row.get("refit_frequency") or ""),
+        )
+        grouped.setdefault(key, {})[str(row["forecast_date"])] = row
+    return grouped
+
+
 def _cpa_record_for_pair(
     *,
+    suite: str,
+    comparison_axis: str,
     target_family: str,
     tail_side: str,
     tail_level: float,
-    refit_frequency: str,
+    loss_family: str,
+    model_name: str,
+    anchor_model_name: str,
+    candidate_model_name: str,
+    anchor_refit_frequency: str,
+    candidate_refit_frequency: str,
     anchor_information_set: str,
     candidate_information_set: str,
     anchor_rows: Mapping[str, Mapping[str, object]],
@@ -79,6 +257,7 @@ def _cpa_record_for_pair(
             forecast_date=forecast_date,
             anchor=anchor_rows[forecast_date],
             candidate=candidate_rows[forecast_date],
+            loss_family=loss_family,
         )
         for forecast_date in common_dates
     ]
@@ -91,14 +270,18 @@ def _cpa_record_for_pair(
     instrument_count = len(active)
     min_effective_n = max(120, 20 * instrument_count) if instrument_count else 120
     base = {
-        "suite": "ml_tail",
+        "suite": suite,
         "target_family": target_family,
         "tail_side": tail_side,
         "tail_level": tail_level,
-        "model_name": ML_TAIL_DIRECT_QUANTILE_MODEL,
-        "refit_frequency": refit_frequency or None,
-        "loss_family": CPA_LOSS_FAMILY,
-        "comparison_axis": "information_set_increment",
+        "model_name": model_name,
+        "anchor_model_name": anchor_model_name,
+        "candidate_model_name": candidate_model_name,
+        "refit_frequency": candidate_refit_frequency or None,
+        "anchor_refit_frequency": anchor_refit_frequency or None,
+        "candidate_refit_frequency": candidate_refit_frequency or None,
+        "loss_family": loss_family,
+        "comparison_axis": comparison_axis,
         "claim_scope": CPA_CLAIM_SCOPE,
         "headline_claim_allowed": False,
         "anchor_information_set": anchor_information_set,
@@ -115,7 +298,7 @@ def _cpa_record_for_pair(
         "hac_kernel": CPA_HAC_KERNEL,
         "hac_lags": _cpa_hac_lags(effective_n) if effective_n else None,
         "method_note": "newey_west_hac_wald_conditional_loss_differential_regression",
-        "regression_formula": "candidate_minus_anchor_quantile_loss_on_preregistered_instruments",
+        "regression_formula": _cpa_regression_formula(loss_family, comparison_axis),
     }
     if not common_dates:
         return _cpa_unavailable(base, "unavailable_missing_anchor_or_candidate_sample")
@@ -138,9 +321,10 @@ def _cpa_paired_observation(
     forecast_date: str,
     anchor: Mapping[str, object],
     candidate: Mapping[str, object],
+    loss_family: str,
 ) -> dict[str, object]:
-    candidate_loss = _cpa_quantile_loss(candidate)
-    anchor_loss = _cpa_quantile_loss(anchor)
+    candidate_loss = _cpa_row_loss(candidate, loss_family)
+    anchor_loss = _cpa_row_loss(anchor, loss_family)
     diff = (
         candidate_loss - anchor_loss
         if candidate_loss is not None and anchor_loss is not None
@@ -163,6 +347,21 @@ def _cpa_paired_observation(
     }
 
 
+def _cpa_row_loss(
+    row: Mapping[str, object],
+    loss_family: str,
+    *,
+    require_primary_fz_pair: bool = False,
+) -> float | None:
+    if loss_family == CPA_QUANTILE_LOSS_FAMILY:
+        return _cpa_quantile_loss(row)
+    if loss_family == CPA_FZ_LOSS_FAMILY:
+        if require_primary_fz_pair and not _primary_fz_pair_allowed(row):
+            return None
+        return _cpa_fz_loss(row)
+    return None
+
+
 def _cpa_quantile_loss(row: Mapping[str, object]) -> float | None:
     recorded = _optional_float(row.get("quantile_loss"))
     if recorded is not None:
@@ -171,9 +370,40 @@ def _cpa_quantile_loss(row: Mapping[str, object]) -> float | None:
         loss = _required_float(row["realized_loss"])
         var_forecast = _required_float(row["var_forecast"])
         tail_level = _required_float(row["tail_level"])
-    except (KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError, PipelineRunError):
         return None
     return quantile_loss(loss, var_forecast, tail_level)
+
+
+def _cpa_fz_loss(row: Mapping[str, object]) -> float | None:
+    recorded = _optional_float(row.get("fz_loss"))
+    if recorded is not None:
+        return recorded
+    try:
+        loss = _required_float(row["realized_loss"])
+        var_forecast = _required_float(row["var_forecast"])
+        es_forecast = _required_float(row["es_forecast"])
+        tail_level = _required_float(row["tail_level"])
+    except (KeyError, TypeError, ValueError, PipelineRunError):
+        return None
+    value = fz_loss(loss, var_forecast, es_forecast, tail_level)
+    return value if math.isfinite(value) else None
+
+
+def _primary_fz_pair_allowed(row: Mapping[str, object]) -> bool:
+    if _cpa_fz_loss(row) is None:
+        return False
+    interpretation = str(row.get("fz_interpretation") or "")
+    es_source = str(row.get("es_source") or "")
+    companion = str(row.get("es_companion_type") or "")
+    blocked = {
+        "augmented_var_es_pair_not_jointly_estimated",
+        "empirical_exceedance_companion",
+        "raw_empirical_es",
+        "rolling_empirical_es",
+    }
+    values = {interpretation, es_source, companion}
+    return values.isdisjoint(blocked)
 
 
 def _cpa_complete_instrument_row(row: Mapping[str, object], instruments: list[str]) -> bool:
@@ -291,3 +521,45 @@ def _cpa_unavailable(base: Mapping[str, object], status: str) -> dict[str, objec
         "tstat_json": None,
         "inference_status": status,
     }
+
+
+def _cross_model_skipped_record(status: str) -> dict[str, object]:
+    return _cpa_unavailable(
+        {
+            "suite": "cross_model",
+            "target_family": PIPELINE_CONFIG.target_policy.primary_target_family,
+            "tail_side": None,
+            "tail_level": None,
+            "model_name": None,
+            "anchor_model_name": None,
+            "candidate_model_name": None,
+            "refit_frequency": None,
+            "anchor_refit_frequency": None,
+            "candidate_refit_frequency": None,
+            "loss_family": None,
+            "comparison_axis": "cross_model_registered_pair",
+            "claim_scope": CPA_CLAIM_SCOPE,
+            "headline_claim_allowed": False,
+            "anchor_information_set": None,
+            "candidate_information_set": None,
+            "common_n": 0,
+            "complete_case_n": 0,
+            "effective_n": 0,
+            "instrument_count": 0,
+            "minimum_effective_n": 120,
+            "instruments_json": "[]",
+            "dropped_instruments_json": "[]",
+            "dropped_missing_instrument_rows": 0,
+            "dropped_missing_loss_rows": 0,
+            "hac_kernel": CPA_HAC_KERNEL,
+            "hac_lags": None,
+            "method_note": "newey_west_hac_wald_conditional_loss_differential_regression",
+            "regression_formula": None,
+        },
+        status,
+    )
+
+
+def _cpa_regression_formula(loss_family: str, comparison_axis: str) -> str:
+    loss_label = "fz_loss" if loss_family == CPA_FZ_LOSS_FAMILY else "quantile_loss"
+    return f"candidate_minus_anchor_{loss_label}_on_preregistered_instruments_{comparison_axis}"

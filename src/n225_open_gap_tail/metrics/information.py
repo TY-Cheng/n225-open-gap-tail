@@ -2,9 +2,15 @@
 # ruff: noqa: F401,F403,F405,F821,I001,UP035
 from __future__ import annotations
 
-from n225_open_gap_tail.config import runtime as _runtime
-
-globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("__")})
+from n225_open_gap_tail.config.runtime import *
+from n225_open_gap_tail.data_lake.artifacts import _read_manifest
+from n225_open_gap_tail.metrics.stat_utils import (
+    _safe_mean,
+    fz_loss,
+    moving_block_one_sided_pvalue,
+    quantile_loss,
+)
+from n225_open_gap_tail.panel.build import registered_ml_tail_information_sets
 
 
 def build_incremental_information_records(
@@ -180,7 +186,7 @@ def _incremental_record_from_pairs(
     block_length = max(5, round(paired_rows ** (1.0 / 3.0))) if paired_rows else None
     mean_candidate_minus_base = _safe_mean(candidate_minus_base)
     dm_pvalue = (
-        _moving_block_one_sided_pvalue(
+        moving_block_one_sided_pvalue(
             candidate_minus_base[np.isfinite(candidate_minus_base)],
             observed_mean=mean_candidate_minus_base,
             reps=BOOTSTRAP_REPS,

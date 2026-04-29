@@ -2,7 +2,15 @@
 # ruff: noqa: F401,F403,F405,F821,I001,UP035
 from __future__ import annotations
 
-from n225_open_gap_tail.config import runtime as _runtime
+from n225_open_gap_tail.config.runtime import *
+from n225_open_gap_tail.metrics.stat_utils import (
+    _safe_mean,
+    christoffersen_independence_test,
+    fz_loss,
+    kupiec_pof_test,
+    quantile_loss,
+    valid_forecast_rows,
+)
 from n225_open_gap_tail.metrics.result_matrix_grouping import (
     _result_matrix_information_increment_groups,
     _result_matrix_tail_model_groups,
@@ -13,8 +21,6 @@ from n225_open_gap_tail.metrics.result_matrix_scoring import (
     _build_result_matrix_group,
     _build_result_matrix_mcs_records,
 )
-
-globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("__")})
 
 
 def build_metric_records(
@@ -107,7 +113,7 @@ def build_metric_records(
 def build_ml_tail_result_matrix_artifacts(
     forecasts: list[dict[str, object]],
 ) -> dict[str, object]:
-    valid_rows = _valid_forecast_rows(forecasts)
+    valid_rows = valid_forecast_rows(forecasts)
     matrix: list[dict[str, object]] = []
     sample_audit: list[dict[str, object]] = []
     dm_records: list[dict[str, object]] = []

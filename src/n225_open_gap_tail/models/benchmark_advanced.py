@@ -2,7 +2,8 @@
 # ruff: noqa: F401,F403,F405,F821,I001,PLR0912,PLR0913,PLR0915,UP035
 from __future__ import annotations
 
-from n225_open_gap_tail.config import runtime as _runtime
+from n225_open_gap_tail.config.runtime import *
+from n225_open_gap_tail.data_lake.artifacts import _forecast_shard_id
 from n225_open_gap_tail.models.benchmark_advanced_math import (
     _advanced_pot_gpd_standardized_tail,
     _empirical_es_multiplier,
@@ -21,9 +22,6 @@ from n225_open_gap_tail.models.benchmark_advanced_stateful import (
     _gas_filter_failure_record,
     benchmark_advanced_refit_dates,
 )
-
-
-globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("__")})
 
 
 def _evaluate_benchmark_advanced_shard(

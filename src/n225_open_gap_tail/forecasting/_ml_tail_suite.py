@@ -2,10 +2,33 @@
 # ruff: noqa: F401,F403,F405,F821,I001,UP035
 from __future__ import annotations
 
-from n225_open_gap_tail.config import runtime as _runtime
+from n225_open_gap_tail.config.runtime import *
 from n225_open_gap_tail.forecasting._guards import _assert_leakage_gate
-
-globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("__")})
+from n225_open_gap_tail.forecasting.artifacts import (
+    _forecast_shard_id,
+    _update_manifest,
+    _write_forecast_shards,
+    _write_json,
+    _write_parquet,
+)
+from n225_open_gap_tail.inference.core import build_common_sample_artifacts
+from n225_open_gap_tail.metrics.cpa import (
+    build_cross_model_cpa_inference_records,
+    build_ml_tail_cpa_inference_records,
+)
+from n225_open_gap_tail.metrics.information import (
+    _assert_run_config_compatible,
+    _gold_artifact_path,
+    build_dst_attenuation_records,
+    build_incremental_information_records,
+)
+from n225_open_gap_tail.metrics.result_matrix import build_ml_tail_result_matrix_artifacts
+from n225_open_gap_tail.models.ml_tail import _evaluate_ml_tail_shard
+from n225_open_gap_tail.models.ml_tail_oof import (
+    build_ml_tail_feature_unavailability_date_records,
+    build_ml_tail_feature_unavailability_records,
+)
+from n225_open_gap_tail.panel.build import registered_ml_tail_information_sets
 
 
 def evaluate_ml_tail_suite(
@@ -104,7 +127,17 @@ def evaluate_ml_tail_suite(
     feature_unavailability = build_ml_tail_feature_unavailability_records(forecasts)
     feature_unavailability_dates = build_ml_tail_feature_unavailability_date_records(forecasts)
     result_matrix_artifacts = build_ml_tail_result_matrix_artifacts(forecasts)
-    cpa_inference = build_ml_tail_cpa_inference_records(headline_forecasts)
+    cpa_inference = build_ml_tail_cpa_inference_records(forecasts)
+    benchmark_forecast_path = forecast_root / "benchmark_forecasts.parquet"
+    benchmark_forecasts = (
+        pl.read_parquet(benchmark_forecast_path).to_dicts()
+        if benchmark_forecast_path.exists()
+        else []
+    )
+    cross_model_cpa_inference = build_cross_model_cpa_inference_records(
+        ml_tail_forecasts=forecasts,
+        benchmark_forecasts=benchmark_forecasts,
+    )
     _write_parquet(metrics_root / "ml_tail_metrics.parquet", metrics)
     _write_parquet(
         metrics_root / "ml_tail_metrics_per_model.parquet",
@@ -161,6 +194,10 @@ def evaluate_ml_tail_suite(
         cast(list[dict[str, object]], result_matrix_artifacts["mcs"]),
     )
     _write_parquet(metrics_root / "ml_tail_cpa_inference.parquet", cpa_inference)
+    _write_parquet(
+        metrics_root / "cross_model_cpa_inference.parquet",
+        cross_model_cpa_inference,
+    )
     (metrics_root / "ml_tail_result_matrix_notes.md").write_text(
         cast(str, result_matrix_artifacts["notes"]),
         encoding="utf-8",
@@ -187,6 +224,10 @@ def evaluate_ml_tail_suite(
                 cast(list[dict[str, object]], result_matrix_artifacts["matrix"])
             ),
             "cpa_inference_rows": len(cpa_inference),
+            "cross_model_cpa_inference_rows": len(cross_model_cpa_inference),
+            "cross_model_cpa_status": "completed"
+            if benchmark_forecasts
+            else "skipped_missing_benchmark_forecasts",
             "tail_sides": list(active_tail_sides),
             "result_matrix_sample_audit_rows": len(
                 cast(list[dict[str, object]], result_matrix_artifacts["sample_audit"])
@@ -205,6 +246,8 @@ def evaluate_ml_tail_suite(
             "ml_tail_forecast_rows": len(forecasts),
             "ml_tail_metric_rows": len(metrics),
             "ml_tail_tail_sides": list(active_tail_sides),
+            "ml_tail_cpa_inference_rows": len(cpa_inference),
+            "cross_model_cpa_inference_rows": len(cross_model_cpa_inference),
         },
     )
     _evaluation_log(

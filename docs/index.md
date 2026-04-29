@@ -68,9 +68,9 @@ and exports provenance-bearing table fragments under ignored `reports/runs/`.
 ML tail now includes direct quantile, fully out-of-fold location-scale, and fully out-of-fold
 standardized-loss POT-GPD model families. The strict headline ladder remains separate from
 the restricted `ml_tail_result_matrix*` layer, which compares VaR-only and VaR-ES metrics on
-explicit common samples without granting headline claims. Richer econometric models
-are wired as explicit nonblocking benchmark diagnostics, but they remain unavailable as
-empirical forecast evidence until their registered optimizers produce valid forecast rows.
+explicit common samples without granting headline claims. Advanced econometric benchmark
+families now produce nonblocking forecast rows when their optimizers pass the registered
+gates; rows that fail remain explicit unavailable diagnostics rather than silent fallbacks.
 The advanced suite is expected to be runtime-heavy; `benchmark-floor` is the fast
 regression path, while the full benchmark suite parallelizes advanced model-by-tail shards.
 These artifacts are research candidates, not final manuscript claims.
@@ -102,7 +102,7 @@ Layer | Current state | Boundary
 U.S. predictors | Massive and FRED smoke ingestion implemented and tested. | These are historical predictor sources, not live production feeds.
 Calendar and contract scaffolding | XNYS/JPX calendars, early closes, DST, quarterly contract metadata, roll windows, and central-contract selector implemented. | Rule-based Nikkei futures metadata must be reconciled against J-Quants or JPX metadata before final empirical results.
 Target data | J-Quants Premium futures daily OHLC is accessible and the durable gold panel is built from the full cache-first workflow. | The results snapshot is research-candidate evidence; final paper claims need a clean committed run and author-reviewed tables.
-Modeling | Benchmark historical, rolling, vol-scaled, GARCH/GJR, and GJR-EVT baseline floor runs behind gates. Advanced benchmark families are wired as nonblocking unavailable diagnostics until their optimizers produce forecast rows. ML tail LightGBM direct-quantile, fully OOF location-scale, and standardized-loss POT-GPD run the registered information-set ladder after the leakage gate passes. The headline ladder stays in `ml_tail_metrics.parquet`; restricted VaR-only and VaR-ES model-family comparisons live in `ml_tail_result_matrix*` artifacts. Block-bootstrap DM, HLN Tmax MCS, Murphy, stress-window, feature-unavailability, ES severity, diagnostic VaR-trigger, and DST attenuation tables are artifact-level outputs with explicit claim boundaries. | Instrumented conditional predictive ability regression, DST formal mechanism tests, hedge PnL/cost analysis, and richer econometric models remain unavailable until their registered implementations complete.
+Modeling | Benchmark historical, rolling, vol-scaled, GARCH/GJR, and GJR-EVT baseline floor runs behind gates. Advanced CAViaR, CARE/expectile, Taylor ALD, direct FZ-loss, GAS-t, and GAS-POT benchmark families are implemented as nonblocking forecast rows plus optimizer diagnostics. ML tail LightGBM direct-quantile, fully OOF location-scale, and standardized-loss POT-GPD run the registered information-set ladder after the leakage gate passes. The headline ladder stays in `ml_tail_metrics.parquet`; restricted VaR-only and VaR-ES model-family comparisons live in `ml_tail_result_matrix*` artifacts. Block-bootstrap DM, HLN Tmax MCS, Murphy, stress-window, feature-unavailability, ES severity, diagnostic VaR-trigger, and DST attenuation tables are artifact-level outputs with explicit claim boundaries. | Instrumented conditional predictive ability regression, DST formal mechanism tests, hedge PnL/cost analysis, and additional robustness model variants remain future work until explicitly implemented and audited.
 
 ## Reading Order
 

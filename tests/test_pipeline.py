@@ -20,6 +20,8 @@ import n225_open_gap_tail.features as paper_features
 import n225_open_gap_tail.forecasting as paper_core
 import n225_open_gap_tail.forecasting as paper_evaluation
 import n225_open_gap_tail.forecasting as paper_module
+import n225_open_gap_tail.forecasting._benchmark_suite as benchmark_suite
+import n225_open_gap_tail.forecasting._ml_tail_suite as ml_tail_suite
 import n225_open_gap_tail.inference as paper_inference
 import n225_open_gap_tail.models.benchmark_advanced as benchmark_advanced
 import n225_open_gap_tail.panel as paper_leakage
@@ -112,12 +114,57 @@ def test_paper_package_split_preserves_import_compatibility() -> None:
     assert paper_leakage.write_leakage_check is write_leakage_check
     assert paper_reporting.export_tables is export_tables
     assert paper_evaluation.evaluate_benchmark_floor_suite is evaluate_benchmark_floor_suite
+    assert paper_evaluation.evaluate_ml_tail_suite is ml_tail_suite.evaluate_ml_tail_suite
+    assert paper_evaluation.evaluate_benchmark_suite is benchmark_suite.evaluate_benchmark_suite
     assert paper_evaluation._evaluate_benchmark_advanced_shard is (
         benchmark_advanced._evaluate_benchmark_advanced_shard
+    )
+    assert "n225_open_gap_tail.forecasting._guards" in (pipeline_runtime._IMPLEMENTATION_MODULES)
+    assert "n225_open_gap_tail.forecasting._benchmark_suite" in (
+        pipeline_runtime._IMPLEMENTATION_MODULES
+    )
+    assert "n225_open_gap_tail.forecasting._ml_tail_suite" in (
+        pipeline_runtime._IMPLEMENTATION_MODULES
     )
     assert "n225_open_gap_tail.models.benchmark_advanced" in (
         pipeline_runtime._IMPLEMENTATION_MODULES
     )
+    assert "n225_open_gap_tail.models.benchmark_advanced_stateful" in (
+        pipeline_runtime._IMPLEMENTATION_MODULES
+    )
+    assert "n225_open_gap_tail.metrics.result_matrix_scoring" in (
+        pipeline_runtime._IMPLEMENTATION_MODULES
+    )
+
+
+def test_benchmark_tagged_dispatch_routes_by_shard_kind(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def fake_floor(payload: dict[str, object]) -> dict[str, list[dict[str, object]]]:
+        calls.append(f"floor:{payload['shard_id']}")
+        return {"forecasts": [{"model_name": "floor"}], "diagnostics": [], "failures": []}
+
+    def fake_advanced(payload: dict[str, object]) -> dict[str, list[dict[str, object]]]:
+        calls.append(f"advanced:{payload['shard_id']}")
+        return {"forecasts": [{"model_name": "advanced"}], "diagnostics": [], "failures": []}
+
+    monkeypatch.setattr(benchmark_suite, "_evaluate_benchmark_shard", fake_floor)
+    monkeypatch.setattr(
+        benchmark_suite,
+        "_evaluate_benchmark_advanced_shard",
+        fake_advanced,
+    )
+
+    floor = benchmark_suite._dispatch_benchmark_shard({"shard_kind": "floor", "shard_id": "a"})
+    advanced = benchmark_suite._dispatch_benchmark_shard(
+        {"shard_kind": "advanced", "shard_id": "b"}
+    )
+
+    assert calls == ["floor:a", "advanced:b"]
+    assert floor["shard_kind"] == "floor"
+    assert advanced["shard_kind"] == "advanced"
 
 
 def test_paper_root_is_compatibility_surface() -> None:
@@ -172,9 +219,16 @@ def test_functional_modules_do_not_import_removed_pipeline_package() -> None:
         "n225_open_gap_tail.diagnostics",
         "n225_open_gap_tail.data_lake.cache_ops",
         "n225_open_gap_tail.panel.build",
+        "n225_open_gap_tail.panel.target_audit",
+        "n225_open_gap_tail.panel.time_alignment",
         "n225_open_gap_tail.models.ml_tail",
         "n225_open_gap_tail.models.benchmark_advanced",
+        "n225_open_gap_tail.models.benchmark_advanced_stateful",
         "n225_open_gap_tail.metrics.result_matrix",
+        "n225_open_gap_tail.metrics.result_matrix_grouping",
+        "n225_open_gap_tail.metrics.result_matrix_scoring",
+        "n225_open_gap_tail.metrics.result_matrix_notes",
+        "n225_open_gap_tail.sources.jquants_futures",
     ],
 )
 def test_pipeline_submodule_surfaces_import(module_name: str) -> None:
@@ -344,6 +398,167 @@ def test_care_expectile_calibration_failure_is_unavailable_not_forecast() -> Non
     assert calibration["expectile_calibration_status"] == (
         "unavailable_care_expectile_insufficient_training_rows"
     )
+
+
+def test_caviar_stateful_sequence_produces_audited_forecasts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 30)
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 1)
+    base_date = datetime(2026, 1, 1, tzinfo=UTC)
+    rows = [
+        {
+            "forecast_date": (base_date + timedelta(days=day)).date().isoformat(),
+            "clean_sample": True,
+            "realized_loss": 0.01 + (0.08 if day % 17 == 0 else float(day % 11) / 1000.0),
+        }
+        for day in range(80)
+    ]
+
+    forecasts, diagnostics, failures = benchmark_advanced._forecast_stateful_sequence(
+        rows=rows,
+        model_name="caviar_sav",
+        tail_level=0.95,
+        oos_start=rows[40]["forecast_date"],
+    )
+
+    assert failures == []
+    assert forecasts
+    assert diagnostics[0]["fit_status"] == "ok"
+    assert diagnostics[0]["burn_in_rows"] == min(
+        paper_module.ADVANCED_RECURSIVE_BURN_IN_ROWS,
+        diagnostics[0]["train_n"] // 4,
+    )
+    assert diagnostics[0]["initialization_source"] in {
+        "coarse_economic_grid",
+        "previous_month_warm_start",
+    }
+    assert forecasts[0]["es_source"] == "empirical_exceedance_companion"
+    assert forecasts[0]["fz_interpretation"] == "augmented_var_es_pair_not_jointly_estimated"
+    assert forecasts[0]["es_forecast"] >= forecasts[0]["var_forecast"]
+
+
+def test_stateful_forecast_t_does_not_use_realized_loss_t(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 30)
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 1)
+    base_date = datetime(2026, 1, 1, tzinfo=UTC)
+    rows = [
+        {
+            "forecast_date": (base_date + timedelta(days=day)).date().isoformat(),
+            "clean_sample": True,
+            "realized_loss": 0.01 + (0.12 if day % 13 == 0 else float(day % 7) / 1000.0),
+        }
+        for day in range(70)
+    ]
+    oos_start = rows[40]["forecast_date"]
+    mutated = [dict(row) for row in rows]
+    mutated[40]["realized_loss"] = 999.0
+
+    forecasts, _, _ = benchmark_advanced._forecast_stateful_sequence(
+        rows=rows,
+        model_name="caviar_asymmetric_slope",
+        tail_level=0.95,
+        oos_start=oos_start,
+    )
+    mutated_forecasts, _, _ = benchmark_advanced._forecast_stateful_sequence(
+        rows=mutated,
+        model_name="caviar_asymmetric_slope",
+        tail_level=0.95,
+        oos_start=oos_start,
+    )
+
+    assert forecasts[0]["forecast_date"] == oos_start
+    assert mutated_forecasts[0]["forecast_date"] == oos_start
+    assert forecasts[0]["var_forecast"] == pytest.approx(mutated_forecasts[0]["var_forecast"])
+    assert forecasts[0]["es_forecast"] == pytest.approx(mutated_forecasts[0]["es_forecast"])
+
+
+def test_direct_fz_and_gas_pot_validity_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 30)
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 3)
+    losses = np.array(
+        [0.01 + (0.11 if index % 9 == 0 else float(index % 5) / 1000.0) for index in range(80)]
+    )
+
+    fit = benchmark_advanced._fit_advanced_model(
+        train=losses[:60],
+        model_name="direct_fz_loss_sav",
+        tail_level=0.95,
+        forecast_date="2026-03-02",
+        previous_params=None,
+        gas_nu_by_year={},
+    )
+    forecast = benchmark_advanced._forecast_from_advanced_fit(fit)
+    assert fit["fit_status"] == "ok"
+    assert forecast["es_forecast"] >= forecast["var_forecast"]
+    assert fit["restart_count"] <= paper_module.ADVANCED_OPTIMIZER_MAX_RESTARTS
+
+    tail = benchmark_advanced._advanced_pot_gpd_standardized_tail(
+        standardized_losses=np.r_[np.linspace(-1.0, 2.0, 50), np.linspace(2.5, 5.0, 12)],
+        tail_level=0.95,
+        threshold_quantile=0.80,
+    )
+    assert tail["evt_exceedance_count"] >= 3
+    assert tail["evt_scale"] > 0
+    assert "gpd_unconstrained_loc_hat" in tail
+
+
+def test_advanced_helper_failure_branches_are_explicit(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 30)
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 3)
+
+    forecasts, diagnostics, failures = benchmark_advanced._forecast_stateful_sequence(
+        rows=[],
+        model_name="caviar_sav",
+        tail_level=0.95,
+        oos_start="2026-01-01",
+    )
+    assert forecasts == []
+    assert failures == []
+    assert diagnostics[0]["fit_status"] == "unavailable_no_clean_rows"
+
+    with pytest.raises(paper_module.PipelineRunError):
+        benchmark_advanced._recursive_var_path(
+            train=np.array([]),
+            params=np.array([0.01, 0.9, 0.05]),
+            variant="sav",
+            has_gap=False,
+        )
+    assert not benchmark_advanced._recursive_params_valid(
+        np.array([0.01, 1.1, 0.05]),
+        variant="sav",
+        has_gap=False,
+    )
+    assert (
+        benchmark_advanced._empirical_es_multiplier(
+            train_losses=np.array([1.0, 2.0]),
+            train_var_forecasts=np.array([10.0, 10.0]),
+        )["status"]
+        == "unavailable_empirical_es_companion_insufficient_exceedances"
+    )
+    assert (
+        benchmark_advanced._gas_filter_path(
+            train=np.array([]),
+            params=np.array([0.0, 0.1, 0.9, 0.0]),
+            nu=5.0,
+        )
+        is None
+    )
+    assert not benchmark_advanced._gas_params_valid(np.array([0.0, 5.0, 0.9, 0.0]))
+    with pytest.raises(paper_module.PipelineRunError):
+        benchmark_advanced._gas_next_log_sigma(
+            y=1.0,
+            log_sigma=0.0,
+            params=np.array([0.0, 0.1, 0.9, 0.0]),
+            nu=1.5,
+        )
+    with pytest.raises(paper_module.PipelineRunError):
+        benchmark_advanced._advanced_pot_gpd_standardized_tail(
+            standardized_losses=np.array([0.1, 0.2]),
+            tail_level=0.95,
+        )
 
 
 def test_combined_clean_start_excludes_pre_start_forecast_rows() -> None:
@@ -2411,6 +2626,74 @@ def test_benchmark_advanced_wiring_is_nonblocking_and_sharded(
     assert status["benchmark_advanced_status"] == "completed_nonblocking"
     assert status["benchmark_advanced_forecast_rows"] == advanced.height
     assert status["benchmark_advanced_failures"] == 0
+
+
+def test_benchmark_tagged_dispatch_preserves_serial_floor_then_advanced_order(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "reports" / "runs" / "benchmark_dispatch_order"
+    panel_dir = run_dir / "panel"
+    panel_dir.mkdir(parents=True)
+    rows = [
+        {
+            "forecast_date": (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=day))
+            .date()
+            .isoformat(),
+            "clean_sample": True,
+            "realized_loss": float(day) / 100.0,
+        }
+        for day in range(70)
+    ]
+    pl.DataFrame(rows).write_parquet(panel_dir / "modeling_panel.parquet")
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"config_hash": paper_module.PIPELINE_CONFIG.config_hash()}),
+        encoding="utf-8",
+    )
+    write_leakage_check(run_dir=run_dir)
+    _patch_paper_module(monkeypatch, "TAIL_LEVELS", (0.95,))
+    _patch_paper_module(monkeypatch, "BENCHMARK_FLOOR_MODEL_NAMES", ("historical_quantile",))
+    _patch_paper_module(monkeypatch, "BENCHMARK_ADVANCED_MODEL_NAMES", ("caviar_sav",))
+    calls: list[str] = []
+
+    def fake_output(payload: dict[str, object]) -> dict[str, list[dict[str, object]]]:
+        model_name = str(cast(tuple[str], payload["models"])[0])
+        kind = str(payload["shard_kind"])
+        calls.append(kind)
+        forecasts = [
+            {
+                "forecast_date": (datetime(2026, 2, 1, tzinfo=UTC) + timedelta(days=day))
+                .date()
+                .isoformat(),
+                "model_name": model_name,
+                "target_family": "full_gap_settle_to_open",
+                "information_set": "target_history_only",
+                "tail_level": 0.95,
+                "refit_frequency": None
+                if kind == "floor"
+                else paper_module.BENCHMARK_ADVANCED_REFIT_FREQUENCY,
+                "benchmark_tier": kind,
+                "var_forecast": 1.0,
+                "es_forecast": 1.1,
+                "realized_loss": float(day) / 100.0,
+                "var_breach": False,
+                "is_valid_forecast": True,
+                "invalid_reason": None,
+                "fit_status": "ok",
+            }
+            for day in range(30)
+        ]
+        return {"forecasts": forecasts, "diagnostics": [], "failures": []}
+
+    monkeypatch.setattr(benchmark_suite, "_evaluate_benchmark_shard", fake_output)
+    monkeypatch.setattr(benchmark_suite, "_evaluate_benchmark_advanced_shard", fake_output)
+
+    evaluate_benchmark_suite(run_dir=run_dir, workers=1)
+
+    assert calls == ["floor", "advanced"]
+    status = json.loads((run_dir / "metrics" / "benchmark_status.json").read_text())
+    assert status["benchmark_floor_forecast_rows"] == 30
+    assert status["benchmark_advanced_forecast_rows"] == 30
 
 
 def test_benchmark_floor_suite_skips_advanced_models(

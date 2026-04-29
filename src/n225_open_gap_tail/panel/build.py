@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from n225_open_gap_tail.config import runtime as _runtime
+from n225_open_gap_tail.panel.target_audit import build_target_audit_records
+from n225_open_gap_tail.panel.time_alignment import build_time_alignment_records
 
 globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("__")})
 

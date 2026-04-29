@@ -12,6 +12,9 @@ from typing import Any, cast
 import polars as pl
 
 from n225_open_gap_tail.config import Settings
+from n225_open_gap_tail.diagnostics.results_discussion import (
+    generate_results_discussion as _generate_results_discussion,
+)
 
 
 @dataclass(frozen=True)
@@ -129,12 +132,24 @@ def _full_run_snapshot_paths(
         "leakage_summary": leakage_root / "summary.json",
         "benchmark_status": run_dir / "metrics" / "benchmark_status.json",
         "benchmark_metrics": run_dir / "metrics" / "benchmark_metrics.parquet",
+        "benchmark_forecasts": run_dir / "forecasts" / "benchmark_forecasts.parquet",
+        "benchmark_dm_inference": run_dir / "metrics" / "benchmark_dm_inference.parquet",
+        "benchmark_mcs": run_dir / "metrics" / "benchmark_mcs.parquet",
         "ml_tail_status": run_dir / "metrics" / "ml_tail_status.json",
         "ml_tail_metrics": run_dir / "metrics" / "ml_tail_metrics.parquet",
         "ml_tail_metrics_per_model": run_dir / "metrics" / "ml_tail_metrics_per_model.parquet",
+        "ml_tail_forecasts": run_dir / "forecasts" / "ml_tail_forecasts.parquet",
         "ml_tail_result_matrix": run_dir / "metrics" / "ml_tail_result_matrix.parquet",
         "ml_tail_result_matrix_dm": run_dir / "metrics" / "ml_tail_result_matrix_dm.parquet",
         "ml_tail_result_matrix_mcs": run_dir / "metrics" / "ml_tail_result_matrix_mcs.parquet",
+        "ml_tail_dm_inference": run_dir / "metrics" / "ml_tail_dm_inference.parquet",
+        "ml_tail_mcs": run_dir / "metrics" / "ml_tail_mcs.parquet",
+        "ml_tail_model_eviction": run_dir / "metrics" / "ml_tail_model_eviction.parquet",
+        "ml_tail_dst_attenuation": run_dir / "metrics" / "ml_tail_dst_attenuation.parquet",
+        "ml_tail_murphy": run_dir / "metrics" / "ml_tail_murphy.parquet",
+        "ml_tail_feature_unavailability": run_dir
+        / "metrics"
+        / "ml_tail_feature_unavailability.parquet",
         "benchmark_stress_windows": run_dir / "metrics" / "benchmark_stress_windows.parquet",
         "ml_tail_stress_windows": run_dir / "metrics" / "ml_tail_stress_windows.parquet",
         "latex_dir": run_dir / "latex" / "tables",
@@ -182,6 +197,21 @@ def _full_run_results_markdown(
     result_matrix = _read_parquet_optional(paths["ml_tail_result_matrix"])
     benchmark_stress = _read_parquet_optional(paths["benchmark_stress_windows"])
     ml_tail_stress = _read_parquet_optional(paths["ml_tail_stress_windows"])
+    results_discussion = _generate_results_discussion(
+        manifest=manifest,
+        paths=paths,
+        data_vintage=data_vintage,
+        benchmark_status=benchmark_status,
+        ml_tail_status=ml_tail_status,
+        leakage_summary=leakage_summary,
+        panel=panel,
+        calendar=calendar,
+        benchmark_metrics=benchmark_metrics,
+        ml_tail_metrics=ml_tail_metrics,
+        result_matrix=result_matrix,
+        benchmark_stress=benchmark_stress,
+        ml_tail_stress=ml_tail_stress,
+    )
 
     run_id = str(manifest.get("run_id") or run_dir.name)
     panel_bounds = _panel_bounds(panel)
@@ -389,6 +419,8 @@ The pipeline is now producing full-run research-candidate evidence from the dura
 - Restricted rows can explain model-family behavior on matched dates, but they cannot replace the headline information ladder.
 - Diagnostic rows can motivate discussion and future checks; they should not be worded as superiority or risk-management usefulness claims.
 
+{results_discussion}
+
 ## Metadata
 
 {metadata_table}
@@ -396,6 +428,10 @@ The pipeline is now producing full-run research-candidate evidence from the dura
 - `combined_clean_start` is the modeling lower bound; dates before it remain audit history rather than forecast evidence.
 - `git_dirty` is recorded so dirty runs can be rejected before manuscript tables are frozen.
 - `fred_vintage_safe=False` is an explicit limitation: FRED data are current historical values with conservative release lag, not real-time vintage observations.
+
+## Technical Infrastructure Note
+
+- The runtime compatibility bridge based on `globals().update(runtime)` remains a future architecture cleanup. Its removal is separate from empirical reruns and is not part of the claim boundary for this results snapshot.
 
 ## Pipeline Structure
 

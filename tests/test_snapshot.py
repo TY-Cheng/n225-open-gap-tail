@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
@@ -10,6 +11,7 @@ from zoneinfo import ZoneInfo
 import polars as pl
 import pytest
 
+import n225_open_gap_tail.diagnostics.results_discussion as results_discussion_module
 import n225_open_gap_tail.diagnostics.snapshot as snapshot_module
 from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.diagnostics.snapshot import (
@@ -442,20 +444,273 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     rendered = Path("docs/results_snapshot.md").read_text(encoding="utf-8")
     assert result.snapshot_id == run_id
     assert "Discussion Q&A" in rendered
+    assert "## Results And Discussion" in rendered
+    assert "<!-- generated: results_discussion -->" in rendered
+    _assert_results_discussion_subsections_in_order(rendered)
     assert "Gold modeling rows" in rendered
     assert "older" in rendered
     assert "bounded access-check snapshot" in rendered
     assert "Coverage review:" in rendered
     assert "must not be read as forecast improvement" in rendered
+    assert "on average across the unconditional evaluation sample" in rendered
+    assert "The hedge-trigger diagnostic has not yet been performed for this run" in rendered
+    assert "## Technical Infrastructure Note" in rendered
     assert "advanced benchmark layer is registered as nonblocking" in rendered
     assert "should be read as unavailable diagnostics" in rendered
     assert "Smoke-only artifact" not in rendered
+    assert ("Giacomini" + "-White") not in rendered
+    assert ("G" + "W") not in rendered
+    _assert_no_unsupported_affirmative_claims(rendered)
+
+
+def test_results_discussion_coverage_sentence_uses_test_fields() -> None:
+    frame = pl.DataFrame(
+        [
+            {
+                "var_breach_rate": 0.08,
+                "expected_breach_rate": 0.05,
+                "kupiec_pvalue": 0.01,
+                "christoffersen_pvalue": 0.20,
+            },
+            {
+                "var_breach_rate": 0.051,
+                "expected_breach_rate": 0.05,
+                "kupiec_pvalue": 0.50,
+                "christoffersen_pvalue": 0.03,
+            },
+        ]
+    )
+
+    sentence = results_discussion_module._coverage_test_discussion_sentence(frame)
+    missing = results_discussion_module._coverage_test_discussion_sentence(pl.DataFrame())
+
+    assert "Coverage review flags `1/2`" in sentence
+    assert "Kupiec p-values fall below 0.05 in `1/2`" in sentence
+    assert "Christoffersen p-values fall below 0.05 in `1/2`" in sentence
+    assert "Coverage review is descriptive" in missing
+
+
+def test_results_discussion_private_helpers_cover_fallbacks(tmp_path: Path) -> None:
+    panel = pl.DataFrame(
+        [
+            {"forecast_date": "2018-01-01", "forecast_sample": True},
+            {"forecast_date": "2018-06-20", "forecast_sample": True},
+        ]
+    )
+    audit = results_discussion_module._results_data_timing_audit(
+        manifest={"combined_clean_start": "2018-06-20"},
+        data_vintage={"fred_vintage_safe": False},
+        leakage_summary={"status": "fail", "failures": 2, "warnings": 1},
+        panel=panel,
+        calendar=pl.DataFrame([{"target_open_ts_utc": datetime(2020, 1, 1, tzinfo=UTC)}]),
+    )
+    assert "require review" in audit
+    assert "2` failures" in audit
+    assert results_discussion_module._date_range_from_calendar(pl.DataFrame()) is None
+    assert (
+        results_discussion_module._forecast_rows_before_combined_clean_start(
+            pl.DataFrame(),
+            "2018-06-20",
+        )
+        is None
+    )
+    assert "not available" in results_discussion_module._leakage_discussion_sentence({})
+
+    assert "not yet been performed" in results_discussion_module._results_benchmark_discussion(
+        benchmark_status={},
+        benchmark_metrics=pl.DataFrame(),
+        benchmark_forecasts=pl.DataFrame(),
+    )
+    no_advanced = results_discussion_module._results_benchmark_discussion(
+        benchmark_status={"forecast_rows": 2},
+        benchmark_metrics=pl.DataFrame([{"model_name": "hist"}]),
+        benchmark_forecasts=pl.DataFrame([{"benchmark_tier": "floor", "model_name": "hist"}]),
+    )
+    assert "does not provide advanced forecast rows" in no_advanced
+    assert (
+        "not yet been performed"
+        in results_discussion_module._results_ml_tail_headline_discussion(
+            ml_tail_status={},
+            ml_tail_metrics=pl.DataFrame(),
+        )
+    )
+    assert (
+        "not yet been performed"
+        in results_discussion_module._results_restricted_model_family_discussion(pl.DataFrame())
+    )
+    assert results_discussion_module._int_range(pl.DataFrame(), "common_n") == "not available"
+    assert (
+        results_discussion_module._int_range(pl.DataFrame([{"common_n": None}]), "common_n")
+        == "not available"
+    )
+    assert (
+        results_discussion_module._int_range(pl.DataFrame([{"common_n": 154}]), "common_n") == "154"
+    )
+
+    assert (
+        "valid coverage rows are not available"
+        in results_discussion_module._coverage_test_discussion_sentence(
+            pl.DataFrame([{"var_breach_rate": None, "expected_breach_rate": None}])
+        )
+    )
+    assert "not available" in results_discussion_module._eviction_discussion_sentence(
+        pl.DataFrame()
+    )
+    assert "do not expose" in results_discussion_module._eviction_discussion_sentence(
+        pl.DataFrame([{"model_name": "m"}])
+    )
+    assert "1` retained" in results_discussion_module._eviction_discussion_sentence(
+        pl.DataFrame(
+            [
+                {"retained_for_headline": True},
+                {"retained_for_headline": False},
+            ]
+        )
+    )
+    assert "not available" in results_discussion_module._tail_event_power_sentence(
+        pl.DataFrame(),
+        (),
+    )
+    gate_sentence = results_discussion_module._tail_event_power_sentence(
+        pl.DataFrame([{"tail_event_power_status": "insufficient_tail_events_for_inference"}]),
+        (pl.DataFrame([{"inference_status": "unavailable_insufficient_tail_events"}]),),
+    )
+    assert "1` restricted rows" in gate_sentence
+    assert "1/1` unavailable" in gate_sentence
+
+    paths = {
+        "dst_attenuation_table": tmp_path / "dst.tex",
+        "es_severity_table": tmp_path / "severity.tex",
+        "hedge_trigger_table": tmp_path / "trigger.tex",
+        "result_matrix_summary_table": tmp_path / "summary.tex",
+    }
+    assert "not yet been exported" in results_discussion_module._diagnostic_table_sentence(paths)
+    paths["dst_attenuation_table"].write_text("x", encoding="utf-8")
+    assert "1/4" in results_discussion_module._diagnostic_table_sentence(paths)
+
+    assert "not yet been performed" in results_discussion_module._severity_discussion_sentence(
+        benchmark_metrics=pl.DataFrame(),
+        ml_tail_metrics=pl.DataFrame(),
+        result_matrix=pl.DataFrame(),
+    )
+    assert "not available" in results_discussion_module._severity_discussion_sentence(
+        benchmark_metrics=pl.DataFrame([{"model_name": "m"}]),
+        ml_tail_metrics=pl.DataFrame(),
+        result_matrix=pl.DataFrame(),
+    )
+    assert "no finite" in results_discussion_module._severity_discussion_sentence(
+        benchmark_metrics=pl.DataFrame([{"mean_exceedance_severity": None}]),
+        ml_tail_metrics=pl.DataFrame(),
+        result_matrix=pl.DataFrame(),
+    )
+
+    combined = results_discussion_module._combine_forecasts_for_snapshot(
+        benchmark_forecasts=pl.DataFrame([{"model_name": "hist"}]),
+        ml_tail_forecasts=pl.DataFrame([{"model_name": "lgbm"}]),
+    )
+    assert combined.height == 2
+    assert set(combined["suite"].to_list()) == {"benchmark", "ml_tail"}
+    assert results_discussion_module._combine_forecasts_for_snapshot(
+        benchmark_forecasts=pl.DataFrame(),
+        ml_tail_forecasts=pl.DataFrame(),
+    ).is_empty()
+
+    assert "not yet been performed" in results_discussion_module._trigger_discussion_sentence(
+        pl.DataFrame()
+    )
+    assert "no valid forecast rows" in results_discussion_module._trigger_discussion_sentence(
+        pl.DataFrame(
+            [
+                {
+                    "model_name": "m",
+                    "information_set": "i",
+                    "tail_level": 0.95,
+                    "var_forecast": None,
+                    "realized_loss": None,
+                    "is_valid_forecast": True,
+                }
+            ]
+        )
+    )
+    trigger_text = results_discussion_module._trigger_discussion_sentence(
+        pl.DataFrame(
+            [
+                {
+                    "suite": "ml_tail",
+                    "model_name": "m",
+                    "information_set": "i",
+                    "tail_level": 0.95,
+                    "var_forecast": 1.0,
+                    "realized_loss": 0.8,
+                    "is_valid_forecast": True,
+                },
+                {
+                    "suite": "ml_tail",
+                    "model_name": "m",
+                    "information_set": "i",
+                    "tail_level": 0.95,
+                    "var_forecast": 2.0,
+                    "realized_loss": 2.5,
+                    "is_valid_forecast": True,
+                },
+            ]
+        )
+    )
+    assert "marks `1` model-date rows" in trigger_text
+    assert "mean triggered exception severity is `0.5`" in trigger_text
 
 
 def test_snapshot_private_helpers_cover_defensive_edges() -> None:
     assert snapshot_module._optional_float(True) is None
     assert snapshot_module._optional_float("1.5") == 1.5
     assert snapshot_module._markdown_cell("a|b\nc") == "a\\|b c"
+    assert results_discussion_module._optional_float("bad") is None
+    assert results_discussion_module._fmt_float(float("inf")) == "inf"
+
+
+def _assert_results_discussion_subsections_in_order(rendered: str) -> None:
+    headings = [
+        "### Data and timing audit",
+        "### Benchmark floor and advanced benchmarks",
+        "### ML-tail headline ladder",
+        "### Restricted model-family comparison",
+        "### Coverage and inference gates",
+        "### Supporting diagnostics",
+        "### Not yet claimed",
+    ]
+    positions = [rendered.index(heading) for heading in headings]
+    assert positions == sorted(positions)
+
+
+def _assert_no_unsupported_affirmative_claims(rendered: str) -> None:
+    forbidden = (
+        "best",
+        "dominates",
+        "significantly outperforms",
+        "superior",
+        "winning",
+        "optimal",
+        "trading signal",
+        "hedge PnL",
+        "causal mechanism",
+        "trading alpha",
+        "conditional predictive ability",
+        "causal",
+        "spillover",
+        "price discovery",
+    )
+    allowed_context = re.compile(
+        r"\b("
+        r"not|no|future|not yet|descriptive|diagnostic|without|does not|cannot|"
+        r"must not|not implemented|not performed|not claimed|rather than|separate|unsupported"
+        r")\b",
+        flags=re.IGNORECASE,
+    )
+    for line in rendered.splitlines():
+        lowered = line.lower()
+        for phrase in forbidden:
+            if phrase.lower() in lowered:
+                assert allowed_context.search(line), line
 
 
 def _raw_row(

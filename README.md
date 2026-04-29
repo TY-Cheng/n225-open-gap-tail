@@ -25,10 +25,8 @@ J-Quants should be configured through the V2 API key flow. The run futures
 target pipeline requires local Premium futures access:
 
 ```bash
-JQUANTS_API_VERSION="v2"
 JQUANTS_API_KEY="replace-me"
 JQUANTS_API_BASE_URL="https://api.jquants.com/v2"
-JQUANTS_API_PLAN="premium"
 JQUANTS_EQUITY_MASTER_ENABLED="true"
 JQUANTS_EQUITY_DAILY_ENABLED="true"
 JQUANTS_DERIVATIVES_DAILY_ENABLED="true"

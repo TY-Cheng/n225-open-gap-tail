@@ -15,6 +15,7 @@ import polars as pl
 import pytest
 
 import n225_open_gap_tail.config.runtime as pipeline_runtime
+import n225_open_gap_tail.data_lake.artifacts as artifact_utils
 import n225_open_gap_tail.data_lake.cache_ops as paper_cache
 import n225_open_gap_tail.features as paper_features
 import n225_open_gap_tail.forecasting as paper_core
@@ -24,6 +25,7 @@ import n225_open_gap_tail.forecasting._benchmark_suite as benchmark_suite
 import n225_open_gap_tail.forecasting._ml_tail_suite as ml_tail_suite
 import n225_open_gap_tail.inference as paper_inference
 import n225_open_gap_tail.metrics.cpa as cpa_module
+import n225_open_gap_tail.metrics.stat_utils as stat_utils
 import n225_open_gap_tail.models.benchmark_advanced as benchmark_advanced
 import n225_open_gap_tail.models.benchmark_advanced_math as advanced_math
 import n225_open_gap_tail.panel as paper_leakage
@@ -87,7 +89,19 @@ def _patch_paper_module(
         "n225_open_gap_tail.data_lake.cache_ops",
         "n225_open_gap_tail.reporting.tables",
         "n225_open_gap_tail.reporting.latex",
-        *pipeline_runtime._IMPLEMENTATION_MODULES,
+        "n225_open_gap_tail.forecasting._guards",
+        "n225_open_gap_tail.forecasting._benchmark_suite",
+        "n225_open_gap_tail.forecasting._ml_tail_suite",
+        "n225_open_gap_tail.forecasting.evaluation",
+        "n225_open_gap_tail.forecasting.artifacts",
+        "n225_open_gap_tail.models.benchmark_advanced_math",
+        "n225_open_gap_tail.models.benchmark_advanced_stateful",
+        "n225_open_gap_tail.metrics.cpa",
+        "n225_open_gap_tail.metrics.result_matrix_grouping",
+        "n225_open_gap_tail.metrics.result_matrix_scoring",
+        "n225_open_gap_tail.metrics.result_matrix_notes",
+        "n225_open_gap_tail.metrics.stat_utils",
+        "n225_open_gap_tail.diagnostics.git",
     )
     for module_name in dict.fromkeys(module_names):
         module = sys.modules.get(module_name)
@@ -122,23 +136,18 @@ def test_paper_package_split_preserves_import_compatibility() -> None:
     assert paper_evaluation._evaluate_benchmark_advanced_shard is (
         benchmark_advanced._evaluate_benchmark_advanced_shard
     )
-    assert "n225_open_gap_tail.forecasting._guards" in (pipeline_runtime._IMPLEMENTATION_MODULES)
-    assert "n225_open_gap_tail.forecasting._benchmark_suite" in (
-        pipeline_runtime._IMPLEMENTATION_MODULES
-    )
-    assert "n225_open_gap_tail.forecasting._ml_tail_suite" in (
-        pipeline_runtime._IMPLEMENTATION_MODULES
-    )
-    assert "n225_open_gap_tail.models.benchmark_advanced" in (
-        pipeline_runtime._IMPLEMENTATION_MODULES
-    )
-    assert "n225_open_gap_tail.models.benchmark_advanced_stateful" in (
-        pipeline_runtime._IMPLEMENTATION_MODULES
-    )
-    assert "n225_open_gap_tail.metrics.result_matrix_scoring" in (
-        pipeline_runtime._IMPLEMENTATION_MODULES
-    )
-    assert "n225_open_gap_tail.metrics.cpa" in pipeline_runtime._IMPLEMENTATION_MODULES
+    assert not hasattr(pipeline_runtime, "_IMPLEMENTATION_MODULES")
+    assert not hasattr(pipeline_runtime, "wire_runtime_namespace")
+
+
+def test_runtime_bridge_removed_from_source_modules() -> None:
+    source_root = Path("src/n225_open_gap_tail")
+    offenders = []
+    for path in source_root.rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        if "globals().update" in text or "wire_runtime_namespace" in text:
+            offenders.append(str(path))
+    assert offenders == []
 
 
 def test_benchmark_tagged_dispatch_routes_by_shard_kind(
@@ -2220,6 +2229,7 @@ def _cpa_loss_matrix_rows(
     tail_side: str = "left_tail",
     model_name: str | None = None,
     include_vix: bool = True,
+    include_es: bool = False,
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     anchor_information_set = (
@@ -2251,6 +2261,9 @@ def _cpa_loss_matrix_rows(
             "dst_regime": regime,
             "absorption_regime": absorption,
         }
+        if include_es:
+            common["es_forecast"] = 0.9
+            common["es_companion_type"] = "joint_var_es_model"
         anchor_loss = 0.22 + float(index % 5) / 1000.0
         candidate_loss = 0.20 + float(index % 11) / 1200.0
         rows.append(
@@ -2258,6 +2271,7 @@ def _cpa_loss_matrix_rows(
                 **common,
                 "information_set": anchor_information_set,
                 "quantile_loss": anchor_loss,
+                "es_forecast": 0.9 if include_es else None,
             }
         )
         rows.append(
@@ -2265,6 +2279,7 @@ def _cpa_loss_matrix_rows(
                 **common,
                 "information_set": candidate_information_set,
                 "quantile_loss": candidate_loss,
+                "es_forecast": 0.8 if include_es else None,
             }
         )
     return rows
@@ -2275,7 +2290,11 @@ def test_ml_tail_cpa_v1_runs_two_sided_direct_quantile_information_ladder() -> N
         [
             *_cpa_loss_matrix_rows(count=150),
             *_cpa_loss_matrix_rows(count=150, tail_side="right_tail"),
-            *_cpa_loss_matrix_rows(count=150, model_name="lightgbm_location_scale"),
+            *_cpa_loss_matrix_rows(
+                count=150,
+                model_name=paper_module.ML_TAIL_LOCATION_SCALE_MODEL,
+                include_es=True,
+            ),
         ]
     )
 
@@ -2300,7 +2319,16 @@ def test_ml_tail_cpa_v1_runs_two_sided_direct_quantile_information_ladder() -> N
     assert core_record["wald_pvalue"] is not None
     assert "lagged_loss_diff" in json.loads(str(core_record["instruments_json"]))
     assert {row["tail_side"] for row in records} == {"left_tail", "right_tail"}
-    assert len(records) == 6
+    assert {row["loss_family"] for row in records} == {"var_quantile_loss", "var_es_fz_loss"}
+    fz_record = next(
+        row
+        for row in records
+        if row["model_name"] == paper_module.ML_TAIL_LOCATION_SCALE_MODEL
+        and row["loss_family"] == "var_es_fz_loss"
+        and row["candidate_information_set"] == "japan_only_plus_us_close_core"
+    )
+    assert fz_record["inference_status"] == "ok_newey_west_hac_wald_cpa"
+    assert fz_record["regression_formula"].startswith("candidate_minus_anchor_fz_loss")
 
 
 def test_ml_tail_cpa_v1_gates_scope_and_instruments() -> None:
@@ -2312,7 +2340,7 @@ def test_ml_tail_cpa_v1_gates_scope_and_instruments() -> None:
 
     assert (
         paper_module.build_ml_tail_cpa_inference_records(
-            _cpa_loss_matrix_rows(count=150, model_name="lightgbm_location_scale")
+            _cpa_loss_matrix_rows(count=150, model_name=paper_module.ML_TAIL_LOCATION_SCALE_MODEL)
         )
         == []
     )
@@ -2382,6 +2410,68 @@ def test_ml_tail_cpa_defensive_branches_and_forecast_quantile_fallback(tmp_path:
     stale.write_text("old", encoding="utf-8")
     reporting_tables._remove_stale_tail_table_names(tmp_path)
     assert not stale.exists()
+
+
+def test_cross_model_cpa_registered_pairs_and_fz_gates() -> None:
+    ml_tail_rows = [
+        *_cpa_loss_matrix_rows(count=150),
+        *_cpa_loss_matrix_rows(
+            count=150,
+            model_name=paper_module.ML_TAIL_LOCATION_SCALE_MODEL,
+            include_es=True,
+        ),
+    ]
+    benchmark_rows: list[dict[str, object]] = []
+    for row in _cpa_loss_matrix_rows(count=150, model_name="garch_t", include_es=True):
+        if row["information_set"] == "japan_only_plus_us_close_core":
+            continue
+        benchmark_rows.append(
+            {
+                **row,
+                "information_set": "target_history_only",
+                "refit_frequency": "monthly",
+                "es_companion_type": "analytical_student_t_es",
+            }
+        )
+    for row in _cpa_loss_matrix_rows(count=150, model_name="caviar_sav", include_es=True):
+        if row["information_set"] == "japan_only_plus_us_close_core":
+            continue
+        benchmark_rows.append(
+            {
+                **row,
+                "information_set": "target_history_only",
+                "refit_frequency": paper_module.BENCHMARK_ADVANCED_REFIT_FREQUENCY,
+                "es_source": "empirical_exceedance_companion",
+                "fz_interpretation": "augmented_var_es_pair_not_jointly_estimated",
+            }
+        )
+
+    records = cpa_module.build_cross_model_cpa_inference_records(
+        ml_tail_forecasts=ml_tail_rows,
+        benchmark_forecasts=benchmark_rows,
+    )
+
+    assert {row["comparison_axis"] for row in records} == {"cross_model_registered_pair"}
+    assert any(row["loss_family"] == "var_quantile_loss" for row in records)
+    fz_records = [row for row in records if row["loss_family"] == "var_es_fz_loss"]
+    assert fz_records
+    assert {row["anchor_model_name"] for row in fz_records} == {"garch_t"}
+    fz_core = next(
+        row
+        for row in fz_records
+        if row["candidate_information_set"] == "japan_only_plus_us_close_core"
+    )
+    assert fz_core["candidate_model_name"] == paper_module.ML_TAIL_LOCATION_SCALE_MODEL
+    assert fz_core["anchor_refit_frequency"] == "monthly"
+    assert fz_core["candidate_refit_frequency"] == paper_module.ML_TAIL_REFIT_FREQUENCY
+    assert fz_core["effective_n"] == 149
+    assert fz_core["inference_status"] == "ok_newey_west_hac_wald_cpa"
+
+    skipped = cpa_module.build_cross_model_cpa_inference_records(
+        ml_tail_forecasts=ml_tail_rows,
+        benchmark_forecasts=[],
+    )
+    assert skipped[0]["inference_status"] == "skipped_missing_benchmark_forecasts"
 
 
 def test_common_sample_unstable_status_after_eviction_threshold(
@@ -3404,6 +3494,7 @@ def test_evaluate_ml_tail_suite_writes_lightgbm_ladder_artifacts(
     assert (run_dir / "metrics" / "ml_tail_feature_unavailability.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_feature_unavailability_dates.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_cpa_inference.parquet").exists()
+    assert (run_dir / "metrics" / "cross_model_cpa_inference.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_result_matrix.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_result_matrix_sample_audit.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_result_matrix_dm.parquet").exists()
@@ -3411,8 +3502,10 @@ def test_evaluate_ml_tail_suite_writes_lightgbm_ladder_artifacts(
     assert (run_dir / "metrics" / "ml_tail_result_matrix_notes.md").exists()
     result_matrix = pl.read_parquet(run_dir / "metrics" / "ml_tail_result_matrix.parquet")
     cpa = pl.read_parquet(run_dir / "metrics" / "ml_tail_cpa_inference.parquet")
+    cross_cpa = pl.read_parquet(run_dir / "metrics" / "cross_model_cpa_inference.parquet")
     assert set(cpa["tail_side"].to_list()) == {"left_tail", "right_tail"}
-    assert set(cpa["loss_family"].to_list()) == {"var_quantile_loss"}
+    assert "var_quantile_loss" in set(cpa["loss_family"].to_list())
+    assert set(cross_cpa["inference_status"].to_list()) == {"skipped_missing_benchmark_forecasts"}
     assert {
         "var_quantile_loss",
         "var_coverage",
@@ -3431,6 +3524,8 @@ def test_evaluate_ml_tail_suite_writes_lightgbm_ladder_artifacts(
     assert status["unavailable_components"] == {}
     assert status["registered_information_sets"]["model_d"].endswith("plus_asia_proxy")
     assert status["cpa_inference_rows"] == cpa.height
+    assert status["cross_model_cpa_inference_rows"] == cross_cpa.height
+    assert status["cross_model_cpa_status"] == "skipped_missing_benchmark_forecasts"
 
 
 def test_locked_run_refuses_config_mismatch_without_force(tmp_path: Path) -> None:
@@ -3739,6 +3834,71 @@ def test_private_pipeline_helpers_cover_defensive_edges(
     assert paper_core._fmt(None) == ""
     assert paper_core._fmt(1.2345678) == "1.234568"
     assert paper_core._optional_float(True) is None
+    artifact_run_dir = tmp_path / "artifact_run"
+    artifact_run_dir.mkdir()
+    artifact_target = tmp_path / "gold_panel.parquet"
+    (artifact_run_dir / "manifest.json").write_text(
+        json.dumps({"gold_artifacts": {"modeling_panel": str(artifact_target)}}),
+        encoding="utf-8",
+    )
+    assert (
+        artifact_utils._gold_artifact_path(
+            artifact_run_dir,
+            "modeling_panel",
+            tmp_path / "fallback.parquet",
+        )
+        == artifact_target
+    )
+    cache_rows_path = tmp_path / "cache_rows.parquet"
+    pl.DataFrame([{"requested_date": "2026-01-05", "value": 1.0}]).write_parquet(cache_rows_path)
+    assert paper_cache._read_parquet_records(cache_rows_path)[0]["requested_date"] == "2026-01-05"
+    assert paper_cache._cache_covers_dates(cache_rows_path, ["2026-01-05"]) is False
+    assert paper_cache._first_row_date_value({}, ("requested_date", "Date")) is None
+    assert (
+        stat_utils.moving_block_one_sided_pvalue(
+            np.array([1.0]),
+            observed_mean=None,
+            reps=2,
+            block_length=1,
+            rng=np.random.default_rng(1),
+        )
+        is None
+    )
+    assert (
+        stat_utils.hln_tmax_mcs_step(
+            np.array([1.0]),
+            reps=2,
+            block_length=1,
+            rng=np.random.default_rng(1),
+        )["pvalue"]
+        is None
+    )
+    assert (
+        stat_utils.kupiec_pof_test(
+            breaches=np.array([]),
+            expected_probability=0.05,
+        )["status"]
+        == "unavailable_invalid_input"
+    )
+    assert (
+        stat_utils.kupiec_pof_test(
+            breaches=np.array([False, False]),
+            expected_probability=0.05,
+        )["status"]
+        == "unavailable_boundary_exceedance_rate"
+    )
+    assert (
+        stat_utils.christoffersen_independence_test(
+            breaches=np.array([False]),
+        )["status"]
+        == "unavailable_insufficient_oos"
+    )
+    assert (
+        stat_utils.christoffersen_independence_test(
+            breaches=np.array([False, False, False]),
+        )["status"]
+        == "unavailable_boundary_transition_rate"
+    )
     assert paper_core._optional_float("bad") is None
     assert (
         paper_core._massive_daily_feature_map(

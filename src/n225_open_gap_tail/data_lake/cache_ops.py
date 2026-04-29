@@ -2,9 +2,213 @@
 # ruff: noqa: F401,F403,F405,F821,I001,UP035
 from __future__ import annotations
 
-from n225_open_gap_tail.config import runtime as _runtime
+from n225_open_gap_tail.config.runtime import *
 
-globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("__")})
+
+def _safe_name(value: str) -> str:  # pragma: no cover - vendor cache path
+    return "".join(ch.lower() if ch.isalnum() else "_" for ch in value).strip("_")
+
+
+def _optional_text(value: object) -> str | None:  # pragma: no cover - vendor cache path
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _month_chunks(*, start: str, end: str) -> list[tuple[str, str]]:  # pragma: no cover
+    current = date.fromisoformat(start).replace(day=1)
+    end_date = date.fromisoformat(end)
+    chunks: list[tuple[str, str]] = []
+    while current <= end_date:
+        next_month = (current.replace(day=28) + timedelta(days=4)).replace(day=1)
+        chunk_start = max(date.fromisoformat(start), current)
+        chunk_end = min(end_date, next_month - timedelta(days=1))
+        chunks.append((chunk_start.isoformat(), chunk_end.isoformat()))
+        current = next_month
+    return chunks
+
+
+def _coerce_datetime(value: object) -> datetime | None:  # pragma: no cover - vendor cache path
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    if isinstance(value, str) and value:
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+    return None
+
+
+def _window_return(values: list[float], window: int) -> float | None:  # pragma: no cover
+    if len(values) < window or len(values) < 2:
+        return None
+    start = values[-window]
+    end = values[-1]
+    if start <= 0 or end <= 0:
+        return None
+    return math.log(end) - math.log(start)
+
+
+def _window_range(  # pragma: no cover - vendor cache path
+    highs: list[float | None], lows: list[float | None]
+) -> float | None:
+    valid_highs = [value for value in highs if value is not None and value > 0]
+    valid_lows = [value for value in lows if value is not None and value > 0]
+    if not valid_highs or not valid_lows:
+        return None
+    high = max(valid_highs)
+    low = min(valid_lows)
+    if low <= 0:
+        return None
+    return math.log(high) - math.log(low)
+
+
+def _jquants_bronze_row(
+    row: Mapping[str, object],
+    *,
+    requested_date: str,
+    source_endpoint: str,
+    downloaded_at_utc: datetime,
+) -> dict[str, object]:  # pragma: no cover - vendor cache path
+    output: dict[str, object] = {
+        "Date": _optional_text(row.get("Date")) or requested_date,
+        "ProdCat": _optional_text(row.get("ProdCat")),
+        "Code": _optional_text(row.get("Code")),
+        "CM": _optional_text(row.get("CM")),
+        "CCMFlag": _optional_text(row.get("CCMFlag")),
+        "LTD": _optional_text(row.get("LTD")),
+        "SQD": _optional_text(row.get("SQD")),
+        "source_endpoint": source_endpoint,
+        "requested_date": requested_date,
+        "research_download_ts_utc": downloaded_at_utc,
+    }
+    for field in ("AO", "AH", "AL", "AC", "EO", "EH", "EL", "EC", "Settle", "Vo", "OI"):
+        output[field] = _optional_float(row.get(field))
+    return output
+
+
+def build_spy_late_session_feature_records(
+    minute_records: list[dict[str, object]],
+    *,
+    calendar_records: list[dict[str, object]],
+    vendor_lag_minutes: int,
+) -> list[dict[str, object]]:  # pragma: no cover - vendor cache path
+    close_by_date = {
+        str(row["calendar_date"]): _coerce_datetime(row.get("us_close_ts_utc"))
+        for row in calendar_records
+        if row.get("us_close_ts_utc") is not None
+    }
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for row in minute_records:
+        if row.get("is_us_regular_session") is True:
+            grouped.setdefault(str(row["bar_date_et"]), []).append(row)
+    records: list[dict[str, object]] = []
+    for date_key in sorted(grouped):
+        rows = sorted(grouped[date_key], key=lambda row: str(row["bar_end_ts_utc"]))
+        official_close = close_by_date.get(date_key) or _coerce_datetime(
+            rows[-1].get("bar_end_ts_utc")
+        )
+        if official_close is None:
+            continue
+        eligible = [
+            row
+            for row in rows
+            if (_coerce_datetime(row.get("bar_end_ts_utc")) or datetime.max.replace(tzinfo=UTC))
+            <= official_close
+        ]
+        if not eligible:
+            continue
+        selected_close = eligible[-1]
+        selected_close_ts = _coerce_datetime(selected_close.get("bar_end_ts_utc"))
+        selected_close_value = _optional_float(selected_close.get("close"))
+        hour_rows = _window_rows(eligible, official_close=official_close, minutes=60)
+        half_hour_rows = _window_rows(eligible, official_close=official_close, minutes=30)
+        final_rows = _window_rows(eligible, official_close=official_close, minutes=15)
+        session_volume = float(sum(_optional_float(row.get("volume")) or 0.0 for row in eligible))
+        late_volume = float(sum(_optional_float(row.get("volume")) or 0.0 for row in hour_rows))
+        feature_available = official_close + timedelta(minutes=vendor_lag_minutes)
+        records.append(
+            {
+                "bar_date_et": date_key,
+                "bar_end_ts_utc": selected_close_ts,
+                "close": selected_close_value,
+                "is_us_regular_session": True,
+                "spy_late_30m_return": _rows_return(half_hour_rows),
+                "spy_late_60m_return": _rows_return(hour_rows),
+                "spy_late_session_range": _rows_range(hour_rows),
+                "spy_late_volume_surge": None,
+                "spy_final_window_momentum": _rows_return(final_rows),
+                "late_60m_volume_for_surge": late_volume,
+                "regular_session_volume_for_surge": session_volume,
+                "feature_available_ts_utc": feature_available,
+                "official_close_ts_utc": official_close,
+                "selected_close_bar_end_ts_utc": selected_close_ts,
+                "vendor_lag_seconds": vendor_lag_minutes * 60,
+            }
+        )
+    return _records_with_recomputed_spy_late_volume_surge(records)
+
+
+def _records_with_recomputed_spy_late_volume_surge(
+    records: list[dict[str, object]],
+) -> list[dict[str, object]]:  # pragma: no cover - vendor cache path
+    rolling_late_volume: list[float] = []
+    output: list[dict[str, object]] = []
+    for row in sorted(records, key=lambda item: str(item.get("bar_date_et") or "")):
+        enriched = dict(row)
+        late_volume = _optional_float(enriched.get("late_60m_volume_for_surge"))
+        if late_volume is None:
+            output.append(enriched)
+            continue
+        rolling_mean_volume = (
+            float(np.mean(rolling_late_volume[-20:])) if rolling_late_volume else None
+        )
+        enriched["spy_late_volume_surge"] = (
+            None
+            if rolling_mean_volume is None or rolling_mean_volume == 0.0
+            else late_volume / rolling_mean_volume
+        )
+        rolling_late_volume.append(late_volume)
+        output.append(enriched)
+    return output
+
+
+def _window_rows(
+    rows: list[dict[str, object]],
+    *,
+    official_close: datetime,
+    minutes: int,
+) -> list[dict[str, object]]:  # pragma: no cover - vendor cache path
+    start = official_close - timedelta(minutes=minutes)
+    return [
+        row
+        for row in rows
+        if (ts := _coerce_datetime(row.get("bar_end_ts_utc"))) is not None
+        and start <= ts <= official_close
+    ]
+
+
+def _rows_return(rows: list[dict[str, object]]) -> float | None:  # pragma: no cover
+    closes = [
+        _optional_float(row.get("close"))
+        for row in rows
+        if _optional_float(row.get("close")) is not None
+    ]
+    if len(closes) < 2:
+        return None
+    start = closes[0]
+    end = closes[-1]
+    if start is None or end is None or start <= 0 or end <= 0:
+        return None
+    return math.log(end) - math.log(start)
+
+
+def _rows_range(rows: list[dict[str, object]]) -> float | None:  # pragma: no cover
+    highs = [_optional_float(row.get("high")) for row in rows]
+    lows = [_optional_float(row.get("low")) for row in rows]
+    return _window_range(highs, lows)
 
 
 def _payload_results(payload: Mapping[str, object]) -> list[dict[str, Any]]:

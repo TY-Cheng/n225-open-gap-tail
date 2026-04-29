@@ -33,6 +33,10 @@ def generate_results_discussion(
     ml_tail_mcs = _read_parquet_optional(paths["ml_tail_mcs"])
     cpa_path = paths.get("ml_tail_cpa_inference")
     ml_tail_cpa = _read_parquet_optional(cpa_path) if cpa_path is not None else pl.DataFrame()
+    cross_cpa_path = paths.get("cross_model_cpa_inference")
+    cross_model_cpa = (
+        _read_parquet_optional(cross_cpa_path) if cross_cpa_path is not None else pl.DataFrame()
+    )
     ml_tail_eviction = _read_parquet_optional(paths["ml_tail_model_eviction"])
     ml_tail_dst = _read_parquet_optional(paths["ml_tail_dst_attenuation"])
     ml_tail_murphy = _read_parquet_optional(paths["ml_tail_murphy"])
@@ -111,7 +115,7 @@ def generate_results_discussion(
 
 ### Not yet claimed
 
-{_cpa_claim_boundary_sentence(ml_tail_cpa)}
+{_cpa_claim_boundary_sentence(ml_tail_cpa, cross_model_cpa)}
 - DST attenuation rows are descriptive forecast evidence; structural DST causal identification is not claimed.
 - No hedge PnL, transaction-cost, or trading-alpha analysis is performed. The trigger table is a pre-open risk-monitoring diagnostic only.
 - Left-tail and right-tail outputs are both economic tail-risk surfaces for futures positions; neither side should be promoted beyond the sample, coverage, and inference gates without author review.
@@ -125,17 +129,25 @@ def _read_parquet_optional(path: Path) -> pl.DataFrame:
     return pl.read_parquet(path)
 
 
-def _cpa_claim_boundary_sentence(cpa: pl.DataFrame) -> str:
-    if cpa.is_empty():
+def _cpa_claim_boundary_sentence(cpa: pl.DataFrame, cross_model_cpa: pl.DataFrame) -> str:
+    if cpa.is_empty() and cross_model_cpa.is_empty():
         return "- Instrumented conditional predictive ability is not implemented in the current artifacts; the reported DM and MCS outputs are unconditional average-sample forecast-comparison diagnostics."
     ok_rows = 0
     if "inference_status" in cpa.columns:
         ok_rows = int(cpa.filter(pl.col("inference_status").str.starts_with("ok")).height)
+    cross_ok_rows = 0
+    if "inference_status" in cross_model_cpa.columns:
+        cross_ok_rows = int(
+            cross_model_cpa.filter(pl.col("inference_status").str.starts_with("ok")).height
+        )
     tail_side_count = _unique_count(cpa, "tail_side")
+    cross_rows = int(cross_model_cpa.height)
     return (
         f"- Instrumented conditional predictive ability appears as a side-specific ML-tail "
         f"information-ladder diagnostic across `{tail_side_count}` tail side(s), with `{cpa.height}` registered row(s), of which `{ok_rows}` pass "
-        "their HAC-Wald gates; it does not generate VaR/ES forecasts and does not replace DM/MCS."
+        "their HAC-Wald gates. "
+        f"Registered cross-model CPA contributes `{cross_rows}` additional conditional loss-difference row(s), of which `{cross_ok_rows}` pass their gates. "
+        "CPA does not generate VaR/ES forecasts, does not replace DM/MCS, and does not by itself establish a model-win claim."
     )
 
 

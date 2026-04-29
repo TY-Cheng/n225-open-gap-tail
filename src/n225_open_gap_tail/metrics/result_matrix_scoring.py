@@ -2,9 +2,16 @@
 # ruff: noqa: F401,F403,F405,F821,I001,UP035
 from __future__ import annotations
 
-from n225_open_gap_tail.config import runtime as _runtime
-
-globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("__")})
+from n225_open_gap_tail.config.runtime import *
+from n225_open_gap_tail.metrics.stat_utils import (
+    _safe_mean,
+    christoffersen_independence_test,
+    fz_loss,
+    hln_tmax_mcs_step,
+    kupiec_pof_test,
+    moving_block_one_sided_pvalue,
+    quantile_loss,
+)
 
 
 def _build_result_matrix_group(
@@ -299,7 +306,7 @@ def _build_result_matrix_dm_records(
         mean_diff = _safe_mean(diffs)
         block_length = max(5, round(len(diffs) ** (1.0 / 3.0))) if len(diffs) else None
         pvalue = (
-            _moving_block_one_sided_pvalue(
+            moving_block_one_sided_pvalue(
                 diffs,
                 observed_mean=mean_diff,
                 reps=BOOTSTRAP_REPS,
@@ -406,7 +413,7 @@ def _build_result_matrix_mcs_records(
     while len(active) > 1:
         ordered = sorted(active)
         matrix = np.column_stack([losses_by_entity[entity] for entity in ordered])
-        result = _hln_tmax_mcs_step(
+        result = hln_tmax_mcs_step(
             matrix,
             reps=BOOTSTRAP_REPS,
             block_length=block_length,

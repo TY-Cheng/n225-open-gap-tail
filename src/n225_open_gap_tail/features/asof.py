@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from zoneinfo import ZoneInfo
 
-from n225_open_gap_tail.config import runtime as _runtime
-
-globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("__")})
+from n225_open_gap_tail.config.runtime import *
+from n225_open_gap_tail.features.descriptions import _safe_name, _window_range, _window_return
 
 
 def _features_asof(
@@ -671,6 +670,10 @@ def _fred_fx_unavailable_reason(
 
 def _spy_minute_feature_map(records: list[dict[str, object]]) -> dict[str, dict[str, object]]:
     if any("spy_late_30m_return" in row for row in records):
+        from n225_open_gap_tail.features.jquants_spy import (
+            _records_with_recomputed_spy_late_volume_surge,
+        )
+
         records = _records_with_recomputed_spy_late_volume_surge(records)
         derived_features: dict[str, dict[str, object]] = {}
         for row in records:

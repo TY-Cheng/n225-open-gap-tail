@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 
-from n225_open_gap_tail.config import runtime as _runtime
+from n225_open_gap_tail.config.runtime import *
 from n225_open_gap_tail.models.benchmark_advanced_math import (
     _advanced_pot_gpd_standardized_tail,
     _burn_in_rows,
@@ -30,8 +30,6 @@ from n225_open_gap_tail.models.benchmark_advanced_math import (
     _student_t_standardized_var_es,
     _uses_positive_gap,
 )
-
-globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("__")})
 
 
 def benchmark_advanced_refit_dates(

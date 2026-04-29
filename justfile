@@ -17,13 +17,21 @@ check: _require-external-uv-env
     uv run mypy src tests
     uv run pytest
     uv run mkdocs build --strict
+    just lint-legacy-names
+    just lint-architecture
 
 full start="2016-07-19" end="" workers="4" force="false":
     just check
-    just _paper-grade "{{ start }}" "{{ end }}" "{{ workers }}" p2a "{{ force }}"
-    just _paper-leakage-check
-    just _paper-eval "" "{{ workers }}" p2b "{{ force }}"
-    just _paper-latex-tables
+    just _run "{{ start }}" "{{ end }}" "{{ workers }}" all "{{ force }}"
+
+source-probe: _require-external-uv-env
+    uv run n225-open-gap-tail source-probe
+
+lint-legacy-names:
+    python3 scripts/lint_legacy_names.py
+
+lint-architecture:
+    python3 scripts/lint_architecture.py
 
 docs port="8000": _require-external-uv-env
     uv run mkdocs build --strict
@@ -32,20 +40,20 @@ docs port="8000": _require-external-uv-env
 snapshot start="2022-01-01" end="": _require-external-uv-env
     uv run n225-open-gap-tail snapshot --start "{{ start }}" {{ if end == "" { "" } else { "--end \"" + end + "\"" } }}
 
-_paper-panel start="2016-07-19" end="": _require-external-uv-env
-    uv run n225-open-gap-tail paper-panel --start "{{ start }}" {{ if end == "" { "" } else { "--end \"" + end + "\"" } }}
+_build-panel start="2016-07-19" end="": _require-external-uv-env
+    uv run n225-open-gap-tail build-panel --start "{{ start }}" {{ if end == "" { "" } else { "--end \"" + end + "\"" } }}
 
-_paper-eval run_id="" workers="" stage="p2a" force="false": _require-external-uv-env
-    uv run n225-open-gap-tail paper-eval {{ if run_id == "" { "" } else { "--run-id \"" + run_id + "\"" } }} {{ if workers == "" { "" } else { "--workers " + workers } }} --stage "{{ stage }}" {{ if force == "true" { "--force" } else { "" } }}
+_evaluate run_id="" workers="" suite="benchmark" force="false": _require-external-uv-env
+    uv run n225-open-gap-tail evaluate {{ if run_id == "" { "" } else { "--run-id \"" + run_id + "\"" } }} {{ if workers == "" { "" } else { "--workers " + workers } }} --suite "{{ suite }}" {{ if force == "true" { "--force" } else { "" } }}
 
-_paper-grade start="2016-07-19" end="" workers="" stage="p2a" force="false": _require-external-uv-env
-    uv run n225-open-gap-tail paper-grade --start "{{ start }}" {{ if end == "" { "" } else { "--end \"" + end + "\"" } }} {{ if workers == "" { "" } else { "--workers " + workers } }} --stage "{{ stage }}" {{ if force == "true" { "--force" } else { "" } }}
+_run start="2016-07-19" end="" workers="" suite="all" force="false": _require-external-uv-env
+    uv run n225-open-gap-tail run --start "{{ start }}" {{ if end == "" { "" } else { "--end \"" + end + "\"" } }} {{ if workers == "" { "" } else { "--workers " + workers } }} --suite "{{ suite }}" {{ if force == "true" { "--force" } else { "" } }}
 
-_paper-latex-tables run_id="": _require-external-uv-env
-    uv run n225-open-gap-tail paper-latex-tables {{ if run_id == "" { "" } else { "--run-id \"" + run_id + "\"" } }}
+_export-tables run_id="": _require-external-uv-env
+    uv run n225-open-gap-tail export-tables {{ if run_id == "" { "" } else { "--run-id \"" + run_id + "\"" } }}
 
-_paper-leakage-check run_id="": _require-external-uv-env
-    uv run n225-open-gap-tail paper-leakage-check {{ run_id }}
+_leakage-check run_id="": _require-external-uv-env
+    uv run n225-open-gap-tail leakage-check {{ run_id }}
 
 _kernel: _require-external-uv-env
     uv run python -m ipykernel install --user --name n225-open-gap-tail --display-name "Python (n225-open-gap-tail)"

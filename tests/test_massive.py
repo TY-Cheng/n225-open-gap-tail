@@ -9,7 +9,7 @@ import polars as pl
 import pytest
 
 from n225_open_gap_tail.config import Settings
-from n225_open_gap_tail.massive import (
+from n225_open_gap_tail.sources.massive import (
     MassiveApiError,
     MassiveClient,
     normalize_aggregate_bars,
@@ -116,7 +116,7 @@ def test_massive_client_retries_rate_limits_and_throttles(monkeypatch: pytest.Mo
         payload = {"status": "OK", "results": [_bar("2026-01-05T05:00:00+00:00", close=101.0)]}
         return httpx.Response(status, json=payload, request=request)
 
-    monkeypatch.setattr("n225_open_gap_tail.massive.time_module.sleep", sleeps.append)
+    monkeypatch.setattr("n225_open_gap_tail.sources.massive.time_module.sleep", sleeps.append)
     with MassiveClient(
         api_key="secret",
         base_url="https://api.massive.test",

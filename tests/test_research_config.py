@@ -5,14 +5,14 @@ from pathlib import Path
 import pytest
 
 from n225_open_gap_tail.config import Settings
-from n225_open_gap_tail.research_config import (
+from n225_open_gap_tail.config.research import (
     ASIA_PROXY_MASSIVE_TICKERS,
     CORE_FRED_SERIES,
     CORE_MASSIVE_TICKERS,
     JAPAN_PROXY_MASSIVE_TICKERS,
     ClaimLevel,
     FeatureSetVersion,
-    default_paper_research_config,
+    default_research_config,
 )
 
 
@@ -20,14 +20,14 @@ def test_claim_level_enum_is_controlled_vocabulary() -> None:
     assert {level.value for level in ClaimLevel} == {
         "smoke_only",
         "preliminary_pipeline",
-        "paper_candidate",
+        "research_candidate",
         "supplementary",
         "unavailable",
     }
 
 
 def test_core_feature_sets_exclude_short_history_and_robustness_tickers() -> None:
-    config = default_paper_research_config()
+    config = default_research_config()
 
     assert config.feature_sets.version == FeatureSetVersion.CORE_FULL_HISTORY
     assert "SOFR" not in config.feature_sets.fred_core
@@ -47,7 +47,7 @@ def test_core_feature_sets_exclude_short_history_and_robustness_tickers() -> Non
     assert config.feature_sets.massive_optional == ("UUP",)
     assert "DEXJPUS" in config.feature_sets.fred_fallback
     assert "BAMLH0A0HYM2" in config.feature_sets.fred_credit_enriched
-    assert config.feature_sets.p2b_model_d_information_set.endswith("plus_asia_proxy")
+    assert config.feature_sets.ml_tail_model_d_information_set.endswith("plus_asia_proxy")
     assert config.leakage_policy.fred_availability_lag_us_business_days == 1
     assert config.leakage_policy.max_forward_fill_us_close_days == 7
     assert config.leakage_policy.fred_h10_release_age_cap_calendar_days == 8
@@ -57,8 +57,8 @@ def test_config_hash_is_stable_and_env_defaults_sync_with_core_lists(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    config = default_paper_research_config()
-    assert config.config_hash() == default_paper_research_config().config_hash()
+    config = default_research_config()
+    assert config.config_hash() == default_research_config().config_hash()
     monkeypatch.setenv("MASSIVE_DAILY_TICKERS", ",".join(CORE_MASSIVE_TICKERS))
     monkeypatch.setenv("FRED_SERIES", ",".join(CORE_FRED_SERIES))
 

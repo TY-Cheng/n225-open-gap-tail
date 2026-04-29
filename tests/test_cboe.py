@@ -8,15 +8,15 @@ import httpx
 import polars as pl
 import pytest
 
-import n225_open_gap_tail.cboe as cboe_module
-from n225_open_gap_tail.cboe import (
+import n225_open_gap_tail.sources.cboe as cboe_module
+from n225_open_gap_tail.config import Settings
+from n225_open_gap_tail.sources.cboe import (
     CboeClient,
     CboeDataError,
     build_vix_consistency_records,
     normalize_cboe_vol_index_rows,
     write_cboe_smoke_sample,
 )
-from n225_open_gap_tail.config import Settings
 
 
 def test_cboe_client_fetches_csv_and_preserves_header() -> None:

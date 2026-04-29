@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from n225_open_gap_tail.config import Settings
-from n225_open_gap_tail.jquants import (
+from n225_open_gap_tail.sources.jquants import (
     JQuantsApiError,
     JQuantsV2Client,
     write_jquants_smoke_sample,

@@ -1,7 +1,31 @@
-import os
 import json
 import urllib.request
-import sys
+from pathlib import Path
+
+IMPLEMENTATION_ROOTS = (
+    Path("src/n225_open_gap_tail/data_lake"),
+    Path("src/n225_open_gap_tail/sources"),
+    Path("src/n225_open_gap_tail/market"),
+    Path("src/n225_open_gap_tail/features"),
+    Path("src/n225_open_gap_tail/panel"),
+    Path("src/n225_open_gap_tail/forecasting"),
+    Path("src/n225_open_gap_tail/models"),
+    Path("src/n225_open_gap_tail/metrics"),
+    Path("src/n225_open_gap_tail/inference"),
+    Path("src/n225_open_gap_tail/reporting"),
+    Path("src/n225_open_gap_tail/diagnostics"),
+)
+
+
+def _read_functional_implementation() -> str:
+    chunks: list[str] = []
+    for root in IMPLEMENTATION_ROOTS:
+        for path in sorted(root.glob("*.py")):
+            if path.name == "__init__.py":
+                continue
+            chunks.append(f"\n\n=== {path.as_posix()} ===\n")
+            chunks.append(path.read_text(encoding="utf-8"))
+    return "".join(chunks)
 
 
 def call_reviewer():
@@ -11,8 +35,7 @@ def call_reviewer():
         "Authorization": "Bearer sk-n225-litellm-local-20260427",
     }
 
-    with open("src/n225_open_gap_tail/paper.py") as f:
-        paper_py = f.read()
+    pipeline_core = _read_functional_implementation()
 
     with open(
         "/Users/tycheng/.gemini/antigravity/brain/a2b09d94-df0d-4225-93fb-b2332e269d24/implementation_plan.md"
@@ -21,14 +44,15 @@ def call_reviewer():
 
     prompt = f"""
     You are a Senior Quantitative Research Reviewer.
-    Please review the current `paper.py` implementation against our Remediation Plan.
-    Provide a harsh, extremely rigorous critique of any flaws in the code, potential look-ahead bias, statistics mistakes, or missing alignment with the plan.
+    Please review the current pipeline implementation against our Remediation Plan.
+    Provide a harsh, extremely rigorous critique of any flaws in the code,
+    potential look-ahead bias, statistics mistakes, or missing alignment with the plan.
     
     === REMEDIATION PLAN ===
     {plan}
     
-    === CURRENT PAPER.PY ===
-    {paper_py}
+    === CURRENT PIPELINE CORE ===
+    {pipeline_core}
     """
 
     data = {

@@ -6,7 +6,10 @@ from pathlib import Path
 import polars as pl
 
 from n225_open_gap_tail.config import Settings
-from n225_open_gap_tail.contracts import build_nikkei_contract_records, write_contract_metadata
+from n225_open_gap_tail.market.contracts import (
+    build_nikkei_contract_records,
+    write_contract_metadata,
+)
 
 
 def test_build_nikkei_contract_records_selects_central_contract_around_roll() -> None:

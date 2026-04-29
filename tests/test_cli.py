@@ -4,25 +4,59 @@ import pytest
 from typer.testing import CliRunner
 
 import n225_open_gap_tail.cli as cli
-from n225_open_gap_tail.calendars import CalendarBuildResult
-from n225_open_gap_tail.cboe import CboeSmokeResult
 from n225_open_gap_tail.cli import app
-from n225_open_gap_tail.contracts import ContractMetadataResult
-from n225_open_gap_tail.fred import FredSmokeResult
-from n225_open_gap_tail.jquants import JQuantsSmokeResult
-from n225_open_gap_tail.massive import MassiveSmokeResult
-from n225_open_gap_tail.paper import (
-    PaperEvalResult,
-    PaperLatexResult,
-    PaperLeakageCheckResult,
-    PaperPanelResult,
+from n225_open_gap_tail.config.research import CORE_FRED_SERIES, CORE_MASSIVE_TICKERS
+from n225_open_gap_tail.diagnostics.snapshot import SnapshotResult
+from n225_open_gap_tail.forecasting import (
+    EvaluationResult,
+    LeakageCheckResult,
+    PanelBuildResult,
+    TableExportResult,
 )
-from n225_open_gap_tail.research_config import CORE_FRED_SERIES, CORE_MASSIVE_TICKERS
-from n225_open_gap_tail.snapshot import SnapshotResult
+from n225_open_gap_tail.market.calendars import CalendarBuildResult
+from n225_open_gap_tail.market.contracts import ContractMetadataResult
+from n225_open_gap_tail.sources.cboe import CboeSmokeResult
+from n225_open_gap_tail.sources.fred import FredSmokeResult
+from n225_open_gap_tail.sources.jquants import JQuantsSmokeResult
+from n225_open_gap_tail.sources.massive import MassiveSmokeResult
+from n225_open_gap_tail.sources.probe import SourceProbeResult
 
 
 def test_format_statuses_empty_mapping() -> None:
     assert cli._format_statuses({}) == "<none>"
+
+
+def test_pipeline_commands_expose_help() -> None:
+    runner = CliRunner()
+    for command in (
+        "build-panel",
+        "evaluate",
+        "export-tables",
+        "leakage-check",
+        "source-probe",
+    ):
+        result = runner.invoke(app, [command, "--help"])
+        assert result.exit_code == 0
+        assert command in result.output
+
+
+def test_source_probe_command_reports_provider_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "probe_sources",
+        lambda settings: [
+            SourceProbeResult("jquants", "ok", "futures_daily_probe rows=1", 200),
+            SourceProbeResult("massive", "rate_limited", "too many requests", 429),
+        ],
+    )
+
+    result = CliRunner().invoke(app, ["source-probe"])
+
+    assert result.exit_code == 1
+    assert "jquants: ok http=200 futures_daily_probe rows=1" in result.output
+    assert "massive: rate_limited http=429 too many requests" in result.output
 
 
 def test_status_reports_environment_without_secret_values(
@@ -376,64 +410,64 @@ def test_snapshot_command_reports_summary(
     assert "model status: completed" in result.output
 
 
-def test_paper_panel_command_reports_summary(
+def test_build_panel_command_reports_summary(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    run_dir = tmp_path / "paper_run"
+    run_dir = tmp_path / "tailrisk_run"
     panel_path = run_dir / "panel" / "modeling_panel.parquet"
 
-    def fake_write_paper_panel(**kwargs: object) -> PaperPanelResult:
+    def fake_build_panel(**kwargs: object) -> PanelBuildResult:
         assert kwargs["start"] == "2016-07-19"
         assert kwargs["end"] is None
-        return PaperPanelResult(
-            run_id="p2a_test",
+        return PanelBuildResult(
+            run_id="tailrisk_test",
             run_dir=run_dir,
             panel_path=panel_path,
             rows=100,
             clean_rows=90,
         )
 
-    monkeypatch.setattr(cli, "write_paper_panel", fake_write_paper_panel)
+    monkeypatch.setattr(cli, "build_panel", fake_build_panel)
 
-    result = CliRunner().invoke(app, ["paper-panel"])
+    result = CliRunner().invoke(app, ["build-panel"])
 
     assert result.exit_code == 0
-    assert "run id: p2a_test" in result.output
+    assert "run id: tailrisk_test" in result.output
     assert f"run dir: {run_dir}" in result.output
     assert "rows: 100" in result.output
     assert "clean rows: 90" in result.output
 
 
-def test_paper_eval_command_reports_summary(
+def test_evaluate_command_reports_summary(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    run_dir = tmp_path / "paper_run"
+    run_dir = tmp_path / "tailrisk_run"
 
-    def fake_resolve_paper_run_dir(settings: object, run_id: str) -> Path:
-        assert run_id == "p2a_test"
+    def fake_resolve_run_dir(settings: object, run_id: str) -> Path:
+        assert run_id == "tailrisk_test"
         return run_dir
 
-    def fake_evaluate_paper_run(**kwargs: object) -> PaperEvalResult:
+    def fake_evaluate_suite(**kwargs: object) -> EvaluationResult:
         assert kwargs["run_dir"] == run_dir
         assert kwargs["workers"] == 2
-        assert kwargs["stage"] == "p2a"
+        assert kwargs["suite"] == "benchmark"
         assert kwargs["force"] is False
-        return PaperEvalResult(
-            run_id="p2a_test",
+        return EvaluationResult(
+            run_id="tailrisk_test",
             run_dir=run_dir,
             forecast_rows=50,
             metric_rows=6,
             status="completed",
         )
 
-    monkeypatch.setattr(cli, "resolve_paper_run_dir", fake_resolve_paper_run_dir)
-    monkeypatch.setattr(cli, "evaluate_paper_run", fake_evaluate_paper_run)
+    monkeypatch.setattr(cli, "resolve_run_dir", fake_resolve_run_dir)
+    monkeypatch.setattr(cli, "evaluate_suite", fake_evaluate_suite)
 
     result = CliRunner().invoke(
         app,
-        ["paper-eval", "--run-id", "p2a_test", "--workers", "2"],
+        ["evaluate", "--run-id", "tailrisk_test", "--workers", "2"],
     )
 
     assert result.exit_code == 0
@@ -442,54 +476,54 @@ def test_paper_eval_command_reports_summary(
     assert "status: completed" in result.output
 
 
-def test_paper_grade_command_runs_panel_eval_and_latex(
+def test_run_command_runs_panel_eval_and_latex(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    run_dir = tmp_path / "paper_run"
+    run_dir = tmp_path / "tailrisk_run"
 
-    def fake_write_paper_panel(**kwargs: object) -> PaperPanelResult:
-        return PaperPanelResult(
-            run_id="p2a_test",
+    def fake_build_panel(**kwargs: object) -> PanelBuildResult:
+        return PanelBuildResult(
+            run_id="tailrisk_test",
             run_dir=run_dir,
             panel_path=run_dir / "panel" / "modeling_panel.parquet",
             rows=100,
             clean_rows=90,
         )
 
-    def fake_evaluate_paper_run(**kwargs: object) -> PaperEvalResult:
-        assert kwargs["stage"] == "p2a"
-        return PaperEvalResult(
-            run_id="p2a_test",
+    def fake_evaluate_suite(**kwargs: object) -> EvaluationResult:
+        assert kwargs["suite"] == "benchmark"
+        return EvaluationResult(
+            run_id="tailrisk_test",
             run_dir=run_dir,
             forecast_rows=50,
             metric_rows=6,
             status="completed",
         )
 
-    def fake_write_paper_latex_tables(**kwargs: object) -> PaperLatexResult:
-        return PaperLatexResult(
-            run_id="p2a_test",
+    def fake_export_tables(**kwargs: object) -> TableExportResult:
+        return TableExportResult(
+            run_id="tailrisk_test",
             latex_dir=run_dir / "latex" / "tables",
             tables=1,
         )
 
-    def fake_write_paper_leakage_check(**kwargs: object) -> PaperLeakageCheckResult:
+    def fake_write_leakage_check(**kwargs: object) -> LeakageCheckResult:
         assert kwargs["run_dir"] == run_dir
-        return PaperLeakageCheckResult(
-            run_id="p2a_test",
+        return LeakageCheckResult(
+            run_id="tailrisk_test",
             output_path=run_dir / "audits" / "leakage_check.parquet",
             rows=100,
             failures=0,
             warnings=0,
         )
 
-    monkeypatch.setattr(cli, "write_paper_panel", fake_write_paper_panel)
-    monkeypatch.setattr(cli, "write_paper_leakage_check", fake_write_paper_leakage_check)
-    monkeypatch.setattr(cli, "evaluate_paper_run", fake_evaluate_paper_run)
-    monkeypatch.setattr(cli, "write_paper_latex_tables", fake_write_paper_latex_tables)
+    monkeypatch.setattr(cli, "build_panel", fake_build_panel)
+    monkeypatch.setattr(cli, "write_leakage_check", fake_write_leakage_check)
+    monkeypatch.setattr(cli, "evaluate_suite", fake_evaluate_suite)
+    monkeypatch.setattr(cli, "export_tables", fake_export_tables)
 
-    result = CliRunner().invoke(app, ["paper-grade", "--workers", "1"])
+    result = CliRunner().invoke(app, ["run", "--workers", "1", "--suite", "benchmark"])
 
     assert result.exit_code == 0
     assert "panel rows: 100" in result.output
@@ -498,61 +532,61 @@ def test_paper_grade_command_runs_panel_eval_and_latex(
     assert "latex tables: 1" in result.output
 
 
-def test_paper_latex_tables_command_reports_summary(
+def test_export_tables_command_reports_summary(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    run_dir = tmp_path / "paper_run"
+    run_dir = tmp_path / "tailrisk_run"
 
-    def fake_resolve_paper_run_dir(settings: object, run_id: str) -> Path:
+    def fake_resolve_run_dir(settings: object, run_id: str) -> Path:
         assert run_id == ""
         return run_dir
 
-    def fake_write_paper_latex_tables(**kwargs: object) -> PaperLatexResult:
+    def fake_export_tables(**kwargs: object) -> TableExportResult:
         assert kwargs["run_dir"] == run_dir
-        return PaperLatexResult(
-            run_id="p2a_latest",
+        return TableExportResult(
+            run_id="tailrisk_latest",
             latex_dir=run_dir / "latex" / "tables",
             tables=1,
         )
 
-    monkeypatch.setattr(cli, "resolve_paper_run_dir", fake_resolve_paper_run_dir)
-    monkeypatch.setattr(cli, "write_paper_latex_tables", fake_write_paper_latex_tables)
+    monkeypatch.setattr(cli, "resolve_run_dir", fake_resolve_run_dir)
+    monkeypatch.setattr(cli, "export_tables", fake_export_tables)
 
-    result = CliRunner().invoke(app, ["paper-latex-tables"])
+    result = CliRunner().invoke(app, ["export-tables"])
 
     assert result.exit_code == 0
-    assert "run id: p2a_latest" in result.output
+    assert "run id: tailrisk_latest" in result.output
     assert "tables: 1" in result.output
 
 
-def test_paper_leakage_check_command_reports_summary(
+def test_leakage_check_command_reports_summary(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    run_dir = tmp_path / "paper_run"
+    run_dir = tmp_path / "tailrisk_run"
     output_path = run_dir / "audits" / "leakage_check.parquet"
 
-    def fake_resolve_paper_run_dir(settings: object, run_id: str) -> Path:
-        assert run_id == "p2a_test"
+    def fake_resolve_run_dir(settings: object, run_id: str) -> Path:
+        assert run_id == "tailrisk_test"
         return run_dir
 
-    def fake_write_paper_leakage_check(**kwargs: object) -> PaperLeakageCheckResult:
+    def fake_write_leakage_check(**kwargs: object) -> LeakageCheckResult:
         assert kwargs["run_dir"] == run_dir
-        return PaperLeakageCheckResult(
-            run_id="p2a_test",
+        return LeakageCheckResult(
+            run_id="tailrisk_test",
             output_path=output_path,
             rows=10,
             failures=0,
             warnings=2,
         )
 
-    monkeypatch.setattr(cli, "resolve_paper_run_dir", fake_resolve_paper_run_dir)
-    monkeypatch.setattr(cli, "write_paper_leakage_check", fake_write_paper_leakage_check)
+    monkeypatch.setattr(cli, "resolve_run_dir", fake_resolve_run_dir)
+    monkeypatch.setattr(cli, "write_leakage_check", fake_write_leakage_check)
 
-    result = CliRunner().invoke(app, ["paper-leakage-check", "p2a_test"])
+    result = CliRunner().invoke(app, ["leakage-check", "tailrisk_test"])
 
     assert result.exit_code == 0
-    assert "run id: p2a_test" in result.output
+    assert "run id: tailrisk_test" in result.output
     assert "rows: 10" in result.output
     assert "warnings: 2" in result.output

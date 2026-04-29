@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from n225_open_gap_tail.config import Settings, split_csv
-from n225_open_gap_tail.research_config import CORE_FRED_SERIES, CORE_MASSIVE_TICKERS
+from n225_open_gap_tail.config.research import CORE_FRED_SERIES, CORE_MASSIVE_TICKERS
 
 
 def test_default_settings_have_project_name() -> None:

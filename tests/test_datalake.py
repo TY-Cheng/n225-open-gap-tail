@@ -7,7 +7,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from n225_open_gap_tail.datalake import (
+from n225_open_gap_tail.data_lake import (
     CACHE_TMP_GC_HOURS,
     CHUNK_HASH_ALGO,
     JQUANTS_BRONZE_SCHEMA,

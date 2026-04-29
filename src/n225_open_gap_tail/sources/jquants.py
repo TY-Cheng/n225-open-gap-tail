@@ -10,6 +10,8 @@ import httpx
 from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.data_lake import write_json_atomic
 
+JQUANTS_REQUIRED_PLAN = "premium"
+
 
 class JQuantsApiError(RuntimeError):
     """Raised when a J-Quants request fails unexpectedly."""
@@ -215,9 +217,8 @@ def write_jquants_smoke_sample(
     document = {
         "metadata": {
             "source": "jquants",
-            "api_version": settings.jquants_api_version,
             "api_base_url": settings.jquants_api_base_url,
-            "api_plan": settings.jquants_api_plan,
+            "required_plan": JQUANTS_REQUIRED_PLAN,
             "downloaded_at_utc": datetime.now(UTC).isoformat(),
             "note": "API key is intentionally excluded from this raw smoke artifact.",
         },

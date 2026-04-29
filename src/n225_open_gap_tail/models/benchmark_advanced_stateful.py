@@ -399,7 +399,7 @@ def _fit_gas_model(
     if path is None:
         return {
             "fit_status": "unavailable_gas_filter_failed",
-            "failure_reason": "nonfinite_unit_scaled_score",
+            "failure_reason": "nonfinite_raw_student_t_log_scale_score",
             "burn_in_rows": burn_in_rows,
             **opt,
         }

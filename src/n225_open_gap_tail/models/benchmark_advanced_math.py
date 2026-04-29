@@ -138,10 +138,12 @@ def _run_derivative_free_optimizer(
 ) -> dict[str, object]:
     best_params = np.asarray(x0, dtype=float)
     best_value = float(cast(Any, objective)(best_params))
+    initial_value = best_value
     best_result: object | None = None
     rng = np.random.default_rng(_stable_optimizer_seed(model_name, tail_level, forecast_date))
     restart_count = 0
     retry_count = 0
+    restart_reason: str | None = None
     methods = ("Nelder-Mead", "Powell")
     starts = [best_params]
     for _ in range(ADVANCED_OPTIMIZER_MAX_RESTARTS):
@@ -172,8 +174,14 @@ def _run_derivative_free_optimizer(
                 best_value = value
                 best_params = np.asarray(result.x, dtype=float)
                 best_result = result
-        if best_result is not None and start_index == 0:
-            break
+        if start_index == 0 and best_result is not None:
+            improvement = initial_value - best_value
+            if math.isfinite(improvement) and improvement > 1e-8 * max(1.0, abs(initial_value)):
+                restart_reason = "primary_optimizer_improved"
+                break
+            restart_reason = "flat_primary_objective_jitter_restarts"
+        elif start_index > 0 and best_result is not None and restart_reason is None:
+            restart_reason = "jitter_restart_improved"
     convergence_code = int(getattr(best_result, "status", 0 if math.isfinite(best_value) else 1))
     return {
         "params": best_params,
@@ -183,8 +191,10 @@ def _run_derivative_free_optimizer(
         else "warning",
         "convergence_code": convergence_code,
         "objective_value": best_value,
+        "initial_objective_value": initial_value if math.isfinite(initial_value) else None,
         "retry_count": retry_count,
         "restart_count": restart_count,
+        "restart_reason": restart_reason or "no_optimizer_improvement",
     }
 
 
@@ -278,7 +288,7 @@ def _gas_next_log_sigma(
     score = ((nu + 1.0) * z * z / (nu + z * z)) - 1.0
     next_state = omega + score_coef * score + persistence * log_sigma
     if not math.isfinite(next_state) or abs(next_state) > 25.0:
-        raise PipelineRunError("nonfinite_unit_scaled_score")
+        raise PipelineRunError("nonfinite_raw_student_t_log_scale_score")
     return float(next_state)
 
 

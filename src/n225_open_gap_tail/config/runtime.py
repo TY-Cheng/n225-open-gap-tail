@@ -46,6 +46,7 @@ from n225_open_gap_tail.data_lake.io import (
     compute_combined_clean_start,
     is_fred_cache_fresh_at_run_start,
     read_json,
+    read_verified_parquet_metadata,
     write_json_atomic,
 )
 from n225_open_gap_tail.sources.fred import FredClient, normalize_fred_rows

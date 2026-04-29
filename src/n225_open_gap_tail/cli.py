@@ -60,10 +60,9 @@ def status() -> None:
         "nikkei contract roll days before last trade: "
         f"{settings.nikkei_contract_roll_days_before_last_trade}"
     )
-    typer.echo(f"j-quants api version: {settings.jquants_api_version}")
     typer.echo(f"j-quants api base url: {settings.jquants_api_base_url}")
     typer.echo(f"j-quants api key configured: {bool(settings.jquants_api_key)}")
-    typer.echo(f"j-quants api plan: {settings.jquants_api_plan}")
+    typer.echo("j-quants required plan: premium")
     typer.echo(f"j-quants equity master enabled: {settings.jquants_equity_master_enabled}")
     typer.echo(f"j-quants equity daily enabled: {settings.jquants_equity_daily_enabled}")
     typer.echo(f"j-quants derivatives daily enabled: {settings.jquants_derivatives_daily_enabled}")

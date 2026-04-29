@@ -53,10 +53,8 @@ class Settings(BaseSettings):
     nikkei_contract_roll_days_before_last_trade: int = 5
     nikkei_contract_months: str = "3,6,9,12"
 
-    jquants_api_version: str = "v2"
     jquants_api_key: str = ""
     jquants_api_base_url: str = "https://api.jquants.com/v2"
-    jquants_api_plan: str = "free"
     jquants_equity_master_enabled: bool = True
     jquants_equity_daily_enabled: bool = True
     jquants_derivatives_daily_enabled: bool = False

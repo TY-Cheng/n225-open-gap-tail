@@ -19,7 +19,7 @@ def _read_parquet_records(path: Path) -> list[dict[str, Any]]:
 
 
 def _cache_covers_dates(path: Path, required_dates: list[str]) -> bool:
-    metadata = read_json(path.with_suffix(path.suffix + ".metadata.json"))
+    metadata = read_verified_parquet_metadata(path)
     raw_dates = metadata.get("requested_dates")
     if not isinstance(raw_dates, list):
         return False
@@ -28,7 +28,7 @@ def _cache_covers_dates(path: Path, required_dates: list[str]) -> bool:
 
 
 def _cache_covers_range(path: Path, start: str, end: str) -> bool:
-    metadata = read_json(path.with_suffix(path.suffix + ".metadata.json"))
+    metadata = read_verified_parquet_metadata(path)
     return _metadata_covers_range(metadata, start, end)
 
 
@@ -500,7 +500,7 @@ def _fetch_fred_predictors(
                 schema_version=FRED_CACHE_SCHEMA.version,
                 extra_partitions={"series": _safe_name(series_id)},
             )
-            metadata = read_json(path.with_suffix(path.suffix + ".metadata.json"))
+            metadata = read_verified_parquet_metadata(path)
             if (
                 path.exists()
                 and is_fred_cache_fresh_at_run_start(

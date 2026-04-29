@@ -1,10 +1,10 @@
-# mypy: ignore-errors
-# ruff: noqa: F401,F403,F405,F821,I001,UP035
 from __future__ import annotations
 
-from n225_open_gap_tail.config import runtime as _runtime
+import math
 
-globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("__")})
+import numpy as np
+
+from n225_open_gap_tail.config.runtime import _optional_float, validate_forecast_values
 
 
 def _safe_mean(values: np.ndarray) -> float | None:

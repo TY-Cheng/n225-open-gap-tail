@@ -154,7 +154,6 @@ def test_write_jquants_smoke_sample_writes_bronze_artifact(tmp_path: Path) -> No
         bronze_data_dir=tmp_path / "bronze",
         jquants_api_key="secret",
         jquants_api_base_url="https://example.test/v2",
-        jquants_api_plan="free",
     )
     client = JQuantsV2Client(
         api_key="secret",
@@ -177,6 +176,6 @@ def test_write_jquants_smoke_sample_writes_bronze_artifact(tmp_path: Path) -> No
     assert result.futures_probe_rows == 0
     assert "bronze/jquants_smoke" in result.output_path.as_posix()
     document: dict[str, Any] = json.loads(result.output_path.read_text(encoding="utf-8"))
-    assert document["metadata"]["api_plan"] == "free"
+    assert document["metadata"]["required_plan"] == "premium"
     assert "secret" not in result.output_path.read_text(encoding="utf-8")
     assert document["requests"][2]["payload"]["message"] == "subscription unavailable"

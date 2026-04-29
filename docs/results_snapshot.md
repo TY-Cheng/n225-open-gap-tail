@@ -1,6 +1,6 @@
 # Results Snapshot
 
-> **Research-candidate full-run artifact.** This page is generated from `tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44`.
+> **Research-candidate full-run artifact.** This page is generated from `tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0`.
 > It summarizes the durable gold modeling sample and run outputs, not the older
 > bounded access-check snapshot. It is still a research-candidate artifact:
 > final manuscript claims require a clean committed run and author review of the
@@ -75,14 +75,14 @@ The pipeline is now producing full-run research-candidate evidence from the dura
 
 | Field | Value |
 | --- | --- |
-| Run ID | `tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44` |
-| Artifact root | `reports/runs/tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44` |
+| Run ID | `tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0` |
+| Artifact root | `reports/runs/tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0` |
 | Claim level | `research_candidate` |
 | Requested window | `['2016-07-19', '2026-04-29']` |
 | Combined clean start | `2018-06-20` |
 | Gold panel dates | `2016-07-19 to 2026-04-28` |
 | Forecast sample dates | `2018-06-20 to 2026-04-28 (1660 rows)` |
-| Git commit | `5229cd4423b4668eb3551a10332903a586c2905d` |
+| Git commit | `c382dbd0c64c4b57712a0b692113ae393958967e` |
 | Git dirty | `True` |
 | FRED vintage safe | `False` |
 
@@ -180,7 +180,7 @@ The pipeline is now producing full-run research-candidate evidence from the dura
 
 ## Benchmark Suite
 
-Status: `completed`; forecast rows: `10557`; metric rows: `16`; failures: `0`.
+Status: `completed`; forecast rows: `10557`; metric rows: `6`; failures: `0`.
 
 | Benchmark layer | Status | Forecast rows | Diagnostic rows | Failures | How to read it |
 | --- | --- | --- | --- | --- | --- |
@@ -189,22 +189,12 @@ Status: `completed`; forecast rows: `10557`; metric rows: `16`; failures: `0`.
 
 | Model | Information set | Rows | VaR breach rate | Exceptions | Mean quantile loss | Mean FZ loss |
 | --- | --- | --- | --- | --- | --- | --- |
-| ald_taylor_var_es_asymmetric_slope | target_history_only | 657 | 5.784% | 38 | 0.00133621 | -3.69953 |
-| ald_taylor_var_es_sav | target_history_only | 657 | 5.175% | 34 | 0.00131329 | -3.73241 |
-| care_expectile_asymmetric_slope | target_history_only | 657 | 6.849% | 45 | 0.00133991 | -3.70602 |
-| care_expectile_sav | target_history_only | 657 | 6.240% | 41 | 0.00132837 | -3.71325 |
-| caviar_asymmetric_slope | target_history_only | 657 | 5.936% | 39 | 0.00133386 | -3.70656 |
-| caviar_sav | target_history_only | 657 | 5.023% | 33 | 0.00131937 | -3.72313 |
-| direct_fz_loss_asymmetric_slope | target_history_only | 657 | 5.784% | 38 | 0.00133621 | -3.69953 |
-| direct_fz_loss_sav | target_history_only | 657 | 5.175% | 34 | 0.00131329 | -3.73241 |
-| ewma_vol_scaled | target_history_only | 657 | 5.327% | 35 | 0.00139628 | -3.65072 |
-| garch_t | target_history_only | 657 | 6.393% | 42 | 0.00135472 | -3.70066 |
-| gas_t_location_scale | target_history_only | 657 | 6.545% | 43 | 0.00133027 | -3.69849 |
-| gas_t_pot_gpd | target_history_only | 657 | 5.479% | 36 | 0.00132624 | -3.73281 |
-| gjr_garch_evt | target_history_only | 657 | 5.632% | 37 | 0.00133878 | -3.72956 |
-| gjr_garch_t | target_history_only | 657 | 6.545% | 43 | 0.00134386 | -3.70581 |
-| historical_quantile | target_history_only | 657 | 6.088% | 40 | 0.00148195 | -3.51034 |
-| rolling_quantile | target_history_only | 657 | 6.088% | 40 | 0.0014819 | -3.5028 |
+| ewma_vol_scaled | target_history_only | 660 | 5.303% | 35 | 0.00139284 | -3.65391 |
+| garch_t | target_history_only | 660 | 6.364% | 42 | 0.00135148 | -3.70351 |
+| gjr_garch_evt | target_history_only | 660 | 5.606% | 37 | 0.00133621 | -3.73138 |
+| gjr_garch_t | target_history_only | 660 | 6.515% | 43 | 0.00134109 | -3.70805 |
+| historical_quantile | target_history_only | 660 | 6.061% | 40 | 0.00147857 | -3.51331 |
+| rolling_quantile | target_history_only | 660 | 6.061% | 40 | 0.00147852 | -3.50579 |
 
 - Benchmark floor rows set the target-history/econometric floor that ML models should be interpreted against.
 - Advanced benchmark families are nonblocking; rows with valid forecasts are empirical evidence subject to the same sample and inference gates, while unavailable rows remain diagnostics.
@@ -270,29 +260,29 @@ Status: `completed_lightgbm_ml_tail_models`; implemented models: `lightgbm_direc
 
 | Artifact | Path | Exists |
 | --- | --- | --- |
-| manifest | `reports/runs/tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/manifest.json` | yes |
-| data_vintage | `reports/runs/tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/data_vintage.json` | yes |
-| modeling_panel | `data/gold/tailrisk_panel/schema_version=1/run_id=tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/modeling_panel.parquet` | yes |
-| target_audit | `data/gold/tailrisk_panel/schema_version=1/run_id=tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/target_audit.parquet` | yes |
-| calendar_map | `data/gold/tailrisk_panel/schema_version=1/run_id=tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/calendar_map.parquet` | yes |
-| feature_coverage | `data/gold/tailrisk_panel/schema_version=1/run_id=tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/feature_coverage.parquet` | yes |
-| leakage_summary | `data/gold/leakage_summary/schema_version=1/run_id=tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/summary.json` | yes |
-| benchmark_status | `reports/runs/tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/metrics/benchmark_status.json` | yes |
-| benchmark_metrics | `reports/runs/tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/metrics/benchmark_metrics.parquet` | yes |
-| ml_tail_status | `reports/runs/tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/metrics/ml_tail_status.json` | yes |
-| ml_tail_metrics | `reports/runs/tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/metrics/ml_tail_metrics.parquet` | yes |
-| ml_tail_metrics_per_model | `reports/runs/tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/metrics/ml_tail_metrics_per_model.parquet` | yes |
-| ml_tail_result_matrix | `reports/runs/tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/metrics/ml_tail_result_matrix.parquet` | yes |
-| ml_tail_result_matrix_dm | `reports/runs/tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/metrics/ml_tail_result_matrix_dm.parquet` | yes |
-| ml_tail_result_matrix_mcs | `reports/runs/tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/metrics/ml_tail_result_matrix_mcs.parquet` | yes |
-| benchmark_stress_windows | `reports/runs/tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/metrics/benchmark_stress_windows.parquet` | yes |
-| ml_tail_stress_windows | `reports/runs/tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/metrics/ml_tail_stress_windows.parquet` | yes |
-| latex_dir | `reports/runs/tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/latex/tables` | yes |
-| claim_scope_table | `reports/runs/tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/latex/tables/tailrisk_claim_scope_table.tex` | yes |
-| es_severity_table | `reports/runs/tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/latex/tables/tailrisk_es_severity_table.tex` | yes |
-| hedge_trigger_table | `reports/runs/tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/latex/tables/tailrisk_hedge_trigger_diagnostics_table.tex` | yes |
-| dst_attenuation_table | `reports/runs/tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/latex/tables/ml_tail_dst_attenuation_table.tex` | yes |
-| result_matrix_summary_table | `reports/runs/tailrisk_20160719_20260429_20260429T062105Z_commit_5229cd44/latex/tables/ml_tail_result_matrix_summary_table.tex` | yes |
+| manifest | `reports/runs/tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/manifest.json` | yes |
+| data_vintage | `reports/runs/tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/data_vintage.json` | yes |
+| modeling_panel | `data/gold/tailrisk_panel/schema_version=1/run_id=tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/modeling_panel.parquet` | yes |
+| target_audit | `data/gold/tailrisk_panel/schema_version=1/run_id=tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/target_audit.parquet` | yes |
+| calendar_map | `data/gold/tailrisk_panel/schema_version=1/run_id=tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/calendar_map.parquet` | yes |
+| feature_coverage | `data/gold/tailrisk_panel/schema_version=1/run_id=tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/feature_coverage.parquet` | yes |
+| leakage_summary | `data/gold/leakage_summary/schema_version=1/run_id=tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/summary.json` | yes |
+| benchmark_status | `reports/runs/tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/metrics/benchmark_status.json` | yes |
+| benchmark_metrics | `reports/runs/tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/metrics/benchmark_metrics.parquet` | yes |
+| ml_tail_status | `reports/runs/tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/metrics/ml_tail_status.json` | yes |
+| ml_tail_metrics | `reports/runs/tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/metrics/ml_tail_metrics.parquet` | yes |
+| ml_tail_metrics_per_model | `reports/runs/tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/metrics/ml_tail_metrics_per_model.parquet` | yes |
+| ml_tail_result_matrix | `reports/runs/tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/metrics/ml_tail_result_matrix.parquet` | yes |
+| ml_tail_result_matrix_dm | `reports/runs/tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/metrics/ml_tail_result_matrix_dm.parquet` | yes |
+| ml_tail_result_matrix_mcs | `reports/runs/tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/metrics/ml_tail_result_matrix_mcs.parquet` | yes |
+| benchmark_stress_windows | `reports/runs/tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/metrics/benchmark_stress_windows.parquet` | yes |
+| ml_tail_stress_windows | `reports/runs/tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/metrics/ml_tail_stress_windows.parquet` | yes |
+| latex_dir | `reports/runs/tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/latex/tables` | yes |
+| claim_scope_table | `reports/runs/tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/latex/tables/tailrisk_claim_scope_table.tex` | yes |
+| es_severity_table | `reports/runs/tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/latex/tables/tailrisk_es_severity_table.tex` | yes |
+| hedge_trigger_table | `reports/runs/tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/latex/tables/tailrisk_hedge_trigger_diagnostics_table.tex` | yes |
+| dst_attenuation_table | `reports/runs/tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/latex/tables/ml_tail_dst_attenuation_table.tex` | yes |
+| result_matrix_summary_table | `reports/runs/tailrisk_20160719_20260429_20260429T072642Z_commit_c382dbd0/latex/tables/ml_tail_result_matrix_summary_table.tex` | yes |
 
 - All paths above are local ignored artifacts; they are reproducible outputs, not tracked source files.
 - Forecast/reporting rebuilds should read these artifacts and must not call vendor APIs.

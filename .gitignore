@@ -6,6 +6,9 @@
 .python-version
 uv.lock
 
+# Local one-off tools
+ask_reviewer.py
+
 # Python
 __pycache__/
 *.py[cod]

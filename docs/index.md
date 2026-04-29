@@ -2,7 +2,7 @@
 
 ## Documentation Map
 
-- [Results Snapshot](results_snapshot.md): current evidence state, smoke outputs, blockers, and artifact map.
+- [Results Snapshot](results_snapshot.md): current full-run evidence state, clean modeling sample, result boundaries, and artifact map.
 - [Paper Plan](paper_plan.md): research design, contribution boundary, empirical contract, and acceptance gates.
 - [Data](data.md): source roles, target hierarchy, timestamp contract, and data-source caveats.
 - [Audit](audit/index.md): prompts for reviewing implementation and manuscript claims against the research contract.
@@ -45,14 +45,16 @@ Keep source credentials in `.env` only. Commit only code, schemas, docs, and sma
 
 ### Code Layout
 
-The package root is intentionally thin: `cli.py` owns command dispatch, while functional
-subpackages own implementation:
+The source root is intentionally thin: `cli.py` owns command dispatch, while functional
+subpackages own implementation. The repo runs in uv non-package mode, so commands enter
+through `just` or `PYTHONPATH=src uv run python -m n225_open_gap_tail.cli ...` rather
+than an installed console script:
 
 - `config`, `data_lake`, and `sources`: settings, typed Parquet/cache primitives, schemas, vendor clients, and source probes.
 - `market` and `features`: calendars, contract metadata, source-specific feature transforms, and timestamp-safe as-of joins.
 - `panel`: durable gold panel artifacts and leakage-bound signatures.
 - `forecasting`, `models`, `metrics`, `inference`, and `reporting`: run orchestration, model families, VaR/ES scoring, comparison inference, and table export.
-- `diagnostics`: bounded smoke/snapshot helpers and local provenance utilities.
+- `diagnostics`: full-run results snapshot helpers and local provenance utilities.
 
 ### Research-Grade Workflow
 
@@ -96,7 +98,7 @@ Layer | Current state | Boundary
 --- | --- | ---
 U.S. predictors | Massive and FRED smoke ingestion implemented and tested. | These are historical predictor sources, not live production feeds.
 Calendar and contract scaffolding | XNYS/JPX calendars, early closes, DST, quarterly contract metadata, roll windows, and central-contract selector implemented. | Rule-based Nikkei futures metadata must be reconciled against J-Quants or JPX metadata before final empirical results.
-Target data | J-Quants Premium futures daily OHLC is accessible and the 2022-present target audit snapshot runs. | The snapshot is smoke evidence; final paper results need the full run rolling evaluation.
+Target data | J-Quants Premium futures daily OHLC is accessible and the durable gold panel is built from the full cache-first workflow. | The results snapshot is research-candidate evidence; final paper claims need a clean committed run and author-reviewed tables.
 Modeling | Benchmark historical, rolling, vol-scaled, GARCH/GJR, and GJR-EVT baseline floor runs behind gates. ML tail LightGBM direct-quantile, fully OOF location-scale, and standardized-loss POT-GPD run the registered information-set ladder after the leakage gate passes. The headline ladder stays in `ml_tail_metrics.parquet`; restricted VaR-only and VaR-ES model-family comparisons live in `ml_tail_result_matrix*` artifacts. Block-bootstrap DM, HLN Tmax MCS, Murphy, stress-window, and feature-unavailability diagnostics are artifact-level inference outputs. | Instrumented conditional predictive ability regression, DST formal mechanism tests, and richer econometric models remain unavailable until their registered implementations complete.
 
 ## Reading Order

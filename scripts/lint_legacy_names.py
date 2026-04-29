@@ -13,7 +13,6 @@ FORBIDDEN = re.compile(
 ROOTS = ("src", "tests", "docs")
 EXTRA_FILES = (
     "README.md",
-    "ask_reviewer.py",
     "justfile",
     "mkdocs.yml",
     "pyproject.toml",

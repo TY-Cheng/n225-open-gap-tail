@@ -69,10 +69,10 @@ FRED uses current historical values with conservative availability semantics and
 The utility smoke/build commands are engineering checks only:
 
 ```bash
-n225-open-gap-tail massive-smoke
-n225-open-gap-tail fred-smoke
-n225-open-gap-tail calendar-build
-n225-open-gap-tail contracts-build
+PYTHONPATH=src uv run python -m n225_open_gap_tail.cli massive-smoke
+PYTHONPATH=src uv run python -m n225_open_gap_tail.cli fred-smoke
+PYTHONPATH=src uv run python -m n225_open_gap_tail.cli calendar-build
+PYTHONPATH=src uv run python -m n225_open_gap_tail.cli contracts-build
 ```
 
 They use the same cache vocabulary as the run workflow: vendor payloads under

@@ -28,11 +28,11 @@ dependencies = [
     "xxhash>=3.5.0",
 ]
 
-[project.scripts]
-n225-open-gap-tail = "n225_open_gap_tail.cli:app"
-
 [project.optional-dependencies]
 docs = ["mkdocs>=1.6.1", "mkdocs-material>=9.6.0"]
+
+[tool.uv]
+package = false
 
 [dependency-groups]
 dev = [
@@ -42,13 +42,6 @@ dev = [
     "pytest-cov>=6.0.0",
     "ruff>=0.9.0",
 ]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/n225_open_gap_tail"]
 
 [tool.ruff]
 line-length = 100
@@ -65,4 +58,5 @@ warn_redundant_casts = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 addopts = "-q --cov=n225_open_gap_tail --cov-report=term-missing --cov-fail-under=95"

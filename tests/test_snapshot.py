@@ -12,6 +12,7 @@ import polars as pl
 import pytest
 
 import n225_open_gap_tail.diagnostics.snapshot as snapshot_module
+from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.diagnostics.snapshot import (
     build_jquants_schema_probe,
     build_model_smoke,
@@ -365,6 +366,168 @@ def test_snapshot_summary_can_be_written_from_generated_artifact_text(tmp_path: 
 
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["fail_closed"] is False
+
+
+def test_results_snapshot_uses_full_run_gold_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    run_id = "tailrisk_test"
+    reports_dir = tmp_path / "reports"
+    gold_dir = tmp_path / "data" / "gold"
+    run_dir = reports_dir / "runs" / run_id
+    panel_dir = gold_dir / "tailrisk_panel" / "schema_version=1" / f"run_id={run_id}"
+    leakage_dir = gold_dir / "leakage_summary" / "schema_version=1" / f"run_id={run_id}"
+    metrics_dir = run_dir / "metrics"
+    panel_dir.mkdir(parents=True)
+    leakage_dir.mkdir(parents=True)
+    metrics_dir.mkdir(parents=True)
+
+    panel_path = panel_dir / "modeling_panel.parquet"
+    target_path = panel_dir / "target_audit.parquet"
+    calendar_path = panel_dir / "calendar_map.parquet"
+    feature_path = panel_dir / "feature_coverage.parquet"
+    pl.DataFrame(
+        [
+            {
+                "forecast_date": "2018-06-20",
+                "forecast_sample": True,
+                "target_clean_sample": True,
+                "forecast_sample_reason": None,
+                "mapping_status": "normal_trading",
+            },
+            {
+                "forecast_date": "2018-06-21",
+                "forecast_sample": False,
+                "target_clean_sample": False,
+                "forecast_sample_reason": "target_not_clean",
+                "mapping_status": "normal_trading",
+            },
+        ]
+    ).write_parquet(panel_path)
+    pl.DataFrame(
+        [
+            {"clean_sample": True, "missing_reason": None},
+            {"clean_sample": False, "missing_reason": "roll_sq_excluded"},
+        ]
+    ).write_parquet(target_path)
+    pl.DataFrame(
+        [
+            {
+                "mapping_status": "normal_trading",
+                "dst_regime": "EDT",
+                "us_early_close_flag": False,
+            }
+        ]
+    ).write_parquet(calendar_path)
+    pl.DataFrame(
+        [
+            {
+                "source_family": "massive_daily",
+                "source_block": "us_core",
+                "missingness_rate": 0.0,
+            }
+        ]
+    ).write_parquet(feature_path)
+    metric_row = {
+        "model_name": "lightgbm_direct_quantile",
+        "information_set": "japan_only",
+        "rows": 1,
+        "var_breach_rate": 0.0,
+        "exceedance_count": 0,
+        "mean_quantile_loss": 0.1,
+        "mean_fz_loss": -1.0,
+    }
+    pl.DataFrame([metric_row]).write_parquet(metrics_dir / "benchmark_metrics.parquet")
+    pl.DataFrame([metric_row]).write_parquet(metrics_dir / "ml_tail_metrics.parquet")
+    pl.DataFrame([metric_row]).write_parquet(metrics_dir / "ml_tail_metrics_per_model.parquet")
+    pl.DataFrame(
+        [
+            {
+                "comparison_family": "tail_model_family",
+                "comparison_axis": "model_family",
+                "sample_policy": "restricted_tail_model_common_sample",
+                "loss_family": "var_quantile_loss",
+                "common_n": 154,
+                "date_start": "2025-08-01",
+                "date_end": "2026-04-28",
+                "joint_exception_count": 17,
+            }
+        ]
+    ).write_parquet(metrics_dir / "ml_tail_result_matrix.parquet")
+    (run_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "claim_level": "research_candidate",
+                "window": ["2016-07-19", "2026-04-29"],
+                "combined_clean_start": "2018-06-20",
+                "git_commit": "abcdef123",
+                "git_dirty": False,
+                "benchmark_eval_status": "completed",
+                "ml_tail_eval_status": "completed_lightgbm_ml_tail_models",
+                "gold_artifacts": {
+                    "modeling_panel": str(panel_path),
+                    "target_audit": str(target_path),
+                    "calendar_map": str(calendar_path),
+                    "feature_coverage": str(feature_path),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "data_vintage.json").write_text(
+        json.dumps({"fred_vintage_safe": False}),
+        encoding="utf-8",
+    )
+    (metrics_dir / "benchmark_status.json").write_text(
+        json.dumps({"status": "completed", "forecast_rows": 1, "metric_rows": 1, "failures": 0}),
+        encoding="utf-8",
+    )
+    (metrics_dir / "ml_tail_status.json").write_text(
+        json.dumps(
+            {
+                "status": "completed_lightgbm_ml_tail_models",
+                "implemented_components": ["lightgbm_direct_quantile"],
+                "forecast_rows": 1,
+                "failures": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (leakage_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "status": "pass",
+                "rows": 10,
+                "failures": 0,
+                "warnings": 0,
+                "panel_row_count": 2,
+                "panel_signature_hash_seed": 42,
+                "panel_signature": "abc",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = snapshot_module.write_results_snapshot_from_run(
+        settings=Settings(
+            data_dir=tmp_path / "data",
+            bronze_data_dir=tmp_path / "data" / "bronze",
+            silver_data_dir=tmp_path / "data" / "silver",
+            gold_data_dir=gold_dir,
+            reports_dir=reports_dir,
+        ),
+        run_id="latest",
+    )
+
+    rendered = Path("docs/results_snapshot.md").read_text(encoding="utf-8")
+    assert result.snapshot_id == run_id
+    assert "Discussion Q&A" in rendered
+    assert "Gold modeling rows" in rendered
+    assert "not the older bounded access-check snapshot" in rendered
+    assert "Smoke-only artifact" not in rendered
 
 
 def test_private_snapshot_helpers_cover_defensive_edges(tmp_path: Path) -> None:

@@ -62,10 +62,8 @@ from n225_open_gap_tail.data_lake.schemas import (
     JoinMissReason,
     MappingStatus,
 )
-from n225_open_gap_tail.diagnostics.snapshot import (
+from n225_open_gap_tail.sources.jquants_futures import (
     build_jquants_schema_probe,
-    build_target_audit_records,
-    build_time_alignment_records,
     normalize_jquants_futures_rows,
 )
 
@@ -156,8 +154,6 @@ BENCHMARK_FLOOR_MODEL_NAMES = (
 BENCHMARK_ADVANCED_MODEL_NAMES = (
     "caviar_sav",
     "caviar_asymmetric_slope",
-    "caviar_indirect_garch",
-    "caviar_adaptive",
     "care_expectile_sav",
     "care_expectile_asymmetric_slope",
     "ald_taylor_var_es_sav",
@@ -172,8 +168,14 @@ BENCHMARK_ADVANCED_RUNTIME_BUDGET_SINGLE_THREADED = (
     PIPELINE_CONFIG.model_policy.advanced_runtime_budget_single_threaded
 )
 BENCHMARK_ADVANCED_PARALLELISM_UNIT = PIPELINE_CONFIG.model_policy.advanced_parallelism_unit
+ADVANCED_RECURSIVE_BURN_IN_ROWS = PIPELINE_CONFIG.model_policy.advanced_recursive_burn_in_rows
+ADVANCED_GAS_BURN_IN_ROWS = PIPELINE_CONFIG.model_policy.advanced_gas_burn_in_rows
+ADVANCED_OPTIMIZER_MAX_RESTARTS = PIPELINE_CONFIG.model_policy.advanced_optimizer_max_restarts
+ADVANCED_OPTIMIZER_JITTER_FRACTION = PIPELINE_CONFIG.model_policy.advanced_optimizer_jitter_fraction
+ADVANCED_OPTIMIZER_JITTER_FLOOR = PIPELINE_CONFIG.model_policy.advanced_optimizer_jitter_floor
 GAS_SCORE_SCALING = PIPELINE_CONFIG.model_policy.gas_score_scaling
 GAS_STATE_VARIABLE = PIPELINE_CONFIG.model_policy.gas_state_variable
+GAS_NU_GRID = PIPELINE_CONFIG.model_policy.gas_nu_grid
 CARE_EXPECTILE_GRID = PIPELINE_CONFIG.model_policy.care_expectile_grid
 CARE_EXPECTILE_CALIBRATION_METHOD = PIPELINE_CONFIG.model_policy.care_expectile_calibration_method
 ML_TAIL_ANCHOR_INFORMATION_SET = PIPELINE_CONFIG.feature_sets.ml_tail_model_a_information_set
@@ -646,16 +648,24 @@ def _run_cache_key(
 
 _IMPLEMENTATION_MODULES = (
     "n225_open_gap_tail.panel.build",
+    "n225_open_gap_tail.forecasting._guards",
+    "n225_open_gap_tail.forecasting._benchmark_suite",
+    "n225_open_gap_tail.forecasting._ml_tail_suite",
     "n225_open_gap_tail.forecasting.evaluation",
     "n225_open_gap_tail.models.ml_tail",
     "n225_open_gap_tail.models.ml_tail_oof",
     "n225_open_gap_tail.metrics.information",
+    "n225_open_gap_tail.metrics.result_matrix_grouping",
+    "n225_open_gap_tail.metrics.result_matrix_scoring",
+    "n225_open_gap_tail.metrics.result_matrix_notes",
     "n225_open_gap_tail.metrics.result_matrix",
     "n225_open_gap_tail.inference.core",
     "n225_open_gap_tail.reporting.tables",
     "n225_open_gap_tail.panel.leakage",
     "n225_open_gap_tail.models.benchmark",
+    "n225_open_gap_tail.models.benchmark_advanced_stateful",
     "n225_open_gap_tail.models.benchmark_advanced",
+    "n225_open_gap_tail.models.benchmark_advanced_math",
     "n225_open_gap_tail.features.asof",
     "n225_open_gap_tail.features.jquants_spy",
     "n225_open_gap_tail.data_lake.cache_ops",

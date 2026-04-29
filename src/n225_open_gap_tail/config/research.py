@@ -128,8 +128,14 @@ class ModelPolicy:
     joblib_backend: str = "loky"
     advanced_runtime_budget_single_threaded: str = "4_to_8_hours_full_suite_estimate"
     advanced_parallelism_unit: str = "model_name_x_tail_level_shards"
+    advanced_recursive_burn_in_rows: int = 252
+    advanced_gas_burn_in_rows: int = 500
+    advanced_optimizer_max_restarts: int = 3
+    advanced_optimizer_jitter_fraction: float = 0.05
+    advanced_optimizer_jitter_floor: float = 1e-4
     gas_score_scaling: str = "unit_inverse_fisher"
     gas_state_variable: str = "log_sigma"
+    gas_nu_grid: tuple[float, ...] = (4.1, 5.0, 7.0, 10.0, 15.0, 20.0, 30.0)
     care_expectile_grid: tuple[float, ...] = (0.80, 0.85, 0.90, 0.925, 0.95, 0.975, 0.99)
     care_expectile_calibration_method: str = (
         "training_window_grid_search_match_target_var_exception_rate"

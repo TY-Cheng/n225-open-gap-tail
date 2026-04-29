@@ -7,22 +7,21 @@ from pathlib import Path
 from typing import cast
 from zoneinfo import ZoneInfo
 
-import numpy as np
 import polars as pl
 import pytest
 
 import n225_open_gap_tail.diagnostics.snapshot as snapshot_module
 from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.diagnostics.snapshot import (
-    build_jquants_schema_probe,
-    build_model_smoke,
-    build_predictor_availability_records,
     build_snapshot_id,
-    build_target_audit_records,
-    build_time_alignment_records,
-    normalize_jquants_futures_rows,
 )
 from n225_open_gap_tail.market.calendars import build_session_calendar_records
+from n225_open_gap_tail.panel.target_audit import build_target_audit_records
+from n225_open_gap_tail.panel.time_alignment import build_time_alignment_records
+from n225_open_gap_tail.sources.jquants_futures import (
+    build_jquants_schema_probe,
+    normalize_jquants_futures_rows,
+)
 
 
 def test_build_snapshot_id_binds_window_timestamp_and_commit() -> None:
@@ -217,104 +216,6 @@ def test_time_alignment_treats_us_early_close_as_expected_regime() -> None:
     assert alignment[0]["us_close_to_ose_night_close_minutes"] == 180
     assert alignment[0]["alignment_pass"] is True
     assert alignment[0]["alignment_reason"] == "est_early_close_expected_180_plus_minus_5"
-
-
-def test_predictor_availability_reports_spearman_and_subsample_guard() -> None:
-    targets = [
-        {
-            "trading_date": f"2026-01-{day:02d}",
-            "clean_sample": True,
-            "full_gap_settle_to_open": -day / 1000,
-            "loss_settle_to_open": day / 1000,
-        }
-        for day in range(1, 13)
-    ]
-    alignment = [
-        {
-            "trading_date": row["trading_date"],
-            "us_calendar_date": row["trading_date"],
-            "dst_regime": "EST",
-        }
-        for row in targets
-    ]
-    massive = [
-        {"ticker": "SPY", "bar_date_et": row["trading_date"], "close": 100 + index}
-        for index, row in enumerate(targets)
-    ]
-    massive.append({"ticker": "QQQ", "bar_date_et": "2026-02-01", "close": 1.0})
-
-    records = build_predictor_availability_records(
-        target_rows=targets,
-        massive_daily_records=massive,
-        fred_records=[],
-        alignment_records=alignment,
-    )
-    by_predictor = {str(row["predictor"]): row for row in records}
-
-    assert by_predictor["SPY"]["source"] == "massive_daily"
-    assert by_predictor["SPY"]["effective_clean_join_rows"] == 12
-    spearman_all = cast(dict[str, object], by_predictor["SPY"]["spearman_all"])
-    spearman_edt = cast(dict[str, object], by_predictor["SPY"]["spearman_edt"])
-    assert spearman_all["n"] == 12
-    assert spearman_edt["reason"] == "insufficient_subsample"
-    assert by_predictor["QQQ"]["effective_clean_join_rows"] == 0
-
-
-def test_model_smoke_gates_evt_by_training_exceedances() -> None:
-    small_rows: list[dict[str, object]] = [
-        {
-            "clean_sample": True,
-            "full_gap_settle_to_open": -0.001,
-            "loss_settle_to_open": 0.001,
-        }
-        for _ in range(10)
-    ]
-    assert build_model_smoke(small_rows)["overall_status"] == "unavailable_insufficient_sample"
-
-    large_rows: list[dict[str, object]] = [
-        {
-            "clean_sample": True,
-            "full_gap_settle_to_open": -value,
-            "loss_settle_to_open": value,
-        }
-        for value in np.linspace(0.001, 0.2, 180)
-    ]
-    status = build_model_smoke(large_rows)
-
-    assert status["overall_status"] == "smoke_metrics_available"
-    assert status["evt_status"] == "unavailable_insufficient_exceedances"
-    assert status["lightgbm_status"] in {
-        "smoke_metrics_available",
-        "unavailable_import_error",
-    }
-
-
-def test_model_smoke_records_train_test_gate_and_evt_fit(monkeypatch: pytest.MonkeyPatch) -> None:
-    rows: list[dict[str, object]] = [
-        {
-            "clean_sample": True,
-            "full_gap_settle_to_open": -0.001,
-            "loss_settle_to_open": 0.001,
-        }
-        for _ in range(130)
-    ]
-    monkeypatch.setattr(snapshot_module, "MIN_TEST_ROWS_FOR_METRICS", 40)
-    gated = build_model_smoke(rows)
-    assert gated["overall_status"] == "unavailable_insufficient_sample"
-    assert cast(int, gated["test_rows"]) < 40
-
-    evt_rows: list[dict[str, object]] = [
-        {
-            "clean_sample": True,
-            "full_gap_settle_to_open": -value,
-            "loss_settle_to_open": value,
-        }
-        for value in np.linspace(0.001, 1.0, 900)
-    ]
-    monkeypatch.setattr(snapshot_module, "MIN_TEST_ROWS_FOR_METRICS", 20)
-    fitted = build_model_smoke(evt_rows)
-    assert cast(int, fitted["evt_train_exceedances"]) >= 30
-    assert fitted["evt_status"] in {"smoke_fit_available", "meaningful_discussion_ready"}
 
 
 def test_target_audit_missing_open_and_oi_anomaly_are_reported() -> None:
@@ -546,52 +447,15 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     assert "bounded access-check snapshot" in rendered
     assert "Coverage review:" in rendered
     assert "must not be read as forecast improvement" in rendered
-    assert "advanced benchmark registry is wired as nonblocking diagnostics" in rendered
-    assert "Advanced benchmark families are wired as nonblocking diagnostics" in rendered
+    assert "advanced benchmark layer is registered as nonblocking" in rendered
+    assert "should be read as unavailable diagnostics" in rendered
     assert "Smoke-only artifact" not in rendered
 
 
-def test_private_snapshot_helpers_cover_defensive_edges(tmp_path: Path) -> None:
-    assert snapshot_module._month_chunks(start="2026-01-30", end="2026-03-02") == [
-        ("2026-01-30", "2026-01-31"),
-        ("2026-02-01", "2026-02-28"),
-        ("2026-03-01", "2026-03-02"),
-    ]
-    assert snapshot_module._date_range(
-        datetime(2026, 1, 1).date(),
-        datetime(2026, 1, 3).date(),
-    ) == [
-        datetime(2026, 1, 1).date(),
-        datetime(2026, 1, 2).date(),
-        datetime(2026, 1, 3).date(),
-    ]
-    assert snapshot_module._optional_date(None) is None
-    parsed_date = snapshot_module._optional_date(datetime(2026, 1, 1).date())
-    assert parsed_date is not None
-    assert parsed_date.isoformat() == "2026-01-01"
-    assert snapshot_module._optional_str("") is None
-    assert snapshot_module._optional_bool(True) is True
-    assert snapshot_module._optional_bool("1") is True
+def test_snapshot_private_helpers_cover_defensive_edges() -> None:
     assert snapshot_module._optional_float(True) is None
     assert snapshot_module._optional_float("1.5") == 1.5
-    assert snapshot_module._price_or_none(0) is None
-    assert snapshot_module._log_gap(0, 1) is None
-    with pytest.raises(snapshot_module.SnapshotError):
-        snapshot_module._parse_date(1)
-    with pytest.raises(snapshot_module.SnapshotError):
-        snapshot_module._as_datetime("not-a-datetime")
-    with pytest.raises(snapshot_module.SnapshotError):
-        snapshot_module._as_datetime(datetime(2026, 1, 1))
-
-    snapshot_module._ensure_snapshot_dirs(tmp_path)
-    assert (tmp_path / "target_audit").exists()
-    json_path = tmp_path / "payload.json"
-    snapshot_module._write_json(json_path, {"created_at": datetime(2026, 1, 1, tzinfo=UTC)})
-    assert "2026-01-01" in json_path.read_text(encoding="utf-8")
-    parquet_path = tmp_path / "payload.parquet"
-    snapshot_module._write_parquet(parquet_path, [{"x": 1}])
-    assert pl.read_parquet(parquet_path).select("x").item() == 1
-    assert snapshot_module._hash_json([{"x": 1}])
+    assert snapshot_module._markdown_cell("a|b\nc") == "a\\|b c"
 
 
 def _raw_row(

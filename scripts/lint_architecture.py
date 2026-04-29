@@ -10,9 +10,7 @@ PKG = ROOT / "src" / "n225_open_gap_tail"
 
 ALLOWED_ROOT_FILES = {"__init__.py", "cli.py"}
 LINE_LIMIT = 1000
-LINE_LIMIT_ALLOWLIST = {
-    "diagnostics/snapshot.py": "legacy snapshot diagnostics module; isolated from pipeline runtime",
-}
+LINE_LIMIT_ALLOWLIST: dict[str, str] = {}
 
 LAYER_ORDER = {
     "config": 0,

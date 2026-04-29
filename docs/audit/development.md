@@ -58,7 +58,7 @@ Audit checklist before adding features:
 Current implementation status:
 
 - Main data-engineering path is implemented: source probes, cache-first bronze/silver reads, durable gold panel artifacts, calendar map, target audit, feature coverage, leakage binding, and run-specific reports.
-- Benchmark floor is implemented for historical, rolling, EWMA/vol-scaled, GARCH/GJR, and GJR-GARCH-EVT style models behind gates. The advanced benchmark registry is wired as a nonblocking diagnostic layer, but CAViaR, direct FZ-loss, CARE/expectile, Taylor ALD, and GAS-style models still emit unavailable diagnostics rather than empirical forecast rows until explicit optimizers and tests exist.
+- Benchmark floor is implemented for historical, rolling, EWMA/vol-scaled, GARCH/GJR, and GJR-GARCH-EVT style models behind gates. The advanced benchmark suite is implemented as a nonblocking benchmark layer with CAViaR, CARE/expectile, Taylor ALD, direct FZ-loss, GAS-t, and GAS-POT forecast rows plus optimizer diagnostics.
 - ML tail path is implemented for `lightgbm_direct_quantile`, fully out-of-fold `lightgbm_location_scale`, and fully out-of-fold `lightgbm_standardized_loss_pot_gpd` over the registered nested information ladder.
 - Result governance is implemented for headline metrics, per-model diagnostics, result matrix artifacts, feature-unavailability diagnostics, block-bootstrap DM, HLN Tmax MCS, Murphy diagnostics, stress windows, and DST attenuation records.
 - The report layer now exports manuscript-facing ES severity, diagnostic VaR-trigger, DST attenuation, claim-scope, and result-matrix summary table fragments. These are still governance/reporting artifacts: ES severity is conditional on VaR exceptions, VaR-trigger rows are not hedge PnL or trading-alpha evidence, and DST attenuation is descriptive forecast evidence rather than a structural causal mechanism.
@@ -132,10 +132,9 @@ Implement the pipeline in this order:
 7A. Econometric tail-risk baselines
    - Implement GARCH-t or GJR-GARCH-t if the dependency is available.
    - Implement GJR-GARCH-EVT on standardized residuals.
-   - Implement CAViaR as a main pre-LightGBM benchmark gate; the registry currently records it as an unavailable advanced diagnostic, not a forecast-producing model.
-   - Implement a direct FZ-loss or CARE/expectile-style VaR-ES benchmark as a main pre-LightGBM benchmark gate; the registry currently records it as unavailable advanced diagnostics.
-   - Implement Taylor-style ALD VaR-ES as a main advanced benchmark when stable on the audited sample; the registry currently records it as unavailable advanced diagnostics.
-   - Treat GAS-t or score-driven VaR-ES models as appendix or fallback benchmarks unless the implementation is stable and tested; the registry currently records them as unavailable advanced diagnostics.
+   - CAViaR SAV/asymmetric-slope variants are implemented as stateful recursive advanced benchmarks with empirical ES companions and optimizer diagnostics.
+   - CARE/expectile-style VaR-ES, Taylor-style ALD VaR-ES, and direct FZ-loss variants are implemented as nonblocking advanced benchmark models with explicit VaR-ES semantics.
+   - GAS-t and GAS-POT are implemented as score-driven advanced benchmarks; keep them appendix/diagnostic unless the sample gates and author review support stronger use.
    - GAS-t must use unit-scaled Student-t score recursion (`score_scaling=unit_inverse_fisher`) with log-scale state; invalid score scaling, nonfinite score/state, invalid `nu`, or exploding scale must emit `unavailable_gas_filter_failed`.
    - CARE is expectile-based and separate from Taylor ALD. Its expectile level must be calibrated on the training window by grid search to match the target VaR exception rate, with `expectile_tau`, calibration breach rate, objective, and status recorded.
    - Full advanced benchmark evaluation is runtime-heavy: expect roughly 4--8 hours single-threaded for all optimizer-based model-by-tail shards; use `benchmark-floor` for fast checks and parallelize only across model/tail shards.

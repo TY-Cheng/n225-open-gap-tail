@@ -7,5 +7,7 @@ _runtime.wire_runtime_namespace()
 globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("__")})
 from .build import *
 from .leakage import *
+from .target_audit import *
+from .time_alignment import *
 
 __all__ = [name for name in globals() if not name.startswith("_")]

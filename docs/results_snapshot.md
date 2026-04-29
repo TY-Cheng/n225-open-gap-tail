@@ -1,3 +1,9 @@
+---
+hide:
+  - navigation
+  - toc
+---
+
 # Results Snapshot
 
 > **Research-candidate full-run artifact.** This page is generated from `tailrisk_20160719_20260429_20260429T115723Z_commit_57b1ddab`.

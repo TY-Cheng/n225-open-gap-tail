@@ -1,9 +1,18 @@
 # mypy: ignore-errors
-# ruff: noqa: F401,F403,F405,F821,I001,UP035
+# ruff: noqa: F401,I001,UP035
 from __future__ import annotations
 
-from n225_open_gap_tail.config.runtime import *
+from n225_open_gap_tail.config.runtime import (
+    CLAIMS_LEVEL,
+    ML_TAIL_DIRECT_QUANTILE_MODEL,
+    Path,
+    pl,
+    TableExportResult as TableExportResult,
+    TAIL_SIDE_LEFT,
+    TAIL_SIDE_RIGHT,
+)
 from n225_open_gap_tail.forecasting.artifacts import _read_manifest, _update_manifest, _write_json
+from n225_open_gap_tail.reporting.figures import export_figures
 from n225_open_gap_tail.reporting.latex import (
     _claim_scope_to_latex,
     _dst_attenuation_to_latex,
@@ -104,6 +113,20 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
         )
         tables += 1
         table_files.append(table_path.name)
+    figure_result = export_figures(run_dir=run_dir, manifest=manifest)
+    table_entries = _table_manifest_entries(table_files)
+    _write_json(
+        run_dir / "latex" / "table_manifest.json",
+        {
+            "claims_level": CLAIMS_LEVEL,
+            "claim_level": manifest.get("claim_level", CLAIMS_LEVEL),
+            "run_id": run_dir.name,
+            "git_commit": manifest.get("git_commit"),
+            "config_hash": manifest.get("config_hash"),
+            "tables": table_entries,
+            "table_count": len(table_entries),
+        },
+    )
     _write_json(
         run_dir / "latex" / "figure_manifest.json",
         {
@@ -114,10 +137,16 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
             "config_hash": manifest.get("config_hash"),
             "tables": tables,
             "table_files": table_files,
-            "figures": [],
+            "figures": figure_result.figure_entries,
         },
     )
-    _update_manifest(run_dir, {"latex_tables": tables})
+    _update_manifest(
+        run_dir,
+        {
+            "latex_tables": tables,
+            "latex_figures": len(figure_result.figure_entries),
+        },
+    )
     return TableExportResult(run_id=run_dir.name, latex_dir=latex_dir, tables=tables)
 
 
@@ -125,6 +154,135 @@ def _remove_stale_tail_table_names(latex_dir: Path) -> None:
     for pattern in ("*_left_headline_table.tex", "*_right_robustness_table.tex"):
         for path in latex_dir.glob(pattern):
             path.unlink(missing_ok=True)
+
+
+def _table_manifest_entries(table_files: list[str]) -> list[dict[str, object]]:
+    return [_table_manifest_entry(table_file) for table_file in table_files]
+
+
+def _table_manifest_entry(table_file: str) -> dict[str, object]:
+    specs: dict[str, tuple[str, list[str], str, str | None]] = {
+        "benchmark_metrics_table.tex": (
+            "benchmark_metrics",
+            ["metrics/benchmark_metrics.parquet"],
+            "benchmark_common_sample_metric_table",
+            None,
+        ),
+        "benchmark_left_tail_risk_table.tex": (
+            "benchmark_left_tail_risk",
+            ["metrics/benchmark_metrics.parquet"],
+            "left_tail_benchmark_risk_table",
+            TAIL_SIDE_LEFT,
+        ),
+        "benchmark_right_tail_risk_table.tex": (
+            "benchmark_right_tail_risk",
+            ["metrics/benchmark_metrics.parquet"],
+            "right_tail_benchmark_risk_table",
+            TAIL_SIDE_RIGHT,
+        ),
+        "ml_tail_metrics_table.tex": (
+            "ml_tail_metrics",
+            ["metrics/ml_tail_metrics.parquet"],
+            "ml_tail_headline_ladder_table",
+            None,
+        ),
+        "ml_tail_left_tail_risk_table.tex": (
+            "ml_tail_left_tail_risk",
+            ["metrics/ml_tail_metrics.parquet"],
+            "left_tail_ml_tail_headline_risk_table",
+            TAIL_SIDE_LEFT,
+        ),
+        "ml_tail_right_tail_risk_table.tex": (
+            "ml_tail_right_tail_risk",
+            ["metrics/ml_tail_metrics.parquet"],
+            "right_tail_ml_tail_headline_risk_table",
+            TAIL_SIDE_RIGHT,
+        ),
+        "tailrisk_es_severity_table.tex": (
+            "tailrisk_es_severity",
+            [
+                "metrics/benchmark_metrics.parquet",
+                "metrics/ml_tail_metrics.parquet",
+                "metrics/ml_tail_metrics_per_model.parquet",
+            ],
+            "es_severity_diagnostic_table",
+            None,
+        ),
+        "tailrisk_hedge_trigger_diagnostics_table.tex": (
+            "tailrisk_trigger_diagnostics",
+            ["forecasts/benchmark_forecasts.parquet", "forecasts/ml_tail_forecasts.parquet"],
+            "trigger_diagnostic_table",
+            None,
+        ),
+        "tailrisk_claim_scope_table.tex": (
+            "tailrisk_claim_scope",
+            ["manifest.json", "config/research_config.json"],
+            "claim_boundary_reference_table",
+            None,
+        ),
+        "ml_tail_result_matrix_table.tex": (
+            "ml_tail_result_matrix",
+            ["metrics/ml_tail_result_matrix.parquet"],
+            "restricted_model_comparison_table",
+            None,
+        ),
+        "ml_tail_result_matrix_summary_table.tex": (
+            "ml_tail_result_matrix_summary",
+            [
+                "metrics/ml_tail_result_matrix.parquet",
+                "metrics/ml_tail_result_matrix_dm.parquet",
+                "metrics/ml_tail_result_matrix_mcs.parquet",
+            ],
+            "restricted_result_matrix_summary_table",
+            None,
+        ),
+        "ml_tail_dst_attenuation_table.tex": (
+            "ml_tail_dst_attenuation",
+            ["metrics/ml_tail_dst_attenuation.parquet"],
+            "descriptive_dst_attenuation_table",
+            None,
+        ),
+    }
+    name, sources, claim_scope, tail_side = specs.get(
+        table_file,
+        (
+            Path(table_file).stem,
+            [],
+            "table_artifact_unclassified",
+            None,
+        ),
+    )
+    return {
+        "name": name,
+        "path": f"latex/tables/{table_file}",
+        "format": "tex",
+        "source_artifacts": sources,
+        "tail_side": tail_side,
+        "caption": _table_caption(name),
+        "claim_scope": claim_scope,
+    }
+
+
+def _table_caption(name: str) -> str:
+    captions = {
+        "benchmark_metrics": (
+            "Benchmark common-sample metric table for target-history and econometric floors."
+        ),
+        "benchmark_left_tail_risk": "Benchmark downside-risk metric table.",
+        "benchmark_right_tail_risk": "Benchmark upside-risk metric table.",
+        "ml_tail_metrics": "ML-tail headline information-set ladder table.",
+        "ml_tail_left_tail_risk": "ML-tail downside-risk headline ladder table.",
+        "ml_tail_right_tail_risk": "ML-tail upside-risk headline ladder table.",
+        "tailrisk_es_severity": "Conditional-on-exception severity diagnostic table.",
+        "tailrisk_trigger_diagnostics": "Pre-open risk-trigger diagnostic table.",
+        "tailrisk_claim_scope": "Claim-boundary reference table for manuscript review.",
+        "ml_tail_result_matrix": "Restricted common-sample model-family comparison table.",
+        "ml_tail_result_matrix_summary": (
+            "Restricted result-matrix inference and gate summary table."
+        ),
+        "ml_tail_dst_attenuation": "Descriptive DST timing-regime diagnostic table.",
+    }
+    return captions.get(name, "Generated LaTeX table artifact.")
 
 
 def _combined_severity_metrics(run_dir: Path) -> pl.DataFrame:

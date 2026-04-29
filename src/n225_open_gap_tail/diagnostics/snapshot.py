@@ -15,6 +15,18 @@ from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.diagnostics.results_discussion import (
     generate_results_discussion as _generate_results_discussion,
 )
+from n225_open_gap_tail.diagnostics.snapshot_gallery import (
+    evidence_map_mermaid as _evidence_map_mermaid,
+)
+from n225_open_gap_tail.diagnostics.snapshot_gallery import (
+    figure_gallery_markdown as _figure_gallery_markdown,
+)
+from n225_open_gap_tail.diagnostics.snapshot_gallery import (
+    sync_snapshot_figure_assets as _sync_snapshot_figure_assets,
+)
+from n225_open_gap_tail.diagnostics.snapshot_gallery import (
+    table_manifest_markdown as _table_manifest_markdown,
+)
 
 
 @dataclass(frozen=True)
@@ -43,6 +55,11 @@ def write_results_snapshot_from_run(
     panel = _read_parquet_optional(paths["modeling_panel"])
     docs_path = Path("docs/results_snapshot.md")
     docs_path.parent.mkdir(parents=True, exist_ok=True)
+    _sync_snapshot_figure_assets(
+        run_dir=run_dir,
+        figure_manifest=_read_json_dict(paths["figure_manifest"]),
+        docs_dir=docs_path.parent,
+    )
     docs_path.write_text(
         _full_run_results_markdown(
             run_dir=run_dir,
@@ -154,6 +171,8 @@ def _full_run_snapshot_paths(
         / "ml_tail_feature_unavailability.parquet",
         "benchmark_stress_windows": run_dir / "metrics" / "benchmark_stress_windows.parquet",
         "ml_tail_stress_windows": run_dir / "metrics" / "ml_tail_stress_windows.parquet",
+        "figure_manifest": run_dir / "latex" / "figure_manifest.json",
+        "table_manifest": run_dir / "latex" / "table_manifest.json",
         "latex_dir": run_dir / "latex" / "tables",
         "claim_scope_table": run_dir / "latex" / "tables" / "tailrisk_claim_scope_table.tex",
         "es_severity_table": run_dir / "latex" / "tables" / "tailrisk_es_severity_table.tex",
@@ -189,6 +208,8 @@ def _full_run_results_markdown(
     benchmark_status = _read_json_dict(paths["benchmark_status"])
     ml_tail_status = _read_json_dict(paths["ml_tail_status"])
     leakage_summary = _read_json_dict(paths["leakage_summary"])
+    figure_manifest = _read_json_dict(paths["figure_manifest"])
+    table_manifest = _read_json_dict(paths["table_manifest"])
     panel = _read_parquet_optional(paths["modeling_panel"])
     target = _read_parquet_optional(paths["target_audit"])
     calendar = _read_parquet_optional(paths["calendar_map"])
@@ -206,6 +227,7 @@ def _full_run_results_markdown(
         benchmark_status=benchmark_status,
         ml_tail_status=ml_tail_status,
         leakage_summary=leakage_summary,
+        figure_manifest=figure_manifest,
         panel=panel,
         calendar=calendar,
         benchmark_metrics=benchmark_metrics,
@@ -353,6 +375,9 @@ def _full_run_results_markdown(
         ],
     )
     artifact_table = _artifact_table(paths)
+    evidence_map = _evidence_map_mermaid()
+    table_manifest_table = _table_manifest_markdown(table_manifest)
+    figure_gallery = _figure_gallery_markdown(figure_manifest=figure_manifest, run_id=run_id)
 
     return f"""# Results Snapshot
 
@@ -368,9 +393,9 @@ def _full_run_results_markdown(
 
 It tests whether timestamp-safe information available after the U.S. cash close helps forecast the downside tail of the next Osaka Nikkei 225 Futures day-session open.
 
-- The object is tail risk, not average return prediction or a trading signal.
+- The object is tail risk, not average return prediction or an execution rule.
 - The comparison is organized as an information ladder: Japan-only history first, then U.S. close core, then Japan proxy ETFs, then Asia proxy ETFs.
-- The current page reports what the pipeline produced; it does not automatically claim that any model is best.
+- The current page reports what the pipeline produced; it does not automatically make a model-selection claim.
 
 ### What exactly is being forecast?
 
@@ -411,7 +436,7 @@ The pipeline is now producing full-run research-candidate evidence from the dura
 
 - The gold sample starts at the dynamic combined clean start, not the 2016 cache lower bound.
 - {advanced_bottom_line_bullet}
-- Before manuscript claims, review the headline/restricted/diagnostic boundaries, inference gates, and vintage limitations rather than selecting a winner from one metric.
+- Before manuscript claims, review the headline/restricted/diagnostic boundaries, inference gates, and vintage limitations rather than selecting a model from one metric.
 
 ### Which results can support headline claims?
 
@@ -419,11 +444,11 @@ The pipeline is now producing full-run research-candidate evidence from the dura
 
 - Headline claims require a clean committed run, a shared common sample, zero leakage failures, and author-reviewed tables.
 - Restricted rows can explain model-family behavior on matched dates, but they cannot replace the headline information ladder.
-- Diagnostic rows can motivate discussion and future checks; they should not be worded as superiority or risk-management usefulness claims without their own evidence gates.
+- Diagnostic rows can motivate discussion and future checks; they should not be worded as model-selection or risk-management usefulness claims without their own evidence gates.
 
 {results_discussion}
 
-## Metadata
+## Run Metadata
 
 {metadata_table}
 
@@ -434,6 +459,16 @@ The pipeline is now producing full-run research-candidate evidence from the dura
 ## Technical Infrastructure Note
 
 - Runtime imports are explicit at the module boundary; no dynamic runtime namespace bridge is required to generate this snapshot. This infrastructure note is separate from empirical claim boundaries.
+
+## Evidence Map
+
+```mermaid
+{evidence_map}
+```
+
+- The left branch binds vendor and calendar inputs into a timestamp-audited gold panel.
+- The middle branch compares benchmark floors, advanced econometric benchmarks, and ML-tail forecasts on registered loss units.
+- The right branch separates headline ladders, restricted model-family comparisons, unconditional DM/MCS inference, CPA diagnostics, and supporting figures.
 
 ## Pipeline Structure
 
@@ -525,6 +560,17 @@ Status: `{ml_tail_status.get("status")}`; implemented models: {ml_tail_component
 - It separates VaR-only losses from VaR-ES joint scoring, so VaR-only claims are not confused with ES claims.
 - Restricted direct-quantile performance is only a comparison anchor for the tail-model family; it does not replace the headline direct-quantile evidence.
 - DM and MCS records are emitted only where registered row-count and exception-count gates pass; otherwise the result matrix remains descriptive.
+
+## Paper-Facing Table And Figure Gallery
+
+### Table Manifest
+
+{table_manifest_table}
+
+- The table manifest records the generated LaTeX table files, their source artifacts, and their claim scopes.
+- Tables are paper-facing exports; the Markdown tables above are snapshot summaries for browser review.
+
+{figure_gallery}
 
 ## Stress And Diagnostic Windows
 
@@ -791,7 +837,7 @@ def _claim_scope_markdown_table() -> str:
             (
                 "DST, stress, Murphy, hedge-trigger diagnostics",
                 "Diagnostic only",
-                "Useful for interpretation and risk monitoring, not automatic model superiority.",
+                "Useful for interpretation and risk monitoring, not automatic model-selection evidence.",
             ),
         ],
     )

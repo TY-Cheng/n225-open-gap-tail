@@ -1,8 +1,8 @@
 # mypy: ignore-errors
-# ruff: noqa: F401,F403,F405,F821,I001,UP035
+# ruff: noqa: F401,I001,UP035
 from __future__ import annotations
 
-from n225_open_gap_tail.config.runtime import *
+from n225_open_gap_tail.config.runtime import _optional_float
 
 
 def _result_matrix_notes(

@@ -144,6 +144,7 @@ def _full_run_snapshot_paths(
         "ml_tail_result_matrix_mcs": run_dir / "metrics" / "ml_tail_result_matrix_mcs.parquet",
         "ml_tail_dm_inference": run_dir / "metrics" / "ml_tail_dm_inference.parquet",
         "ml_tail_mcs": run_dir / "metrics" / "ml_tail_mcs.parquet",
+        "ml_tail_cpa_inference": run_dir / "metrics" / "ml_tail_cpa_inference.parquet",
         "ml_tail_model_eviction": run_dir / "metrics" / "ml_tail_model_eviction.parquet",
         "ml_tail_dst_attenuation": run_dir / "metrics" / "ml_tail_dst_attenuation.parquet",
         "ml_tail_murphy": run_dir / "metrics" / "ml_tail_murphy.parquet",
@@ -417,7 +418,7 @@ The pipeline is now producing full-run research-candidate evidence from the dura
 
 - Headline claims require a clean committed run, a shared common sample, zero leakage failures, and author-reviewed tables.
 - Restricted rows can explain model-family behavior on matched dates, but they cannot replace the headline information ladder.
-- Diagnostic rows can motivate discussion and future checks; they should not be worded as superiority or risk-management usefulness claims.
+- Diagnostic rows can motivate discussion and future checks; they should not be worded as superiority or risk-management usefulness claims without their own evidence gates.
 
 {results_discussion}
 
@@ -528,7 +529,7 @@ Status: `{ml_tail_status.get("status")}`; implemented models: {ml_tail_component
 
 {stress_table}
 
-- Stress windows identify high-loss or high-volatility subsamples for robustness diagnostics.
+- Stress windows identify high-loss or high-volatility subsamples for two-sided risk diagnostics.
 - These rows use reproducible full-sample classifiers in this first pass, so they should be described as diagnostics rather than a live stress classifier.
 - They are useful for finding whether model behavior changes in difficult regimes before writing manuscript discussion.
 
@@ -643,7 +644,7 @@ def _feature_coverage_table(frame: pl.DataFrame) -> str:
 
 
 def _metrics_table(frame: pl.DataFrame) -> str:
-    columns = [
+    base_columns = [
         "model_name",
         "information_set",
         "rows",
@@ -652,12 +653,18 @@ def _metrics_table(frame: pl.DataFrame) -> str:
         "mean_quantile_loss",
         "mean_fz_loss",
     ]
+    columns = (
+        [*base_columns[:2], "tail_side", *base_columns[2:]]
+        if "tail_side" in frame.columns
+        else base_columns
+    )
     if frame.is_empty() or not set(columns).issubset(frame.columns):
-        return _markdown_table(tuple(columns), [("missing", "", "", "", "", "", "")])
+        return _markdown_table(tuple(columns), [tuple(["missing", *[""] * (len(columns) - 1)])])
     rows = [
         (
             row["model_name"],
             row["information_set"],
+            *([row["tail_side"]] if "tail_side" in columns else []),
             row["rows"],
             _fmt_rate(row["var_breach_rate"]),
             row["exceedance_count"],
@@ -670,6 +677,7 @@ def _metrics_table(frame: pl.DataFrame) -> str:
         (
             "Model",
             "Information set",
+            *(("Tail side",) if "tail_side" in columns else ()),
             "Rows",
             "VaR breach rate",
             "Exceptions",
@@ -782,7 +790,7 @@ def _claim_scope_markdown_table() -> str:
             (
                 "DST, stress, Murphy, hedge-trigger diagnostics",
                 "Diagnostic only",
-                "Useful for interpretation and robustness, not automatic model superiority.",
+                "Useful for interpretation and risk monitoring, not automatic model superiority.",
             ),
         ],
     )

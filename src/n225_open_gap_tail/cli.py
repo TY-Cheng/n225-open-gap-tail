@@ -281,12 +281,22 @@ def evaluate_command(
         "benchmark",
         help="Evaluation suite: benchmark, benchmark-floor, or ml-tail.",
     ),
+    tail_side: str = typer.Option(
+        "both",
+        help="Tail side: left-tail, right-tail, or both.",
+    ),
     force: bool = typer.Option(False, help="Clear locked outputs when config hash changed."),
 ) -> None:
     """Run a forecast evaluation suite for a tail-risk run."""
     settings = load_settings()
     run_dir = resolve_run_dir(settings, run_id)
-    result = evaluate_suite(run_dir=run_dir, workers=workers, suite=suite, force=force)
+    result = evaluate_suite(
+        run_dir=run_dir,
+        workers=workers,
+        suite=suite,
+        force=force,
+        tail_side=tail_side,
+    )
 
     typer.echo(f"run id: {result.run_id}")
     typer.echo(f"run dir: {result.run_dir}")
@@ -304,6 +314,10 @@ def run_command(
         "all",
         help="Evaluation suite: benchmark, benchmark-floor, ml-tail, or all.",
     ),
+    tail_side: str = typer.Option(
+        "both",
+        help="Tail side: left-tail, right-tail, or both.",
+    ),
     force: bool = typer.Option(False, help="Clear locked outputs when config hash changed."),
 ) -> None:
     """Build the panel, run requested evaluation suites, and export tables."""
@@ -318,6 +332,7 @@ def run_command(
             workers=workers,
             suite=active_suite,
             force=force,
+            tail_side=tail_side,
         )
     latex = export_tables(run_dir=panel.run_dir)
 

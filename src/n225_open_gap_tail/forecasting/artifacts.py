@@ -32,6 +32,7 @@ def _write_forecast_shards(
         (
             str(row["model_name"]),
             str(row.get("target_family") or "full_gap_settle_to_open"),
+            str(row.get("tail_side") or PRIMARY_TAIL_SIDE),
             str(row.get("information_set") or "target_history_only"),
             _required_float(row["tail_level"]),
             str(row.get("refit_frequency") or ""),
@@ -39,11 +40,19 @@ def _write_forecast_shards(
         for row in [*forecasts, *diagnostics, *failures]
         if "model_name" in row and "tail_level" in row
     }
-    for model_name, target_family, information_set, tail_level, refit_frequency in sorted(keys):
+    for (
+        model_name,
+        target_family,
+        tail_side,
+        information_set,
+        tail_level,
+        refit_frequency,
+    ) in sorted(keys):
         shard_dir = shard_root / _forecast_shard_id(
             model_name,
             tail_level,
             target_family=target_family,
+            tail_side=tail_side,
             information_set=information_set,
             refit_frequency=refit_frequency or None,
         )
@@ -54,6 +63,7 @@ def _write_forecast_shards(
                 for row in forecasts
                 if row.get("model_name") == model_name
                 and str(row.get("target_family") or "full_gap_settle_to_open") == target_family
+                and str(row.get("tail_side") or PRIMARY_TAIL_SIDE) == tail_side
                 and str(row.get("information_set") or "target_history_only") == information_set
                 and _required_float(row["tail_level"]) == tail_level
                 and str(row.get("refit_frequency") or "") == refit_frequency
@@ -66,6 +76,7 @@ def _write_forecast_shards(
                 for row in diagnostics
                 if row.get("model_name") == model_name
                 and str(row.get("target_family") or "full_gap_settle_to_open") == target_family
+                and str(row.get("tail_side") or PRIMARY_TAIL_SIDE) == tail_side
                 and str(row.get("information_set") or "target_history_only") == information_set
                 and _required_float(row["tail_level"]) == tail_level
                 and str(row.get("refit_frequency") or "") == refit_frequency
@@ -78,6 +89,7 @@ def _write_forecast_shards(
                 for row in failures
                 if row.get("model_name") == model_name
                 and str(row.get("target_family") or "full_gap_settle_to_open") == target_family
+                and str(row.get("tail_side") or PRIMARY_TAIL_SIDE) == tail_side
                 and str(row.get("information_set") or "target_history_only") == information_set
                 and _required_float(row["tail_level"]) == tail_level
                 and str(row.get("refit_frequency") or "") == refit_frequency
@@ -92,6 +104,7 @@ def _write_forecast_shards(
                 "completion_state": "complete",
                 "model_name": model_name,
                 "target_family": target_family,
+                "tail_side": tail_side,
                 "information_set": information_set,
                 "tail_level": tail_level,
                 "refit_frequency": refit_frequency or None,
@@ -99,6 +112,7 @@ def _write_forecast_shards(
                     model_name,
                     tail_level,
                     target_family=target_family,
+                    tail_side=tail_side,
                     information_set=information_set,
                     refit_frequency=refit_frequency or None,
                 ),
@@ -111,12 +125,14 @@ def _forecast_shard_id(
     tail_level: float,
     *,
     target_family: str = "full_gap_settle_to_open",
+    tail_side: str = PRIMARY_TAIL_SIDE,
     information_set: str = "target_history_only",
     refit_frequency: str | None = None,
 ) -> str:
     parts = [
         f"model={_safe_name(model_name)}",
         f"target={_safe_name(target_family)}",
+        f"side={_safe_name(tail_side)}",
         f"info={_safe_name(information_set)}",
         f"tail={tail_level:.3f}".replace(".", "_"),
     ]

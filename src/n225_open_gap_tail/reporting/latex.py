@@ -10,22 +10,26 @@ globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("_
 def _metrics_to_latex(
     metrics: pl.DataFrame, *, manifest: Mapping[str, object] | None = None
 ) -> str:
-    headers = ("model", "tail", "rows", "breach", "q_loss", "fz_loss")
+    headers = ("model", "side", "tail", "rows", "breach", "q_loss", "fz_loss")
     manifest = manifest or {}
     lines = [
         f"% run_id: {manifest.get('run_id', '')}",
         f"% git_commit: {manifest.get('git_commit', '')}",
         f"% config_hash: {manifest.get('config_hash', '')}",
         f"% claim_level: {manifest.get('claim_level', manifest.get('claims_level', ''))}",
-        "% loss convention: loss_t = -gap_t; lower FZ loss is better",
-        "\\begin{tabular}{lrrrrr}",
+        (
+            "% loss convention: realized_loss is positive loss for selected tail_side; "
+            "lower FZ loss is better"
+        ),
+        "\\begin{tabular}{llrrrrr}",
         "\\toprule",
         " & ".join(headers) + r" \\",
         "\\midrule",
     ]
     for row in metrics.iter_rows(named=True):
         lines.append(
-            f"{row['model_name']} & {float(row['tail_level']):.3f} & "
+            f"{row['model_name']} & {_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
+            f"{float(row['tail_level']):.3f} & "
             f"{int(row['rows'])} & {_fmt(row['var_breach_rate'])} & "
             f"{_fmt(row['mean_quantile_loss'])} & {_fmt(row['mean_fz_loss'])} \\\\"
         )
@@ -34,7 +38,7 @@ def _metrics_to_latex(
         "inference artifacts use block-bootstrap DM and HLN Tmax MCS; "
         "common-sample status is recorded in metrics metadata."
     )
-    lines.extend(["\\midrule", f"\\multicolumn{{6}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(["\\midrule", f"\\multicolumn{{7}}{{l}}{{\\footnotesize {note}}} \\\\"])
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
 
@@ -43,13 +47,13 @@ def _result_matrix_to_latex(
     matrix: pl.DataFrame, *, manifest: Mapping[str, object] | None = None
 ) -> str:
     manifest = manifest or {}
-    headers = ("family", "axis", "loss", "info/model", "tail", "N", "exc", "metric")
+    headers = ("family", "axis", "loss", "info/model", "side", "tail", "N", "exc", "metric")
     lines = [
         f"% run_id: {manifest.get('run_id', '')}",
         f"% git_commit: {manifest.get('git_commit', '')}",
         f"% config_hash: {manifest.get('config_hash', '')}",
         "% claim_scope: restricted_model_comparison_not_headline unless stated otherwise",
-        "\\begin{tabular}{llllrrrr}",
+        "\\begin{tabular}{lllllrrrr}",
         "\\toprule",
         " & ".join(headers) + r" \\",
         "\\midrule",
@@ -76,6 +80,7 @@ def _result_matrix_to_latex(
             f"{_latex_escape(row.get('comparison_axis'))} & "
             f"{_latex_escape(row.get('loss_family'))} & "
             f"{_latex_escape(label)} & "
+            f"{_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
             f"{_fmt(row.get('tail_level'))} & "
             f"{int(_optional_float(row.get('common_n')) or 0)} & "
             f"{int(_optional_float(row.get('exception_count')) or 0)} & "
@@ -87,7 +92,7 @@ def _result_matrix_to_latex(
         "and HLN Tmax MCS appear only when registered sample and exception gates pass; "
         "these rows do not replace the headline ML tail table."
     )
-    lines.extend(["\\midrule", f"\\multicolumn{{8}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(["\\midrule", f"\\multicolumn{{9}}{{l}}{{\\footnotesize {note}}} \\\\"])
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
 
@@ -96,13 +101,13 @@ def _es_severity_to_latex(
     metrics: pl.DataFrame, *, manifest: Mapping[str, object] | None = None
 ) -> str:
     manifest = manifest or {}
-    headers = ("suite", "scope", "model", "info", "N", "exc", "severity", "delta")
+    headers = ("suite", "scope", "model", "side", "info", "N", "exc", "severity", "delta")
     lines = [
         f"% run_id: {manifest.get('run_id', '')}",
         f"% git_commit: {manifest.get('git_commit', '')}",
         f"% config_hash: {manifest.get('config_hash', '')}",
         "% table_scope: exceedance_severity_diagnostic",
-        "\\begin{tabular}{llllrrrr}",
+        "\\begin{tabular}{lllllrrrr}",
         "\\toprule",
         " & ".join(headers) + r" \\",
         "\\midrule",
@@ -112,6 +117,7 @@ def _es_severity_to_latex(
             f"{_latex_escape(row.get('suite'))} & "
             f"{_latex_escape(row.get('claim_scope'))} & "
             f"{_latex_escape(row.get('model_name'))} & "
+            f"{_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
             f"{_latex_escape(row.get('information_set'))} & "
             f"{int(_optional_float(row.get('rows')) or 0)} & "
             f"{int(_optional_float(row.get('exceedance_count')) or 0)} & "
@@ -123,7 +129,7 @@ def _es_severity_to_latex(
         "means lower mean exceedance severity than the same-model anchor information "
         "set. This is an ES severity diagnostic, not a model-win claim."
     )
-    lines.extend(["\\midrule", f"\\multicolumn{{8}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(["\\midrule", f"\\multicolumn{{9}}{{l}}{{\\footnotesize {note}}} \\\\"])
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
 
@@ -132,13 +138,13 @@ def _hedge_trigger_to_latex(
     forecasts: pl.DataFrame, *, manifest: Mapping[str, object] | None = None
 ) -> str:
     manifest = manifest or {}
-    headers = ("suite", "model", "info", "tail", "N", "trig", "false", "miss", "sev")
+    headers = ("suite", "model", "info", "side", "tail", "N", "trig", "false", "miss", "sev")
     lines = [
         f"% run_id: {manifest.get('run_id', '')}",
         f"% git_commit: {manifest.get('git_commit', '')}",
         f"% config_hash: {manifest.get('config_hash', '')}",
         "% table_scope: diagnostic_var_trigger_not_hedge_pnl",
-        "\\begin{tabular}{llllrrrrr}",
+        "\\begin{tabular}{lllllrrrrr}",
         "\\toprule",
         " & ".join(headers) + r" \\",
         "\\midrule",
@@ -148,6 +154,7 @@ def _hedge_trigger_to_latex(
             f"{_latex_escape(row.get('suite'))} & "
             f"{_latex_escape(row.get('model_name'))} & "
             f"{_latex_escape(row.get('information_set'))} & "
+            f"{_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
             f"{_fmt(row.get('tail_level'))} & "
             f"{int(_optional_float(row.get('rows')) or 0)} & "
             f"{int(_optional_float(row.get('trigger_count')) or 0)} & "
@@ -161,7 +168,7 @@ def _hedge_trigger_to_latex(
         "exception; misses are exceptions without a trigger. This is not hedge PnL, "
         "not turnover, and not a trading-alpha result."
     )
-    lines.extend(["\\midrule", f"\\multicolumn{{9}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(["\\midrule", f"\\multicolumn{{10}}{{l}}{{\\footnotesize {note}}} \\\\"])
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
 
@@ -213,13 +220,13 @@ def _result_matrix_summary_to_latex(
     manifest: Mapping[str, object] | None = None,
 ) -> str:
     manifest = manifest or {}
-    headers = ("family", "axis", "loss", "sample", "N", "joint exc", "DM", "MCS")
+    headers = ("family", "axis", "loss", "side", "sample", "N", "joint exc", "DM", "MCS")
     lines = [
         f"% run_id: {manifest.get('run_id', '')}",
         f"% git_commit: {manifest.get('git_commit', '')}",
         f"% config_hash: {manifest.get('config_hash', '')}",
         "% table_scope: result_matrix_sample_and_inference_gate_summary",
-        "\\begin{tabular}{llllrrrr}",
+        "\\begin{tabular}{lllllrrrr}",
         "\\toprule",
         " & ".join(headers) + r" \\",
         "\\midrule",
@@ -229,6 +236,7 @@ def _result_matrix_summary_to_latex(
             f"{_latex_escape(row.get('comparison_family'))} & "
             f"{_latex_escape(row.get('comparison_axis'))} & "
             f"{_latex_escape(row.get('loss_family'))} & "
+            f"{_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
             f"{_latex_escape(row.get('sample_policy'))} & "
             f"{_latex_escape(row.get('common_n_range'))} & "
             f"{_latex_escape(row.get('joint_exception_range'))} & "
@@ -242,7 +250,7 @@ def _result_matrix_summary_to_latex(
         "Restricted samples are not headline evidence. DM/MCS counts show how many "
         "registered inference records passed their sample and exception gates."
     )
-    lines.extend(["\\midrule", f"\\multicolumn{{8}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(["\\midrule", f"\\multicolumn{{9}}{{l}}{{\\footnotesize {note}}} \\\\"])
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
 
@@ -311,7 +319,7 @@ def _severity_rows(metrics: pl.DataFrame) -> list[dict[str, object]]:
         return []
     sort_columns = [
         column
-        for column in ("suite", "model_name", "tail_level", "information_set")
+        for column in ("suite", "model_name", "tail_side", "tail_level", "information_set")
         if column in metrics.columns
     ]
     frame = metrics.sort(sort_columns) if sort_columns else metrics
@@ -325,13 +333,15 @@ def _severity_rows(metrics: pl.DataFrame) -> list[dict[str, object]]:
         suite = str(row.get("suite") or "unknown")
         model_name = str(row.get("model_name") or "")
         tail_level = float(_optional_float(row.get("tail_level")) or 0.0)
-        key = (suite, model_name, tail_level)
+        tail_side = str(row.get("tail_side") or PRIMARY_TAIL_SIDE)
+        key = (suite, model_name, tail_side, tail_level)
         if key not in anchors:
             anchors[key] = severity
         claim_scope = str(row.get("claim_scope") or "")
         staged.append(
             {
                 **row,
+                "tail_side": tail_side,
                 "suite": suite,
                 "claim_scope": claim_scope or _severity_claim_scope(row),
                 "severity_delta_vs_anchor": anchors[key] - severity,
@@ -368,6 +378,7 @@ def _hedge_trigger_rows(forecasts: pl.DataFrame) -> list[dict[str, object]]:
         for column in (
             "suite",
             "target_family",
+            "tail_side",
             "model_name",
             "information_set",
             "tail_level",
@@ -450,11 +461,21 @@ def _result_matrix_summary_rows(
         return []
     rows = []
     frame = matrix
+    if "tail_side" not in frame.columns:
+        frame = frame.with_columns(pl.lit(PRIMARY_TAIL_SIDE).alias("tail_side"))
     for column in ("common_n", "joint_exception_count"):
         if column not in frame.columns:
             frame = frame.with_columns(pl.lit(None).alias(column))
     grouped = (
-        frame.group_by(["comparison_family", "comparison_axis", "sample_policy", "loss_family"])
+        frame.group_by(
+            [
+                "comparison_family",
+                "comparison_axis",
+                "sample_policy",
+                "loss_family",
+                "tail_side",
+            ]
+        )
         .agg(
             pl.min("common_n").alias("min_common_n"),
             pl.max("common_n").alias("max_common_n"),
@@ -502,12 +523,13 @@ def _inference_status_counts(
     return output
 
 
-def _result_summary_key(row: Mapping[str, object]) -> tuple[str, str, str, str]:
+def _result_summary_key(row: Mapping[str, object]) -> tuple[str, str, str, str, str]:
     return (
         str(row.get("comparison_family") or ""),
         str(row.get("comparison_axis") or ""),
         str(row.get("sample_policy") or ""),
         str(row.get("loss_family") or ""),
+        str(row.get("tail_side") or PRIMARY_TAIL_SIDE),
     )
 
 

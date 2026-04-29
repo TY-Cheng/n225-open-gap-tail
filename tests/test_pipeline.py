@@ -23,12 +23,14 @@ import n225_open_gap_tail.forecasting as paper_module
 import n225_open_gap_tail.forecasting._benchmark_suite as benchmark_suite
 import n225_open_gap_tail.forecasting._ml_tail_suite as ml_tail_suite
 import n225_open_gap_tail.inference as paper_inference
+import n225_open_gap_tail.metrics.cpa as cpa_module
 import n225_open_gap_tail.models.benchmark_advanced as benchmark_advanced
 import n225_open_gap_tail.models.benchmark_advanced_math as advanced_math
 import n225_open_gap_tail.panel as paper_leakage
 import n225_open_gap_tail.panel as paper_panel
 import n225_open_gap_tail.reporting as paper_reporting
 import n225_open_gap_tail.reporting.latex as reporting_latex
+import n225_open_gap_tail.reporting.tables as reporting_tables
 from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.data_lake import VendorErrorClass
 from n225_open_gap_tail.forecasting import (
@@ -136,6 +138,7 @@ def test_paper_package_split_preserves_import_compatibility() -> None:
     assert "n225_open_gap_tail.metrics.result_matrix_scoring" in (
         pipeline_runtime._IMPLEMENTATION_MODULES
     )
+    assert "n225_open_gap_tail.metrics.cpa" in pipeline_runtime._IMPLEMENTATION_MODULES
 
 
 def test_benchmark_tagged_dispatch_routes_by_shard_kind(
@@ -681,6 +684,25 @@ def test_global_oos_intersection_requires_complete_loss_matrix() -> None:
         "unavailable_insufficient_common_oos"
     )
     assert global_oos_intersection([], model_names=()) == []
+
+
+def test_tail_side_loss_units_are_explicit_and_symmetric() -> None:
+    rows = [
+        {"forecast_date": "2026-01-01", "gap_t": -0.04, "realized_loss": 999.0},
+        {"forecast_date": "2026-01-02", "gap_t": 0.03, "realized_loss": 999.0},
+    ]
+
+    left = pipeline_runtime.rows_for_tail_side(rows, tail_side="left-tail")
+    right = pipeline_runtime.rows_for_tail_side(rows, tail_side="right_tail")
+
+    assert [row["realized_loss"] for row in left] == pytest.approx([0.04, -0.03])
+    assert [row["realized_loss"] for row in right] == pytest.approx([-0.04, 0.03])
+    assert {row["tail_side"] for row in left} == {"left_tail"}
+    assert {row["tail_side"] for row in right} == {"right_tail"}
+    assert pipeline_runtime.tail_side_values("both") == ("left_tail", "right_tail")
+    assert pipeline_runtime.TAIL_LEVELS == (0.95, 0.975)
+    with pytest.raises(paper_module.PipelineRunError, match="Unknown tail_side"):
+        pipeline_runtime.normalize_tail_side("center_tail")
 
 
 def test_feature_matrix_gate_records_candidate_active_and_dropped_sets() -> None:
@@ -1927,22 +1949,24 @@ def test_loss_matrix_grouping_keeps_target_and_refit_frequency_separate() -> Non
         ("full_gap_settle_to_open", "monthly"),
         ("residual_usclosemark_to_open", "daily"),
     ):
-        for index in range(130):
-            forecast_date = (datetime(2026, 6, 1, tzinfo=UTC) + timedelta(days=index)).date()
-            for model_name, fz in (("historical_quantile", 0.20), ("candidate", 0.19)):
-                loss_matrix.append(
-                    {
-                        "forecast_date": forecast_date.isoformat(),
-                        "target_family": target_family,
-                        "model_name": model_name,
-                        "information_set": "target_history_only",
-                        "tail_level": 0.95,
-                        "refit_frequency": refit_frequency,
-                        "realized_loss": 1.0 if index % 20 == 0 else 0.1,
-                        "var_forecast": 0.5,
-                        "fz_loss": fz,
-                    }
-                )
+        for tail_side in ("left_tail", "right_tail"):
+            for index in range(130):
+                forecast_date = (datetime(2026, 6, 1, tzinfo=UTC) + timedelta(days=index)).date()
+                for model_name, fz in (("historical_quantile", 0.20), ("candidate", 0.19)):
+                    loss_matrix.append(
+                        {
+                            "forecast_date": forecast_date.isoformat(),
+                            "target_family": target_family,
+                            "tail_side": tail_side,
+                            "model_name": model_name,
+                            "information_set": "target_history_only",
+                            "tail_level": 0.95,
+                            "refit_frequency": refit_frequency,
+                            "realized_loss": 1.0 if index % 20 == 0 else 0.1,
+                            "var_forecast": 0.5,
+                            "fz_loss": fz,
+                        }
+                    )
 
     dm = paper_module.build_block_bootstrap_dm_records(
         loss_matrix,
@@ -1953,10 +1977,18 @@ def test_loss_matrix_grouping_keeps_target_and_refit_frequency_separate() -> Non
     )
 
     assert {
-        (row["target_family"], row["refit_frequency"], row["candidate_model_name"]) for row in dm
+        (
+            row["target_family"],
+            row["tail_side"],
+            row["refit_frequency"],
+            row["candidate_model_name"],
+        )
+        for row in dm
     } == {
-        ("full_gap_settle_to_open", "monthly", "candidate"),
-        ("residual_usclosemark_to_open", "daily", "candidate"),
+        ("full_gap_settle_to_open", "left_tail", "monthly", "candidate"),
+        ("full_gap_settle_to_open", "right_tail", "monthly", "candidate"),
+        ("residual_usclosemark_to_open", "left_tail", "daily", "candidate"),
+        ("residual_usclosemark_to_open", "right_tail", "daily", "candidate"),
     }
 
 
@@ -2180,6 +2212,176 @@ def test_ml_tail_result_matrix_runs_registered_mcs_when_gates_pass(
         for row in mcs
         if row["loss_family"] == "var_coverage"
     )
+
+
+def _cpa_loss_matrix_rows(
+    *,
+    count: int,
+    tail_side: str = "left_tail",
+    model_name: str | None = None,
+    include_vix: bool = True,
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    anchor_information_set = (
+        pipeline_runtime.PIPELINE_CONFIG.feature_sets.ml_tail_model_a_information_set
+    )
+    candidate_information_set = "japan_only_plus_us_close_core"
+    model = model_name or paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL
+    for index in range(count):
+        forecast_date = (
+            (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=index)).date().isoformat()
+        )
+        vix_value = 18.0 + float(index % 7) if include_vix else None
+        regime = "EDT" if index % 2 else "EST"
+        absorption = (
+            "post_us_close_night_absorption" if index % 3 else "near_coincident_us_japan_close"
+        )
+        common = {
+            "forecast_date": forecast_date,
+            "target_family": "full_gap_settle_to_open",
+            "tail_side": tail_side,
+            "model_name": model,
+            "tail_level": 0.95,
+            "refit_frequency": paper_module.ML_TAIL_REFIT_FREQUENCY,
+            "realized_loss": 1.0 if index % 17 == 0 else 0.1,
+            "var_forecast": 0.5,
+            "fit_status": "ok",
+            "is_valid_forecast": True,
+            "vix_level": vix_value,
+            "dst_regime": regime,
+            "absorption_regime": absorption,
+        }
+        anchor_loss = 0.22 + float(index % 5) / 1000.0
+        candidate_loss = 0.20 + float(index % 11) / 1200.0
+        rows.append(
+            {
+                **common,
+                "information_set": anchor_information_set,
+                "quantile_loss": anchor_loss,
+            }
+        )
+        rows.append(
+            {
+                **common,
+                "information_set": candidate_information_set,
+                "quantile_loss": candidate_loss,
+            }
+        )
+    return rows
+
+
+def test_ml_tail_cpa_v1_runs_two_sided_direct_quantile_information_ladder() -> None:
+    records = paper_module.build_ml_tail_cpa_inference_records(
+        [
+            *_cpa_loss_matrix_rows(count=150),
+            *_cpa_loss_matrix_rows(count=150, tail_side="right_tail"),
+            *_cpa_loss_matrix_rows(count=150, model_name="lightgbm_location_scale"),
+        ]
+    )
+
+    core_record = next(
+        row
+        for row in records
+        if row["candidate_information_set"] == "japan_only_plus_us_close_core"
+    )
+
+    assert core_record["tail_side"] == "left_tail"
+    assert core_record["model_name"] == paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL
+    assert core_record["loss_family"] == "var_quantile_loss"
+    assert core_record["claim_scope"] == "conditional_inference_diagnostic_not_headline"
+    assert core_record["headline_claim_allowed"] is False
+    assert core_record["inference_status"] == "ok_newey_west_hac_wald_cpa"
+    assert core_record["common_n"] == 150
+    assert core_record["effective_n"] == 149
+    assert core_record["dropped_missing_instrument_rows"] == 1
+    assert core_record["dropped_missing_loss_rows"] == 0
+    assert core_record["hac_kernel"] == "bartlett"
+    assert core_record["hac_lags"] == math.floor(4 * (149 / 100) ** (2 / 9))
+    assert core_record["wald_pvalue"] is not None
+    assert "lagged_loss_diff" in json.loads(str(core_record["instruments_json"]))
+    assert {row["tail_side"] for row in records} == {"left_tail", "right_tail"}
+    assert len(records) == 6
+
+
+def test_ml_tail_cpa_v1_gates_scope_and_instruments() -> None:
+    right_records = paper_module.build_ml_tail_cpa_inference_records(
+        _cpa_loss_matrix_rows(count=150, tail_side="right_tail")
+    )
+    assert {row["tail_side"] for row in right_records} == {"right_tail"}
+    assert {row["loss_family"] for row in right_records} == {"var_quantile_loss"}
+
+    assert (
+        paper_module.build_ml_tail_cpa_inference_records(
+            _cpa_loss_matrix_rows(count=150, model_name="lightgbm_location_scale")
+        )
+        == []
+    )
+
+    short_records = paper_module.build_ml_tail_cpa_inference_records(
+        _cpa_loss_matrix_rows(count=30)
+    )
+    short_core = next(
+        row
+        for row in short_records
+        if row["candidate_information_set"] == "japan_only_plus_us_close_core"
+    )
+    assert short_core["inference_status"] == "unavailable_insufficient_effective_rows_for_cpa"
+    assert short_core["wald_pvalue"] is None
+
+    no_vix_records = paper_module.build_ml_tail_cpa_inference_records(
+        _cpa_loss_matrix_rows(count=150, include_vix=False)
+    )
+    no_vix_core = next(
+        row
+        for row in no_vix_records
+        if row["candidate_information_set"] == "japan_only_plus_us_close_core"
+    )
+    dropped = json.loads(str(no_vix_core["dropped_instruments_json"]))
+    assert {"instrument": "vix_level", "drop_reason": "nonfinite_or_missing"} in dropped
+    assert no_vix_core["inference_status"] == "ok_newey_west_hac_wald_cpa"
+
+
+def test_ml_tail_cpa_defensive_branches_and_forecast_quantile_fallback(tmp_path: Path) -> None:
+    assert cpa_module._cpa_quantile_loss(
+        {"realized_loss": 1.0, "var_forecast": 0.8, "tail_level": 0.95}
+    ) == pytest.approx(quantile_loss(1.0, 0.8, 0.95))
+    assert cpa_module._cpa_quantile_loss({"realized_loss": 1.0}) is None
+    assert cpa_module._cpa_hac_lags(1) == 0
+
+    anchor_only = [
+        row
+        for row in _cpa_loss_matrix_rows(count=3)
+        if row["information_set"]
+        == pipeline_runtime.PIPELINE_CONFIG.feature_sets.ml_tail_model_a_information_set
+    ]
+    missing_candidate = paper_module.build_ml_tail_cpa_inference_records(anchor_only)
+    assert {row["inference_status"] for row in missing_candidate} == {
+        "unavailable_missing_anchor_or_candidate_sample"
+    }
+
+    constant_rows = []
+    for row in _cpa_loss_matrix_rows(count=150):
+        constant_rows.append(
+            {
+                **row,
+                "quantile_loss": 0.1,
+                "vix_level": 20.0,
+                "dst_regime": "EST",
+                "absorption_regime": "coincident_us_ose_night_close",
+            }
+        )
+    no_instruments = paper_module.build_ml_tail_cpa_inference_records(constant_rows)
+    no_instrument_core = next(
+        row
+        for row in no_instruments
+        if row["candidate_information_set"] == "japan_only_plus_us_close_core"
+    )
+    assert no_instrument_core["inference_status"] == "unavailable_no_nonconstant_instruments"
+
+    stale = tmp_path / "benchmark_right_robustness_table.tex"
+    stale.write_text("old", encoding="utf-8")
+    reporting_tables._remove_stale_tail_table_names(tmp_path)
+    assert not stale.exists()
 
 
 def test_common_sample_unstable_status_after_eviction_threshold(
@@ -2532,7 +2734,7 @@ def test_evaluate_benchmark_shard_records_unavailable_oos(tmp_path: Path) -> Non
     assert result["diagnostics"][0]["model_name"] == "historical_quantile"
     assert result["diagnostics"][0]["shard_id"] == (
         "model=historical_quantile/target=full_gap_settle_to_open/"
-        "info=target_history_only/tail=0_950"
+        "side=left_tail/info=target_history_only/tail=0_950"
     )
 
 
@@ -2607,7 +2809,7 @@ def test_evaluate_benchmark_suite_and_latex_export_with_synthetic_panel(
 
     _patch_paper_module(monkeypatch, "_forecast_one", fake_forecast_one)
 
-    result = evaluate_benchmark_suite(run_dir=run_dir, workers=1)
+    result = evaluate_benchmark_suite(run_dir=run_dir, workers=1, tail_side="left_tail")
     latex = export_tables(run_dir=run_dir)
 
     assert result.status == "completed"
@@ -2619,12 +2821,13 @@ def test_evaluate_benchmark_suite_and_latex_export_with_synthetic_panel(
         / "shards"
         / "model=historical_quantile"
         / "target=full_gap_settle_to_open"
+        / "side=left_tail"
         / "info=target_history_only"
         / "tail=0_950"
         / "forecasts.parquet"
     ).exists()
     assert (run_dir / "metrics" / "benchmark_metrics.parquet").exists()
-    assert latex.tables == 4
+    assert latex.tables >= 4
     assert (latex.latex_dir / "benchmark_metrics_table.tex").exists()
     assert (latex.latex_dir / "tailrisk_es_severity_table.tex").exists()
     assert (latex.latex_dir / "tailrisk_hedge_trigger_diagnostics_table.tex").exists()
@@ -2738,7 +2941,7 @@ def test_benchmark_advanced_wiring_is_nonblocking_and_sharded(
     _patch_paper_module(monkeypatch, "_forecast_one", fake_forecast_one)
     _patch_paper_module(monkeypatch, "_forecast_stateful_sequence", fake_stateful_sequence)
 
-    result = evaluate_benchmark_suite(run_dir=run_dir, workers=1)
+    result = evaluate_benchmark_suite(run_dir=run_dir, workers=1, tail_side="left_tail")
 
     assert result.status == "completed"
     forecasts = pl.read_parquet(run_dir / "forecasts" / "benchmark_forecasts.parquet")
@@ -2753,6 +2956,7 @@ def test_benchmark_advanced_wiring_is_nonblocking_and_sharded(
         / "shards"
         / "model=caviar_sav"
         / "target=full_gap_settle_to_open"
+        / "side=left_tail"
         / "info=target_history_only"
         / "tail=0_950"
         / "refit=monthly_parameter_refit_daily_filter"
@@ -2807,6 +3011,7 @@ def test_benchmark_tagged_dispatch_preserves_serial_floor_then_advanced_order(
                 .isoformat(),
                 "model_name": model_name,
                 "target_family": "full_gap_settle_to_open",
+                "tail_side": payload.get("tail_side"),
                 "information_set": "target_history_only",
                 "tail_level": 0.95,
                 "refit_frequency": None
@@ -2830,10 +3035,10 @@ def test_benchmark_tagged_dispatch_preserves_serial_floor_then_advanced_order(
 
     evaluate_benchmark_suite(run_dir=run_dir, workers=1)
 
-    assert calls == ["floor", "advanced"]
+    assert calls == ["floor", "floor", "advanced", "advanced"]
     status = json.loads((run_dir / "metrics" / "benchmark_status.json").read_text())
-    assert status["benchmark_floor_forecast_rows"] == 30
-    assert status["benchmark_advanced_forecast_rows"] == 30
+    assert status["benchmark_floor_forecast_rows"] == 60
+    assert status["benchmark_advanced_forecast_rows"] == 60
 
 
 def test_benchmark_floor_suite_skips_advanced_models(
@@ -3193,16 +3398,21 @@ def test_evaluate_ml_tail_suite_writes_lightgbm_ladder_artifacts(
     assert (run_dir / "forecasts" / "ml_tail_forecasts.parquet").exists()
     forecasts = pl.read_parquet(run_dir / "forecasts" / "ml_tail_forecasts.parquet")
     assert forecasts["information_set"].n_unique() == 4
+    assert set(forecasts["tail_side"].to_list()) == {"left_tail", "right_tail"}
     assert (run_dir / "metrics" / "ml_tail_incremental_information.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_dst_attenuation.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_feature_unavailability.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_feature_unavailability_dates.parquet").exists()
+    assert (run_dir / "metrics" / "ml_tail_cpa_inference.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_result_matrix.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_result_matrix_sample_audit.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_result_matrix_dm.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_result_matrix_mcs.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_result_matrix_notes.md").exists()
     result_matrix = pl.read_parquet(run_dir / "metrics" / "ml_tail_result_matrix.parquet")
+    cpa = pl.read_parquet(run_dir / "metrics" / "ml_tail_cpa_inference.parquet")
+    assert set(cpa["tail_side"].to_list()) == {"left_tail", "right_tail"}
+    assert set(cpa["loss_family"].to_list()) == {"var_quantile_loss"}
     assert {
         "var_quantile_loss",
         "var_coverage",
@@ -3220,6 +3430,7 @@ def test_evaluate_ml_tail_suite_writes_lightgbm_ladder_artifacts(
     assert set(status["implemented_components"]) == set(paper_module.ML_TAIL_MODEL_NAMES)
     assert status["unavailable_components"] == {}
     assert status["registered_information_sets"]["model_d"].endswith("plus_asia_proxy")
+    assert status["cpa_inference_rows"] == cpa.height
 
 
 def test_locked_run_refuses_config_mismatch_without_force(tmp_path: Path) -> None:

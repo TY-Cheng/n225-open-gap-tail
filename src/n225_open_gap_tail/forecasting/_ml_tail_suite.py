@@ -13,6 +13,7 @@ def evaluate_ml_tail_suite(
     run_dir: Path,
     workers: int = 1,
     force: bool = False,
+    tail_side: str = TAIL_SIDE_BOTH,
 ) -> EvaluationResult:
     panel_path = _gold_artifact_path(
         run_dir, "modeling_panel", run_dir / "panel" / "modeling_panel.parquet"
@@ -34,28 +35,32 @@ def evaluate_ml_tail_suite(
     metrics_root.mkdir(parents=True, exist_ok=True)
     information_sets = registered_ml_tail_information_sets()
     jobs: list[dict[str, object]] = []
-    for tail_level in TAIL_LEVELS:
-        for model_name in ML_TAIL_MODEL_NAMES:
-            for information_set in information_sets:
-                jobs.append(
-                    {
-                        "panel_path": str(panel_path),
-                        "coverage_path": str(coverage_path),
-                        "run_dir": str(run_dir),
-                        "tail_level": tail_level,
-                        "target_family": PIPELINE_CONFIG.target_policy.primary_target_family,
-                        "information_set": information_set,
-                        "model_name": model_name,
-                        "refit_frequency": ML_TAIL_REFIT_FREQUENCY,
-                        "shard_id": _forecast_shard_id(
-                            model_name,
-                            tail_level,
-                            information_set=information_set,
-                            target_family=PIPELINE_CONFIG.target_policy.primary_target_family,
-                            refit_frequency=ML_TAIL_REFIT_FREQUENCY,
-                        ),
-                    }
-                )
+    active_tail_sides = tail_side_values(tail_side)
+    for active_tail_side in active_tail_sides:
+        for tail_level in TAIL_LEVELS:
+            for model_name in ML_TAIL_MODEL_NAMES:
+                for information_set in information_sets:
+                    jobs.append(
+                        {
+                            "panel_path": str(panel_path),
+                            "coverage_path": str(coverage_path),
+                            "run_dir": str(run_dir),
+                            "tail_side": active_tail_side,
+                            "tail_level": tail_level,
+                            "target_family": PIPELINE_CONFIG.target_policy.primary_target_family,
+                            "information_set": information_set,
+                            "model_name": model_name,
+                            "refit_frequency": ML_TAIL_REFIT_FREQUENCY,
+                            "shard_id": _forecast_shard_id(
+                                model_name,
+                                tail_level,
+                                information_set=information_set,
+                                target_family=PIPELINE_CONFIG.target_policy.primary_target_family,
+                                tail_side=active_tail_side,
+                                refit_frequency=ML_TAIL_REFIT_FREQUENCY,
+                            ),
+                        }
+                    )
     for payload in jobs:
         validate_worker_payload(payload)
     n_jobs = _bounded_workers(workers)
@@ -99,6 +104,7 @@ def evaluate_ml_tail_suite(
     feature_unavailability = build_ml_tail_feature_unavailability_records(forecasts)
     feature_unavailability_dates = build_ml_tail_feature_unavailability_date_records(forecasts)
     result_matrix_artifacts = build_ml_tail_result_matrix_artifacts(forecasts)
+    cpa_inference = build_ml_tail_cpa_inference_records(headline_forecasts)
     _write_parquet(metrics_root / "ml_tail_metrics.parquet", metrics)
     _write_parquet(
         metrics_root / "ml_tail_metrics_per_model.parquet",
@@ -154,6 +160,7 @@ def evaluate_ml_tail_suite(
         metrics_root / "ml_tail_result_matrix_mcs.parquet",
         cast(list[dict[str, object]], result_matrix_artifacts["mcs"]),
     )
+    _write_parquet(metrics_root / "ml_tail_cpa_inference.parquet", cpa_inference)
     (metrics_root / "ml_tail_result_matrix_notes.md").write_text(
         cast(str, result_matrix_artifacts["notes"]),
         encoding="utf-8",
@@ -179,6 +186,8 @@ def evaluate_ml_tail_suite(
             "result_matrix_rows": len(
                 cast(list[dict[str, object]], result_matrix_artifacts["matrix"])
             ),
+            "cpa_inference_rows": len(cpa_inference),
+            "tail_sides": list(active_tail_sides),
             "result_matrix_sample_audit_rows": len(
                 cast(list[dict[str, object]], result_matrix_artifacts["sample_audit"])
             ),
@@ -195,6 +204,7 @@ def evaluate_ml_tail_suite(
             "ml_tail_eval_status": "completed_lightgbm_ml_tail_models",
             "ml_tail_forecast_rows": len(forecasts),
             "ml_tail_metric_rows": len(metrics),
+            "ml_tail_tail_sides": list(active_tail_sides),
         },
     )
     _evaluation_log(

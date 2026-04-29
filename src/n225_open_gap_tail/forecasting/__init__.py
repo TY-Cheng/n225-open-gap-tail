@@ -15,6 +15,7 @@ from n225_open_gap_tail.models.benchmark_advanced import *
 from n225_open_gap_tail.models.ml_tail import *
 from n225_open_gap_tail.models.ml_tail_oof import *
 from n225_open_gap_tail.metrics.information import *
+from n225_open_gap_tail.metrics.cpa import *
 from n225_open_gap_tail.metrics.result_matrix import *
 from n225_open_gap_tail.metrics.stat_utils import *
 from n225_open_gap_tail.inference.core import *

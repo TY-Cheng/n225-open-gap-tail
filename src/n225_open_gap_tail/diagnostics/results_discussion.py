@@ -31,6 +31,8 @@ def generate_results_discussion(
     benchmark_mcs = _read_parquet_optional(paths["benchmark_mcs"])
     ml_tail_dm = _read_parquet_optional(paths["ml_tail_dm_inference"])
     ml_tail_mcs = _read_parquet_optional(paths["ml_tail_mcs"])
+    cpa_path = paths.get("ml_tail_cpa_inference")
+    ml_tail_cpa = _read_parquet_optional(cpa_path) if cpa_path is not None else pl.DataFrame()
     ml_tail_eviction = _read_parquet_optional(paths["ml_tail_model_eviction"])
     ml_tail_dst = _read_parquet_optional(paths["ml_tail_dst_attenuation"])
     ml_tail_murphy = _read_parquet_optional(paths["ml_tail_murphy"])
@@ -109,9 +111,10 @@ def generate_results_discussion(
 
 ### Not yet claimed
 
-- Instrumented conditional predictive ability is not implemented in the current artifacts; the reported DM and MCS outputs are unconditional average-sample forecast-comparison diagnostics.
+{_cpa_claim_boundary_sentence(ml_tail_cpa)}
 - DST attenuation rows are descriptive forecast evidence; structural DST causal identification is not claimed.
 - No hedge PnL, transaction-cost, or trading-alpha analysis is performed. The trigger table is a pre-open risk-monitoring diagnostic only.
+- Left-tail and right-tail outputs are both economic tail-risk surfaces for futures positions; neither side should be promoted beyond the sample, coverage, and inference gates without author review.
 - The current evidence does not create an automatic model-win statement; any manuscript claim still requires author review of sample gates, coverage, loss metrics, and inference diagnostics.
 """
 
@@ -120,6 +123,20 @@ def _read_parquet_optional(path: Path) -> pl.DataFrame:
     if not path.exists():
         return pl.DataFrame()
     return pl.read_parquet(path)
+
+
+def _cpa_claim_boundary_sentence(cpa: pl.DataFrame) -> str:
+    if cpa.is_empty():
+        return "- Instrumented conditional predictive ability is not implemented in the current artifacts; the reported DM and MCS outputs are unconditional average-sample forecast-comparison diagnostics."
+    ok_rows = 0
+    if "inference_status" in cpa.columns:
+        ok_rows = int(cpa.filter(pl.col("inference_status").str.starts_with("ok")).height)
+    tail_side_count = _unique_count(cpa, "tail_side")
+    return (
+        f"- Instrumented conditional predictive ability appears as a side-specific ML-tail "
+        f"information-ladder diagnostic across `{tail_side_count}` tail side(s), with `{cpa.height}` registered row(s), of which `{ok_rows}` pass "
+        "their HAC-Wald gates; it does not generate VaR/ES forecasts and does not replace DM/MCS."
+    )
 
 
 def _results_data_timing_audit(
@@ -169,6 +186,8 @@ def _results_benchmark_discussion(
     if benchmark_metrics.is_empty() and benchmark_forecasts.is_empty():
         return _analysis_not_available("Benchmark metrics and forecasts")
     headline_model_count = _unique_count(benchmark_metrics, "model_name")
+    metric_rows = int(benchmark_metrics.height)
+    tail_side_count = _unique_count(benchmark_metrics, "tail_side")
     forecast_rows = int(
         _optional_float(benchmark_status.get("forecast_rows")) or benchmark_forecasts.height
     )
@@ -190,7 +209,7 @@ def _results_benchmark_discussion(
     )
     return "\n".join(
         [
-            f"- `benchmark_metrics.parquet` reports `{headline_model_count}` common-sample benchmark model rows, while benchmark forecasts contain `{forecast_rows}` model-date rows.",
+            f"- `benchmark_metrics.parquet` reports `{metric_rows}` common-sample rows across `{headline_model_count}` benchmark model families and `{tail_side_count}` tail side(s), while benchmark forecasts contain `{forecast_rows}` model-date rows.",
             "- Benchmark-floor models are external target-history and econometric baselines; this section does not rank them.",
             f"- {advanced_sentence}",
         ]
@@ -206,12 +225,13 @@ def _results_ml_tail_headline_discussion(
         return _analysis_not_available("The ML-tail headline ladder")
     information_sets = _unique_count(ml_tail_metrics, "information_set")
     tail_levels = _unique_count(ml_tail_metrics, "tail_level")
+    tail_side_count = _unique_count(ml_tail_metrics, "tail_side")
     models = _unique_values(ml_tail_metrics, "model_name")
     implemented = _join_list(ml_tail_status.get("implemented_components"))
     return "\n".join(
         [
             "`ml_tail_metrics.parquet` defines the headline ML-tail information-set ladder for this run.",
-            f"- The headline artifact contains `{information_sets}` information sets and `{tail_levels}` tail level(s); the retained headline model rows are {models}.",
+            f"- The headline artifact contains `{information_sets}` information sets, `{tail_levels}` tail level(s), and `{tail_side_count}` tail side(s); the retained headline model rows are {models}.",
             f"- The implemented ML-tail registry is {implemented}, but the headline ladder should be read only from `ml_tail_metrics.parquet`.",
             "- The ladder is used to assess candidate incremental U.S.-close information under strict common-sample rules; it does not by itself establish forecast improvement.",
         ]

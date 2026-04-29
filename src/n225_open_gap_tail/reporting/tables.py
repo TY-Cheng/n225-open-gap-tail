@@ -10,6 +10,7 @@ globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("_
 def export_tables(*, run_dir: Path) -> TableExportResult:
     latex_dir = run_dir / "latex" / "tables"
     latex_dir.mkdir(parents=True, exist_ok=True)
+    _remove_stale_tail_table_names(latex_dir)
     tables = 0
     table_files: list[str] = []
     manifest = _read_manifest(run_dir)
@@ -23,6 +24,21 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
         table_path.write_text(tex, encoding="utf-8")
         tables += 1
         table_files.append(table_path.name)
+        for active_tail_side, suffix in (
+            (TAIL_SIDE_LEFT, "left_tail_risk"),
+            (TAIL_SIDE_RIGHT, "right_tail_risk"),
+        ):
+            if "tail_side" not in metrics.columns:
+                continue
+            side_metrics = metrics.filter(pl.col("tail_side") == active_tail_side)
+            if side_metrics.is_empty():
+                continue
+            side_path = latex_dir / f"{suite}_{suffix}_table.tex"
+            side_path.write_text(
+                _metrics_to_latex(side_metrics, manifest=manifest), encoding="utf-8"
+            )
+            tables += 1
+            table_files.append(side_path.name)
     severity_metrics = _combined_severity_metrics(run_dir)
     if not severity_metrics.is_empty():
         table_path = latex_dir / "tailrisk_es_severity_table.tex"
@@ -95,6 +111,12 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
     )
     _update_manifest(run_dir, {"latex_tables": tables})
     return TableExportResult(run_id=run_dir.name, latex_dir=latex_dir, tables=tables)
+
+
+def _remove_stale_tail_table_names(latex_dir: Path) -> None:
+    for pattern in ("*_left_headline_table.tex", "*_right_robustness_table.tex"):
+        for path in latex_dir.glob(pattern):
+            path.unlink(missing_ok=True)
 
 
 def _combined_severity_metrics(run_dir: Path) -> pl.DataFrame:

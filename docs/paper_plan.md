@@ -71,7 +71,10 @@ Secondary questions are:
 - Does the EVT layer improve extreme-tail extrapolation and ES severity diagnostics relative to LightGBM-only forecasts?
 - Are results stable around roll windows, SQ windows, U.S. early closes, Japan holidays, and stress periods?
 
-Upper-tail analysis is optional appendix work. The main paper is a lower-tail risk study.
+Left-tail and right-tail analyses are both first-class futures risk surfaces. The
+main manuscript may emphasize downside opening risk, but the pipeline computes
+both sides so long and short futures exposures can be reviewed under the same
+sample, coverage, and inference gates.
 
 ## Target Hierarchy
 
@@ -101,7 +104,7 @@ The empirical design tests this null through nested information sets:
 
 DST, early-close interactions, and night-session controls are added to the same nested ladder rather than treated as broader feature searches. The Japan and Asia proxy blocks are interpreted as mechanism and robustness layers, not as part of the broad U.S. core signal.
 
-The primary comparison uses chronological rolling or expanding forecasts. The implemented default is a documented block-bootstrap Diebold-Mariano comparison on paired VaR/ES loss differentials, with common-sample loss matrices used for MCS and related diagnostics. The ML tail headline ladder remains in `ml_tail_metrics.parquet`; a separate `ml_tail_result_matrix*` layer reports restricted common-sample VaR-only comparisons, VaR-ES FZ comparisons, and explicit sample/inference gates for LightGBM tail-model families. Deng and Qiu (2021) is treated as support for scoring-function comparison and short-sample caution, not as an exact implemented backtest. A true instrumented conditional predictive ability regression remains a future inference layer; it should only be reported after the rolling design, instrument set, and out-of-sample length are sufficient.
+The primary comparison uses chronological rolling or expanding forecasts. The implemented default is a documented block-bootstrap Diebold-Mariano comparison on paired VaR/ES loss differentials, with common-sample loss matrices used for MCS and related diagnostics. The ML tail headline ladder remains in `ml_tail_metrics.parquet`; a separate `ml_tail_result_matrix*` layer reports restricted common-sample VaR-only comparisons, VaR-ES FZ comparisons, and explicit sample/inference gates for LightGBM tail-model families. Deng and Qiu (2021) is treated as support for scoring-function comparison and short-sample caution, not as an exact implemented backtest. The implemented instrumented conditional predictive ability layer is a side-specific diagnostic over ML-tail direct-quantile information-set loss differentials; it does not generate forecasts and does not replace DM/MCS.
 
 ## Economic Mechanism
 
@@ -198,7 +201,7 @@ ES and joint VaR-ES evaluation:
 Model comparison:
 
 - block-bootstrap Diebold-Mariano paired loss comparisons as the implemented default;
-- instrumented conditional predictive ability only after a registered instrumented implementation exists and the rolling design is sufficiently long;
+- side-specific instrumented conditional predictive ability diagnostics for ML-tail information-set loss differentials, with effective-sample gates;
 - Diebold-Mariano tests with HAC or block-bootstrap standard errors as a fallback;
 - Model Confidence Set for the main model family when there are enough out-of-sample loss differentials;
 - quantile-score calibration and sharpness decomposition where implementation is stable.

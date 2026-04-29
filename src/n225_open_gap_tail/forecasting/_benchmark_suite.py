@@ -14,6 +14,7 @@ def evaluate_benchmark_suite(
     workers: int = 1,
     force: bool = False,
     include_advanced: bool = True,
+    tail_side: str = TAIL_SIDE_BOTH,
 ) -> EvaluationResult:
     panel_path = _gold_artifact_path(
         run_dir, "modeling_panel", run_dir / "panel" / "modeling_panel.parquet"
@@ -29,36 +30,46 @@ def evaluate_benchmark_suite(
     forecast_root.mkdir(parents=True, exist_ok=True)
     metrics_root.mkdir(parents=True, exist_ok=True)
     floor_jobs: list[dict[str, object]] = []
-    for tail_level in TAIL_LEVELS:
-        for model_name in BENCHMARK_FLOOR_MODEL_NAMES:
-            floor_jobs.append(
-                {
-                    "panel_path": str(panel_path),
-                    "run_dir": str(run_dir),
-                    "tail_level": tail_level,
-                    "models": (model_name,),
-                    "shard_id": _forecast_shard_id(model_name, tail_level),
-                    "shard_kind": "floor",
-                }
-            )
-    advanced_jobs: list[dict[str, object]] = []
-    if include_advanced:
+    active_tail_sides = tail_side_values(tail_side)
+    for active_tail_side in active_tail_sides:
         for tail_level in TAIL_LEVELS:
-            for model_name in BENCHMARK_ADVANCED_MODEL_NAMES:
-                advanced_jobs.append(
+            for model_name in BENCHMARK_FLOOR_MODEL_NAMES:
+                floor_jobs.append(
                     {
                         "panel_path": str(panel_path),
                         "run_dir": str(run_dir),
+                        "tail_side": active_tail_side,
                         "tail_level": tail_level,
                         "models": (model_name,),
                         "shard_id": _forecast_shard_id(
                             model_name,
                             tail_level,
-                            refit_frequency=BENCHMARK_ADVANCED_REFIT_FREQUENCY,
+                            tail_side=active_tail_side,
                         ),
-                        "shard_kind": "advanced",
+                        "shard_kind": "floor",
                     }
                 )
+    advanced_jobs: list[dict[str, object]] = []
+    if include_advanced:
+        for active_tail_side in active_tail_sides:
+            for tail_level in TAIL_LEVELS:
+                for model_name in BENCHMARK_ADVANCED_MODEL_NAMES:
+                    advanced_jobs.append(
+                        {
+                            "panel_path": str(panel_path),
+                            "run_dir": str(run_dir),
+                            "tail_side": active_tail_side,
+                            "tail_level": tail_level,
+                            "models": (model_name,),
+                            "shard_id": _forecast_shard_id(
+                                model_name,
+                                tail_level,
+                                tail_side=active_tail_side,
+                                refit_frequency=BENCHMARK_ADVANCED_REFIT_FREQUENCY,
+                            ),
+                            "shard_kind": "advanced",
+                        }
+                    )
     jobs = [*floor_jobs, *advanced_jobs]
     for payload in jobs:
         validate_worker_payload(payload)
@@ -157,6 +168,7 @@ def evaluate_benchmark_suite(
             "benchmark_advanced_model_count": len(BENCHMARK_ADVANCED_MODEL_NAMES)
             if include_advanced
             else 0,
+            "tail_sides": list(active_tail_sides),
             "forecast_rows": len(forecasts),
             "benchmark_floor_forecast_rows": len(floor_forecasts),
             "benchmark_advanced_forecast_rows": len(advanced_forecasts),
@@ -185,6 +197,7 @@ def evaluate_benchmark_suite(
             "benchmark_floor_status": "completed",
             "benchmark_advanced_status": advanced_status,
             "benchmark_forecast_rows": len(forecasts),
+            "benchmark_tail_sides": list(active_tail_sides),
         },
     )
     _evaluation_log(
@@ -205,12 +218,14 @@ def evaluate_benchmark_floor_suite(
     run_dir: Path,
     workers: int = 1,
     force: bool = False,
+    tail_side: str = TAIL_SIDE_BOTH,
 ) -> EvaluationResult:
     return evaluate_benchmark_suite(
         run_dir=run_dir,
         workers=workers,
         force=force,
         include_advanced=False,
+        tail_side=tail_side,
     )
 
 

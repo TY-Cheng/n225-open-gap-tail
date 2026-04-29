@@ -11,6 +11,7 @@ def _evaluate_ml_tail_shard(payload: dict[str, object]) -> dict[str, list[dict[s
     validate_worker_payload(payload)
     panel_path = Path(str(payload["panel_path"]))
     coverage_path = Path(str(payload["coverage_path"]))
+    tail_side = normalize_tail_side(payload.get("tail_side"))
     tail_level = _required_float(payload["tail_level"])
     target_family = str(
         payload.get("target_family") or PIPELINE_CONFIG.target_policy.primary_target_family
@@ -24,7 +25,7 @@ def _evaluate_ml_tail_shard(payload: dict[str, object]) -> dict[str, list[dict[s
         information_set=information_set,
     )
     panel_rows = pl.read_parquet(panel_path).to_dicts()
-    rows = build_ml_tail_modeling_rows(panel_rows, candidate_features)
+    rows = build_ml_tail_modeling_rows(panel_rows, candidate_features, tail_side=tail_side)
     oos_diagnostics = find_oos_start_diagnostics(rows, tail_level=tail_level)
     oos_start = cast(str | None, oos_diagnostics["oos_start"])
     if oos_start is None:
@@ -34,11 +35,13 @@ def _evaluate_ml_tail_shard(payload: dict[str, object]) -> dict[str, list[dict[s
                 {
                     "model_name": model_name,
                     "information_set": information_set,
+                    "tail_side": tail_side,
                     "tail_level": tail_level,
                     "shard_id": _forecast_shard_id(
                         model_name,
                         tail_level,
                         target_family=target_family,
+                        tail_side=tail_side,
                         information_set=information_set,
                         refit_frequency=refit_frequency,
                     ),
@@ -61,6 +64,7 @@ def _evaluate_ml_tail_shard(payload: dict[str, object]) -> dict[str, list[dict[s
         model_name=model_name,
         information_set=information_set,
         candidate_features=candidate_features,
+        tail_side=tail_side,
         tail_level=tail_level,
         oos_start=oos_start,
     )
@@ -69,6 +73,8 @@ def _evaluate_ml_tail_shard(payload: dict[str, object]) -> dict[str, list[dict[s
 def build_ml_tail_modeling_rows(
     panel_rows: list[dict[str, object]],
     candidate_features: list[str],
+    *,
+    tail_side: str = PRIMARY_TAIL_SIDE,
 ) -> list[dict[str, object]]:
     rows = sorted(panel_rows, key=lambda row: str(row.get("forecast_date") or ""))
     losses: list[float] = []
@@ -82,11 +88,12 @@ def build_ml_tail_modeling_rows(
             parsed_date = date.fromisoformat(forecast_date)
         except ValueError:
             continue
-        loss = _optional_float(row.get("realized_loss"))
+        loss = realized_loss_for_tail_side(row, tail_side)
         gap = _optional_float(row.get("gap_t"))
         record: dict[str, object] = {
             "forecast_date": forecast_date,
             "target_family": row.get("target_family") or "full_gap_settle_to_open",
+            "tail_side": tail_side,
             "clean_sample": row.get("clean_sample"),
             "realized_loss": loss,
             "gap_t": gap,
@@ -149,6 +156,7 @@ def _forecast_ml_tail_lightgbm_sequence(
     candidate_features: list[str],
     tail_level: float,
     oos_start: str,
+    tail_side: str = PRIMARY_TAIL_SIDE,
 ) -> dict[str, list[dict[str, object]]]:
     try:
         import lightgbm as lgb
@@ -159,6 +167,7 @@ def _forecast_ml_tail_lightgbm_sequence(
                 {
                     "model_name": model_name,
                     "information_set": information_set,
+                    "tail_side": tail_side,
                     "tail_level": tail_level,
                     "fit_status": "unavailable_import_error",
                     "failure_reason": str(exc),
@@ -175,6 +184,7 @@ def _forecast_ml_tail_lightgbm_sequence(
             information_set=information_set,
             candidate_features=candidate_features,
             tail_level=tail_level,
+            tail_side=tail_side,
             oos_start=oos_start,
             lgb=lgb,
         )
@@ -257,6 +267,7 @@ def _forecast_ml_tail_lightgbm_sequence(
                         "forecast_date": row["forecast_date"],
                         "model_name": model_name,
                         "information_set": information_set,
+                        "tail_side": tail_side,
                         "tail_level": tail_level,
                         "train_n": cached_train_n,
                         "optimizer_status": "lightgbm_fit_completed",
@@ -278,6 +289,7 @@ def _forecast_ml_tail_lightgbm_sequence(
                         "forecast_date": row["forecast_date"],
                         "model_name": model_name,
                         "information_set": information_set,
+                        "tail_side": tail_side,
                         "tail_level": tail_level,
                         "fit_status": "unavailable_optimizer_failed",
                         "failure_reason": str(exc),
@@ -296,6 +308,7 @@ def _forecast_ml_tail_lightgbm_sequence(
                     {
                         "forecast_date": row["forecast_date"],
                         "target_family": row.get("target_family") or "full_gap_settle_to_open",
+                        "tail_side": tail_side,
                         "model_name": model_name,
                         "information_set": information_set,
                         "tail_level": tail_level,
@@ -337,6 +350,7 @@ def _forecast_ml_tail_lightgbm_sequence(
                 {
                     "forecast_date": row["forecast_date"],
                     "target_family": row.get("target_family") or "full_gap_settle_to_open",
+                    "tail_side": tail_side,
                     "model_name": model_name,
                     "information_set": information_set,
                     "tail_level": tail_level,
@@ -367,6 +381,7 @@ def _forecast_ml_tail_lightgbm_sequence(
                     "forecast_date": row["forecast_date"],
                     "model_name": model_name,
                     "information_set": information_set,
+                    "tail_side": tail_side,
                     "tail_level": tail_level,
                     "fit_status": "unavailable_prediction_failed",
                     "failure_reason": str(exc),
@@ -384,6 +399,7 @@ def _forecast_ml_tail_location_scale_sequence(
     tail_level: float,
     oos_start: str,
     lgb: Any,
+    tail_side: str = PRIMARY_TAIL_SIDE,
 ) -> dict[str, list[dict[str, object]]]:
     clean = [
         row
@@ -423,6 +439,7 @@ def _forecast_ml_tail_location_scale_sequence(
                         row=row,
                         model_name=model_name,
                         information_set=information_set,
+                        tail_side=tail_side,
                         tail_level=tail_level,
                         refit_month=refit_month,
                         bundle=cached_bundle,
@@ -446,6 +463,7 @@ def _forecast_ml_tail_location_scale_sequence(
                         "target_family": row.get("target_family") or "full_gap_settle_to_open",
                         "model_name": model_name,
                         "information_set": information_set,
+                        "tail_side": tail_side,
                         "tail_level": tail_level,
                         "fit_status": status,
                         "failure_reason": str(exc),
@@ -473,6 +491,7 @@ def _forecast_ml_tail_location_scale_sequence(
                         row=row,
                         model_name=model_name,
                         information_set=information_set,
+                        tail_side=tail_side,
                         tail_level=tail_level,
                         bundle=cached_bundle,
                         unavailable_features=unavailable_features,
@@ -483,6 +502,7 @@ def _forecast_ml_tail_location_scale_sequence(
                 row=row,
                 model_name=model_name,
                 information_set=information_set,
+                tail_side=tail_side,
                 tail_level=tail_level,
                 bundle=cached_bundle,
             )
@@ -493,6 +513,7 @@ def _forecast_ml_tail_location_scale_sequence(
                     "forecast_date": row["forecast_date"],
                     "model_name": model_name,
                     "information_set": information_set,
+                    "tail_side": tail_side,
                     "tail_level": tail_level,
                     "fit_status": _ml_tail_unavailable_status(exc),
                     "failure_reason": str(exc),

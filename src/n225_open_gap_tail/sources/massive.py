@@ -92,7 +92,23 @@ class MassiveClient:
         attempt = 0
         while True:
             self._throttle()
-            response = self._client.get(f"{self._base_url}{path}", params=query)
+            try:
+                response = self._client.get(f"{self._base_url}{path}", params=query)
+            except httpx.RequestError as exc:
+                if attempt >= self._max_retries:
+                    message = f"Massive.com request failed: {type(exc).__name__}"
+                    if raise_for_status:
+                        raise MassiveApiError(message, status_code=0) from exc
+                    return 0, {
+                        "status": "NETWORK_ERROR",
+                        "error_class": "network_error",
+                        "message": message,
+                    }
+                attempt += 1
+                backoff = min(5.0, attempt)
+                if backoff > 0:
+                    time_module.sleep(backoff)
+                continue
             if response.status_code != 429 and response.status_code < 500:
                 break
             if attempt >= self._max_retries:

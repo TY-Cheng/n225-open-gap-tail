@@ -138,6 +138,73 @@ def test_massive_client_retries_rate_limits_and_throttles(monkeypatch: pytest.Mo
     assert 2.0 in sleeps
 
 
+def test_massive_client_retries_network_timeouts_without_exposing_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+    sleeps: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise httpx.ReadTimeout("simulated timeout", request=request)
+        return httpx.Response(
+            200,
+            json={
+                "status": "OK",
+                "results": [_bar("2026-01-05T05:00:00+00:00", close=101.0)],
+            },
+            request=request,
+        )
+
+    monkeypatch.setattr("n225_open_gap_tail.sources.massive.time_module.sleep", sleeps.append)
+    with MassiveClient(
+        api_key="massive-secret",
+        base_url="https://api.massive.test",
+        max_retries=1,
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        endpoint = client.fetch_aggregate_bars(
+            name="daily_SPY",
+            ticker="SPY",
+            multiplier=1,
+            timespan="day",
+            start="2026-01-05",
+            end="2026-01-05",
+        )
+
+    assert endpoint.http_status == 200
+    assert attempts == 2
+    assert sleeps == [1.0]
+
+
+def test_massive_client_reports_exhausted_network_timeout_as_network_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("simulated timeout", request=request)
+
+    with MassiveClient(
+        api_key="massive-secret",
+        base_url="https://api.massive.test",
+        max_retries=0,
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        endpoint = client.fetch_aggregate_bars(
+            name="daily_SPY",
+            ticker="SPY",
+            multiplier=1,
+            timespan="day",
+            start="2026-01-05",
+            end="2026-01-05",
+        )
+
+    assert endpoint.http_status == 0
+    assert endpoint.ok is False
+    assert endpoint.row_count == 0
+    assert endpoint.payload["error_class"] == "network_error"
+    assert "massive-secret" not in str(endpoint.payload)
+
+
 def test_normalize_aggregate_bars_adds_timestamp_audit_fields() -> None:
     rows = [
         _bar("2026-01-05T14:30:00+00:00", close=100.0),

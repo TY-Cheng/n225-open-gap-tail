@@ -43,6 +43,11 @@ def _evaluate_benchmark_shard(payload: dict[str, object]) -> dict[str, list[dict
             "diagnostics": [
                 {
                     "model_name": model_name,
+                    "benchmark_tier": "floor",
+                    "model_family": _floor_model_family(model_name),
+                    "model_variant": model_name,
+                    "refit_frequency": None,
+                    "advanced_model_nonblocking": False,
                     "tail_level": tail_level,
                     "shard_id": _forecast_shard_id(model_name, tail_level),
                     "fit_status": "unavailable_insufficient_oos_start",
@@ -51,6 +56,9 @@ def _evaluate_benchmark_shard(payload: dict[str, object]) -> dict[str, list[dict
                     "train_exceedances": oos_diagnostics["train_exceedances"],
                     "min_train_rows": DEFAULT_MIN_TRAIN_ROWS,
                     "min_train_exceedances": DEFAULT_MIN_TRAIN_EXCEEDANCES,
+                    "refit_dates_json": None,
+                    "refit_calendar": None,
+                    "state_update_policy": None,
                 }
                 for model_name in models
             ],
@@ -108,6 +116,11 @@ def _forecast_model_sequence(
                     "forecast_date": row["forecast_date"],
                     "target_family": "full_gap_settle_to_open",
                     "model_name": model_name,
+                    "benchmark_tier": "floor",
+                    "model_family": _floor_model_family(model_name),
+                    "model_variant": model_name,
+                    "refit_frequency": None,
+                    "advanced_model_nonblocking": False,
                     "information_set": "target_history_only",
                     "tail_level": tail_level,
                     "var_forecast": var_forecast,
@@ -129,6 +142,11 @@ def _forecast_model_sequence(
                 {
                     "forecast_date": row["forecast_date"],
                     "model_name": model_name,
+                    "benchmark_tier": "floor",
+                    "model_family": _floor_model_family(model_name),
+                    "model_variant": model_name,
+                    "refit_frequency": None,
+                    "advanced_model_nonblocking": False,
                     "tail_level": tail_level,
                     "train_n": int(train.size),
                     "optimizer_status": forecast.get("optimizer_status"),
@@ -146,6 +164,9 @@ def _forecast_model_sequence(
                     "threshold_policy": forecast.get("threshold_policy"),
                     "threshold_smoothing": forecast.get("threshold_smoothing"),
                     "threshold_selection": forecast.get("threshold_selection"),
+                    "refit_dates_json": None,
+                    "refit_calendar": None,
+                    "state_update_policy": None,
                 }
             )
         except Exception as exc:  # pragma: no cover - exercised via synthetic failure tests
@@ -153,12 +174,32 @@ def _forecast_model_sequence(
                 {
                     "forecast_date": row["forecast_date"],
                     "model_name": model_name,
+                    "benchmark_tier": "floor",
+                    "model_family": _floor_model_family(model_name),
+                    "model_variant": model_name,
+                    "refit_frequency": None,
+                    "advanced_model_nonblocking": False,
                     "tail_level": tail_level,
                     "fit_status": "unavailable_optimizer_failed",
                     "failure_reason": str(exc),
+                    "refit_dates_json": None,
+                    "refit_calendar": None,
+                    "state_update_policy": None,
                 }
             )
     return forecasts, diagnostics, failures
+
+
+def _floor_model_family(model_name: str) -> str:
+    if model_name in {"historical_quantile", "rolling_quantile"}:
+        return "empirical_quantile"
+    if model_name == "ewma_vol_scaled":
+        return "volatility_scaled"
+    if model_name in {"garch_t", "gjr_garch_t"}:
+        return "arch"
+    if model_name == "gjr_garch_evt":
+        return "arch_evt"
+    return "benchmark_floor"
 
 
 def _forecast_one(

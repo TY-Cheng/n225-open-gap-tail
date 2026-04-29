@@ -145,6 +145,29 @@ RESULT_MATRIX_MIN_MCS_ROWS = 250
 RESULT_MATRIX_MIN_MCS_EXCEPTIONS = 10
 RESULT_MATRIX_LOSS_FAMILIES = ("var_quantile_loss", "var_coverage", "var_es_fz_loss")
 BENCHMARK_ANCHOR_MODEL = "historical_quantile"
+BENCHMARK_FLOOR_MODEL_NAMES = (
+    "historical_quantile",
+    "rolling_quantile",
+    "ewma_vol_scaled",
+    "garch_t",
+    "gjr_garch_t",
+    "gjr_garch_evt",
+)
+BENCHMARK_ADVANCED_MODEL_NAMES = (
+    "caviar_sav",
+    "caviar_asymmetric_slope",
+    "caviar_indirect_garch",
+    "caviar_adaptive",
+    "care_expectile_sav",
+    "care_expectile_asymmetric_slope",
+    "ald_taylor_var_es_sav",
+    "ald_taylor_var_es_asymmetric_slope",
+    "direct_fz_loss_sav",
+    "direct_fz_loss_asymmetric_slope",
+    "gas_t_location_scale",
+    "gas_t_pot_gpd",
+)
+BENCHMARK_ADVANCED_REFIT_FREQUENCY = "monthly_parameter_refit_daily_filter"
 ML_TAIL_ANCHOR_INFORMATION_SET = PIPELINE_CONFIG.feature_sets.ml_tail_model_a_information_set
 MODEL_EVICTION_COVERAGE_THRESHOLD = 0.95
 COMMON_SAMPLE_MIN_ANCHOR_COVERAGE = 0.90
@@ -624,6 +647,7 @@ _IMPLEMENTATION_MODULES = (
     "n225_open_gap_tail.reporting.tables",
     "n225_open_gap_tail.panel.leakage",
     "n225_open_gap_tail.models.benchmark",
+    "n225_open_gap_tail.models.benchmark_advanced",
     "n225_open_gap_tail.features.asof",
     "n225_open_gap_tail.features.jquants_spy",
     "n225_open_gap_tail.data_lake.cache_ops",
@@ -632,6 +656,15 @@ _IMPLEMENTATION_MODULES = (
     "n225_open_gap_tail.features.descriptions",
     "n225_open_gap_tail.metrics.stat_utils",
     "n225_open_gap_tail.diagnostics.git",
+)
+_PUBLIC_SURFACE_MODULES = (
+    "n225_open_gap_tail.features",
+    "n225_open_gap_tail.forecasting",
+    "n225_open_gap_tail.models",
+    "n225_open_gap_tail.metrics",
+    "n225_open_gap_tail.inference",
+    "n225_open_gap_tail.panel",
+    "n225_open_gap_tail.reporting",
 )
 _WIRED = False
 _WIRING = False
@@ -646,12 +679,16 @@ def wire_runtime_namespace() -> None:
         modules = [sys.modules[__name__]]
         for module_name in _IMPLEMENTATION_MODULES:
             modules.append(importlib.import_module(module_name))
+        for module_name in _PUBLIC_SURFACE_MODULES:
+            module = sys.modules.get(module_name)
+            if module is not None:
+                modules.append(module)
         namespace = {}
-        for module in modules:
+        for module in dict.fromkeys(modules):
             namespace.update(
                 {key: value for key, value in vars(module).items() if not key.startswith("__")}
             )
-        for module in modules:
+        for module in dict.fromkeys(modules):
             module.__dict__.update(namespace)
         _WIRED = True
     finally:

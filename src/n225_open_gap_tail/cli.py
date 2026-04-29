@@ -278,7 +278,10 @@ def build_panel_command(
 def evaluate_command(
     run_id: str = typer.Option("", help="Run id. Defaults to the latest tail-risk run."),
     workers: int = typer.Option(0, help="Joblib workers. Defaults to bounded local workers."),
-    suite: str = typer.Option("benchmark", help="Evaluation suite: benchmark or ml-tail."),
+    suite: str = typer.Option(
+        "benchmark",
+        help="Evaluation suite: benchmark, benchmark-floor, or ml-tail.",
+    ),
     force: bool = typer.Option(False, help="Clear locked outputs when config hash changed."),
 ) -> None:
     """Run a forecast evaluation suite for a tail-risk run."""
@@ -298,7 +301,10 @@ def run_command(
     start: str = typer.Option(MAIN_SAMPLE_START, help="Start date in YYYY-MM-DD."),
     end: str = typer.Option("", help="End date in YYYY-MM-DD. Defaults to today."),
     workers: int = typer.Option(0, help="Joblib workers. Defaults to bounded local workers."),
-    suite: str = typer.Option("all", help="Evaluation suite: benchmark, ml-tail, or all."),
+    suite: str = typer.Option(
+        "all",
+        help="Evaluation suite: benchmark, benchmark-floor, ml-tail, or all.",
+    ),
     force: bool = typer.Option(False, help="Clear locked outputs when config hash changed."),
 ) -> None:
     """Build the panel, run requested evaluation suites, and export tables."""

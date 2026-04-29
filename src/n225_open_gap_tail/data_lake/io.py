@@ -371,6 +371,8 @@ def classify_vendor_error(
 ) -> VendorErrorClass:
     if exception is not None:
         return VendorErrorClass.NETWORK_ERROR
+    if status_code == 0:
+        return VendorErrorClass.NETWORK_ERROR
     if status_code is None:
         return VendorErrorClass.UNKNOWN_ERROR
     if 200 <= status_code < 300:

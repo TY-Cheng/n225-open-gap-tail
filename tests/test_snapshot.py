@@ -11,9 +11,8 @@ import numpy as np
 import polars as pl
 import pytest
 
-import n225_open_gap_tail.snapshot as snapshot_module
-from n225_open_gap_tail.calendars import build_session_calendar_records
-from n225_open_gap_tail.snapshot import (
+import n225_open_gap_tail.diagnostics.snapshot as snapshot_module
+from n225_open_gap_tail.diagnostics.snapshot import (
     build_jquants_schema_probe,
     build_model_smoke,
     build_predictor_availability_records,
@@ -22,6 +21,7 @@ from n225_open_gap_tail.snapshot import (
     build_time_alignment_records,
     normalize_jquants_futures_rows,
 )
+from n225_open_gap_tail.market.calendars import build_session_calendar_records
 
 
 def test_build_snapshot_id_binds_window_timestamp_and_commit() -> None:

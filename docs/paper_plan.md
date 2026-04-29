@@ -101,7 +101,7 @@ The empirical design tests this null through nested information sets:
 
 DST, early-close interactions, and night-session controls are added to the same nested ladder rather than treated as broader feature searches. The Japan and Asia proxy blocks are interpreted as mechanism and robustness layers, not as part of the broad U.S. core signal.
 
-The primary comparison uses chronological rolling or expanding forecasts. The implemented default is a documented block-bootstrap Diebold-Mariano comparison on paired VaR/ES loss differentials, with common-sample loss matrices used for MCS and related diagnostics. A true instrumented Giacomini-White conditional predictive ability regression remains a future inference layer; it should only be reported after the rolling design, instrument set, and out-of-sample length are sufficient.
+The primary comparison uses chronological rolling or expanding forecasts. The implemented default is a documented block-bootstrap Diebold-Mariano comparison on paired VaR/ES loss differentials, with common-sample loss matrices used for MCS and related diagnostics. The ML tail headline ladder remains in `ml_tail_metrics.parquet`; a separate `ml_tail_result_matrix*` layer reports restricted common-sample VaR-only comparisons, VaR-ES FZ comparisons, and explicit sample/inference gates for LightGBM tail-model families. Deng and Qiu (2021) is treated as support for scoring-function comparison and short-sample caution, not as an exact implemented backtest. A true instrumented conditional predictive ability regression remains a future inference layer; it should only be reported after the rolling design, instrument set, and out-of-sample length are sufficient.
 
 ## Economic Mechanism
 
@@ -198,7 +198,7 @@ ES and joint VaR-ES evaluation:
 Model comparison:
 
 - block-bootstrap Diebold-Mariano paired loss comparisons as the implemented default;
-- instrumented Giacomini-White conditional predictive ability only after a registered instrumented implementation exists and the rolling design is sufficiently long;
+- instrumented conditional predictive ability only after a registered instrumented implementation exists and the rolling design is sufficiently long;
 - Diebold-Mariano tests with HAC or block-bootstrap standard errors as a fallback;
 - Model Confidence Set for the main model family when there are enough out-of-sample loss differentials;
 - quantile-score calibration and sharpness decomposition where implementation is stable.
@@ -248,7 +248,7 @@ The following boundaries are hard constraints:
 - No claim that LightGBM-EVT is a novel algorithm.
 - No extreme-tail superiority claim without enough exceedances and rolling out-of-sample diagnostics.
 
-Paper-grade empirical claims require completed OSE Nikkei 225 Futures target-data audit and rolling out-of-sample evaluation. J-Quants Premium futures OHLC is now available locally for historical research snapshots, but it remains an ex-post target source, not a same-morning production feed.
+Research-grade empirical claims require completed OSE Nikkei 225 Futures target-data audit and rolling out-of-sample evaluation. J-Quants Premium futures OHLC is now available locally for historical research snapshots, but it remains an ex-post target source, not a same-morning production feed.
 
 Engineering gates, schema checks, and implementation order are maintained in [Development Audit](audit/development.md). The current implementation status is maintained in [Results Snapshot](results_snapshot.md).
 

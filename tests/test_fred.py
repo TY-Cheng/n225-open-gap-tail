@@ -9,7 +9,7 @@ import polars as pl
 import pytest
 
 from n225_open_gap_tail.config import Settings
-from n225_open_gap_tail.fred import (
+from n225_open_gap_tail.sources.fred import (
     FredClient,
     FredDataError,
     h10_release_ts_utc,

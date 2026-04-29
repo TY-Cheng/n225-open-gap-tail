@@ -23,7 +23,7 @@ Before editing anything, read these files in order:
 Respect the existing workflow:
 
 - Use `just status`, `just check`, and `just full` as the main entrypoints.
-  Use lower-level recipes such as `just _paper-panel` and `just _paper-eval` only when debugging a specific layer.
+  Use lower-level recipes such as `just _build-panel` and `just _evaluate` only when debugging a specific layer.
 - `just full` defaults to `2016-07-19` as a cache lower bound. The manifest computes
   `combined_clean_start` from required J-Quants field coverage, XLC-inclusive Massive core
   coverage, required FRED core coverage, and canonical FRED H.10 USD/JPY coverage. Do not
@@ -54,6 +54,14 @@ Audit checklist before adding features:
 - Are tests named honestly as unit, schema, smoke, or real-data checks?
 - Are rule-based contract metadata and exchange-calendar outputs clearly labeled as scaffolding that requires vendor reconciliation?
 - Is any claim about model performance, VaR/ES calibration, or hedge usefulness unsupported by current artifacts?
+
+Current implementation status:
+
+- Main data-engineering path is implemented: source probes, cache-first bronze/silver reads, durable gold panel artifacts, calendar map, target audit, feature coverage, leakage binding, and run-specific reports.
+- Benchmark floor is implemented for historical, rolling, EWMA/vol-scaled, GARCH/GJR, and GJR-GARCH-EVT style models behind gates. CAViaR, direct FZ-loss or CARE-style VaR-ES, Taylor ALD, and GAS-style models remain registered gaps until explicit implementations and tests exist.
+- ML tail path is implemented for `lightgbm_direct_quantile`, fully out-of-fold `lightgbm_location_scale`, and fully out-of-fold `lightgbm_standardized_loss_pot_gpd` over the registered nested information ladder.
+- Result governance is implemented for headline metrics, per-model diagnostics, result matrix artifacts, feature-unavailability diagnostics, block-bootstrap DM, HLN Tmax MCS, Murphy diagnostics, stress windows, and DST attenuation records.
+- Still-missing manuscript-facing outputs include a standalone ES severity reduction table and hedge-trigger diagnostics. Existing `mean_exceedance_severity` fields and `ml_tail_dst_attenuation.parquet` are useful artifacts, but they should not be described as complete risk-management or mechanism tables until the explicit report layer exists.
 
 Implement the pipeline in this order:
 
@@ -109,7 +117,7 @@ Implement the pipeline in this order:
 
 6. Feature builder
    - Build timestamp-safe U.S. close features.
-   - Include the Tier 1 and Tier 1.5 candidate universe from `docs/data.md`: U.S. ETF returns and ranges, sector returns and dispersion, USD/JPY, TLT, GLD, USO, EEM, FXI, SMH where source coverage passes audit, Japan proxy tickers (`EWJ`, `DXJ`) and Asia proxy tickers (`EWY`, `EWT`, `EWH`) as separate P2B information blocks, VIX close/range, SKEW or VIX term-structure proxies where licensed or public source support exists, Treasury rates, yield-curve slope, funding proxies, credit spreads, and calendar/event flags.
+   - Include the Tier 1 and Tier 1.5 candidate universe from `docs/data.md`: U.S. ETF returns and ranges, sector returns and dispersion, USD/JPY, TLT, GLD, USO, EEM, FXI, SMH where source coverage passes audit, Japan proxy tickers (`EWJ`, `DXJ`) and Asia proxy tickers (`EWY`, `EWT`, `EWH`) as separate ML tail information blocks, VIX close/range, SKEW or VIX term-structure proxies where licensed or public source support exists, Treasury rates, yield-curve slope, funding proxies, credit spreads, and calendar/event flags.
    - Add SPY late-session minute-bar features after timestamp validation: last-30-minute return, last-hour return, late-session range, late-60-minute volume surge, and final-window reversal or momentum. Freeze these features at U.S. close plus the configured vendor-availability lag, and recompute the volume-surge baseline across loaded cache partitions rather than inside each monthly chunk.
    - Mandate core lagged Japanese variables:
      prior gap, lagged OSE day returns, lagged OSE night returns where available, volume and open-interest changes, roll-window flags, SQ-window flags, Japan holiday-adjacent flags, U.S. holiday-adjacent flags, U.S. early-close flags, and OSE holiday-trading flags.
@@ -124,28 +132,28 @@ Implement the pipeline in this order:
 7A. Econometric tail-risk baselines
    - Implement GARCH-t or GJR-GARCH-t if the dependency is available.
    - Implement GJR-GARCH-EVT on standardized residuals.
-   - Implement CAViaR as a main pre-LightGBM benchmark gate.
-   - Implement a direct FZ-loss or CARE-style VaR-ES benchmark as a main pre-LightGBM benchmark gate.
-   - Implement Taylor-style ALD VaR-ES as a main advanced benchmark when stable on the audited sample.
+   - Implement CAViaR as a main pre-LightGBM benchmark gate; this is not yet implemented.
+   - Implement a direct FZ-loss or CARE-style VaR-ES benchmark as a main pre-LightGBM benchmark gate; this is not yet implemented.
+   - Implement Taylor-style ALD VaR-ES as a main advanced benchmark when stable on the audited sample; this is not yet implemented.
    - Treat GAS-t or score-driven VaR-ES models as appendix or fallback benchmarks unless the implementation is stable and tested.
    - If a main advanced benchmark is numerically unstable or sample-inadequate, label it unavailable with a reason; do not replace it with weak evidence.
    - Save these metrics before LightGBM tuning.
 
 8. LightGBM model variants
    - Implement chronological validation only; do not use random train/test splits.
-   - P2B first pass runs `lightgbm_direct_quantile`, `lightgbm_location_scale`, and
+   - ML tail first pass runs `lightgbm_direct_quantile`, `lightgbm_location_scale`, and
      `lightgbm_standardized_loss_pot_gpd` over the registered nested ladder:
      `japan_only`,
      `japan_only_plus_us_close_core`,
      `japan_only_plus_us_close_core_plus_japan_proxy`,
      and `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy`.
-   - Require `leakage_check_failures = 0` before P2B model evaluation.
+   - Require `leakage_check_failures = 0` before ML tail model evaluation.
    - Use month-level refits with daily forecasts for the first LightGBM pass; record active feature hashes, dropped features, training missingness, training variance, target family, information set, tail level, and refit frequency.
    - `lightgbm_location_scale` uses fully out-of-fold standardized losses, pooled Duan smearing, empirical standardized VaR/ES, and explicit unavailable diagnostics when OOF sample, scale, or ES gates fail.
    - `lightgbm_standardized_loss_pot_gpd` reuses the same fully OOF standardized losses and fits GPD exceedances with `loc=0`; finite-ES, threshold, and exceedance-count gates must pass before emitting forecast rows.
    - Keep `lightgbm_direct_quantile` as the unchanged direct quantile benchmark at registered tail levels.
-   - Implement `exceedance_probability_model` for rolling lower-tail thresholds.
-   - Optionally implement `severity_model` for exceedance magnitudes.
+   - Implement `exceedance_probability_model` for rolling lower-tail thresholds only after the main ML tail ladder is stable; this is not current evidence.
+   - Optionally implement `severity_model` for exceedance magnitudes; this is not current evidence.
    - Calibrate probability outputs on validation data when they are used as exceedance probabilities.
    - Keep hyperparameter tuning simple and reproducible in the first pass.
 
@@ -165,18 +173,22 @@ Implement the pipeline in this order:
     - Produce reproducible tables and figures under ignored report/artifact directories.
     - Report quantile loss, VaR coverage, conditional coverage or independence tests, dynamic quantile diagnostics where feasible, Fissler-Ziegel joint VaR-ES score, ES exceedance severity diagnostics, and tail ranking metrics.
     - Build Murphy diagrams for VaR-ES dominance diagnostics; treat them as diagnostic plots, not standalone significance tests.
-    - Build model-comparison artifacts with block-bootstrap DM and HLN Tmax MCS when the OOS loss series supports it. True instrumented GW regression remains a separate future implementation.
-    - Inspect `p2b_feature_unavailability.parquet` and
-      `p2b_feature_unavailability_dates.parquet` before changing model-eviction thresholds;
+    - Build model-comparison artifacts with block-bootstrap DM and HLN Tmax MCS when the OOS loss series supports it. True instrumented conditional predictive ability regression remains a separate future implementation.
+    - Inspect `ml_tail_feature_unavailability.parquet` and
+      `ml_tail_feature_unavailability_dates.parquet` before changing model-eviction thresholds;
       release-lagged FRED rates should be handled by timestamp-safe fill metadata, while
       remaining SPY late-session volume gaps are explicit active-feature exclusions.
+    - Keep `ml_tail_metrics.parquet` as the headline ML tail ladder. Use `ml_tail_result_matrix*`
+      artifacts for restricted VaR-only and VaR-ES comparisons across LightGBM tail-model
+      families and within-model information-set increments; these rows are diagnostic or
+      restricted evidence and must not be promoted into automatic superiority claims.
     - Report quantile-score calibration and sharpness decomposition when implementation is stable.
     - Build incremental-information tables in this order:
       Japan-only, Japan plus U.S. close core, Japan plus U.S. close core plus Japan proxy,
       and Japan plus U.S. close core plus Japan proxy plus Asia proxy.
-    - Build a DST absorption table with the absorption coefficient and its component gains by EST/EDT regime.
-    - Build a main ES severity reduction table reporting exceedance severity changes at the 2.5% ES level after adding U.S. close information.
-    - Build secondary hedge-trigger diagnostics with fixed thresholds, fixed cost assumptions, false-positive rate, missed-event rate, turnover, and loss avoided.
+    - Build a DST absorption table with the absorption coefficient and its component gains by EST/EDT regime. The current `ml_tail_dst_attenuation.parquet` artifact provides the core attenuation records; a final paper table still needs review and formatting.
+    - Build a main ES severity reduction table reporting exceedance severity changes at the 2.5% ES level after adding U.S. close information. Do not treat generic result-matrix severity fields as this table until the report layer makes the comparison explicit.
+    - Build secondary hedge-trigger diagnostics with fixed thresholds, fixed cost assumptions, false-positive rate, missed-event rate, turnover, and loss avoided. These remain unimplemented unless an explicit artifact is present.
     - Treat hedge-trigger results as pre-open risk-management diagnostics, not trading-profit claims.
 
 Acceptance criteria for each implementation phase:

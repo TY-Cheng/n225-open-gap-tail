@@ -1,0 +1,84 @@
+# mypy: ignore-errors
+# ruff: noqa: F401,F403,F405,F821,I001,UP035
+from __future__ import annotations
+
+from n225_open_gap_tail.config import runtime as _runtime
+
+globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("__")})
+
+
+def _optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = float(cast(Any, value))
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _required_float(value: object) -> float:
+    parsed = _optional_float(value)
+    if parsed is None:
+        raise PipelineRunError(f"Expected finite numeric value, got {value!r}")
+    return parsed
+
+
+def _safe_name(value: str) -> str:
+    return value.replace(":", "_").replace(".", "_").replace("-", "_").replace("/", "_").lower()
+
+
+def _feature_description(field: str) -> str:
+    if field.startswith("fx_usdjpy_"):
+        return "canonical USDJPY FX control using timestamp-safe FRED H.10 availability"
+    if field.endswith("_days"):
+        return "timestamp-safe source staleness or release-lag diagnostic used as a predictor"
+    if field.endswith("_return"):
+        return "close-to-close log return frozen at U.S. close information set"
+    if field.endswith("_range"):
+        return "log high-low range over the source bar window"
+    if field.endswith("_diff"):
+        return "first difference of daily source value"
+    if field.endswith("_level"):
+        return "daily source level with conservative research availability semantics"
+    if field.startswith("spy_late_"):
+        return "SPY late-session minute-bar feature frozen at the U.S. close cutoff"
+    return "run predictor candidate"
+
+
+def _window_return(closes: list[float], window: int) -> float | None:
+    if len(closes) <= window:
+        return None
+    start = closes[-window - 1]
+    end = closes[-1]
+    if start <= 0 or end <= 0:
+        return None
+    return math.log(end) - math.log(start)
+
+
+def _window_range(highs: list[float | None], lows: list[float | None]) -> float | None:
+    valid_highs = [value for value in highs if value is not None and value > 0]
+    valid_lows = [value for value in lows if value is not None and value > 0]
+    if not valid_highs or not valid_lows:
+        return None
+    return math.log(max(valid_highs)) - math.log(min(valid_lows))
+
+
+def _month_chunks(*, start: str, end: str) -> list[tuple[str, str]]:
+    start_date = date.fromisoformat(start)
+    end_date = date.fromisoformat(end)
+    chunks: list[tuple[str, str]] = []
+    current = start_date
+    while current <= end_date:
+        next_month = current.replace(day=28) + timedelta(days=4)
+        month_end = min(next_month.replace(day=1) - timedelta(days=1), end_date)
+        chunks.append((current.isoformat(), month_end.isoformat()))
+        current = month_end + timedelta(days=1)
+    return chunks

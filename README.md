@@ -21,7 +21,7 @@ just check
 pytest, and performs a strict docs build. Do not commit `.env`; put shareable defaults in
 `.env.example`.
 
-J-Quants should be configured through the V2 API key flow. The paper-grade futures
+J-Quants should be configured through the V2 API key flow. The run futures
 target pipeline requires local Premium futures access:
 
 ```bash
@@ -84,6 +84,25 @@ reports/                  Local model outputs; ignored by git
 notebooks/                Exploratory notebooks
 ```
 
+The Python package is organized by function rather than by research-stage labels:
+
+```text
+n225_open_gap_tail/
+  cli.py
+  config/       Settings, research configuration, and shared runtime constants
+  data_lake/    Atomic Parquet IO, schemas, Hive cache paths, and cache markers
+  sources/      J-Quants, Massive, FRED, Cboe, and source readiness probes
+  market/       Exchange calendars and Nikkei futures contract metadata
+  features/     Timestamp-safe feature construction and as-of joins
+  panel/        Durable gold panel construction and leakage binding
+  forecasting/  Suite orchestration, run locking, and artifact routing
+  models/       Benchmark and ML tail model implementations
+  metrics/      VaR/ES losses, coverage tests, result matrix, and diagnostics
+  inference/    Block-bootstrap DM, HLN Tmax MCS, Murphy, and stress diagnostics
+  reporting/    LaTeX tables and notes
+  diagnostics/  Snapshot and local git provenance helpers
+```
+
 ## Data Utility Commands
 
 ```bash
@@ -95,37 +114,37 @@ n225-open-gap-tail contracts-build
 n225-open-gap-tail snapshot
 ```
 
-These commands are debugging utilities, not the paper-grade workflow. They now write through
+These commands are debugging utilities, not the run workflow. They now write through
 the same cache vocabulary as the main pipeline: vendor payloads under `data/bronze/` and
 typed normalized outputs under `data/silver/`. The snapshot command writes bounded smoke
 artifacts under ignored `reports/snapshots/` and regenerates `docs/results_snapshot.md`.
 
-For paper-grade work, use `just full`; do not mix utility smoke artifacts with paper-run
+For run work, use `just full`; do not mix utility smoke artifacts with research-run
 evidence.
 
-## Paper-Grade Workflow
+## Research-Grade Workflow
 
-The unified paper-grade entrypoint is:
+The unified run entrypoint is:
 
 ```bash
 just full
 ```
 
-`full` runs local checks, builds the cache-first paper panel, runs the P2A baseline floor,
-audits feature leakage timestamps, runs the P2B LightGBM information-set ladder, and
+`full` runs local checks, builds the cache-first modeling panel, runs the Benchmark baseline floor,
+audits feature leakage timestamps, runs the ML tail LightGBM information-set ladder, and
 exports LaTeX table fragments under ignored
-`reports/paper_runs/`. The default panel start is `2016-07-19`; the run manifest then
+`reports/runs/`. The default panel start is `2016-07-19`; the run manifest then
 computes `combined_clean_start` from required features only: J-Quants required-field
 coverage, XLC-inclusive Massive core coverage, FRED core coverage, and the canonical
 FRED H.10 USD/JPY control. These outputs are
-`paper_candidate_not_final_manuscript` until manually reviewed.
+`research_candidate_not_final_manuscript` until manually reviewed.
 
 The data path is typed and resumable:
 
 - J-Quants, Massive, FRED, calendar, and rule-based contract caches use ignored
   `data/bronze/` and `data/silver/`.
-- Run-scoped gold artifacts are stored under `reports/paper_runs/<run_id>/panel/`; reserved
-  `data/gold/` is available for future durable cross-run gold tables.
+- Durable gold artifacts are stored under `data/gold/tailrisk_panel/schema_version=1/run_id=<run_id>/`.
+  `reports/runs/<run_id>/` keeps run-specific forecasts, metrics, audits, and tables.
 - Parquet writes are atomic and carry `xxhash64` chunk hashes plus schema hashes.
 - Old orphan `.tmp` files are garbage-collected at run start.
 - FRED current-historical caches are labeled `vintage_safe=false`; `DEXJPUS` is treated
@@ -134,24 +153,29 @@ The data path is typed and resumable:
   evaluated once at run start, not mid-run.
 - Non-FX FRED predictors are selected feature-by-feature using timestamp-safe as-of
   logic. Release-lag fills carry explicit metadata, filled diffs are marked, and
-  `fred_rates_staleness_days` enters the expanded P2B block as an auditable staleness
+  `fred_rates_staleness_days` enters the expanded ML tail block as an auditable staleness
   feature.
 - SPY minute bars are reduced chunk-by-chunk to late-session features using the official
   NYSE close or early close; the late-volume-surge baseline is recomputed across loaded
   cache partitions, and full raw minute history is not retained by default.
 - Derivatives intraday remains disabled, so `residual_usclosemark_to_open` is extension-only.
-- P2B writes feature-unavailability diagnostics under
-  `reports/paper_runs/<run_id>/metrics/`, including aggregate and date-level Parquet
+- ML tail writes feature-unavailability diagnostics under
+  `reports/runs/<run_id>/metrics/`, including aggregate and date-level Parquet
   tables for missing active features.
-- P2B runs three registered LightGBM model families when the leakage gate passes:
+- ML tail runs three registered LightGBM model families when the leakage gate passes:
   direct quantile, fully out-of-fold location-scale with Duan smearing, and
   fully out-of-fold standardized-loss POT-GPD. Location-scale/POT forecasts that fail
   sample, scale, or GPD validity gates are recorded as unavailable diagnostics rather than
   invalid paper-metric rows.
+- ML tail keeps the strict headline information-set ladder in `ml_tail_metrics.parquet` and
+  writes a separate `ml_tail_result_matrix*` layer for restricted common-sample VaR-only
+  and VaR-ES comparisons across LightGBM tail-model families. These matrix rows are
+  marked `headline_claim_allowed=false`; they support audit and discussion, not
+  automatic superiority claims.
 
 For custom windows or workers, pass recipe arguments positionally, for example
 `just full 2022-01-01 "" 4`. The lower-level recipes remain available for debugging:
-`_paper-panel`, `_paper-eval`, `_paper-leakage-check`, and `_paper-latex-tables`.
-`_paper-eval` uses staged dispatch: `p2a` runs the baseline floor; `p2b` runs the
+`_build-panel`, `_evaluate`, `_leakage-check`, and `_export-tables`.
+`_evaluate` uses staged dispatch: `benchmark` runs the baseline floor; `ml_tail` runs the
 LightGBM direct-quantile, location-scale, and standardized-loss POT-GPD information-set
-ladder; `p2c` remains an explicit nonblocking gate for advanced econometric models.
+ladder; richer econometric suites remain future work until they have real implementations.

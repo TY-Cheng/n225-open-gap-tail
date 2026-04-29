@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from n225_open_gap_tail.schemas import (
+from n225_open_gap_tail.data_lake.schemas import (
     JQUANTS_FUTURES_FIELD_USES,
     MODEL_READY_LOSS_FIELDS,
     REQUIRED_MARKET_STRUCTURE_FLAGS,

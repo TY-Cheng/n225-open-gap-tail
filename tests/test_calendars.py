@@ -5,8 +5,8 @@ from pathlib import Path
 
 import polars as pl
 
-from n225_open_gap_tail.calendars import build_session_calendar_records, write_calendar_table
 from n225_open_gap_tail.config import Settings
+from n225_open_gap_tail.market.calendars import build_session_calendar_records, write_calendar_table
 
 
 def test_build_session_calendar_records_marks_holidays_and_dst() -> None:

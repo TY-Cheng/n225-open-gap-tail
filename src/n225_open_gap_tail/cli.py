@@ -3,22 +3,23 @@ from pathlib import Path
 
 import typer
 
-from n225_open_gap_tail.calendars import write_calendar_table
-from n225_open_gap_tail.cboe import write_cboe_smoke_sample
 from n225_open_gap_tail.config import load_settings, split_csv
-from n225_open_gap_tail.contracts import write_contract_metadata
-from n225_open_gap_tail.datalake import MAIN_SAMPLE_START
-from n225_open_gap_tail.fred import write_fred_smoke_sample
-from n225_open_gap_tail.jquants import write_jquants_smoke_sample
-from n225_open_gap_tail.massive import write_massive_smoke_sample
-from n225_open_gap_tail.paper import (
-    evaluate_paper_run,
-    resolve_paper_run_dir,
-    write_paper_latex_tables,
-    write_paper_leakage_check,
-    write_paper_panel,
+from n225_open_gap_tail.data_lake import MAIN_SAMPLE_START
+from n225_open_gap_tail.diagnostics.snapshot import write_full_smoke_snapshot
+from n225_open_gap_tail.forecasting import (
+    build_panel,
+    evaluate_suite,
+    export_tables,
+    resolve_run_dir,
+    write_leakage_check,
 )
-from n225_open_gap_tail.snapshot import write_full_smoke_snapshot
+from n225_open_gap_tail.market.calendars import write_calendar_table
+from n225_open_gap_tail.market.contracts import write_contract_metadata
+from n225_open_gap_tail.sources.cboe import write_cboe_smoke_sample
+from n225_open_gap_tail.sources.fred import write_fred_smoke_sample
+from n225_open_gap_tail.sources.jquants import write_jquants_smoke_sample
+from n225_open_gap_tail.sources.massive import write_massive_smoke_sample
+from n225_open_gap_tail.sources.probe import probe_sources
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -70,6 +71,18 @@ def status() -> None:
         f"j-quants derivatives intraday enabled: {settings.jquants_derivatives_intraday_enabled}"
     )
     typer.echo(f"jpx datacube email configured: {bool(settings.jpx_datacube_email)}")
+
+
+@app.command("source-probe")
+def source_probe() -> None:
+    """Check provider reachability before a full cold rebuild."""
+    settings = load_settings()
+    results = probe_sources(settings)
+    for result in results:
+        http_status = f" http={result.http_status}" if result.http_status is not None else ""
+        typer.echo(f"{result.source}: {result.status}{http_status} {result.detail}")
+    if any(result.status != "ok" for result in results):
+        raise typer.Exit(code=1)
 
 
 @app.command("jquants-smoke")
@@ -247,14 +260,14 @@ def snapshot(
     typer.echo(f"model status: {result.model_status}")
 
 
-@app.command("paper-panel")
-def paper_panel(
+@app.command("build-panel")
+def build_panel_command(
     start: str = typer.Option(MAIN_SAMPLE_START, help="Start date in YYYY-MM-DD."),
     end: str = typer.Option("", help="End date in YYYY-MM-DD. Defaults to today."),
 ) -> None:
-    """Build the paper-grade full-history modeling panel."""
+    """Build the cache-first modeling panel and durable gold artifacts."""
     settings = load_settings()
-    result = write_paper_panel(settings=settings, start=start, end=end or None)
+    result = build_panel(settings=settings, start=start, end=end or None)
 
     typer.echo(f"run id: {result.run_id}")
     typer.echo(f"run dir: {result.run_dir}")
@@ -263,17 +276,17 @@ def paper_panel(
     typer.echo(f"clean rows: {result.clean_rows}")
 
 
-@app.command("paper-eval")
-def paper_eval(
-    run_id: str = typer.Option("", help="Paper run id. Defaults to the latest P2A run."),
+@app.command("evaluate")
+def evaluate_command(
+    run_id: str = typer.Option("", help="Run id. Defaults to the latest tail-risk run."),
     workers: int = typer.Option(0, help="Joblib workers. Defaults to bounded local workers."),
-    stage: str = typer.Option("p2a", help="Evaluation stage: p2a, p2b, or p2c."),
+    suite: str = typer.Option("benchmark", help="Evaluation suite: benchmark or ml-tail."),
     force: bool = typer.Option(False, help="Clear locked outputs when config hash changed."),
 ) -> None:
-    """Run paper-grade evaluation for a paper run."""
+    """Run a forecast evaluation suite for a tail-risk run."""
     settings = load_settings()
-    run_dir = resolve_paper_run_dir(settings, run_id)
-    result = evaluate_paper_run(run_dir=run_dir, workers=workers, stage=stage, force=force)
+    run_dir = resolve_run_dir(settings, run_id)
+    result = evaluate_suite(run_dir=run_dir, workers=workers, suite=suite, force=force)
 
     typer.echo(f"run id: {result.run_id}")
     typer.echo(f"run dir: {result.run_dir}")
@@ -282,28 +295,28 @@ def paper_eval(
     typer.echo(f"status: {result.status}")
 
 
-@app.command("paper-grade")
-def paper_grade(
+@app.command("run")
+def run_command(
     start: str = typer.Option(MAIN_SAMPLE_START, help="Start date in YYYY-MM-DD."),
     end: str = typer.Option("", help="End date in YYYY-MM-DD. Defaults to today."),
     workers: int = typer.Option(0, help="Joblib workers. Defaults to bounded local workers."),
-    stage: str = typer.Option("p2a", help="Evaluation stage: p2a, p2b, p2c, or all."),
+    suite: str = typer.Option("all", help="Evaluation suite: benchmark, ml-tail, or all."),
     force: bool = typer.Option(False, help="Clear locked outputs when config hash changed."),
 ) -> None:
-    """Build the paper panel, run requested evaluation stages, and export LaTeX tables."""
+    """Build the panel, run requested evaluation suites, and export tables."""
     settings = load_settings()
-    panel = write_paper_panel(settings=settings, start=start, end=end or None)
-    write_paper_leakage_check(run_dir=panel.run_dir)
-    stages = ("p2a", "p2b", "p2c") if stage == "all" else (stage,)
+    panel = build_panel(settings=settings, start=start, end=end or None)
+    write_leakage_check(run_dir=panel.run_dir)
+    suites = ("benchmark", "ml-tail") if suite == "all" else (suite,)
     evaluation = None
-    for active_stage in stages:
-        evaluation = evaluate_paper_run(
+    for active_suite in suites:
+        evaluation = evaluate_suite(
             run_dir=panel.run_dir,
             workers=workers,
-            stage=active_stage,
+            suite=active_suite,
             force=force,
         )
-    latex = write_paper_latex_tables(run_dir=panel.run_dir)
+    latex = export_tables(run_dir=panel.run_dir)
 
     typer.echo(f"run id: {panel.run_id}")
     typer.echo(f"run dir: {panel.run_dir}")
@@ -314,28 +327,28 @@ def paper_grade(
     typer.echo(f"latex tables: {latex.tables}")
 
 
-@app.command("paper-latex-tables")
-def paper_latex_tables(
-    run_id: str = typer.Option("", help="Paper run id. Defaults to the latest P2A run."),
+@app.command("export-tables")
+def export_tables_command(
+    run_id: str = typer.Option("", help="Run id. Defaults to the latest tail-risk run."),
 ) -> None:
-    """Export paper-run metrics to LaTeX table fragments."""
+    """Export run metrics to LaTeX table fragments."""
     settings = load_settings()
-    run_dir = resolve_paper_run_dir(settings, run_id)
-    result = write_paper_latex_tables(run_dir=run_dir)
+    run_dir = resolve_run_dir(settings, run_id)
+    result = export_tables(run_dir=run_dir)
 
     typer.echo(f"run id: {result.run_id}")
     typer.echo(f"latex dir: {result.latex_dir}")
     typer.echo(f"tables: {result.tables}")
 
 
-@app.command("paper-leakage-check")
-def paper_leakage_check(
-    run_id: str = typer.Argument("", help="Paper run id. Defaults to the latest P2A run."),
+@app.command("leakage-check")
+def leakage_check_command(
+    run_id: str = typer.Argument("", help="Run id. Defaults to the latest tail-risk run."),
 ) -> None:
     """Audit feature timestamp availability against model cutoff and target open."""
     settings = load_settings()
-    run_dir = resolve_paper_run_dir(settings, run_id)
-    result = write_paper_leakage_check(run_dir=run_dir)
+    run_dir = resolve_run_dir(settings, run_id)
+    result = write_leakage_check(run_dir=run_dir)
 
     typer.echo(f"run id: {result.run_id}")
     typer.echo(f"leakage parquet: {result.output_path}")

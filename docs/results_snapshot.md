@@ -21,6 +21,8 @@
 
 This snapshot validates data access, target construction, timestamp alignment, predictor availability, and smoke-only model wiring. It does **not** support claims about causal spillover, price discovery, trading alpha, live deployment, LightGBM-EVT superiority, or ES improvement.
 
+Regenerate this page with `just snapshot` after material code or schema changes. The snapshot window is intentionally bounded and may start later than the full `just full` default; it is a smoke/access check, not the clean modeling sample.
+
 ## Model Smoke
 
 The model layer is deliberately labeled as smoke-only. If LightGBM or EVT gates are unavailable, that is a valid engineering result rather than weak empirical evidence.

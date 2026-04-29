@@ -24,7 +24,7 @@ Core variable definitions should be transparent enough for reader evaluation. Pu
 
 ## Current Environment Contract
 
-The current local `.env` contract uses J-Quants API V2. The paper-grade futures
+The current local `.env` contract uses J-Quants API V2. The run futures
 target pipeline requires Premium futures access for the historical derivatives endpoint;
 intraday derivatives remain disabled unless a licensed intraday mark is added:
 
@@ -52,7 +52,7 @@ FRED_BASE_URL="https://fred.stlouisfed.org"
 FRED_SERIES="VIXCLS,DGS2,DGS10,T10Y2Y,DEXJPUS"
 ```
 
-These snippets are the paper-grade core defaults. Smoke commands can override them with smaller ticker or series lists.
+These snippets are the run core defaults. Smoke commands can override them with smaller ticker or series lists.
 
 Short-history and robustness-only candidates stay out of `core_full_history`:
 
@@ -64,7 +64,7 @@ ASIA_PROXY_MASSIVE_TICKERS="EWY,EWT,EWH"
 OPTIONAL_MASSIVE_TICKERS="UUP"
 ```
 
-FRED uses current historical values with conservative availability semantics and is not ALFRED/vintage-safe unless a future run explicitly records realtime or vintage parameters. `DEXJPUS` is handled as a Federal Reserve H.10 weekly-batch as-of FX control: the previous business week's observations are unavailable until the following H.10 release timestamp. Massive FX is not part of the default paper pipeline.
+FRED uses current historical values with conservative availability semantics and is not ALFRED/vintage-safe unless a future run explicitly records realtime or vintage parameters. `DEXJPUS` is handled as a Federal Reserve H.10 weekly-batch as-of FX control: the previous business week's observations are unavailable until the following H.10 release timestamp. Massive FX is not part of the default tail-risk pipeline.
 
 The utility smoke/build commands are engineering checks only:
 
@@ -75,7 +75,7 @@ n225-open-gap-tail calendar-build
 n225-open-gap-tail contracts-build
 ```
 
-They use the same cache vocabulary as the paper-grade workflow: vendor payloads under
+They use the same cache vocabulary as the run workflow: vendor payloads under
 `data/bronze/` and typed normalized outputs under `data/silver/`. Smoke artifacts do not
 constitute empirical validation of the forecasting paper.
 
@@ -101,8 +101,8 @@ The first-paper predictor universe is pre-registered by economic role rather tha
 | U.S. late-session dynamics | SPY last-30-minute return, last-hour return, late-session range, late-60-minute volume surge, final-window reversal or momentum | Massive.com minute bars | `US_CASH_CLOSE` after official close plus vendor lag | Late U.S. trading pressure and closing imbalance proxies that may be more informative than daily close-to-close moves. |
 | U.S. sectors | XLK, XLF, XLE, XLV, XLI, XLY, XLP, XLB, XLU, XLC returns and dispersion | Massive.com | `US_CASH_CLOSE` | Sector composition, growth/cyclical rotation, defensives, utilities, and communications exposure. |
 | Asia and global risk | EEM, FXI, SMH, HYG, LQD | Massive.com core candidates | `US_CASH_CLOSE` after source audit | Emerging-market, China, semiconductor, and credit-risk channels relevant to Japan. |
-| Japan proxy block | EWJ, DXJ | Massive.com P2B proxy block | `US_CASH_CLOSE` after source audit | U.S.-traded Japan equity proxies used to test whether Japan-exposure trading absorbs incremental signal beyond broad U.S. core. |
-| Asia proxy block | EWY, EWT, EWH | Massive.com P2B proxy block | `US_CASH_CLOSE` after source audit | Korea, Taiwan, and Hong Kong proxies used to test regional and supply-chain information beyond Japan proxies. |
+| Japan proxy block | EWJ, DXJ | Massive.com ML tail proxy block | `US_CASH_CLOSE` after source audit | U.S.-traded Japan equity proxies used to test whether Japan-exposure trading absorbs incremental signal beyond broad U.S. core. |
+| Asia proxy block | EWY, EWT, EWH | Massive.com ML tail proxy block | `US_CASH_CLOSE` after source audit | Korea, Taiwan, and Hong Kong proxies used to test regional and supply-chain information beyond Japan proxies. |
 | FX | Canonical USD/JPY from FRED `DEXJPUS` only | FRED H.10 | H.10 weekly-batch as-of release | Conservative lagged currency control without letting optional Massive FX entitlement determine the main sample. |
 | Safe-haven and commodity proxies | TLT, GLD, USO | Massive.com planned candidates | `US_CASH_CLOSE` after source audit | Flight-to-quality, dollar-rate duration, and commodity-risk channels. |
 | U.S. volatility | VIX close; VIX high/low/range when available | Cboe, FRED, Massive index probe | Historical daily close or audited index timestamp | U.S. implied volatility and volatility-of-risk regime. |
@@ -112,7 +112,7 @@ The first-paper predictor universe is pre-registered by economic role rather tha
 | Event flags | FOMC, CPI, payrolls, BOJ, major Japan macro releases | Official calendars | Timestamped event flags, no numeric surprises in core design | Scheduled risk-event controls without macro feature fishing. |
 | Lagged Japanese futures state | Prior gap, lagged day return, lagged night return, volume/OI changes, roll/SQ flags | J-Quants futures after Premium access | Historical target-side variables, lagged before cutoff | Domestic state, liquidity proxy, and contract-state controls. |
 
-The Massive ticker selection covers U.S. market beta, technology and growth exposure, small-cap risk appetite, sector dispersion, FX, duration, safe-haven demand, commodities, Asia/EM risk, and semiconductors. Japan and Asia proxy tickers are cached with the panel but enter the P2B nested information-set ladder separately from the broad U.S. core block.
+The Massive ticker selection covers U.S. market beta, technology and growth exposure, small-cap risk appetite, sector dispersion, FX, duration, safe-haven demand, commodities, Asia/EM risk, and semiconductors. Japan and Asia proxy tickers are cached with the panel but enter the ML tail nested information-set ladder separately from the broad U.S. core block.
 
 ## Data Availability Timeline
 
@@ -211,14 +211,22 @@ For ordinary non-FX FRED predictors, the gold panel selects each feature indepen
 the latest non-null value whose `feature_available_ts_utc` is no later than the model cutoff.
 Forward-filled levels keep their source observation date and availability timestamp; synthetic
 filled diffs are set to `0.0` and marked with fill metadata rather than treated as raw
-observations. The expanded P2B block also carries `fred_rates_staleness_days`, computed from
+observations. The expanded ML tail block also carries `fred_rates_staleness_days`, computed from
 the DGS2/DGS10/T10Y2Y rate block, so release lag can be learned by the model instead of
 remaining only a diagnostic.
 
-P2B writes feature-unavailability diagnostics under `metrics/` for each paper run:
-`p2b_feature_unavailability.parquet` aggregates missing active features by information set,
-and `p2b_feature_unavailability_dates.parquet` keeps the date-level trace needed to separate
+ML tail writes feature-unavailability diagnostics under `metrics/` for each tail-risk run:
+`ml_tail_feature_unavailability.parquet` aggregates missing active features by information set,
+and `ml_tail_feature_unavailability_dates.parquet` keeps the date-level trace needed to separate
 structural gaps such as SPY late-session volume from FRED release-lag handling.
+
+ML tail also writes a result-matrix layer under `metrics/` for model-family audit:
+`ml_tail_result_matrix.parquet`, `ml_tail_result_matrix_sample_audit.parquet`,
+`ml_tail_result_matrix_dm.parquet`, `ml_tail_result_matrix_mcs.parquet`, and
+`ml_tail_result_matrix_notes.md`. This layer separates VaR-only comparisons
+(`var_quantile_loss`, coverage, exception diagnostics) from VaR-ES joint scoring
+(`var_es_fz_loss`) and uses restricted common samples. It does not replace the headline
+ML tail ladder in `ml_tail_metrics.parquet`.
 
 ## Target Hierarchy
 
@@ -302,7 +310,7 @@ The data lake is intentionally tiered to prevent feature fishing.
 - Massive U.S. ETF, sector, equity-index, and USD/JPY predictors.
 - SPY minute-bar late-session features: last-30-minute return, last-hour return, late-session range, late-60-minute volume surge, and final-window reversal or momentum, all frozen at U.S. close plus the configured vendor-availability lag. The volume-surge baseline is recomputed across loaded cache partitions so monthly Hive chunks do not create artificial first-session missing values.
 - Massive core block additions: XLY, XLP, XLB, XLU, XLC, TLT, GLD, USO, EEM, FXI, SMH, HYG, and LQD after source and coverage audit.
-- Massive P2B proxy blocks: Japan proxy (`EWJ`, `DXJ`) and Asia proxy (`EWY`, `EWT`, `EWH`) are cached now but interpreted separately from the core U.S. close block.
+- Massive ML tail proxy blocks: Japan proxy (`EWJ`, `DXJ`) and Asia proxy (`EWY`, `EWT`, `EWH`) are cached now but interpreted separately from the core U.S. close block.
 - Cboe or FRED VIX close; VIX high, low, and range only when the source supports them.
 - FRED 2-year and 10-year Treasury yields, T10Y2Y yield-curve slope, and ICE BofA credit-spread proxies. SOFR/EFFR funding proxies are `post_2018_enriched`, not `core_full_history`.
 - Major event flags: FOMC, CPI, payrolls, BOJ policy events, and major Japan macro releases.

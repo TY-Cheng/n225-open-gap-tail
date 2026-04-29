@@ -13,6 +13,7 @@ import pytest
 
 import n225_open_gap_tail.diagnostics.results_discussion as results_discussion_module
 import n225_open_gap_tail.diagnostics.snapshot as snapshot_module
+import n225_open_gap_tail.diagnostics.snapshot_gallery as snapshot_gallery
 from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.diagnostics.snapshot import (
     build_snapshot_id,
@@ -429,6 +430,77 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
         ),
         encoding="utf-8",
     )
+    (run_dir / "latex").mkdir(parents=True)
+    (run_dir / "latex" / "table_manifest.json").write_text(
+        json.dumps(
+            {
+                "table_count": 1,
+                "tables": [
+                    {
+                        "name": "ml_tail_metrics",
+                        "path": "latex/tables/ml_tail_metrics_table.tex",
+                        "format": "tex",
+                        "source_artifacts": ["metrics/ml_tail_metrics.parquet"],
+                        "tail_side": None,
+                        "caption": "ML-tail headline information-set ladder table.",
+                        "claim_scope": "ml_tail_headline_ladder_table",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "latex" / "figure_manifest.json").write_text(
+        json.dumps(
+            {
+                "figures": [
+                    {
+                        "name": "dst_attenuation_left_tail",
+                        "path": "latex/figures/dst_attenuation_left_tail.png",
+                        "format": "png",
+                        "source_artifacts": ["metrics/ml_tail_dst_attenuation.parquet"],
+                        "tail_side": "left_tail",
+                        "caption": (
+                            "DST attenuation diagnostic for left_tail; bars report registered "
+                            "forecast-loss gain summaries by timing regime. This is descriptive "
+                            "forecast evidence, not structural causal identification."
+                        ),
+                        "claim_scope": (
+                            "descriptive_dst_attenuation_not_structural_causal_identification"
+                        ),
+                    },
+                    {
+                        "name": "dst_attenuation_left_tail",
+                        "path": "latex/figures/dst_attenuation_left_tail.pdf",
+                        "format": "pdf",
+                        "source_artifacts": ["metrics/ml_tail_dst_attenuation.parquet"],
+                        "tail_side": "left_tail",
+                        "caption": (
+                            "DST attenuation diagnostic for left_tail; bars report registered "
+                            "forecast-loss gain summaries by timing regime. This is descriptive "
+                            "forecast evidence, not structural causal identification."
+                        ),
+                        "claim_scope": (
+                            "descriptive_dst_attenuation_not_structural_causal_identification"
+                        ),
+                    },
+                    {
+                        "name": "trigger_diagnostics_right_tail",
+                        "path": "latex/figures/trigger_diagnostics_right_tail.png",
+                        "format": "png",
+                        "source_artifacts": ["forecasts/benchmark_forecasts.parquet"],
+                        "tail_side": "right_tail",
+                        "caption": (
+                            "VaR trigger diagnostic for right_tail; this is not hedge PnL, "
+                            "not transaction-cost evidence, and not trading-alpha evidence."
+                        ),
+                        "claim_scope": "trigger_diagnostic_not_pnl_cost_or_alpha",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
 
     result = snapshot_module.write_results_snapshot_from_run(
         settings=Settings(
@@ -447,12 +519,27 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     assert "## Results And Discussion" in rendered
     assert "<!-- generated: results_discussion -->" in rendered
     _assert_results_discussion_subsections_in_order(rendered)
+    assert "### CPA as conditional loss-difference diagnostics" in rendered
+    assert "Figure: dst_attenuation_left_tail" in rendered
+    assert "Source: metrics/ml_tail_dst_attenuation.parquet" in rendered
+    assert (
+        "Claim scope: descriptive_dst_attenuation_not_structural_causal_identification" in rendered
+    )
+    assert "File: latex/figures/dst_attenuation_left_tail.png" in rendered
     assert "Gold modeling rows" in rendered
+    assert "## Run Metadata" in rendered
+    assert "## Evidence Map" in rendered
+    assert "## Paper-Facing Table And Figure Gallery" in rendered
+    assert "### Table Manifest" in rendered
+    assert "ml_tail_headline_ladder_table" in rendered
+    assert "![dst_attenuation_left_tail]" in rendered
+    assert "figures/tailrisk_test/dst_attenuation_left_tail.png" in rendered
     assert "older" in rendered
     assert "bounded access-check snapshot" in rendered
     assert "Coverage review:" in rendered
     assert "must not be read as forecast improvement" in rendered
     assert "on average across the unconditional evaluation sample" in rendered
+    assert "conditional loss-difference diagnostic" in rendered
     assert "The hedge-trigger diagnostic has not yet been performed for this run" in rendered
     assert "## Technical Infrastructure Note" in rendered
     assert "advanced benchmark layer is registered as nonblocking" in rendered
@@ -668,13 +755,107 @@ def test_snapshot_private_helpers_cover_defensive_edges() -> None:
     assert results_discussion_module._fmt_float(float("inf")) == "inf"
 
 
+def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
+    run_dir = tmp_path / "reports" / "runs" / "tailrisk_gallery"
+    figure_dir = run_dir / "latex" / "figures"
+    figure_dir.mkdir(parents=True)
+    source = figure_dir / "coverage_breach_rates_left_tail.png"
+    source.write_bytes(b"png")
+    stale_docs = tmp_path / "docs" / "figures" / run_dir.name / "stale.png"
+    stale_docs.parent.mkdir(parents=True)
+    stale_docs.write_bytes(b"old")
+    manifest: dict[str, object] = {
+        "figures": [
+            "bad",
+            {"name": "no_path", "format": "png"},
+            {
+                "name": "coverage_breach_rates_left_tail",
+                "path": "latex/figures/coverage_breach_rates_left_tail.png",
+                "format": "png",
+                "source_artifacts": ["metrics/ml_tail_metrics.parquet"],
+                "tail_side": "left_tail",
+                "claim_scope": "coverage_diagnostic_not_headline_claim",
+            },
+            {
+                "name": "coverage_breach_rates_left_tail",
+                "path": "latex/figures/coverage_breach_rates_left_tail.pdf",
+                "format": "pdf",
+                "source_artifacts": ["metrics/ml_tail_metrics.parquet"],
+                "tail_side": "left_tail",
+                "claim_scope": "coverage_diagnostic_not_headline_claim",
+            },
+            {
+                "name": "unknown_plot_left_tail",
+                "path": "latex/figures/missing.png",
+                "format": "png",
+                "source_artifacts": [],
+                "tail_side": "left_tail",
+                "claim_scope": None,
+            },
+        ]
+    }
+
+    snapshot_gallery.sync_snapshot_figure_assets(
+        run_dir=run_dir,
+        figure_manifest={},
+        docs_dir=tmp_path / "docs",
+    )
+    snapshot_gallery.sync_snapshot_figure_assets(
+        run_dir=run_dir,
+        figure_manifest=manifest,
+        docs_dir=tmp_path / "docs",
+    )
+
+    copied = tmp_path / "docs" / "figures" / run_dir.name / source.name
+    assert copied.exists()
+    assert not stale_docs.exists()
+    assert "flowchart LR" in snapshot_gallery.evidence_map_mermaid()
+    assert "table_manifest_not_available" in snapshot_gallery.table_manifest_markdown({})
+    assert "table_manifest_not_available" in snapshot_gallery.table_manifest_markdown(
+        {"tables": ["bad"]}
+    )
+    assert "ml_tail_metrics.parquet" in snapshot_gallery.table_manifest_markdown(
+        {
+            "tables": [
+                {
+                    "name": "ml_tail_metrics",
+                    "source_artifacts": ["metrics/ml_tail_metrics.parquet"],
+                    "claim_scope": "ml_tail_headline_ladder_table",
+                    "tail_side": None,
+                    "path": "latex/tables/ml_tail_metrics_table.tex",
+                }
+            ]
+        }
+    )
+    gallery = snapshot_gallery.figure_gallery_markdown(
+        figure_manifest=manifest,
+        run_id=run_dir.name,
+    )
+    assert "Figure 1. Coverage Breach-Rate Diagnostics" in gallery
+    assert "coverage_breach_rates_left_tail.png" in gallery
+    assert "Figure artifacts are not available" in snapshot_gallery.figure_gallery_markdown(
+        figure_manifest={},
+        run_id=run_dir.name,
+    )
+    assert snapshot_gallery._figure_family("benchmark_murphy_left_tail") == "benchmark_murphy"
+    assert snapshot_gallery._figure_family("ml_tail_murphy_left_tail") == "ml_tail_murphy"
+    assert snapshot_gallery._figure_family("dst_attenuation_left_tail") == "dst"
+    assert snapshot_gallery._figure_family("es_severity_left_tail") == "severity"
+    assert snapshot_gallery._figure_family("trigger_diagnostics_left_tail") == "trigger"
+    assert snapshot_gallery._figure_family("unknown") == "other"
+    assert "generated diagnostic figure" in " ".join(snapshot_gallery._figure_key_readings("x"))
+    assert snapshot_gallery._source_artifacts_text([]) == "`missing`"
+    assert snapshot_gallery._markdown_cell("a|b\nc") == "a\\|b c"
+
+
 def _assert_results_discussion_subsections_in_order(rendered: str) -> None:
     headings = [
         "### Data and timing audit",
         "### Benchmark floor and advanced benchmarks",
-        "### ML-tail headline ladder",
+        "### Left/right ML-tail headline ladder",
         "### Restricted model-family comparison",
         "### Coverage and inference gates",
+        "### CPA as conditional loss-difference diagnostics",
         "### Supporting diagnostics",
         "### Not yet claimed",
     ]
@@ -683,34 +864,46 @@ def _assert_results_discussion_subsections_in_order(rendered: str) -> None:
 
 
 def _assert_no_unsupported_affirmative_claims(rendered: str) -> None:
-    forbidden = (
+    forbidden_anywhere = (
         "best",
         "dominates",
-        "significantly outperforms",
+        "winner",
         "superior",
-        "winning",
-        "optimal",
-        "trading signal",
-        "hedge PnL",
-        "causal mechanism",
-        "trading alpha",
-        "conditional predictive ability",
-        "causal",
-        "spillover",
-        "price discovery",
+        "significantly outperforms",
     )
-    allowed_context = re.compile(
-        r"\b("
-        r"not|no|future|not yet|descriptive|diagnostic|without|does not|cannot|"
-        r"must not|not implemented|not performed|not claimed|rather than|separate|unsupported"
-        r")\b",
+    for phrase in forbidden_anywhere:
+        assert phrase.lower() not in rendered.lower()
+
+    restricted_disclaimer_terms = (
+        "hedge PnL",
+        "transaction-cost",
+        "trading-alpha",
+        "causal identification",
+        "causal mechanism",
+        "trading signal",
+    )
+    not_claimed_start = rendered.index("### Not yet claimed")
+    not_claimed_end = rendered.find("\n## ", not_claimed_start + 1)
+    not_claimed = (
+        rendered[not_claimed_start:]
+        if not_claimed_end == -1
+        else rendered[not_claimed_start:not_claimed_end]
+    )
+    approved_disclaimers = (
+        "This is a pre-open risk-monitoring diagnostic, not hedge PnL, "
+        "transaction-cost, or trading-alpha evidence.",
+    )
+    allowed_lines = set(not_claimed.splitlines()) | set(approved_disclaimers)
+    for line in rendered.splitlines():
+        for phrase in restricted_disclaimer_terms:
+            if phrase.lower() in line.lower():
+                assert line in allowed_lines, line
+
+    assert re.search(
+        r"DM|MCS|unconditional evaluation sample",
+        rendered,
         flags=re.IGNORECASE,
     )
-    for line in rendered.splitlines():
-        lowered = line.lower()
-        for phrase in forbidden:
-            if phrase.lower() in lowered:
-                assert allowed_context.search(line), line
 
 
 def _raw_row(

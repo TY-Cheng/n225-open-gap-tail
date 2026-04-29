@@ -31,6 +31,7 @@ import n225_open_gap_tail.models.benchmark_advanced_math as advanced_math
 import n225_open_gap_tail.panel as paper_leakage
 import n225_open_gap_tail.panel as paper_panel
 import n225_open_gap_tail.reporting as paper_reporting
+import n225_open_gap_tail.reporting.figures as reporting_figures
 import n225_open_gap_tail.reporting.latex as reporting_latex
 import n225_open_gap_tail.reporting.tables as reporting_tables
 from n225_open_gap_tail.config import Settings
@@ -89,6 +90,7 @@ def _patch_paper_module(
         "n225_open_gap_tail.data_lake.cache_ops",
         "n225_open_gap_tail.reporting.tables",
         "n225_open_gap_tail.reporting.latex",
+        "n225_open_gap_tail.reporting.figures",
         "n225_open_gap_tail.forecasting._guards",
         "n225_open_gap_tail.forecasting._benchmark_suite",
         "n225_open_gap_tail.forecasting._ml_tail_suite",
@@ -130,6 +132,7 @@ def test_paper_package_split_preserves_import_compatibility() -> None:
     assert paper_features.drop_low_variance_features is drop_low_variance_features
     assert paper_leakage.write_leakage_check is write_leakage_check
     assert paper_reporting.export_tables is export_tables
+    assert paper_reporting.export_figures is reporting_figures.export_figures
     assert paper_evaluation.evaluate_benchmark_floor_suite is evaluate_benchmark_floor_suite
     assert paper_evaluation.evaluate_ml_tail_suite is ml_tail_suite.evaluate_ml_tail_suite
     assert paper_evaluation.evaluate_benchmark_suite is benchmark_suite.evaluate_benchmark_suite
@@ -145,7 +148,11 @@ def test_runtime_bridge_removed_from_source_modules() -> None:
     offenders = []
     for path in source_root.rglob("*.py"):
         text = path.read_text(encoding="utf-8")
-        if "globals().update" in text or "wire_runtime_namespace" in text:
+        if (
+            "globals().update" in text
+            or "wire_runtime_namespace" in text
+            or "from n225_open_gap_tail.config.runtime import *" in text
+        ):
             offenders.append(str(path))
     assert offenders == []
 
@@ -3280,6 +3287,230 @@ def test_dst_attenuation_latex_export_is_descriptive(tmp_path: Path) -> None:
     assert "descriptive forecast evidence" in latex_text
     assert "not a structural causal mechanism" in latex_text
     assert "conditional predictive ability" not in latex_text
+
+
+def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> None:
+    run_dir = tmp_path / "reports" / "runs" / "figure_export"
+    metrics_dir = run_dir / "metrics"
+    forecasts_dir = run_dir / "forecasts"
+    metrics_dir.mkdir(parents=True)
+    forecasts_dir.mkdir(parents=True)
+    (run_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "figure_export",
+                "git_commit": "abc123",
+                "config_hash": paper_module.PIPELINE_CONFIG.config_hash(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    metric_rows = []
+    for tail_side in (paper_module.TAIL_SIDE_LEFT, paper_module.TAIL_SIDE_RIGHT):
+        for model_name, breach in (
+            ("historical_quantile", 0.05),
+            ("garch_t", 0.07),
+        ):
+            metric_rows.append(
+                {
+                    "model_name": model_name,
+                    "target_family": "full_gap_settle_to_open",
+                    "tail_side": tail_side,
+                    "information_set": "target_history_only",
+                    "tail_level": 0.95,
+                    "refit_frequency": "daily",
+                    "sample_policy": "headline_common_sample",
+                    "common_sample_status": "ok",
+                    "rows": 20,
+                    "var_breach_rate": breach,
+                    "expected_breach_rate": 0.05,
+                    "exceedance_count": 1,
+                    "mean_quantile_loss": 0.001,
+                    "mean_fz_loss": -3.1,
+                    "mean_exceedance_severity": 0.01,
+                }
+            )
+    benchmark_metrics = pl.DataFrame(metric_rows)
+    benchmark_metrics.write_parquet(metrics_dir / "benchmark_metrics.parquet")
+    advanced = benchmark_metrics.with_columns(
+        pl.lit("caviar_sav").alias("model_name"),
+        pl.lit("monthly_parameter_refit_daily_filter").alias("refit_frequency"),
+    )
+    pl.concat([benchmark_metrics, advanced], how="diagonal_relaxed").write_parquet(
+        metrics_dir / "benchmark_metrics_per_model.parquet"
+    )
+    ml_rows = []
+    for tail_side in (paper_module.TAIL_SIDE_LEFT, paper_module.TAIL_SIDE_RIGHT):
+        for information_set, breach in (
+            ("japan_only", 0.06),
+            ("japan_only_plus_us_close_core", 0.08),
+        ):
+            base = {
+                "model_name": paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
+                "target_family": "full_gap_settle_to_open",
+                "tail_side": tail_side,
+                "information_set": information_set,
+                "tail_level": 0.95,
+                "refit_frequency": "monthly",
+                "sample_policy": "headline_common_sample",
+                "common_sample_status": "ok",
+                "rows": 20,
+                "var_breach_rate": breach,
+                "expected_breach_rate": 0.05,
+                "exceedance_count": 2,
+                "mean_quantile_loss": 0.001,
+                "mean_fz_loss": -3.2,
+                "mean_exceedance_severity": 0.009,
+            }
+            ml_rows.append(base)
+            ml_rows.append({**base, "model_name": "lightgbm_location_scale"})
+    ml_metrics = pl.DataFrame(ml_rows)
+    ml_metrics.filter(
+        pl.col("model_name") == paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL
+    ).write_parquet(metrics_dir / "ml_tail_metrics.parquet")
+    ml_metrics.write_parquet(metrics_dir / "ml_tail_metrics_per_model.parquet")
+    murphy_rows = []
+    for tail_side in (paper_module.TAIL_SIDE_LEFT, paper_module.TAIL_SIDE_RIGHT):
+        for threshold_index, threshold_value in enumerate((-0.01, 0.0, 0.01)):
+            for model_name in ("historical_quantile", "garch_t"):
+                murphy_rows.append(
+                    {
+                        "suite": "benchmark",
+                        "target_family": "full_gap_settle_to_open",
+                        "tail_side": tail_side,
+                        "model_name": model_name,
+                        "information_set": "target_history_only",
+                        "tail_level": 0.95,
+                        "refit_frequency": "daily",
+                        "threshold_index": threshold_index,
+                        "threshold_value": threshold_value,
+                        "threshold_grid_policy": "synthetic_common_grid",
+                        "rows": 20,
+                        "mean_elementary_score": 0.02 + threshold_index * 0.001,
+                    }
+                )
+    pl.DataFrame(murphy_rows).write_parquet(metrics_dir / "benchmark_murphy.parquet")
+    ml_murphy_rows = []
+    for tail_side in (paper_module.TAIL_SIDE_LEFT, paper_module.TAIL_SIDE_RIGHT):
+        for threshold_index, threshold_value in enumerate((-0.01, 0.0, 0.01)):
+            for information_set in ("japan_only", "japan_only_plus_us_close_core"):
+                ml_murphy_rows.append(
+                    {
+                        "suite": "ml_tail",
+                        "target_family": "full_gap_settle_to_open",
+                        "tail_side": tail_side,
+                        "model_name": paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
+                        "information_set": information_set,
+                        "tail_level": 0.95,
+                        "refit_frequency": "monthly",
+                        "threshold_index": threshold_index,
+                        "threshold_value": threshold_value,
+                        "threshold_grid_policy": "synthetic_common_grid",
+                        "rows": 20,
+                        "mean_elementary_score": 0.015 + threshold_index * 0.001,
+                    }
+                )
+    pl.DataFrame(ml_murphy_rows).write_parquet(metrics_dir / "ml_tail_murphy.parquet")
+    dst_rows = []
+    for tail_side in (paper_module.TAIL_SIDE_LEFT, paper_module.TAIL_SIDE_RIGHT):
+        for regime in ("EST", "EDT"):
+            dst_rows.append(
+                {
+                    "model_name": paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
+                    "tail_side": tail_side,
+                    "tail_level": 0.95,
+                    "base_information_set": "japan_only",
+                    "expanded_information_set": "japan_only_plus_us_close_core",
+                    "dst_regime": regime,
+                    "paired_rows": 20,
+                    "mean_quantile_gain": 0.001,
+                    "mean_fz_gain": 0.002,
+                    "inference_status": "ok_block_bootstrap_dm",
+                }
+            )
+    pl.DataFrame(dst_rows).write_parquet(metrics_dir / "ml_tail_dst_attenuation.parquet")
+    forecast_rows = []
+    for tail_side in (paper_module.TAIL_SIDE_LEFT, paper_module.TAIL_SIDE_RIGHT):
+        for day in range(8):
+            forecast_rows.append(
+                {
+                    "forecast_date": f"2026-01-{day + 1:02d}",
+                    "target_family": "full_gap_settle_to_open",
+                    "tail_side": tail_side,
+                    "model_name": "historical_quantile",
+                    "information_set": "target_history_only",
+                    "tail_level": 0.95,
+                    "refit_frequency": "daily",
+                    "var_forecast": 0.01 + day * 0.001,
+                    "realized_loss": 0.02 if day % 3 == 0 else 0.005,
+                    "is_valid_forecast": True,
+                }
+            )
+            forecast_rows.append(
+                {
+                    **forecast_rows[-1],
+                    "model_name": paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
+                    "information_set": "japan_only",
+                    "refit_frequency": "monthly",
+                }
+            )
+    forecast_frame = pl.DataFrame(forecast_rows)
+    forecast_frame.filter(pl.col("model_name") == "historical_quantile").write_parquet(
+        forecasts_dir / "benchmark_forecasts.parquet"
+    )
+    forecast_frame.filter(
+        pl.col("model_name") == paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL
+    ).write_parquet(forecasts_dir / "ml_tail_forecasts.parquet")
+
+    latex = export_tables(run_dir=run_dir)
+    manifest = json.loads((run_dir / "latex" / "figure_manifest.json").read_text())
+    table_manifest = json.loads((run_dir / "latex" / "table_manifest.json").read_text())
+    entries = manifest["figures"]
+
+    assert latex.tables >= 7
+    assert table_manifest["table_count"] == latex.tables
+    assert len(table_manifest["tables"]) == latex.tables
+    assert any(table["name"] == "benchmark_metrics" for table in table_manifest["tables"])
+    assert all(table["source_artifacts"] for table in table_manifest["tables"])
+    assert all((run_dir / table["path"]).exists() for table in table_manifest["tables"])
+    assert entries
+    assert {entry["format"] for entry in entries} == {"png", "pdf"}
+    assert {entry["tail_side"] for entry in entries} == {
+        paper_module.TAIL_SIDE_LEFT,
+        paper_module.TAIL_SIDE_RIGHT,
+    }
+    assert any(entry["name"] == "coverage_breach_rates_left_tail" for entry in entries)
+    assert any(entry["name"] == "benchmark_murphy_right_tail" for entry in entries)
+    assert any("not structural causal identification" in entry["caption"] for entry in entries)
+    assert any("not hedge PnL" in entry["caption"] for entry in entries)
+    assert all((run_dir / entry["path"]).exists() for entry in entries)
+
+
+def test_export_figures_skips_missing_optional_artifacts(tmp_path: Path) -> None:
+    run_dir = tmp_path / "reports" / "runs" / "empty_figures"
+    run_dir.mkdir(parents=True)
+    stale = run_dir / "latex" / "figures" / "stale.png"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("old", encoding="utf-8")
+
+    result = reporting_figures.export_figures(run_dir=run_dir, manifest={"run_id": "empty_figures"})
+
+    assert result.figure_entries == []
+    assert result.figure_dir.exists()
+    assert not stale.exists()
+    assert reporting_figures._available_tail_sides(pl.DataFrame()) == []
+    assert reporting_figures._first_float(pl.DataFrame(), "x") is None
+    assert reporting_figures._optional_float(None) is None
+    assert reporting_figures._optional_float("bad") is None
+    assert reporting_figures._optional_float(float("nan")) is None
+    assert reporting_figures._series_percent(pl.DataFrame({"x": [0.1]}), "missing") == [0.0]
+    assert reporting_figures._trigger_plot_rows(pl.DataFrame()).is_empty()
+    assert (
+        reporting_figures._limit_rows_for_plot(
+            pl.DataFrame({"x": list(range(20))}), max_rows=3
+        ).height
+        == 3
+    )
 
 
 def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) -> None:

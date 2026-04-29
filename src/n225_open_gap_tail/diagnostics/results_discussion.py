@@ -17,6 +17,7 @@ def generate_results_discussion(
     benchmark_status: Mapping[str, object],
     ml_tail_status: Mapping[str, object],
     leakage_summary: Mapping[str, object],
+    figure_manifest: Mapping[str, object],
     panel: pl.DataFrame,
     calendar: pl.DataFrame,
     benchmark_metrics: pl.DataFrame,
@@ -72,7 +73,7 @@ def generate_results_discussion(
         )
     }
 
-### ML-tail headline ladder
+### Left/right ML-tail headline ladder
 
 {
         _results_ml_tail_headline_discussion(
@@ -96,6 +97,10 @@ def generate_results_discussion(
         )
     }
 
+### CPA as conditional loss-difference diagnostics
+
+{_results_cpa_discussion(ml_tail_cpa, cross_model_cpa)}
+
 ### Supporting diagnostics
 
 {
@@ -110,16 +115,16 @@ def generate_results_discussion(
             ml_tail_stress=ml_tail_stress,
             feature_unavailability=feature_unavailability,
             combined_forecasts=combined_forecasts,
+            figure_manifest=figure_manifest,
         )
     }
 
 ### Not yet claimed
 
-{_cpa_claim_boundary_sentence(ml_tail_cpa, cross_model_cpa)}
 - DST attenuation rows are descriptive forecast evidence; structural DST causal identification is not claimed.
 - No hedge PnL, transaction-cost, or trading-alpha analysis is performed. The trigger table is a pre-open risk-monitoring diagnostic only.
 - Left-tail and right-tail outputs are both economic tail-risk surfaces for futures positions; neither side should be promoted beyond the sample, coverage, and inference gates without author review.
-- The current evidence does not create an automatic model-win statement; any manuscript claim still requires author review of sample gates, coverage, loss metrics, and inference diagnostics.
+- The current evidence does not create an automatic model-selection statement; any manuscript claim still requires author review of sample gates, coverage, loss metrics, and inference diagnostics.
 """
 
 
@@ -129,9 +134,9 @@ def _read_parquet_optional(path: Path) -> pl.DataFrame:
     return pl.read_parquet(path)
 
 
-def _cpa_claim_boundary_sentence(cpa: pl.DataFrame, cross_model_cpa: pl.DataFrame) -> str:
+def _results_cpa_discussion(cpa: pl.DataFrame, cross_model_cpa: pl.DataFrame) -> str:
     if cpa.is_empty() and cross_model_cpa.is_empty():
-        return "- Instrumented conditional predictive ability is not implemented in the current artifacts; the reported DM and MCS outputs are unconditional average-sample forecast-comparison diagnostics."
+        return "- Instrumented CPA conditional loss-difference diagnostics are not implemented in the current artifacts; the reported DM and MCS outputs are unconditional average-sample forecast-comparison diagnostics."
     ok_rows = 0
     if "inference_status" in cpa.columns:
         ok_rows = int(cpa.filter(pl.col("inference_status").str.starts_with("ok")).height)
@@ -142,12 +147,14 @@ def _cpa_claim_boundary_sentence(cpa: pl.DataFrame, cross_model_cpa: pl.DataFram
         )
     tail_side_count = _unique_count(cpa, "tail_side")
     cross_rows = int(cross_model_cpa.height)
-    return (
-        f"- Instrumented conditional predictive ability appears as a side-specific ML-tail "
-        f"information-ladder diagnostic across `{tail_side_count}` tail side(s), with `{cpa.height}` registered row(s), of which `{ok_rows}` pass "
-        "their HAC-Wald gates. "
-        f"Registered cross-model CPA contributes `{cross_rows}` additional conditional loss-difference row(s), of which `{cross_ok_rows}` pass their gates. "
-        "CPA does not generate VaR/ES forecasts, does not replace DM/MCS, and does not by itself establish a model-win claim."
+    loss_families = _unique_values(cpa, "loss_family")
+    cross_loss_families = _unique_values(cross_model_cpa, "loss_family")
+    return "\n".join(
+        [
+            f"- The ML-tail information-ladder CPA artifact is a conditional loss-difference diagnostic across `{tail_side_count}` tail side(s), with `{cpa.height}` registered row(s), `{ok_rows}` HAC-Wald gate pass(es), and loss families {loss_families}.",
+            f"- The registered cross-model CPA artifact is a conditional loss-difference diagnostic with `{cross_rows}` row(s), `{cross_ok_rows}` HAC-Wald gate pass(es), and loss families {cross_loss_families}.",
+            "- Quantile-loss CPA and FZ-loss CPA are downstream inference over existing loss differentials; CPA does not generate VaR/ES forecasts and does not replace DM/MCS.",
+        ]
     )
 
 
@@ -245,6 +252,7 @@ def _results_ml_tail_headline_discussion(
             "`ml_tail_metrics.parquet` defines the headline ML-tail information-set ladder for this run.",
             f"- The headline artifact contains `{information_sets}` information sets, `{tail_levels}` tail level(s), and `{tail_side_count}` tail side(s); the retained headline model rows are {models}.",
             f"- The implemented ML-tail registry is {implemented}, but the headline ladder should be read only from `ml_tail_metrics.parquet`.",
+            "- The ladder reports downside-risk and upside-risk surfaces separately. The registered artifacts show different left/right patterns, and the generator does not assume that the two sides share the same economic mechanism.",
             "- The ladder is used to assess candidate incremental U.S.-close information under strict common-sample rules; it does not by itself establish forecast improvement.",
         ]
     )
@@ -300,6 +308,7 @@ def _results_supporting_diagnostics_discussion(
     ml_tail_stress: pl.DataFrame,
     feature_unavailability: pl.DataFrame,
     combined_forecasts: pl.DataFrame,
+    figure_manifest: Mapping[str, object],
 ) -> str:
     table_sentence = _diagnostic_table_sentence(paths)
     severity_sentence = _severity_discussion_sentence(
@@ -324,6 +333,7 @@ def _results_supporting_diagnostics_discussion(
         if not feature_unavailability.is_empty()
         else "Feature-unavailability diagnostics are empty or not available for this run."
     )
+    figure_sentence = _figure_reference_discussion(figure_manifest)
     return "\n".join(
         [
             f"- {table_sentence}",
@@ -332,8 +342,39 @@ def _results_supporting_diagnostics_discussion(
             f"- {trigger_sentence}",
             f"- Stress-window diagnostics contain `{stress_rows}` rows, and {murphy_sentence}",
             f"- {feature_sentence}",
+            figure_sentence,
         ]
     )
+
+
+def _figure_reference_discussion(figure_manifest: Mapping[str, object]) -> str:
+    figures = figure_manifest.get("figures")
+    if not isinstance(figures, list) or not figures:
+        return "- Figure manifest references are not available for this run."
+    lines = ["- Figure manifest references:"]
+    seen: set[str] = set()
+    for item in figures:
+        if not isinstance(item, Mapping):
+            continue
+        if str(item.get("format")) != "png":
+            continue
+        name = str(item.get("name") or "unknown_figure")
+        if name in seen:
+            continue
+        seen.add(name)
+        path = str(item.get("path") or "missing")
+        sources = item.get("source_artifacts")
+        if isinstance(sources, list) and sources:
+            source_text = ", ".join(str(source) for source in sources)
+        else:
+            source_text = "not recorded"
+        claim_scope = str(item.get("claim_scope") or "not recorded")
+        lines.append(
+            f"  - Figure: {name} (Source: {source_text}; Claim scope: {claim_scope}; File: {path})."
+        )
+    if len(lines) == 1:
+        return "- Figure manifest references are present but do not include PNG entries for manuscript review."
+    return "\n".join(lines)
 
 
 def _analysis_not_available(label: str) -> str:
@@ -536,14 +577,14 @@ def _combine_forecasts_for_snapshot(
 def _trigger_discussion_sentence(forecasts: pl.DataFrame) -> str:
     required = {"model_name", "information_set", "tail_level", "var_forecast", "realized_loss"}
     if forecasts.is_empty() or not required.issubset(forecasts.columns):
-        return "The hedge-trigger diagnostic has not yet been performed for this run; it would be descriptive and not hedge PnL, transaction-cost, or trading-alpha evidence."
+        return "The hedge-trigger diagnostic has not yet been performed for this run; it would be descriptive trigger evidence only."
     valid = forecasts.filter(
         pl.col("var_forecast").is_not_null()
         & pl.col("realized_loss").is_not_null()
         & pl.col("is_valid_forecast").fill_null(True)
     )
     if valid.is_empty():
-        return "The hedge-trigger diagnostic has no valid forecast rows; it remains descriptive and not hedge PnL, transaction-cost, or trading-alpha evidence."
+        return "The hedge-trigger diagnostic has no valid forecast rows; it remains descriptive trigger evidence only."
     group_columns = [
         column
         for column in (

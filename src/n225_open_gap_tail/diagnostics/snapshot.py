@@ -1,13 +1,15 @@
+# ruff: noqa: E501
 from __future__ import annotations
 
 import hashlib
 import json
 import math
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -79,6 +81,42 @@ class SnapshotError(RuntimeError):
     """Raised when a snapshot gate cannot be satisfied."""
 
 
+def write_results_snapshot_from_run(
+    *,
+    settings: Settings,
+    run_id: str | None = None,
+) -> SnapshotResult:
+    """Write docs/results_snapshot.md from a completed full tail-risk run.
+
+    This is intentionally different from the historical smoke snapshot helper below:
+    it does not fetch vendors and it summarizes the durable gold modeling sample.
+    """
+    run_dir = _resolve_snapshot_run_dir(settings=settings, run_id=run_id)
+    manifest = _read_json_dict(run_dir / "manifest.json")
+    resolved_run_id = str(manifest.get("run_id") or run_dir.name)
+    paths = _full_run_snapshot_paths(settings=settings, run_dir=run_dir, manifest=manifest)
+    panel = _read_parquet_optional(paths["modeling_panel"])
+    docs_path = Path("docs/results_snapshot.md")
+    docs_path.parent.mkdir(parents=True, exist_ok=True)
+    docs_path.write_text(
+        _full_run_results_markdown(
+            run_dir=run_dir,
+            manifest=manifest,
+            paths=paths,
+        ),
+        encoding="utf-8",
+    )
+    return SnapshotResult(
+        snapshot_id=resolved_run_id,
+        snapshot_dir=run_dir,
+        docs_results_path=docs_path,
+        target_rows=panel.height,
+        model_status=str(
+            manifest.get("ml_tail_eval_status") or manifest.get("benchmark_eval_status")
+        ),
+    )
+
+
 def build_snapshot_id(
     *,
     start: str,
@@ -90,6 +128,569 @@ def build_snapshot_id(
     clean_end = end.replace("-", "")
     compact_ts = run_ts_utc.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
     return f"{clean_start}_{clean_end}_{compact_ts}_commit_{git_commit[:8]}"
+
+
+def _resolve_snapshot_run_dir(*, settings: Settings, run_id: str | None) -> Path:
+    runs_dir = settings.reports_dir / "runs"
+    if run_id and run_id != "latest":
+        run_dir = runs_dir / run_id
+        if not (run_dir / "manifest.json").exists():
+            raise SnapshotError(f"Run manifest not found: {run_dir / 'manifest.json'}")
+        return run_dir
+    candidates = sorted(
+        (path for path in runs_dir.glob("tailrisk_*") if (path / "manifest.json").exists()),
+        key=lambda path: (path / "manifest.json").stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        raise SnapshotError("No completed tail-risk run found under reports/runs")
+    return candidates[0]
+
+
+def _read_json_dict(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    return cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
+
+
+def _full_run_snapshot_paths(
+    *,
+    settings: Settings,
+    run_dir: Path,
+    manifest: dict[str, object],
+) -> dict[str, Path]:
+    run_id = str(manifest.get("run_id") or run_dir.name)
+    gold_artifacts = _dict_value(manifest.get("gold_artifacts"))
+    gold_panel_root = (
+        settings.gold_data_dir / "tailrisk_panel" / "schema_version=1" / f"run_id={run_id}"
+    )
+    leakage_root = (
+        settings.gold_data_dir / "leakage_summary" / "schema_version=1" / f"run_id={run_id}"
+    )
+    return {
+        "manifest": run_dir / "manifest.json",
+        "data_vintage": run_dir / "data_vintage.json",
+        "modeling_panel": Path(
+            str(gold_artifacts.get("modeling_panel", gold_panel_root / "modeling_panel.parquet"))
+        ),
+        "target_audit": Path(
+            str(gold_artifacts.get("target_audit", gold_panel_root / "target_audit.parquet"))
+        ),
+        "calendar_map": Path(
+            str(gold_artifacts.get("calendar_map", gold_panel_root / "calendar_map.parquet"))
+        ),
+        "feature_coverage": Path(
+            str(
+                gold_artifacts.get("feature_coverage", gold_panel_root / "feature_coverage.parquet")
+            )
+        ),
+        "leakage_summary": leakage_root / "summary.json",
+        "benchmark_status": run_dir / "metrics" / "benchmark_status.json",
+        "benchmark_metrics": run_dir / "metrics" / "benchmark_metrics.parquet",
+        "ml_tail_status": run_dir / "metrics" / "ml_tail_status.json",
+        "ml_tail_metrics": run_dir / "metrics" / "ml_tail_metrics.parquet",
+        "ml_tail_metrics_per_model": run_dir / "metrics" / "ml_tail_metrics_per_model.parquet",
+        "ml_tail_result_matrix": run_dir / "metrics" / "ml_tail_result_matrix.parquet",
+        "benchmark_stress_windows": run_dir / "metrics" / "benchmark_stress_windows.parquet",
+        "ml_tail_stress_windows": run_dir / "metrics" / "ml_tail_stress_windows.parquet",
+        "latex_dir": run_dir / "latex" / "tables",
+    }
+
+
+def _dict_value(value: object) -> dict[str, object]:
+    return value if isinstance(value, dict) else {}
+
+
+def _read_parquet_optional(path: Path) -> pl.DataFrame:
+    if not path.exists():
+        return pl.DataFrame()
+    return pl.read_parquet(path)
+
+
+def _full_run_results_markdown(
+    *,
+    run_dir: Path,
+    manifest: dict[str, object],
+    paths: dict[str, Path],
+) -> str:
+    data_vintage = _read_json_dict(paths["data_vintage"])
+    benchmark_status = _read_json_dict(paths["benchmark_status"])
+    ml_tail_status = _read_json_dict(paths["ml_tail_status"])
+    leakage_summary = _read_json_dict(paths["leakage_summary"])
+    panel = _read_parquet_optional(paths["modeling_panel"])
+    target = _read_parquet_optional(paths["target_audit"])
+    calendar = _read_parquet_optional(paths["calendar_map"])
+    feature_coverage = _read_parquet_optional(paths["feature_coverage"])
+    benchmark_metrics = _read_parquet_optional(paths["benchmark_metrics"])
+    ml_tail_metrics = _read_parquet_optional(paths["ml_tail_metrics"])
+    result_matrix = _read_parquet_optional(paths["ml_tail_result_matrix"])
+    benchmark_stress = _read_parquet_optional(paths["benchmark_stress_windows"])
+    ml_tail_stress = _read_parquet_optional(paths["ml_tail_stress_windows"])
+
+    run_id = str(manifest.get("run_id") or run_dir.name)
+    panel_bounds = _panel_bounds(panel)
+    forecast_bounds = _forecast_sample_bounds(panel)
+    metadata_table = _markdown_table(
+        ("Field", "Value"),
+        [
+            ("Run ID", f"`{run_id}`"),
+            ("Artifact root", f"`{run_dir}`"),
+            ("Claim level", _code(manifest.get("claim_level") or manifest.get("claims_level"))),
+            ("Requested window", _code(manifest.get("window"))),
+            ("Combined clean start", _code(manifest.get("combined_clean_start"))),
+            ("Gold panel dates", panel_bounds),
+            ("Forecast sample dates", forecast_bounds),
+            ("Git commit", _code(manifest.get("git_commit"))),
+            ("Git dirty", _code(manifest.get("git_dirty"))),
+            ("FRED vintage safe", _code(data_vintage.get("fred_vintage_safe"))),
+        ],
+    )
+    panel_table = _markdown_table(
+        ("Measure", "Value"),
+        [
+            ("Gold modeling rows", str(panel.height)),
+            ("Gold columns", str(panel.width)),
+            ("Target-audit rows", str(target.height)),
+            ("Clean target rows", str(_bool_sum(target, "clean_sample"))),
+            ("Forecast-sample rows", str(_bool_sum(panel, "forecast_sample"))),
+            (
+                "Rows before combined clean start",
+                str(_count_value(panel, "forecast_sample_reason", "before_combined_clean_start")),
+            ),
+            (
+                "Target-not-clean rows",
+                str(_count_value(panel, "forecast_sample_reason", "target_not_clean")),
+            ),
+            (
+                "Mapping excluded rows",
+                str(
+                    _count_value(
+                        panel, "forecast_sample_reason", "mapping_status_not_normal_trading"
+                    )
+                ),
+            ),
+        ],
+    )
+    target_table = _counts_table(target, "missing_reason", "Target audit reason")
+    calendar_table = _markdown_table(
+        ("Measure", "Value"),
+        [
+            (
+                "Normal trading mappings",
+                str(_count_value(calendar, "mapping_status", "normal_trading")),
+            ),
+            (
+                "U.S./Japan desync mappings",
+                str(_count_value(calendar, "mapping_status", "us_jp_desync")),
+            ),
+            ("NYSE early-close mappings", str(_bool_sum(calendar, "us_early_close_flag"))),
+            ("EDT rows", str(_count_value(calendar, "dst_regime", "EDT"))),
+            ("EST rows", str(_count_value(calendar, "dst_regime", "EST"))),
+        ],
+    )
+    feature_table = _feature_coverage_table(feature_coverage)
+    leakage_table = _markdown_table(
+        ("Field", "Value"),
+        [
+            ("Status", _code(leakage_summary.get("status"))),
+            ("Rows audited", _code(leakage_summary.get("rows"))),
+            ("Failures", _code(leakage_summary.get("failures"))),
+            ("Warnings", _code(leakage_summary.get("warnings"))),
+            ("Panel row count", _code(leakage_summary.get("panel_row_count"))),
+            ("Panel signature seed", _code(leakage_summary.get("panel_signature_hash_seed"))),
+            ("Panel signature", _code(leakage_summary.get("panel_signature"))),
+        ],
+    )
+    benchmark_table = _metrics_table(benchmark_metrics)
+    ml_headline_table = _metrics_table(ml_tail_metrics)
+    result_matrix_table = _result_matrix_summary_table(result_matrix)
+    benchmark_status_label = (
+        manifest.get("benchmark_eval_status")
+        or benchmark_status.get("status")
+        or benchmark_status.get("common_sample_status")
+        or "unknown"
+    )
+    ml_tail_components = _join_list(ml_tail_status.get("implemented_components"))
+    stress_table = _markdown_table(
+        ("Suite", "Rows", "Window labels"),
+        [
+            (
+                "benchmark",
+                str(benchmark_stress.height),
+                _unique_values(benchmark_stress, "window_name"),
+            ),
+            ("ml_tail", str(ml_tail_stress.height), _unique_values(ml_tail_stress, "window_name")),
+        ],
+    )
+    artifact_table = _artifact_table(paths)
+
+    return f"""# Results Snapshot
+
+!!! warning "Research-candidate full-run artifact"
+    This page is generated from `{run_id}`. It summarizes the durable gold modeling sample and run outputs, not the older bounded access-check snapshot. It is still a research-candidate artifact: final manuscript claims require a clean committed run and author review of the tables and notes.
+
+## Discussion Q&A
+
+### What is this project testing?
+
+It tests whether timestamp-safe information available after the U.S. cash close helps forecast the downside tail of the next Osaka Nikkei 225 Futures day-session open.
+
+- The object is tail risk, not average return prediction or a trading signal.
+- The comparison is organized as an information ladder: Japan-only history first, then U.S. close core, then Japan proxy ETFs, then Asia proxy ETFs.
+- The current page reports what the pipeline produced; it does not automatically claim that any model is best.
+
+### What exactly is being forecast?
+
+The primary target is the loss version of the settle-to-open Nikkei futures gap for the OSE day-session open.
+
+- A positive realized loss means the opening gap moved against the lower-tail risk direction being evaluated.
+- Roll/SQ windows and invalid reference prices are excluded from clean target evidence.
+- The residual U.S.-close mark target is disabled in this run because there is no licensed timestamped intraday Nikkei mark.
+
+### Why is timing the central issue?
+
+The forecast origin is the U.S. close plus vendor lag, and it must occur before the OSE target open.
+
+- Every joined predictor is audited against `feature_available_ts_utc <= model_cutoff_ts_utc < target_open_ts_utc`.
+- FRED features are treated with timestamp-safe release lags; FRED historical values are not ALFRED vintage-safe.
+- Leakage audit failures are zero in this run, but warnings remain visible below rather than hidden.
+
+### What has been implemented?
+
+The external benchmark floor and the ML-tail suite are implemented and have completed artifacts in this run.
+
+- Benchmark models include target-history baselines and GARCH/EVT-style econometric floors.
+- ML-tail models include direct LightGBM quantile, location-scale LightGBM, and standardized-loss POT-GPD.
+- The headline ML-tail table remains strict: it currently keeps direct quantile rows because the newer tail-model variants have shorter common coverage.
+
+### How should broad readers interpret the metrics?
+
+Coverage diagnostics ask whether VaR exceptions are too frequent or too rare; quantile loss scores VaR accuracy; FZ loss scores VaR-ES pairs.
+
+- Lower quantile loss is better only within a common sample and claim boundary.
+- FZ loss is only meaningful for valid VaR-ES pairs and needs enough exceptions to avoid short-sample overinterpretation.
+- Restricted result-matrix rows are useful diagnostics, not replacements for the headline information-set ladder.
+
+### What is the current bottom line?
+
+The pipeline is now producing full-run research-candidate evidence from the durable gold layer.
+
+- The gold sample starts at the dynamic combined clean start, not the 2016 cache lower bound.
+- Benchmark and ML-tail suites both completed with zero recorded forecast failures.
+- Before manuscript claims, rerun from a clean commit and review the restricted result matrix, inference gates, and vintage limitations.
+
+## Metadata
+
+{metadata_table}
+
+- `combined_clean_start` is the modeling lower bound; dates before it remain audit history rather than forecast evidence.
+- `git_dirty=True` means this exact run was produced with local uncommitted changes; use a clean committed rerun for manuscript tables.
+- `fred_vintage_safe=False` is an explicit limitation: FRED data are current historical values with conservative release lag, not real-time vintage observations.
+
+## Pipeline Structure
+
+```mermaid
+flowchart LR
+  A["Vendor and calendar sources"] --> B["Bronze cache"]
+  B --> C["Silver normalized features"]
+  C --> D["Gold modeling panel"]
+  D --> E["Leakage and coverage gates"]
+  E --> F["Benchmark models"]
+  E --> G["ML-tail model registry"]
+  F --> H["Metrics and loss matrices"]
+  G --> H
+  H --> I["DM, MCS, result matrix, stress diagnostics"]
+  I --> J["Results snapshot"]
+```
+
+- Data-access and cache artifacts live under `data/bronze` and `data/silver`.
+- Durable modeling evidence lives under `data/gold`; forecast/evaluation/reporting read from gold and reports.
+- Run-specific forecasts, metrics, diagnostics, and LaTeX tables live under `reports/runs/<run_id>`.
+
+## Gold Panel Construction
+
+{panel_table}
+
+{target_table}
+
+- The cache lower bound is 2016-07-19, but XLC/core predictor coverage pushes the actual forecast sample to the combined clean start.
+- Target exclusion is explicit: roll/SQ windows and the single missing reference price are carried as audit evidence, not silently dropped.
+- The forecast-sample reason column makes the sample boundary reproducible row by row.
+
+## Calendar And Timing Map
+
+{calendar_table}
+
+- The map covers EST/EDT, early closes, U.S./Japan holiday desynchronization, and normal trading alignments.
+- Desync rows are not treated as normal forecast rows.
+- The timing map is part of the leakage-bound gold artifact, not ad hoc evaluation logic.
+
+## Feature Coverage
+
+{feature_table}
+
+- U.S. core, proxy ETFs, SPY late-session features, CBOE VIX, FRED rates, and FRED H.10 FX are separated by source family and block.
+- Credit-spread FRED features are enriched/optional and visibly late-starting, so they do not move the core clean start.
+- Feature coverage should be read together with the leakage summary; high coverage alone is not enough without timestamp validity.
+
+## Leakage Audit
+
+{leakage_table}
+
+- Zero failures means no audited row violated the hard timestamp invariant.
+- Warnings are retained because they identify conservative-lag or missing-feature situations that may matter for interpretation.
+- The panel signature is deterministic and binds the leakage check to the current gold panel/config.
+
+## Benchmark Suite
+
+Status: `{benchmark_status_label}`; forecast rows: `{benchmark_status.get("forecast_rows")}`; metric rows: `{benchmark_status.get("metric_rows")}`; failures: `{benchmark_status.get("failures")}`.
+
+{benchmark_table}
+
+- Benchmarks set the target-history/econometric floor that ML models should be interpreted against.
+- The table is not a leaderboard by itself; coverage, exception counts, quantile loss, and FZ loss must be read together.
+- Common-sample rows are reported directly so readers can see the effective evidence size.
+
+## ML-Tail Headline Ladder
+
+Status: `{ml_tail_status.get("status")}`; implemented models: {ml_tail_components}; forecast rows: `{ml_tail_status.get("forecast_rows")}`; failures: `{ml_tail_status.get("failures")}`.
+
+{ml_headline_table}
+
+- This headline table remains strict and currently reports direct LightGBM quantile across the information ladder.
+- Location-scale and POT-GPD are implemented, but their shorter common coverage keeps them out of the headline ladder.
+- The apparent improvement in quantile loss as blocks are added is descriptive until inference and coverage diagnostics are reviewed.
+
+## Result Matrix Layer
+
+{result_matrix_table}
+
+- The result matrix is the right place to compare direct quantile, location-scale, and POT-GPD on their restricted common dates.
+- It separates VaR-only losses from VaR-ES joint scoring, so VaR-only claims are not confused with ES claims.
+- Restricted direct-quantile performance is only a comparison anchor for the tail-model family; it does not replace the headline direct-quantile evidence.
+
+## Stress And Diagnostic Windows
+
+{stress_table}
+
+- Stress windows identify high-loss or high-volatility subsamples for robustness diagnostics.
+- These rows use reproducible full-sample classifiers in this first pass, so they should be described as diagnostics rather than a live stress classifier.
+- They are useful for finding whether model behavior changes in difficult regimes before writing manuscript discussion.
+
+## Artifact Index
+
+{artifact_table}
+
+- All paths above are local ignored artifacts; they are reproducible outputs, not tracked source files.
+- Forecast/reporting rebuilds should read these artifacts and must not call vendor APIs.
+- If this page is stale, rerun `just snapshot` after a completed `just full` or pass an explicit run id to the CLI snapshot command.
+"""
+
+
+def _code(value: object) -> str:
+    return f"`{value}`"
+
+
+def _join_list(value: object) -> str:
+    if isinstance(value, list):
+        return ", ".join(f"`{item}`" for item in value)
+    return _code(value)
+
+
+def _markdown_table(headers: tuple[str, ...], rows: Sequence[tuple[object, ...]]) -> str:
+    header = "| " + " | ".join(headers) + " |"
+    divider = "| " + " | ".join("---" for _ in headers) + " |"
+    body = ["| " + " | ".join(_markdown_cell(cell) for cell in row) + " |" for row in rows]
+    return "\n".join([header, divider, *body])
+
+
+def _markdown_cell(value: object) -> str:
+    text = "" if value is None else str(value)
+    return text.replace("|", "\\|").replace("\n", " ")
+
+
+def _panel_bounds(frame: pl.DataFrame) -> str:
+    if frame.is_empty() or "forecast_date" not in frame.columns:
+        return "`missing`"
+    values = frame.select(
+        pl.col("forecast_date").min().alias("start"),
+        pl.col("forecast_date").max().alias("end"),
+    ).row(0, named=True)
+    return f"`{values['start']} to {values['end']}`"
+
+
+def _forecast_sample_bounds(frame: pl.DataFrame) -> str:
+    if frame.is_empty() or not {"forecast_date", "forecast_sample"}.issubset(frame.columns):
+        return "`missing`"
+    filtered = frame.filter(pl.col("forecast_sample") == True)  # noqa: E712
+    if filtered.is_empty():
+        return "`empty`"
+    values = filtered.select(
+        pl.col("forecast_date").min().alias("start"),
+        pl.col("forecast_date").max().alias("end"),
+        pl.len().alias("rows"),
+    ).row(0, named=True)
+    return f"`{values['start']} to {values['end']} ({values['rows']} rows)`"
+
+
+def _bool_sum(frame: pl.DataFrame, column: str) -> int:
+    if frame.is_empty() or column not in frame.columns:
+        return 0
+    return int(frame.select(pl.col(column).fill_null(False).sum()).item() or 0)
+
+
+def _count_value(frame: pl.DataFrame, column: str, value: str) -> int:
+    if frame.is_empty() or column not in frame.columns:
+        return 0
+    return int(frame.filter(pl.col(column) == value).height)
+
+
+def _counts_table(frame: pl.DataFrame, column: str, label: str) -> str:
+    if frame.is_empty() or column not in frame.columns:
+        return _markdown_table((label, "Rows"), [("missing", "0")])
+    rows = [
+        (str(row[column]), str(row["len"]))
+        for row in frame.group_by(column).len().sort("len", descending=True).iter_rows(named=True)
+    ]
+    return _markdown_table((label, "Rows"), rows)
+
+
+def _feature_coverage_table(frame: pl.DataFrame) -> str:
+    required = {"source_family", "source_block", "missingness_rate"}
+    if frame.is_empty() or not required.issubset(frame.columns):
+        return _markdown_table(
+            ("Source family", "Block", "Features", "Mean missing", "Max missing"),
+            [("missing", "missing", "0", "n/a", "n/a")],
+        )
+    grouped = (
+        frame.group_by(["source_family", "source_block"])
+        .agg(
+            pl.len().alias("features"),
+            pl.mean("missingness_rate").alias("mean_missing"),
+            pl.max("missingness_rate").alias("max_missing"),
+        )
+        .sort(["source_family", "source_block"])
+    )
+    rows = [
+        (
+            row["source_family"],
+            row["source_block"],
+            row["features"],
+            _fmt_rate(row["mean_missing"]),
+            _fmt_rate(row["max_missing"]),
+        )
+        for row in grouped.iter_rows(named=True)
+    ]
+    return _markdown_table(
+        ("Source family", "Block", "Features", "Mean missing", "Max missing"),
+        rows,
+    )
+
+
+def _metrics_table(frame: pl.DataFrame) -> str:
+    columns = [
+        "model_name",
+        "information_set",
+        "rows",
+        "var_breach_rate",
+        "exceedance_count",
+        "mean_quantile_loss",
+        "mean_fz_loss",
+    ]
+    if frame.is_empty() or not set(columns).issubset(frame.columns):
+        return _markdown_table(tuple(columns), [("missing", "", "", "", "", "", "")])
+    rows = [
+        (
+            row["model_name"],
+            row["information_set"],
+            row["rows"],
+            _fmt_rate(row["var_breach_rate"]),
+            row["exceedance_count"],
+            _fmt_float(row["mean_quantile_loss"]),
+            _fmt_float(row["mean_fz_loss"]),
+        )
+        for row in frame.select(columns).iter_rows(named=True)
+    ]
+    return _markdown_table(
+        (
+            "Model",
+            "Information set",
+            "Rows",
+            "VaR breach rate",
+            "Exceptions",
+            "Mean quantile loss",
+            "Mean FZ loss",
+        ),
+        rows,
+    )
+
+
+def _result_matrix_summary_table(frame: pl.DataFrame) -> str:
+    columns = {"comparison_family", "comparison_axis", "sample_policy", "loss_family"}
+    if frame.is_empty() or not columns.issubset(frame.columns):
+        return _markdown_table(
+            ("Family", "Axis", "Loss", "Rows", "Common N", "Date range", "Joint exceptions"),
+            [("missing", "", "", "0", "n/a", "n/a", "n/a")],
+        )
+    grouped = (
+        frame.group_by(["comparison_family", "comparison_axis", "sample_policy", "loss_family"])
+        .agg(
+            pl.len().alias("rows"),
+            pl.min("common_n").alias("min_n"),
+            pl.max("common_n").alias("max_n"),
+            pl.min("date_start").alias("start"),
+            pl.max("date_end").alias("end"),
+            pl.min("joint_exception_count").alias("min_joint_exceptions"),
+            pl.max("joint_exception_count").alias("max_joint_exceptions"),
+        )
+        .sort(["comparison_family", "comparison_axis", "loss_family"])
+    )
+    rows = [
+        (
+            row["comparison_family"],
+            row["comparison_axis"],
+            row["loss_family"],
+            row["rows"],
+            f"{row['min_n']} to {row['max_n']}",
+            f"{row['start']} to {row['end']}",
+            f"{row['min_joint_exceptions']} to {row['max_joint_exceptions']}",
+        )
+        for row in grouped.iter_rows(named=True)
+    ]
+    return _markdown_table(
+        ("Family", "Axis", "Loss", "Rows", "Common N", "Date range", "Joint exceptions"),
+        rows,
+    )
+
+
+def _unique_values(frame: pl.DataFrame, column: str) -> str:
+    if frame.is_empty() or column not in frame.columns:
+        return "`missing`"
+    values = sorted(str(value) for value in frame[column].drop_nulls().unique().to_list())
+    return ", ".join(f"`{value}`" for value in values)
+
+
+def _artifact_table(paths: dict[str, Path]) -> str:
+    rows = [
+        (name, f"`{path}`", "yes" if path.exists() else "missing") for name, path in paths.items()
+    ]
+    return _markdown_table(("Artifact", "Path", "Exists"), rows)
+
+
+def _fmt_float(value: object) -> str:
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        return str(value)
+    if not math.isfinite(float(value)):
+        return str(value)
+    return f"{float(value):.6g}"
+
+
+def _fmt_rate(value: object) -> str:
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        return str(value)
+    if not math.isfinite(float(value)):
+        return str(value)
+    return f"{float(value):.3%}"
 
 
 def normalize_jquants_futures_rows(

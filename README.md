@@ -76,7 +76,7 @@ See `docs/data.md` for the data contract and source checklist.
 ## Repository Layout
 
 ```text
-src/n225_open_gap_tail/   Python package
+src/n225_open_gap_tail/   Source tree
 tests/                    Unit and smoke tests
 docs/                     Project notes and workflow docs
 data/                     Local data only; ignored by git
@@ -84,7 +84,9 @@ reports/                  Local model outputs; ignored by git
 notebooks/                Exploratory notebooks
 ```
 
-The Python package is organized by function rather than by research-stage labels:
+The source tree is organized by function rather than by research-stage labels. This repo
+runs in uv non-package mode (`tool.uv.package = false`); the code is not built or installed
+as a wheel.
 
 ```text
 n225_open_gap_tail/
@@ -106,21 +108,28 @@ n225_open_gap_tail/
 ## Data Utility Commands
 
 ```bash
-n225-open-gap-tail jquants-smoke
-n225-open-gap-tail massive-smoke
-n225-open-gap-tail fred-smoke
-n225-open-gap-tail calendar-build
-n225-open-gap-tail contracts-build
-n225-open-gap-tail snapshot
+PYTHONPATH=src uv run python -m n225_open_gap_tail.cli jquants-smoke
+PYTHONPATH=src uv run python -m n225_open_gap_tail.cli massive-smoke
+PYTHONPATH=src uv run python -m n225_open_gap_tail.cli fred-smoke
+PYTHONPATH=src uv run python -m n225_open_gap_tail.cli calendar-build
+PYTHONPATH=src uv run python -m n225_open_gap_tail.cli contracts-build
 ```
 
-These commands are debugging utilities, not the run workflow. They now write through
-the same cache vocabulary as the main pipeline: vendor payloads under `data/bronze/` and
-typed normalized outputs under `data/silver/`. The snapshot command writes bounded smoke
-artifacts under ignored `reports/snapshots/` and regenerates `docs/results_snapshot.md`.
+These commands are debugging utilities, not the run workflow. They write through the same
+cache vocabulary as the main pipeline: vendor payloads under `data/bronze/` and typed
+normalized outputs under `data/silver/`.
 
 For run work, use `just full`; do not mix utility smoke artifacts with research-run
 evidence.
+
+The manuscript-facing snapshot is generated separately from completed full-run artifacts:
+
+```bash
+just snapshot
+```
+
+It reads the latest completed `reports/runs/<run_id>` and durable `data/gold/` artifacts
+to regenerate `docs/results_snapshot.md` without calling vendors.
 
 ## Research-Grade Workflow
 

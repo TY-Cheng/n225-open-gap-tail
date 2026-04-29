@@ -384,30 +384,33 @@ def test_snapshot_command_reports_summary(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    snapshot_dir = tmp_path / "snapshot"
+    snapshot_dir = tmp_path / "tailrisk_run"
     docs_results = tmp_path / "docs" / "results_snapshot.md"
 
-    def fake_write_full_smoke_snapshot(**kwargs: object) -> SnapshotResult:
-        assert kwargs["start"] == "2022-01-01"
-        assert kwargs["end"] is None
+    def fake_write_results_snapshot_from_run(**kwargs: object) -> SnapshotResult:
+        assert kwargs["run_id"] == "latest"
         return SnapshotResult(
-            snapshot_id="snapshot_1",
+            snapshot_id="tailrisk_latest",
             snapshot_dir=snapshot_dir,
             docs_results_path=docs_results,
-            target_rows=25,
-            model_status="completed",
+            target_rows=250,
+            model_status="completed_lightgbm_ml_tail_models",
         )
 
-    monkeypatch.setattr(cli, "write_full_smoke_snapshot", fake_write_full_smoke_snapshot)
+    monkeypatch.setattr(
+        cli,
+        "write_results_snapshot_from_run",
+        fake_write_results_snapshot_from_run,
+    )
 
     result = CliRunner().invoke(app, ["snapshot"])
 
     assert result.exit_code == 0
-    assert "snapshot id: snapshot_1" in result.output
-    assert f"snapshot dir: {snapshot_dir}" in result.output
+    assert "run id: tailrisk_latest" in result.output
+    assert f"run dir: {snapshot_dir}" in result.output
     assert f"docs results snapshot: {docs_results}" in result.output
-    assert "target rows: 25" in result.output
-    assert "model status: completed" in result.output
+    assert "gold panel rows: 250" in result.output
+    assert "model status: completed_lightgbm_ml_tail_models" in result.output
 
 
 def test_build_panel_command_reports_summary(

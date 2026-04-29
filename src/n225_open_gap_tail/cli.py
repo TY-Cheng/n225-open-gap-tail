@@ -5,7 +5,7 @@ import typer
 
 from n225_open_gap_tail.config import load_settings, split_csv
 from n225_open_gap_tail.data_lake import MAIN_SAMPLE_START
-from n225_open_gap_tail.diagnostics.snapshot import write_full_smoke_snapshot
+from n225_open_gap_tail.diagnostics.snapshot import write_results_snapshot_from_run
 from n225_open_gap_tail.forecasting import (
     build_panel,
     evaluate_suite,
@@ -242,21 +242,19 @@ def contracts_build(
 
 @app.command("snapshot")
 def snapshot(
-    start: str = typer.Option("2022-01-01", help="Start date in YYYY-MM-DD."),
-    end: str = typer.Option("", help="End date in YYYY-MM-DD. Defaults to today."),
+    run_id: str = typer.Option("latest", help="Run id. Defaults to the latest tail-risk run."),
 ) -> None:
-    """Run the 2022-present full-smoke results snapshot."""
+    """Write docs/results_snapshot.md from a completed full tail-risk run."""
     settings = load_settings()
-    result = write_full_smoke_snapshot(
+    result = write_results_snapshot_from_run(
         settings=settings,
-        start=start,
-        end=end or None,
+        run_id=run_id,
     )
 
-    typer.echo(f"snapshot id: {result.snapshot_id}")
-    typer.echo(f"snapshot dir: {result.snapshot_dir}")
+    typer.echo(f"run id: {result.snapshot_id}")
+    typer.echo(f"run dir: {result.snapshot_dir}")
     typer.echo(f"docs results snapshot: {result.docs_results_path}")
-    typer.echo(f"target rows: {result.target_rows}")
+    typer.echo(f"gold panel rows: {result.target_rows}")
     typer.echo(f"model status: {result.model_status}")
 
 
@@ -361,3 +359,7 @@ def _format_statuses(statuses: dict[str, int]) -> str:
     if not statuses:
         return "<none>"
     return ", ".join(f"{ticker}={status}" for ticker, status in statuses.items())
+
+
+if __name__ == "__main__":
+    app()

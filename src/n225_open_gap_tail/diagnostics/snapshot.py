@@ -382,7 +382,6 @@ def _full_run_results_markdown(
     return f"""---
 hide:
   - navigation
-  - toc
 ---
 
 # Results Snapshot

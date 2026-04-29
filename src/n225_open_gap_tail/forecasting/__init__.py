@@ -11,6 +11,7 @@ from n225_open_gap_tail.panel.leakage import *
 from n225_open_gap_tail.forecasting.evaluation import *
 from n225_open_gap_tail.forecasting.artifacts import *
 from n225_open_gap_tail.models.benchmark import *
+from n225_open_gap_tail.models.benchmark_advanced import *
 from n225_open_gap_tail.models.ml_tail import *
 from n225_open_gap_tail.models.ml_tail_oof import *
 from n225_open_gap_tail.metrics.information import *

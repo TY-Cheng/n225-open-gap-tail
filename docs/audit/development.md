@@ -58,10 +58,10 @@ Audit checklist before adding features:
 Current implementation status:
 
 - Main data-engineering path is implemented: source probes, cache-first bronze/silver reads, durable gold panel artifacts, calendar map, target audit, feature coverage, leakage binding, and run-specific reports.
-- Benchmark floor is implemented for historical, rolling, EWMA/vol-scaled, GARCH/GJR, and GJR-GARCH-EVT style models behind gates. CAViaR, direct FZ-loss or CARE-style VaR-ES, Taylor ALD, and GAS-style models remain registered gaps until explicit implementations and tests exist.
+- Benchmark floor is implemented for historical, rolling, EWMA/vol-scaled, GARCH/GJR, and GJR-GARCH-EVT style models behind gates. The advanced benchmark registry is wired as a nonblocking diagnostic layer, but CAViaR, direct FZ-loss, CARE/expectile, Taylor ALD, and GAS-style models still emit unavailable diagnostics rather than empirical forecast rows until explicit optimizers and tests exist.
 - ML tail path is implemented for `lightgbm_direct_quantile`, fully out-of-fold `lightgbm_location_scale`, and fully out-of-fold `lightgbm_standardized_loss_pot_gpd` over the registered nested information ladder.
 - Result governance is implemented for headline metrics, per-model diagnostics, result matrix artifacts, feature-unavailability diagnostics, block-bootstrap DM, HLN Tmax MCS, Murphy diagnostics, stress windows, and DST attenuation records.
-- Still-missing manuscript-facing outputs include a standalone ES severity reduction table and hedge-trigger diagnostics. Existing `mean_exceedance_severity` fields and `ml_tail_dst_attenuation.parquet` are useful artifacts, but they should not be described as complete risk-management or mechanism tables until the explicit report layer exists.
+- The report layer now exports manuscript-facing ES severity, diagnostic VaR-trigger, DST attenuation, claim-scope, and result-matrix summary table fragments. These are still governance/reporting artifacts: ES severity is conditional on VaR exceptions, VaR-trigger rows are not hedge PnL or trading-alpha evidence, and DST attenuation is descriptive forecast evidence rather than a structural causal mechanism.
 
 Implement the pipeline in this order:
 
@@ -132,10 +132,10 @@ Implement the pipeline in this order:
 7A. Econometric tail-risk baselines
    - Implement GARCH-t or GJR-GARCH-t if the dependency is available.
    - Implement GJR-GARCH-EVT on standardized residuals.
-   - Implement CAViaR as a main pre-LightGBM benchmark gate; this is not yet implemented.
-   - Implement a direct FZ-loss or CARE-style VaR-ES benchmark as a main pre-LightGBM benchmark gate; this is not yet implemented.
-   - Implement Taylor-style ALD VaR-ES as a main advanced benchmark when stable on the audited sample; this is not yet implemented.
-   - Treat GAS-t or score-driven VaR-ES models as appendix or fallback benchmarks unless the implementation is stable and tested.
+   - Implement CAViaR as a main pre-LightGBM benchmark gate; the registry currently records it as an unavailable advanced diagnostic, not a forecast-producing model.
+   - Implement a direct FZ-loss or CARE/expectile-style VaR-ES benchmark as a main pre-LightGBM benchmark gate; the registry currently records it as unavailable advanced diagnostics.
+   - Implement Taylor-style ALD VaR-ES as a main advanced benchmark when stable on the audited sample; the registry currently records it as unavailable advanced diagnostics.
+   - Treat GAS-t or score-driven VaR-ES models as appendix or fallback benchmarks unless the implementation is stable and tested; the registry currently records them as unavailable advanced diagnostics.
    - If a main advanced benchmark is numerically unstable or sample-inadequate, label it unavailable with a reason; do not replace it with weak evidence.
    - Save these metrics before LightGBM tuning.
 
@@ -186,9 +186,9 @@ Implement the pipeline in this order:
     - Build incremental-information tables in this order:
       Japan-only, Japan plus U.S. close core, Japan plus U.S. close core plus Japan proxy,
       and Japan plus U.S. close core plus Japan proxy plus Asia proxy.
-    - Build a DST absorption table with the absorption coefficient and its component gains by EST/EDT regime. The current `ml_tail_dst_attenuation.parquet` artifact provides the core attenuation records; a final paper table still needs review and formatting.
-    - Build a main ES severity reduction table reporting exceedance severity changes at the 2.5% ES level after adding U.S. close information. Do not treat generic result-matrix severity fields as this table until the report layer makes the comparison explicit.
-    - Build secondary hedge-trigger diagnostics with fixed thresholds, fixed cost assumptions, false-positive rate, missed-event rate, turnover, and loss avoided. These remain unimplemented unless an explicit artifact is present.
+    - Use the exported DST attenuation table with the absorption coefficient and its component gains by EST/EDT regime as descriptive forecast evidence. Do not call it a structural causal mechanism without a separate registered identification design.
+    - Use the exported ES severity table for exceedance-severity diagnostics. It reports severity conditional on VaR exceptions and should be reviewed before being converted into manuscript prose.
+    - Use the exported VaR-trigger diagnostic table only as a pre-open risk-monitoring diagnostic. It reports a fixed within-model VaR trigger, false alarms, missed exceptions, and triggered exception severity; it does not estimate hedge PnL, costs, turnover, or loss avoided.
     - Treat hedge-trigger results as pre-open risk-management diagnostics, not trading-profit claims.
 
 Acceptance criteria for each implementation phase:

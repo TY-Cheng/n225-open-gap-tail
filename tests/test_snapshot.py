@@ -435,6 +435,7 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
         "information_set": "japan_only",
         "rows": 1,
         "var_breach_rate": 0.0,
+        "expected_breach_rate": 0.05,
         "exceedance_count": 0,
         "mean_quantile_loss": 0.1,
         "mean_fz_loss": -1.0,
@@ -482,7 +483,22 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
         encoding="utf-8",
     )
     (metrics_dir / "benchmark_status.json").write_text(
-        json.dumps({"status": "completed", "forecast_rows": 1, "metric_rows": 1, "failures": 0}),
+        json.dumps(
+            {
+                "status": "completed",
+                "forecast_rows": 1,
+                "metric_rows": 1,
+                "failures": 0,
+                "benchmark_floor_status": "completed",
+                "benchmark_floor_forecast_rows": 1,
+                "benchmark_floor_metric_rows": 1,
+                "benchmark_floor_failures": 0,
+                "benchmark_advanced_status": "completed_nonblocking",
+                "benchmark_advanced_forecast_rows": 0,
+                "benchmark_advanced_diagnostic_rows": 2,
+                "benchmark_advanced_failures": 0,
+            }
+        ),
         encoding="utf-8",
     )
     (metrics_dir / "ml_tail_status.json").write_text(
@@ -526,7 +542,12 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     assert result.snapshot_id == run_id
     assert "Discussion Q&A" in rendered
     assert "Gold modeling rows" in rendered
-    assert "not the older bounded access-check snapshot" in rendered
+    assert "older" in rendered
+    assert "bounded access-check snapshot" in rendered
+    assert "Coverage review:" in rendered
+    assert "must not be read as forecast improvement" in rendered
+    assert "advanced benchmark registry is wired as nonblocking diagnostics" in rendered
+    assert "Advanced benchmark families are wired as nonblocking diagnostics" in rendered
     assert "Smoke-only artifact" not in rendered
 
 

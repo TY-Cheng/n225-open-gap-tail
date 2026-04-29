@@ -223,7 +223,7 @@ structural gaps such as SPY late-session volume from FRED release-lag handling.
 ML tail also writes a result-matrix layer under `metrics/` for model-family audit:
 `ml_tail_result_matrix.parquet`, `ml_tail_result_matrix_sample_audit.parquet`,
 `ml_tail_result_matrix_dm.parquet`, `ml_tail_result_matrix_mcs.parquet`, and
-`ml_tail_result_matrix_notes.md`. This layer separates VaR-only comparisons
+the run-specific `ml_tail_result_matrix_notes.md` artifact. This layer separates VaR-only comparisons
 (`var_quantile_loss`, coverage, exception diagnostics) from VaR-ES joint scoring
 (`var_es_fz_loss`) and uses restricted common samples. It does not replace the headline
 ML tail ladder in `ml_tail_metrics.parquet`.

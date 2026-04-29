@@ -191,9 +191,22 @@ def _full_run_snapshot_paths(
         "ml_tail_metrics": run_dir / "metrics" / "ml_tail_metrics.parquet",
         "ml_tail_metrics_per_model": run_dir / "metrics" / "ml_tail_metrics_per_model.parquet",
         "ml_tail_result_matrix": run_dir / "metrics" / "ml_tail_result_matrix.parquet",
+        "ml_tail_result_matrix_dm": run_dir / "metrics" / "ml_tail_result_matrix_dm.parquet",
+        "ml_tail_result_matrix_mcs": run_dir / "metrics" / "ml_tail_result_matrix_mcs.parquet",
         "benchmark_stress_windows": run_dir / "metrics" / "benchmark_stress_windows.parquet",
         "ml_tail_stress_windows": run_dir / "metrics" / "ml_tail_stress_windows.parquet",
         "latex_dir": run_dir / "latex" / "tables",
+        "claim_scope_table": run_dir / "latex" / "tables" / "tailrisk_claim_scope_table.tex",
+        "es_severity_table": run_dir / "latex" / "tables" / "tailrisk_es_severity_table.tex",
+        "hedge_trigger_table": run_dir
+        / "latex"
+        / "tables"
+        / "tailrisk_hedge_trigger_diagnostics_table.tex",
+        "dst_attenuation_table": run_dir / "latex" / "tables" / "ml_tail_dst_attenuation_table.tex",
+        "result_matrix_summary_table": run_dir
+        / "latex"
+        / "tables"
+        / "ml_tail_result_matrix_summary_table.tex",
     }
 
 
@@ -223,6 +236,7 @@ def _full_run_results_markdown(
     feature_coverage = _read_parquet_optional(paths["feature_coverage"])
     benchmark_metrics = _read_parquet_optional(paths["benchmark_metrics"])
     ml_tail_metrics = _read_parquet_optional(paths["ml_tail_metrics"])
+    ml_tail_metrics_per_model = _read_parquet_optional(paths["ml_tail_metrics_per_model"])
     result_matrix = _read_parquet_optional(paths["ml_tail_result_matrix"])
     benchmark_stress = _read_parquet_optional(paths["benchmark_stress_windows"])
     ml_tail_stress = _read_parquet_optional(paths["ml_tail_stress_windows"])
@@ -302,8 +316,16 @@ def _full_run_results_markdown(
         ],
     )
     benchmark_table = _metrics_table(benchmark_metrics)
+    benchmark_layer_table = _benchmark_layer_table(benchmark_status)
     ml_headline_table = _metrics_table(ml_tail_metrics)
+    ml_coverage_review = _coverage_review_sentence(ml_tail_metrics)
     result_matrix_table = _result_matrix_summary_table(result_matrix)
+    claim_scope_table = _claim_scope_markdown_table()
+    metric_artifact_table = _metric_artifact_relationship_table(
+        ml_tail_metrics=ml_tail_metrics,
+        ml_tail_metrics_per_model=ml_tail_metrics_per_model,
+        result_matrix=result_matrix,
+    )
     benchmark_status_label = (
         manifest.get("benchmark_eval_status")
         or benchmark_status.get("status")
@@ -326,8 +348,11 @@ def _full_run_results_markdown(
 
     return f"""# Results Snapshot
 
-!!! warning "Research-candidate full-run artifact"
-    This page is generated from `{run_id}`. It summarizes the durable gold modeling sample and run outputs, not the older bounded access-check snapshot. It is still a research-candidate artifact: final manuscript claims require a clean committed run and author review of the tables and notes.
+> **Research-candidate full-run artifact.** This page is generated from `{run_id}`.
+> It summarizes the durable gold modeling sample and run outputs, not the older
+> bounded access-check snapshot. It is still a research-candidate artifact:
+> final manuscript claims require a clean committed run and author review of the
+> tables and notes.
 
 ## Discussion Q&A
 
@@ -357,9 +382,10 @@ The forecast origin is the U.S. close plus vendor lag, and it must occur before 
 
 ### What has been implemented?
 
-The external benchmark floor and the ML-tail suite are implemented and have completed artifacts in this run.
+The benchmark floor and ML-tail suite are implemented and have completed artifacts in this run. The advanced benchmark registry is wired as nonblocking diagnostics, but it has not yet produced empirical advanced-model forecasts.
 
-- Benchmark models include target-history baselines and GARCH/EVT-style econometric floors.
+- Benchmark floor models include target-history baselines and GARCH/EVT-style econometric floors.
+- Advanced benchmark families such as CAViaR, CARE/expectile, Taylor ALD, direct FZ-loss, and GAS are visible as unavailable diagnostics until their optimizers produce valid forecast rows.
 - ML-tail models include direct LightGBM quantile, location-scale LightGBM, and standardized-loss POT-GPD.
 - The headline ML-tail table remains strict: it currently keeps direct quantile rows because the newer tail-model variants have shorter common coverage.
 
@@ -376,32 +402,36 @@ Coverage diagnostics ask whether VaR exceptions are too frequent or too rare; qu
 The pipeline is now producing full-run research-candidate evidence from the durable gold layer.
 
 - The gold sample starts at the dynamic combined clean start, not the 2016 cache lower bound.
-- Benchmark and ML-tail suites both completed with zero recorded forecast failures.
-- Before manuscript claims, rerun from a clean commit and review the restricted result matrix, inference gates, and vintage limitations.
+- Benchmark floor and ML-tail suites both completed with zero recorded forecast failures; advanced benchmark rows are nonblocking diagnostics in this run.
+- Before manuscript claims, review the headline/restricted/diagnostic boundaries, inference gates, and vintage limitations rather than selecting a winner from one metric.
+
+### Which results can support headline claims?
+
+{claim_scope_table}
+
+- Headline claims require a clean committed run, a shared common sample, zero leakage failures, and author-reviewed tables.
+- Restricted rows can explain model-family behavior on matched dates, but they cannot replace the headline information ladder.
+- Diagnostic rows can motivate discussion and future checks; they should not be worded as superiority or risk-management usefulness claims.
 
 ## Metadata
 
 {metadata_table}
 
 - `combined_clean_start` is the modeling lower bound; dates before it remain audit history rather than forecast evidence.
-- `git_dirty=True` means this exact run was produced with local uncommitted changes; use a clean committed rerun for manuscript tables.
+- `git_dirty` is recorded so dirty runs can be rejected before manuscript tables are frozen.
 - `fred_vintage_safe=False` is an explicit limitation: FRED data are current historical values with conservative release lag, not real-time vintage observations.
 
 ## Pipeline Structure
 
-```mermaid
-flowchart LR
-  A["Vendor and calendar sources"] --> B["Bronze cache"]
-  B --> C["Silver normalized features"]
-  C --> D["Gold modeling panel"]
-  D --> E["Leakage and coverage gates"]
-  E --> F["Benchmark models"]
-  E --> G["ML-tail model registry"]
-  F --> H["Metrics and loss matrices"]
-  G --> H
-  H --> I["DM, MCS, result matrix, stress diagnostics"]
-  I --> J["Results snapshot"]
-```
+| Step | Layer | Purpose |
+| --- | --- | --- |
+| 1 | Vendor and calendar sources | Pull or read J-Quants, Massive, FRED, CBOE, and exchange-calendar inputs. |
+| 2 | Bronze and silver cache | Preserve typed vendor/cache rows, then normalize timestamp-safe research features. |
+| 3 | Gold modeling panel | Join targets, calendar map, feature coverage, and leakage-bound signatures. |
+| 4 | Leakage and coverage gates | Enforce timestamp ordering and sample eligibility before evaluation. |
+| 5 | Benchmark floor and ML-tail registry | Run target-history/econometric floors and LightGBM tail-model families. |
+| 6 | Metrics, inference, diagnostics | Build loss matrices, DM/MCS/Murphy diagnostics, stress windows, and result matrix artifacts. |
+| 7 | Results snapshot | Summarize run-specific evidence and claim boundaries for reader review. |
 
 - Data-access and cache artifacts live under `data/bronze` and `data/silver`.
 - Durable modeling evidence lives under `data/gold`; forecast/evaluation/reporting read from gold and reports.
@@ -445,9 +475,12 @@ flowchart LR
 
 Status: `{benchmark_status_label}`; forecast rows: `{benchmark_status.get("forecast_rows")}`; metric rows: `{benchmark_status.get("metric_rows")}`; failures: `{benchmark_status.get("failures")}`.
 
+{benchmark_layer_table}
+
 {benchmark_table}
 
-- Benchmarks set the target-history/econometric floor that ML models should be interpreted against.
+- Benchmark floor rows set the target-history/econometric floor that ML models should be interpreted against.
+- Advanced benchmark families are wired as nonblocking diagnostics; if forecast rows are zero, they are implementation-status evidence rather than model-performance evidence.
 - The table is not a leaderboard by itself; coverage, exception counts, quantile loss, and FZ loss must be read together.
 - Common-sample rows are reported directly so readers can see the effective evidence size.
 
@@ -459,7 +492,16 @@ Status: `{ml_tail_status.get("status")}`; implemented models: {ml_tail_component
 
 - This headline table remains strict and currently reports direct LightGBM quantile across the information ladder.
 - Location-scale and POT-GPD are implemented, but their shorter common coverage keeps them out of the headline ladder.
-- The apparent improvement in quantile loss as blocks are added is descriptive until inference and coverage diagnostics are reviewed.
+- Differences across information blocks are candidate forecast evidence only after the common-sample, coverage, and inference diagnostics are reviewed.
+- {ml_coverage_review}
+
+### ML-tail artifact relationship
+
+{metric_artifact_table}
+
+- `ml_tail_metrics.parquet` is the headline ladder artifact. In this run it contains direct-quantile rows that survived the strict common-sample gate.
+- `ml_tail_metrics_per_model.parquet` reports each implemented ML-tail model on its own valid OOS rows; it is useful for debugging coverage but is not a cross-model comparison table.
+- `ml_tail_result_matrix.parquet` creates restricted common samples for VaR-only and VaR-ES comparisons across model families and within-model information-set increments.
 
 ## Result Matrix Layer
 
@@ -468,6 +510,7 @@ Status: `{ml_tail_status.get("status")}`; implemented models: {ml_tail_component
 - The result matrix is the right place to compare direct quantile, location-scale, and POT-GPD on their restricted common dates.
 - It separates VaR-only losses from VaR-ES joint scoring, so VaR-only claims are not confused with ES claims.
 - Restricted direct-quantile performance is only a comparison anchor for the tail-model family; it does not replace the headline direct-quantile evidence.
+- DM and MCS records are emitted only where registered row-count and exception-count gates pass; otherwise the result matrix remains descriptive.
 
 ## Stress And Diagnostic Windows
 
@@ -625,6 +668,37 @@ def _metrics_table(frame: pl.DataFrame) -> str:
     )
 
 
+def _benchmark_layer_table(status: dict[str, object]) -> str:
+    return _markdown_table(
+        (
+            "Benchmark layer",
+            "Status",
+            "Forecast rows",
+            "Diagnostic rows",
+            "Failures",
+            "How to read it",
+        ),
+        [
+            (
+                "floor",
+                _code(status.get("benchmark_floor_status") or status.get("status") or "unknown"),
+                _code(status.get("benchmark_floor_forecast_rows") or status.get("forecast_rows")),
+                _code(status.get("benchmark_floor_metric_rows") or status.get("metric_rows")),
+                _code(status.get("benchmark_floor_failures") or 0),
+                "Implemented benchmark evidence for target-history and econometric floor models.",
+            ),
+            (
+                "advanced",
+                _code(status.get("benchmark_advanced_status") or "not_reported"),
+                _code(status.get("benchmark_advanced_forecast_rows") or 0),
+                _code(status.get("benchmark_advanced_diagnostic_rows") or 0),
+                _code(status.get("benchmark_advanced_failures") or 0),
+                "Nonblocking registry diagnostics unless valid advanced forecast rows are present.",
+            ),
+        ],
+    )
+
+
 def _result_matrix_summary_table(frame: pl.DataFrame) -> str:
     columns = {"comparison_family", "comparison_axis", "sample_policy", "loss_family"}
     if frame.is_empty() or not columns.issubset(frame.columns):
@@ -660,6 +734,104 @@ def _result_matrix_summary_table(frame: pl.DataFrame) -> str:
     return _markdown_table(
         ("Family", "Axis", "Loss", "Rows", "Common N", "Date range", "Joint exceptions"),
         rows,
+    )
+
+
+def _claim_scope_markdown_table() -> str:
+    return _markdown_table(
+        ("Evidence layer", "Can support headline claim?", "How to read it"),
+        [
+            (
+                "Benchmark common-sample table",
+                "Yes, after review",
+                "External target-history/econometric floor on a shared sample.",
+            ),
+            (
+                "ML-tail headline ladder",
+                "Yes, after review",
+                "Strict information-set ladder; currently direct quantile survived the gate.",
+            ),
+            (
+                "ML-tail per-model rows",
+                "No",
+                "Model-specific OOS diagnostics; samples need not match across model families.",
+            ),
+            (
+                "Restricted result matrix",
+                "No headline claim",
+                "Matched-date comparison for model families and within-model increments.",
+            ),
+            (
+                "DST, stress, Murphy, hedge-trigger diagnostics",
+                "Diagnostic only",
+                "Useful for interpretation and robustness, not automatic model superiority.",
+            ),
+        ],
+    )
+
+
+def _metric_artifact_relationship_table(
+    *,
+    ml_tail_metrics: pl.DataFrame,
+    ml_tail_metrics_per_model: pl.DataFrame,
+    result_matrix: pl.DataFrame,
+) -> str:
+    return _markdown_table(
+        ("Artifact", "Rows", "Role", "Claim boundary"),
+        [
+            (
+                "`ml_tail_metrics.parquet`",
+                str(ml_tail_metrics.height),
+                "Headline ML-tail information-set ladder",
+                "Eligible for headline discussion after author review.",
+            ),
+            (
+                "`ml_tail_metrics_per_model.parquet`",
+                str(ml_tail_metrics_per_model.height),
+                "Per-model diagnostics on each model's own valid OOS rows",
+                "Not a cross-model comparison and not a replacement headline table.",
+            ),
+            (
+                "`ml_tail_result_matrix.parquet`",
+                str(result_matrix.height),
+                "Restricted common-sample VaR-only and VaR-ES comparisons",
+                "Restricted evidence; direct quantile rows here are comparison anchors.",
+            ),
+        ],
+    )
+
+
+def _coverage_review_sentence(frame: pl.DataFrame) -> str:
+    required = {"var_breach_rate", "expected_breach_rate"}
+    if frame.is_empty() or not required.issubset(frame.columns):
+        return (
+            "Coverage review status is unavailable in this snapshot; quantile and FZ loss "
+            "differences cannot establish improvement without VaR exception diagnostics."
+        )
+    review_threshold = 0.025
+    rows = []
+    for row in frame.iter_rows(named=True):
+        breach = _optional_float(row.get("var_breach_rate"))
+        expected = _optional_float(row.get("expected_breach_rate"))
+        if breach is None or expected is None:
+            continue
+        rows.append(abs(breach - expected) > review_threshold)
+    if not rows:
+        return (
+            "Coverage review status is unavailable in this snapshot; quantile and FZ loss "
+            "differences cannot establish improvement without VaR exception diagnostics."
+        )
+    flagged = sum(1 for value in rows if value)
+    if flagged:
+        return (
+            f"Coverage review: `{flagged}/{len(rows)}` headline rows differ from the "
+            "expected breach rate by more than 2.5 percentage points, so quantile/FZ loss "
+            "differences alone must not be read as forecast improvement."
+        )
+    return (
+        "Coverage review: headline breach rates are within the 2.5 percentage-point "
+        "snapshot review band, but final claims still require author review of inference "
+        "and exception diagnostics."
     )
 
 

@@ -12,6 +12,7 @@ def evaluate_benchmark_suite(
     run_dir: Path,
     workers: int = 1,
     force: bool = False,
+    include_advanced: bool = True,
 ) -> EvaluationResult:
     panel_path = _gold_artifact_path(
         run_dir, "modeling_panel", run_dir / "panel" / "modeling_panel.parquet"
@@ -26,17 +27,10 @@ def evaluate_benchmark_suite(
     metrics_root = run_dir / "metrics"
     forecast_root.mkdir(parents=True, exist_ok=True)
     metrics_root.mkdir(parents=True, exist_ok=True)
-    jobs: list[dict[str, object]] = []
+    floor_jobs: list[dict[str, object]] = []
     for tail_level in TAIL_LEVELS:
-        for model_name in (
-            "historical_quantile",
-            "rolling_quantile",
-            "ewma_vol_scaled",
-            "garch_t",
-            "gjr_garch_t",
-            "gjr_garch_evt",
-        ):
-            jobs.append(
+        for model_name in BENCHMARK_FLOOR_MODEL_NAMES:
+            floor_jobs.append(
                 {
                     "panel_path": str(panel_path),
                     "run_dir": str(run_dir),
@@ -45,19 +39,52 @@ def evaluate_benchmark_suite(
                     "shard_id": _forecast_shard_id(model_name, tail_level),
                 }
             )
+    advanced_jobs: list[dict[str, object]] = []
+    if include_advanced:
+        for tail_level in TAIL_LEVELS:
+            for model_name in BENCHMARK_ADVANCED_MODEL_NAMES:
+                advanced_jobs.append(
+                    {
+                        "panel_path": str(panel_path),
+                        "run_dir": str(run_dir),
+                        "tail_level": tail_level,
+                        "models": (model_name,),
+                        "shard_id": _forecast_shard_id(
+                            model_name,
+                            tail_level,
+                            refit_frequency=BENCHMARK_ADVANCED_REFIT_FREQUENCY,
+                        ),
+                    }
+                )
+    jobs = [*floor_jobs, *advanced_jobs]
     for payload in jobs:
         validate_worker_payload(payload)
     n_jobs = _bounded_workers(workers)
-    _evaluation_log(f"Benchmark shards queued={len(jobs)} n_jobs={n_jobs}")
+    _evaluation_log(
+        f"Benchmark shards queued={len(jobs)} floor={len(floor_jobs)} "
+        f"advanced={len(advanced_jobs)} n_jobs={n_jobs}"
+    )
     if n_jobs == 1:
-        outputs = [_evaluate_benchmark_shard(payload) for payload in jobs]
+        floor_outputs = [_evaluate_benchmark_shard(payload) for payload in floor_jobs]
+        advanced_outputs = [
+            _evaluate_benchmark_advanced_shard(payload) for payload in advanced_jobs
+        ]
     else:
-        outputs = Parallel(n_jobs=n_jobs, backend=PIPELINE_CONFIG.model_policy.joblib_backend)(
-            delayed(_evaluate_benchmark_shard)(payload) for payload in jobs
-        )
+        floor_outputs = Parallel(
+            n_jobs=n_jobs, backend=PIPELINE_CONFIG.model_policy.joblib_backend
+        )(delayed(_evaluate_benchmark_shard)(payload) for payload in floor_jobs)
+        advanced_outputs = Parallel(
+            n_jobs=n_jobs, backend=PIPELINE_CONFIG.model_policy.joblib_backend
+        )(delayed(_evaluate_benchmark_advanced_shard)(payload) for payload in advanced_jobs)
+    outputs = [*floor_outputs, *advanced_outputs]
     forecasts = [row for output in outputs for row in output["forecasts"]]
     diagnostics = [row for output in outputs for row in output["diagnostics"]]
     failures = [row for output in outputs for row in output["failures"]]
+    floor_forecasts = [row for output in floor_outputs for row in output["forecasts"]]
+    floor_failures = [row for output in floor_outputs for row in output["failures"]]
+    advanced_forecasts = [row for output in advanced_outputs for row in output["forecasts"]]
+    advanced_diagnostics = [row for output in advanced_outputs for row in output["diagnostics"]]
+    advanced_failures = [row for output in advanced_outputs for row in output["failures"]]
     forecast_path = forecast_root / "benchmark_forecasts.parquet"
     diagnostics_path = forecast_root / "benchmark_fit_diagnostics.parquet"
     failures_path = forecast_root / "benchmark_failures.parquet"
@@ -75,8 +102,18 @@ def evaluate_benchmark_suite(
         anchor_model=BENCHMARK_ANCHOR_MODEL,
         anchor_information_set="target_history_only",
     )
+    floor_artifacts = build_common_sample_artifacts(
+        floor_forecasts,
+        suite="benchmark_floor",
+        anchor_model=BENCHMARK_ANCHOR_MODEL,
+        anchor_information_set="target_history_only",
+    )
     metrics = cast(list[dict[str, object]], artifacts["headline_metrics"])
     _write_parquet(metrics_root / "benchmark_metrics.parquet", metrics)
+    _write_parquet(
+        metrics_root / "benchmark_floor_metrics.parquet",
+        cast(list[dict[str, object]], floor_artifacts["headline_metrics"]),
+    )
     _write_parquet(
         metrics_root / "benchmark_metrics_per_model.parquet",
         cast(list[dict[str, object]], artifacts["per_model_metrics"]),
@@ -106,6 +143,9 @@ def evaluate_benchmark_suite(
         cast(list[dict[str, object]], artifacts["stress_windows"]),
     )
     _evaluation_log(f"wrote headline metrics rows={len(metrics)}")
+    advanced_status = (
+        "completed_nonblocking" if include_advanced else "skipped_benchmark_floor_suite"
+    )
     _write_json(
         metrics_root / "benchmark_status.json",
         {
@@ -113,18 +153,41 @@ def evaluate_benchmark_suite(
             "claim_level": CLAIMS_LEVEL,
             "config_hash": PIPELINE_CONFIG.config_hash(),
             "suite": "benchmark",
+            "benchmark_floor_status": "completed",
+            "benchmark_advanced_status": advanced_status,
+            "benchmark_floor_model_count": len(BENCHMARK_FLOOR_MODEL_NAMES),
+            "benchmark_advanced_model_count": len(BENCHMARK_ADVANCED_MODEL_NAMES)
+            if include_advanced
+            else 0,
             "forecast_rows": len(forecasts),
+            "benchmark_floor_forecast_rows": len(floor_forecasts),
+            "benchmark_advanced_forecast_rows": len(advanced_forecasts),
+            "benchmark_advanced_diagnostic_rows": len(advanced_diagnostics),
+            "benchmark_advanced_unavailable_diagnostic_rows": sum(
+                1 for row in advanced_diagnostics if row.get("fit_status") != "ok"
+            ),
             "metric_rows": len(metrics),
+            "benchmark_floor_metric_rows": len(
+                cast(list[dict[str, object]], floor_artifacts["headline_metrics"])
+            ),
             "per_model_metric_rows": len(
                 cast(list[dict[str, object]], artifacts["per_model_metrics"])
             ),
             "loss_matrix_rows": len(cast(list[dict[str, object]], artifacts["loss_matrix"])),
             "common_sample_status": artifacts["common_sample_status"],
             "failures": len(failures),
+            "benchmark_floor_failures": len(floor_failures),
+            "benchmark_advanced_failures": len(advanced_failures),
         },
     )
     _update_manifest(
-        run_dir, {"benchmark_eval_status": "completed", "benchmark_forecast_rows": len(forecasts)}
+        run_dir,
+        {
+            "benchmark_eval_status": "completed",
+            "benchmark_floor_status": "completed",
+            "benchmark_advanced_status": advanced_status,
+            "benchmark_forecast_rows": len(forecasts),
+        },
     )
     _evaluation_log(
         f"complete run_id={run_dir.name} forecast_rows={len(forecasts)} "
@@ -136,6 +199,20 @@ def evaluate_benchmark_suite(
         forecast_rows=len(forecasts),
         metric_rows=len(metrics),
         status="completed",
+    )
+
+
+def evaluate_benchmark_floor_suite(
+    *,
+    run_dir: Path,
+    workers: int = 1,
+    force: bool = False,
+) -> EvaluationResult:
+    return evaluate_benchmark_suite(
+        run_dir=run_dir,
+        workers=workers,
+        force=force,
+        include_advanced=False,
     )
 
 
@@ -351,6 +428,8 @@ def evaluate_suite(
     normalized_suite = suite.lower().replace("-", "_")
     if normalized_suite == "benchmark":
         return evaluate_benchmark_suite(run_dir=run_dir, workers=workers, force=force)
+    if normalized_suite == "benchmark_floor":
+        return evaluate_benchmark_floor_suite(run_dir=run_dir, workers=workers, force=force)
     if normalized_suite == "ml_tail":
         return evaluate_ml_tail_suite(run_dir=run_dir, workers=workers, force=force)
     raise PipelineRunError(f"Unknown evaluation suite: {suite}")

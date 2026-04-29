@@ -21,9 +21,11 @@ import n225_open_gap_tail.forecasting as paper_core
 import n225_open_gap_tail.forecasting as paper_evaluation
 import n225_open_gap_tail.forecasting as paper_module
 import n225_open_gap_tail.inference as paper_inference
+import n225_open_gap_tail.models.benchmark_advanced as benchmark_advanced
 import n225_open_gap_tail.panel as paper_leakage
 import n225_open_gap_tail.panel as paper_panel
 import n225_open_gap_tail.reporting as paper_reporting
+import n225_open_gap_tail.reporting.latex as reporting_latex
 from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.data_lake import VendorErrorClass
 from n225_open_gap_tail.forecasting import (
@@ -38,6 +40,7 @@ from n225_open_gap_tail.forecasting import (
     build_spy_late_session_feature_records,
     drop_low_variance_features,
     empirical_excess_es_companion,
+    evaluate_benchmark_floor_suite,
     evaluate_benchmark_suite,
     evaluate_ml_tail_suite,
     evaluate_suite,
@@ -68,6 +71,7 @@ def _patch_paper_module(
         "n225_open_gap_tail.panel.build",
         "n225_open_gap_tail.panel.leakage",
         "n225_open_gap_tail.models.benchmark",
+        "n225_open_gap_tail.models.benchmark_advanced",
         "n225_open_gap_tail.models.ml_tail",
         "n225_open_gap_tail.models.ml_tail_oof",
         "n225_open_gap_tail.metrics.information",
@@ -107,6 +111,13 @@ def test_paper_package_split_preserves_import_compatibility() -> None:
     assert paper_features.drop_low_variance_features is drop_low_variance_features
     assert paper_leakage.write_leakage_check is write_leakage_check
     assert paper_reporting.export_tables is export_tables
+    assert paper_evaluation.evaluate_benchmark_floor_suite is evaluate_benchmark_floor_suite
+    assert paper_evaluation._evaluate_benchmark_advanced_shard is (
+        benchmark_advanced._evaluate_benchmark_advanced_shard
+    )
+    assert "n225_open_gap_tail.models.benchmark_advanced" in (
+        pipeline_runtime._IMPLEMENTATION_MODULES
+    )
 
 
 def test_paper_root_is_compatibility_surface() -> None:
@@ -121,6 +132,7 @@ def test_paper_root_is_compatibility_surface() -> None:
         "PipelineRunError",
         "build_panel",
         "evaluate_suite",
+        "evaluate_benchmark_floor_suite",
         "evaluate_benchmark_suite",
         "evaluate_ml_tail_suite",
         "export_tables",
@@ -161,6 +173,7 @@ def test_functional_modules_do_not_import_removed_pipeline_package() -> None:
         "n225_open_gap_tail.data_lake.cache_ops",
         "n225_open_gap_tail.panel.build",
         "n225_open_gap_tail.models.ml_tail",
+        "n225_open_gap_tail.models.benchmark_advanced",
         "n225_open_gap_tail.metrics.result_matrix",
     ],
 )
@@ -225,6 +238,21 @@ def test_find_oos_start_requires_min_rows_and_tail_exceedances() -> None:
         )
         is None
     )
+
+
+def test_advanced_benchmark_monthly_refit_uses_first_valid_panel_date() -> None:
+    rows = [
+        {"forecast_date": "2026-01-30", "clean_sample": True, "realized_loss": 0.01},
+        {"forecast_date": "2026-02-03", "clean_sample": True, "realized_loss": 0.02},
+        {"forecast_date": "2026-02-04", "clean_sample": True, "realized_loss": 0.03},
+        {"forecast_date": "2026-03-02", "clean_sample": True, "realized_loss": 0.04},
+        {"forecast_date": "2026-03-03", "clean_sample": False, "realized_loss": 0.05},
+    ]
+
+    assert benchmark_advanced.benchmark_advanced_refit_dates(
+        rows,
+        oos_start="2026-02-01",
+    ) == ["2026-02-03", "2026-03-02"]
 
 
 def test_combined_clean_start_excludes_pre_start_forecast_rows() -> None:
@@ -2154,13 +2182,200 @@ def test_evaluate_benchmark_suite_and_latex_export_with_synthetic_panel(
         / "forecasts.parquet"
     ).exists()
     assert (run_dir / "metrics" / "benchmark_metrics.parquet").exists()
-    assert latex.tables == 1
+    assert latex.tables == 4
     assert (latex.latex_dir / "benchmark_metrics_table.tex").exists()
+    assert (latex.latex_dir / "tailrisk_es_severity_table.tex").exists()
+    assert (latex.latex_dir / "tailrisk_hedge_trigger_diagnostics_table.tex").exists()
+    assert (latex.latex_dir / "tailrisk_claim_scope_table.tex").exists()
     latex_text = (latex.latex_dir / "benchmark_metrics_table.tex").read_text(encoding="utf-8")
     assert "% config_hash:" in latex_text
     assert "block-bootstrap DM" in latex_text
     assert "conditional predictive ability" not in latex_text
     assert "instrumented conditional predictive ability" not in latex_text
+    trigger_text = (latex.latex_dir / "tailrisk_hedge_trigger_diagnostics_table.tex").read_text(
+        encoding="utf-8"
+    )
+    assert "not hedge PnL" in trigger_text
+    assert "trading-alpha" in trigger_text
+
+
+def test_benchmark_advanced_wiring_is_nonblocking_and_sharded(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "reports" / "runs" / "benchmark_advanced_synthetic"
+    panel_dir = run_dir / "panel"
+    panel_dir.mkdir(parents=True)
+    rows = [
+        {
+            "forecast_date": (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=day))
+            .date()
+            .isoformat(),
+            "clean_sample": True,
+            "realized_loss": float(day) / 100.0,
+        }
+        for day in range(70)
+    ]
+    pl.DataFrame(rows).write_parquet(panel_dir / "modeling_panel.parquet")
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"config_hash": paper_module.PIPELINE_CONFIG.config_hash()}),
+        encoding="utf-8",
+    )
+    write_leakage_check(run_dir=run_dir)
+
+    _patch_paper_module(monkeypatch, "DEFAULT_EARLIEST_OOS_START", "2026-01-01")
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 30)
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 1)
+    _patch_paper_module(monkeypatch, "TAIL_LEVELS", (0.95,))
+    _patch_paper_module(monkeypatch, "BENCHMARK_ADVANCED_MODEL_NAMES", ("caviar_sav",))
+
+    def fake_forecast_one(
+        *,
+        train: np.ndarray,
+        model_name: str,
+        tail_level: float,
+    ) -> dict[str, object]:
+        var = float(np.quantile(train, tail_level))
+        return {
+            "var_forecast": var,
+            "es_forecast": var + 0.01,
+            "es_companion_type": "synthetic_floor",
+            "optimizer_status": "ok",
+            "convergence_code": 0,
+        }
+
+    def fake_stateful_sequence(
+        *,
+        rows: list[dict[str, object]],
+        model_name: str,
+        tail_level: float,
+        oos_start: str,
+    ) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
+        clean = paper_module._clean_loss_rows(rows)
+        forecasts = []
+        for index, row in enumerate(clean):
+            if index < 30 or str(row["forecast_date"]) < oos_start:
+                continue
+            realized = float(row["realized_loss"])
+            forecasts.append(
+                {
+                    "forecast_date": row["forecast_date"],
+                    "model_name": model_name,
+                    "tail_level": tail_level,
+                    "var_forecast": realized + 1.0,
+                    "es_forecast": realized + 1.1,
+                    "es_companion_type": "synthetic_advanced",
+                    "realized_loss": realized,
+                    "var_breach": False,
+                    "is_valid_forecast": True,
+                    "invalid_reason": None,
+                    "train_n": index,
+                    "fit_status": "ok",
+                }
+            )
+        return (
+            forecasts,
+            [
+                {
+                    "model_name": model_name,
+                    "tail_level": tail_level,
+                    "fit_status": "ok",
+                    "refit_dates_json": json.dumps(
+                        benchmark_advanced.benchmark_advanced_refit_dates(
+                            clean,
+                            oos_start=oos_start,
+                        )
+                    ),
+                }
+            ],
+            [],
+        )
+
+    _patch_paper_module(monkeypatch, "_forecast_one", fake_forecast_one)
+    _patch_paper_module(monkeypatch, "_forecast_stateful_sequence", fake_stateful_sequence)
+
+    result = evaluate_benchmark_suite(run_dir=run_dir, workers=1)
+
+    assert result.status == "completed"
+    forecasts = pl.read_parquet(run_dir / "forecasts" / "benchmark_forecasts.parquet")
+    advanced = forecasts.filter(pl.col("benchmark_tier") == "advanced")
+    assert advanced.height > 0
+    assert set(advanced["refit_frequency"].to_list()) == {
+        paper_module.BENCHMARK_ADVANCED_REFIT_FREQUENCY
+    }
+    assert (
+        run_dir
+        / "forecasts"
+        / "shards"
+        / "model=caviar_sav"
+        / "target=full_gap_settle_to_open"
+        / "info=target_history_only"
+        / "tail=0_950"
+        / "refit=monthly_parameter_refit_daily_filter"
+        / "forecasts.parquet"
+    ).exists()
+    assert (run_dir / "metrics" / "benchmark_floor_metrics.parquet").exists()
+    status = json.loads((run_dir / "metrics" / "benchmark_status.json").read_text())
+    assert status["benchmark_floor_status"] == "completed"
+    assert status["benchmark_advanced_status"] == "completed_nonblocking"
+    assert status["benchmark_advanced_forecast_rows"] == advanced.height
+    assert status["benchmark_advanced_failures"] == 0
+
+
+def test_benchmark_floor_suite_skips_advanced_models(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "reports" / "runs" / "benchmark_floor_only"
+    panel_dir = run_dir / "panel"
+    panel_dir.mkdir(parents=True)
+    rows = [
+        {
+            "forecast_date": (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=day))
+            .date()
+            .isoformat(),
+            "clean_sample": True,
+            "realized_loss": float(day) / 100.0,
+        }
+        for day in range(70)
+    ]
+    pl.DataFrame(rows).write_parquet(panel_dir / "modeling_panel.parquet")
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"config_hash": paper_module.PIPELINE_CONFIG.config_hash()}),
+        encoding="utf-8",
+    )
+    write_leakage_check(run_dir=run_dir)
+
+    _patch_paper_module(monkeypatch, "DEFAULT_EARLIEST_OOS_START", "2026-01-01")
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 30)
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 1)
+    _patch_paper_module(monkeypatch, "TAIL_LEVELS", (0.95,))
+
+    def fake_forecast_one(
+        *,
+        train: np.ndarray,
+        model_name: str,
+        tail_level: float,
+    ) -> dict[str, object]:
+        var = float(np.quantile(train, tail_level))
+        return {
+            "var_forecast": var,
+            "es_forecast": var + 0.01,
+            "es_companion_type": "synthetic_floor",
+            "optimizer_status": "ok",
+            "convergence_code": 0,
+        }
+
+    _patch_paper_module(monkeypatch, "_forecast_one", fake_forecast_one)
+
+    result = evaluate_suite(run_dir=run_dir, workers=1, suite="benchmark-floor")
+
+    assert result.status == "completed"
+    forecasts = pl.read_parquet(run_dir / "forecasts" / "benchmark_forecasts.parquet")
+    assert set(forecasts["benchmark_tier"].to_list()) == {"floor"}
+    status = json.loads((run_dir / "metrics" / "benchmark_status.json").read_text())
+    assert status["benchmark_advanced_status"] == "skipped_benchmark_floor_suite"
+    assert status["benchmark_advanced_model_count"] == 0
 
 
 def test_result_matrix_latex_export_has_restricted_notes(tmp_path: Path) -> None:
@@ -2201,13 +2416,210 @@ def test_result_matrix_latex_export_has_restricted_notes(tmp_path: Path) -> None
 
     latex = export_tables(run_dir=run_dir)
     latex_text = (latex.latex_dir / "ml_tail_result_matrix_table.tex").read_text(encoding="utf-8")
+    summary_text = (latex.latex_dir / "ml_tail_result_matrix_summary_table.tex").read_text(
+        encoding="utf-8"
+    )
 
-    assert latex.tables == 1
+    assert latex.tables == 2
     assert "restricted result matrix" in latex_text
     assert "headline ML tail table" in latex_text
     assert "block-bootstrap DM" in latex_text
+    assert "VaR-only and VaR-ES" in summary_text
+    assert "Restricted samples are not headline evidence" in summary_text
     assert "conditional predictive ability" not in latex_text
     assert "instrumented conditional predictive ability" not in latex_text
+
+
+def test_dst_attenuation_latex_export_is_descriptive(tmp_path: Path) -> None:
+    run_dir = tmp_path / "reports" / "runs" / "dst_latex"
+    metrics_dir = run_dir / "metrics"
+    metrics_dir.mkdir(parents=True)
+    (run_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "dst_latex",
+                "git_commit": "abc123",
+                "config_hash": paper_module.PIPELINE_CONFIG.config_hash(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    pl.DataFrame(
+        [
+            {
+                "model_name": paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
+                "tail_level": 0.95,
+                "base_information_set": "japan_only",
+                "expanded_information_set": "japan_only_plus_us_close_core",
+                "dst_regime": "EST",
+                "paired_rows": 120,
+                "mean_quantile_gain": 0.001,
+                "mean_fz_gain": 0.002,
+                "dm_pvalue_one_sided": 0.12,
+                "alpha_absorb": None,
+                "inference_status": "ok_block_bootstrap_dm",
+            }
+        ]
+    ).write_parquet(metrics_dir / "ml_tail_dst_attenuation.parquet")
+
+    latex = export_tables(run_dir=run_dir)
+    latex_text = (latex.latex_dir / "ml_tail_dst_attenuation_table.tex").read_text(encoding="utf-8")
+
+    assert latex.tables == 1
+    assert "descriptive forecast evidence" in latex_text
+    assert "not a structural causal mechanism" in latex_text
+    assert "conditional predictive ability" not in latex_text
+
+
+def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) -> None:
+    metrics = pl.DataFrame(
+        [
+            {
+                "suite": "ml_tail",
+                "model_name": paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
+                "information_set": "japan_only",
+                "tail_level": 0.95,
+                "sample_policy": "headline_common_sample",
+                "rows": 20,
+                "var_breach_rate": 0.05,
+                "exceedance_count": 1,
+                "mean_quantile_loss": 0.01,
+                "mean_fz_loss": -1.0,
+                "mean_exceedance_severity": 0.02,
+            },
+            {
+                "suite": "ml_tail",
+                "model_name": paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
+                "information_set": "japan_only_plus_us_close_core",
+                "tail_level": 0.95,
+                "sample_policy": "headline_common_sample",
+                "rows": 20,
+                "var_breach_rate": 0.05,
+                "exceedance_count": 1,
+                "mean_quantile_loss": 0.009,
+                "mean_fz_loss": -1.1,
+                "mean_exceedance_severity": 0.01,
+            },
+            {
+                "suite": "ml_tail_per_model",
+                "model_name": paper_module.ML_TAIL_LOCATION_SCALE_MODEL,
+                "information_set": "japan_only",
+                "tail_level": 0.95,
+                "rows": 20,
+                "var_breach_rate": 0.0,
+                "exceedance_count": 0,
+                "mean_quantile_loss": 0.02,
+                "mean_fz_loss": -0.8,
+                "mean_exceedance_severity": None,
+            },
+            {
+                "suite": "ml_tail_per_model",
+                "model_name": paper_module.ML_TAIL_LOCATION_SCALE_MODEL,
+                "information_set": "japan_only_plus_us_close_core",
+                "tail_level": 0.95,
+                "rows": 20,
+                "var_breach_rate": 0.05,
+                "exceedance_count": 1,
+                "mean_quantile_loss": 0.018,
+                "mean_fz_loss": -0.9,
+                "mean_exceedance_severity": 0.03,
+            },
+        ]
+    )
+    severity_text = reporting_latex._es_severity_to_latex(metrics)
+    assert "headline" in severity_text
+    assert "0.010000" in severity_text
+    assert reporting_latex._severity_rows(pl.DataFrame()) == []
+    assert reporting_latex._hedge_trigger_rows(pl.DataFrame({"suite": ["ml_tail"]})) == []
+    assert reporting_latex._group_mean(pl.DataFrame(), "missing") is None
+    assert reporting_latex._range_label(None, 1) == "n/a"
+    assert reporting_latex._range_label(5, 5) == "5"
+    assert reporting_latex._range_label(5, 7) == "5--7"
+
+    matrix = pl.DataFrame(
+        [
+            {
+                "comparison_family": "tail_model_family",
+                "comparison_axis": "model_family",
+                "sample_policy": "restricted_tail_model_common_sample",
+                "loss_family": "var_quantile_loss",
+                "model_name": paper_module.ML_TAIL_LOCATION_SCALE_MODEL,
+                "tail_level": 0.95,
+                "common_n": 121,
+                "joint_exception_count": 6,
+                "metric_status": "skipped",
+                "metric_value": 0.1,
+            }
+        ]
+    )
+    dm = pl.DataFrame(
+        [
+            {
+                "comparison_family": "tail_model_family",
+                "comparison_axis": "model_family",
+                "sample_policy": "restricted_tail_model_common_sample",
+                "loss_family": "var_quantile_loss",
+                "inference_status": "ok_block_bootstrap_dm",
+            },
+            {
+                "comparison_family": "tail_model_family",
+                "comparison_axis": "model_family",
+                "sample_policy": "restricted_tail_model_common_sample",
+                "loss_family": "var_quantile_loss",
+                "inference_status": "unavailable_insufficient_tail_events_for_inference",
+            },
+        ]
+    )
+    mcs = pl.DataFrame(
+        [
+            {
+                "comparison_family": "tail_model_family",
+                "comparison_axis": "model_family",
+                "sample_policy": "restricted_tail_model_common_sample",
+                "loss_family": "var_quantile_loss",
+                "mcs_status": "ok_hln_tmax_mcs",
+            },
+        ]
+    )
+    result_text = reporting_latex._result_matrix_to_latex(matrix)
+    summary_text = reporting_latex._result_matrix_summary_to_latex(matrix, dm=dm, mcs=mcs)
+    assert paper_module.ML_TAIL_LOCATION_SCALE_MODEL not in result_text
+    assert "1/2" in summary_text
+    assert "1/1" in summary_text
+    assert reporting_latex._result_matrix_summary_rows(pl.DataFrame(), dm=None, mcs=None) == []
+    assert reporting_latex._inference_status_counts(None, "status", "ok") == {}
+
+    run_dir = tmp_path / "reports" / "runs" / "ml_tail_reporting"
+    (run_dir / "metrics").mkdir(parents=True)
+    (run_dir / "forecasts").mkdir(parents=True)
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"config_hash": paper_module.PIPELINE_CONFIG.config_hash()}),
+        encoding="utf-8",
+    )
+    metrics.drop("suite").write_parquet(run_dir / "metrics" / "ml_tail_metrics.parquet")
+    metrics.drop("suite").write_parquet(run_dir / "metrics" / "ml_tail_metrics_per_model.parquet")
+    pl.DataFrame(
+        [
+            {
+                "forecast_date": "2026-01-01",
+                "target_family": "full_gap_settle_to_open",
+                "model_name": paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
+                "information_set": "japan_only",
+                "tail_level": 0.95,
+                "refit_frequency": "monthly",
+                "var_forecast": 0.01,
+                "realized_loss": 0.02,
+                "is_valid_forecast": True,
+            }
+        ]
+    ).write_parquet(run_dir / "forecasts" / "ml_tail_forecasts.parquet")
+
+    latex = export_tables(run_dir=run_dir)
+    severity_export = (latex.latex_dir / "tailrisk_es_severity_table.tex").read_text(
+        encoding="utf-8"
+    )
+    assert latex.tables == 4
+    assert "ml\\_tail\\_per\\_model" in severity_export
 
 
 def test_evaluate_ml_tail_suite_writes_lightgbm_ladder_artifacts(

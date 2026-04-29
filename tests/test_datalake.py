@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -21,6 +22,7 @@ from n225_open_gap_tail.data_lake import (
     compute_combined_clean_start,
     is_fred_cache_fresh_at_run_start,
     read_json,
+    read_verified_parquet_metadata,
     scan_hive_parquet,
 )
 
@@ -62,6 +64,22 @@ def test_atomic_parquet_write_validates_and_records_hash(tmp_path: Path) -> None
     assert result.schema_hash == JQUANTS_BRONZE_SCHEMA.hash
     assert result.metadata_path.exists()
     assert pl.read_parquet(output).height == 1
+
+
+def test_verified_parquet_metadata_rejects_missing_or_mismatched_sidecar(tmp_path: Path) -> None:
+    output = tmp_path / "data.parquet"
+    result = atomic_write_parquet(output, [{"value": 1.0}])
+
+    assert read_verified_parquet_metadata(output)["chunk_hash"] == result.chunk_hash
+    result.metadata_path.unlink()
+    assert read_verified_parquet_metadata(output) == {}
+
+    second = atomic_write_parquet(output, [{"value": 2.0}])
+    payload = read_json(second.metadata_path)
+    payload["chunk_hash"] = "not-the-current-parquet"
+    second.metadata_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert read_verified_parquet_metadata(output) == {}
 
 
 def test_cache_tmp_gc_removes_only_old_orphans(tmp_path: Path) -> None:

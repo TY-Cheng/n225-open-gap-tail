@@ -24,9 +24,21 @@ def build_common_sample_artifacts(
     evictions: list[dict[str, object]] = []
     headline_forecasts: list[dict[str, object]] = []
     status_by_tail: dict[float, str] = {}
-    for tail_level in sorted({key[2] for key in grouped}):
-        keys = sorted(key for key in grouped if key[2] == tail_level)
-        anchor_key = (anchor_model, anchor_information_set, tail_level)
+    for target_family, tail_level, refit_frequency in sorted(
+        {(key[0], key[3], key[4]) for key in grouped}
+    ):
+        keys = sorted(
+            key
+            for key in grouped
+            if key[0] == target_family and key[3] == tail_level and key[4] == refit_frequency
+        )
+        anchor_key = (
+            target_family,
+            anchor_model,
+            anchor_information_set,
+            tail_level,
+            refit_frequency,
+        )
         anchor_dates = set(grouped.get(anchor_key, {}))
         if not anchor_dates:
             status_by_tail[tail_level] = "unavailable_missing_anchor"
@@ -48,7 +60,7 @@ def build_common_sample_artifacts(
                 )
             continue
 
-        retained_keys: list[tuple[str, str, float]] = []
+        retained_keys: list[tuple[str, str, str, float, str]] = []
         pending_rows: list[dict[str, object]] = []
         for key in keys:
             overlap_rows = len(set(grouped[key]).intersection(anchor_dates))
@@ -172,10 +184,22 @@ def build_block_bootstrap_dm_records(
     grouped = _group_loss_matrix_by_key(loss_matrix)
     rng = np.random.default_rng(seed)
     records: list[dict[str, object]] = []
-    for tail_level in sorted({key[2] for key in grouped}):
-        anchor_key = (anchor_model, anchor_information_set, tail_level)
+    for target_family, tail_level, refit_frequency in sorted(
+        {(key[0], key[3], key[4]) for key in grouped}
+    ):
+        anchor_key = (
+            target_family,
+            anchor_model,
+            anchor_information_set,
+            tail_level,
+            refit_frequency,
+        )
         anchor_rows = grouped.get(anchor_key, {})
-        for candidate_key in sorted(key for key in grouped if key[2] == tail_level):
+        for candidate_key in sorted(
+            key
+            for key in grouped
+            if key[0] == target_family and key[3] == tail_level and key[4] == refit_frequency
+        ):
             if candidate_key == anchor_key:
                 continue
             candidate_rows = grouped[candidate_key]
@@ -191,6 +215,12 @@ def build_block_bootstrap_dm_records(
             diffs = diffs[np.isfinite(diffs)]
             block_length = max(5, round(len(diffs) ** (1.0 / 3.0))) if len(diffs) else None
             mean_diff = _safe_mean(diffs)
+            joint_exception_count = _loss_matrix_joint_exception_count(
+                grouped,
+                [anchor_key, candidate_key],
+                dates,
+            )
+            inference_status = _headline_dm_gate_status(len(dates), joint_exception_count)
             pvalue = (
                 _moving_block_one_sided_pvalue(
                     diffs,
@@ -199,18 +229,24 @@ def build_block_bootstrap_dm_records(
                     block_length=int(block_length),
                     rng=rng,
                 )
-                if mean_diff is not None and block_length is not None and len(diffs) >= 2
+                if inference_status == "ok_block_bootstrap_dm"
+                and mean_diff is not None
+                and block_length is not None
                 else None
             )
             records.append(
                 {
                     "suite": suite,
+                    "target_family": target_family,
                     "tail_level": tail_level,
+                    "refit_frequency": refit_frequency or None,
                     "baseline_model_name": anchor_model,
                     "baseline_information_set": anchor_information_set,
-                    "candidate_model_name": candidate_key[0],
-                    "candidate_information_set": candidate_key[1],
+                    "candidate_model_name": candidate_key[1],
+                    "candidate_information_set": candidate_key[2],
                     "paired_rows": int(diffs.size),
+                    "common_n": len(dates),
+                    "joint_exception_count": joint_exception_count,
                     "mean_fz_loss_diff_candidate_minus_baseline": mean_diff,
                     "alternative": "candidate_mean_diff_less_than_zero",
                     "null_hypothesis": "E[FZ_candidate_minus_baseline] >= 0",
@@ -219,10 +255,10 @@ def build_block_bootstrap_dm_records(
                     "bootstrap_reps": reps,
                     "bootstrap_seed": seed,
                     "block_length": block_length,
-                    "method_note": PIPELINE_CONFIG.evaluation_policy.dm_method,
-                    "inference_status": "ok"
-                    if pvalue is not None
-                    else "unavailable_block_bootstrap_dm_insufficient_pairs",
+                    "method_note": PIPELINE_CONFIG.evaluation_policy.dm_method
+                    if inference_status == "ok_block_bootstrap_dm"
+                    else None,
+                    "inference_status": inference_status,
                 }
             )
     return records
@@ -239,12 +275,20 @@ def build_mcs_records(
     grouped = _group_loss_matrix_by_key(loss_matrix)
     rng = np.random.default_rng(seed)
     records: list[dict[str, object]] = []
-    for tail_level in sorted({key[2] for key in grouped}):
-        keys = sorted(key for key in grouped if key[2] == tail_level)
+    for target_family, tail_level, refit_frequency in sorted(
+        {(key[0], key[3], key[4]) for key in grouped}
+    ):
+        keys = sorted(
+            key
+            for key in grouped
+            if key[0] == target_family and key[3] == tail_level and key[4] == refit_frequency
+        )
         if not keys:
             continue
         common_dates = sorted(set.intersection(*(set(grouped[key]) for key in keys)))
-        if len(common_dates) < PIPELINE_CONFIG.evaluation_policy.min_common_oos_rows:
+        joint_exception_count = _loss_matrix_joint_exception_count(grouped, keys, common_dates)
+        gate_status = _headline_mcs_gate_status(len(common_dates), joint_exception_count)
+        if gate_status != "ok_hln_tmax_mcs":
             for key in keys:
                 records.append(
                     _mcs_record(
@@ -257,8 +301,9 @@ def build_mcs_records(
                         reps=reps,
                         seed=seed,
                         block_length=None,
-                        status="unavailable_insufficient_global_common_oos",
-                        method_note=PIPELINE_CONFIG.evaluation_policy.mcs_method,
+                        status=gate_status,
+                        method_note=None,
+                        joint_exception_count=joint_exception_count,
                     )
                 )
             continue
@@ -274,11 +319,11 @@ def build_mcs_records(
         }
         mean_losses = {key: _safe_mean(values) for key, values in losses_by_key.items()}
         active = {key for key, value in mean_losses.items() if value is not None}
-        eliminated_step: dict[tuple[str, str, float], int] = {}
-        elimination_pvalue: dict[tuple[str, str, float], float | None] = {}
-        elimination_tmax: dict[tuple[str, str, float], float | None] = {}
-        elimination_active_set: dict[tuple[str, str, float], str | None] = {}
-        model_tmax_component: dict[tuple[str, str, float], float | None] = {}
+        eliminated_step: dict[tuple[str, str, str, float, str], int] = {}
+        elimination_pvalue: dict[tuple[str, str, str, float, str], float | None] = {}
+        elimination_tmax: dict[tuple[str, str, str, float, str], float | None] = {}
+        elimination_active_set: dict[tuple[str, str, str, float, str], str | None] = {}
+        model_tmax_component: dict[tuple[str, str, str, float, str], float | None] = {}
         final_tmax_stat: float | None = None
         final_pvalue: float | None = None
         block_length = max(5, round(len(common_dates) ** (1.0 / 3.0)))
@@ -334,6 +379,7 @@ def build_mcs_records(
                     active_model_set=elimination_active_set.get(key)
                     if key in eliminated_step
                     else final_active_set,
+                    joint_exception_count=joint_exception_count,
                 )
             )
     return records
@@ -342,7 +388,7 @@ def build_mcs_records(
 def _mcs_record(
     *,
     suite: str,
-    key: tuple[str, str, float],
+    key: tuple[str, str, str, float, str],
     rows: int,
     mean_fz_loss: float | None,
     included: bool,
@@ -358,13 +404,17 @@ def _mcs_record(
     final_pvalue: float | None = None,
     model_t_stat: float | None = None,
     active_model_set: str | None = None,
+    joint_exception_count: int | None = None,
 ) -> dict[str, object]:
     return {
         "suite": suite,
-        "tail_level": key[2],
-        "model_name": key[0],
-        "information_set": key[1],
+        "target_family": key[0],
+        "tail_level": key[3],
+        "refit_frequency": key[4] or None,
+        "model_name": key[1],
+        "information_set": key[2],
         "rows": rows,
+        "joint_exception_count": joint_exception_count,
         "mean_fz_loss": mean_fz_loss,
         "included_in_mcs": included,
         "elimination_step": elimination_step,
@@ -422,13 +472,15 @@ def _hln_tmax_mcs_step(
     return {"tmax_stat": tmax_stat, "pvalue": pvalue, "t_values": t_values}
 
 
-def _mcs_key_set_json(keys: list[tuple[str, str, float]]) -> str:
+def _mcs_key_set_json(keys: list[tuple[str, str, str, float, str]]) -> str:
     return json.dumps(
         [
             {
-                "model_name": key[0],
-                "information_set": key[1],
-                "tail_level": key[2],
+                "target_family": key[0],
+                "model_name": key[1],
+                "information_set": key[2],
+                "tail_level": key[3],
+                "refit_frequency": key[4] or None,
             }
             for key in keys
         ],
@@ -479,16 +531,18 @@ def build_murphy_records(
         rows = list(rows_by_date.values())
         row_losses = np.array([_required_float(row["realized_loss"]) for row in rows], dtype=float)
         var_values = np.array([_required_float(row["var_forecast"]) for row in rows], dtype=float)
-        alpha = 1.0 - key[2]
+        alpha = 1.0 - key[3]
         for threshold_index, threshold in enumerate(thresholds):
             exceed = (row_losses > threshold).astype(float)
             elementary = (exceed - alpha) * (var_values - threshold)
             records.append(
                 {
                     "suite": suite,
-                    "model_name": key[0],
-                    "information_set": key[1],
-                    "tail_level": key[2],
+                    "target_family": key[0],
+                    "model_name": key[1],
+                    "information_set": key[2],
+                    "tail_level": key[3],
+                    "refit_frequency": key[4] or None,
                     "threshold_index": threshold_index,
                     "threshold_value": float(threshold),
                     "threshold_grid_policy": "pooled_oos_loss_1pct_to_99pct_200_equal_points",
@@ -558,18 +612,20 @@ def _valid_forecast_rows(forecasts: list[dict[str, object]]) -> list[dict[str, o
     ]
 
 
-def _forecast_key(row: Mapping[str, object]) -> tuple[str, str, float]:
+def _forecast_key(row: Mapping[str, object]) -> tuple[str, str, str, float, str]:
     return (
+        str(row.get("target_family") or "full_gap_settle_to_open"),
         str(row["model_name"]),
         str(row.get("information_set") or "target_history_only"),
         _required_float(row["tail_level"]),
+        str(row.get("refit_frequency") or ""),
     )
 
 
 def _group_forecasts_by_key(
     forecasts: list[dict[str, object]],
-) -> dict[tuple[str, str, float], dict[str, dict[str, object]]]:
-    grouped: dict[tuple[str, str, float], dict[str, dict[str, object]]] = {}
+) -> dict[tuple[str, str, str, float, str], dict[str, dict[str, object]]]:
+    grouped: dict[tuple[str, str, str, float, str], dict[str, dict[str, object]]] = {}
     for row in forecasts:
         grouped.setdefault(_forecast_key(row), {})[str(row["forecast_date"])] = row
     return grouped
@@ -577,23 +633,62 @@ def _group_forecasts_by_key(
 
 def _group_loss_matrix_by_key(
     rows: list[dict[str, object]],
-) -> dict[tuple[str, str, float], dict[str, dict[str, object]]]:
-    grouped: dict[tuple[str, str, float], dict[str, dict[str, object]]] = {}
+) -> dict[tuple[str, str, str, float, str], dict[str, dict[str, object]]]:
+    grouped: dict[tuple[str, str, str, float, str], dict[str, dict[str, object]]] = {}
     for row in rows:
         key = (
+            str(row.get("target_family") or "full_gap_settle_to_open"),
             str(row["model_name"]),
             str(row.get("information_set") or "target_history_only"),
             _required_float(row["tail_level"]),
+            str(row.get("refit_frequency") or ""),
         )
         grouped.setdefault(key, {})[str(row["forecast_date"])] = row
     return grouped
 
 
+def _loss_matrix_joint_exception_count(
+    grouped: Mapping[tuple[str, str, str, float, str], Mapping[str, Mapping[str, object]]],
+    keys: list[tuple[str, str, str, float, str]],
+    common_dates: list[str],
+) -> int:
+    count = 0
+    for forecast_date in common_dates:
+        has_exception = False
+        for key in keys:
+            row = grouped.get(key, {}).get(forecast_date)
+            if row is None:
+                continue
+            loss = _optional_float(row.get("realized_loss"))
+            var = _optional_float(row.get("var_forecast"))
+            if loss is not None and var is not None and loss > var:
+                has_exception = True
+                break
+        count += int(has_exception)
+    return count
+
+
+def _headline_dm_gate_status(common_n: int, joint_exception_count: int) -> str:
+    if common_n < RESULT_MATRIX_MIN_DM_ROWS:
+        return "unavailable_insufficient_common_rows_for_inference"
+    if joint_exception_count < RESULT_MATRIX_MIN_DM_EXCEPTIONS:
+        return "unavailable_insufficient_tail_events_for_inference"
+    return "ok_block_bootstrap_dm"
+
+
+def _headline_mcs_gate_status(common_n: int, joint_exception_count: int) -> str:
+    if common_n < RESULT_MATRIX_MIN_MCS_ROWS:
+        return "unavailable_insufficient_common_rows_for_inference"
+    if joint_exception_count < RESULT_MATRIX_MIN_MCS_EXCEPTIONS:
+        return "unavailable_insufficient_tail_events_for_inference"
+    return "ok_hln_tmax_mcs"
+
+
 def _model_eviction_record(
     *,
     suite: str,
-    key: tuple[str, str, float],
-    anchor_key: tuple[str, str, float],
+    key: tuple[str, str, str, float, str],
+    anchor_key: tuple[str, str, str, float, str],
     anchor_rows: int,
     overlap_rows: int,
     coverage_ratio: float,
@@ -605,11 +700,13 @@ def _model_eviction_record(
 ) -> dict[str, object]:
     return {
         "suite": suite,
-        "model_name": key[0],
-        "information_set": key[1],
-        "tail_level": key[2],
-        "anchor_model_name": anchor_key[0],
-        "anchor_information_set": anchor_key[1],
+        "target_family": key[0],
+        "model_name": key[1],
+        "information_set": key[2],
+        "tail_level": key[3],
+        "refit_frequency": key[4] or None,
+        "anchor_model_name": anchor_key[1],
+        "anchor_information_set": anchor_key[2],
         "anchor_rows": anchor_rows,
         "overlap_rows": overlap_rows,
         "coverage_ratio": coverage_ratio,

@@ -2,6 +2,8 @@
 # ruff: noqa: F401,F403,F405,F821,I001,UP035
 from __future__ import annotations
 
+from zoneinfo import ZoneInfo
+
 from n225_open_gap_tail.config import runtime as _runtime
 
 globals().update({k: v for k, v in vars(_runtime).items() if not k.startswith("__")})
@@ -570,7 +572,7 @@ def _fx_candidate_is_usable(
         return False
     if observation_date > target_date:
         return False
-    release_age_days = max(0, (cutoff.date() - available_ts.date()).days)
+    release_age_days = _fred_h10_release_age_days(cutoff=cutoff, available_ts=available_ts)
     return release_age_days <= max_release_age_days
 
 
@@ -589,7 +591,9 @@ def _fx_output(
         None if observation_date is None else (target_date - observation_date).days
     )
     release_age_days = (
-        None if available_ts is None else max(0, (cutoff.date() - available_ts.date()).days)
+        None
+        if available_ts is None
+        else _fred_h10_release_age_days(cutoff=cutoff, available_ts=available_ts)
     )
     source_date = observation_date.isoformat() if observation_date else None
     output: dict[str, object] = {
@@ -614,6 +618,14 @@ def _fx_output(
             fill_method=source,
         )
     return output
+
+
+def _fred_h10_release_age_days(*, cutoff: datetime, available_ts: datetime) -> int:
+    """Calendar days since the expected H.10 release in the U.S. release calendar."""
+    release_zone = ZoneInfo("America/New_York")
+    cutoff_release_date = cutoff.astimezone(release_zone).date()
+    available_release_date = available_ts.astimezone(release_zone).date()
+    return max(0, (cutoff_release_date - available_release_date).days)
 
 
 def _fx_observation_date(row: Mapping[str, object]) -> date | None:

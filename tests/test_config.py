@@ -6,7 +6,6 @@ from n225_open_gap_tail.config.research import CORE_FRED_SERIES, CORE_MASSIVE_TI
 
 def test_default_settings_have_project_name() -> None:
     settings = Settings(
-        jquants_api_plan="free",
         jquants_derivatives_daily_enabled=False,
         jquants_derivatives_intraday_enabled=False,
         fred_series=",".join(CORE_FRED_SERIES),
@@ -16,8 +15,7 @@ def test_default_settings_have_project_name() -> None:
     assert settings.project_name == "n225-open-gap-tail"
     assert settings.project_timezone_jp == "Asia/Tokyo"
     assert settings.project_timezone_us == "America/New_York"
-    assert settings.jquants_api_version == "v2"
-    assert settings.jquants_api_plan == "free"
+    assert settings.jquants_api_base_url.endswith("/v2")
     assert settings.jquants_equity_master_enabled is True
     assert settings.jquants_equity_daily_enabled is True
     assert settings.jquants_derivatives_daily_enabled is False

@@ -122,9 +122,11 @@ def _deterministic_frame_signature(
     sort_columns: tuple[str, ...],
 ) -> str:
     working = frame
-    for column in columns:
-        if column not in working.columns:
-            working = working.with_columns(pl.lit(None).alias(column))
+    missing = [column for column in columns if column not in working.columns]
+    if missing:
+        raise PipelineRunError(
+            "Cannot sign leakage summary; panel signature columns missing: " + ", ".join(missing)
+        )
     selected = working.select(
         [
             pl.col(column).cast(pl.Utf8, strict=False).fill_null("<NULL>").alias(column)

@@ -24,6 +24,7 @@ import n225_open_gap_tail.forecasting._benchmark_suite as benchmark_suite
 import n225_open_gap_tail.forecasting._ml_tail_suite as ml_tail_suite
 import n225_open_gap_tail.inference as paper_inference
 import n225_open_gap_tail.models.benchmark_advanced as benchmark_advanced
+import n225_open_gap_tail.models.benchmark_advanced_math as advanced_math
 import n225_open_gap_tail.panel as paper_leakage
 import n225_open_gap_tail.panel as paper_panel
 import n225_open_gap_tail.reporting as paper_reporting
@@ -309,7 +310,7 @@ def test_advanced_benchmark_monthly_refit_uses_first_valid_panel_date() -> None:
     ) == ["2026-02-03", "2026-03-02"]
 
 
-def test_advanced_gas_contract_records_unit_score_scaling_and_failure_status() -> None:
+def test_advanced_gas_contract_records_raw_score_scaling_and_failure_status() -> None:
     _, diagnostics, _ = benchmark_advanced._forecast_stateful_sequence(
         rows=[
             {"forecast_date": "2026-01-02", "clean_sample": True, "realized_loss": 0.01},
@@ -321,18 +322,32 @@ def test_advanced_gas_contract_records_unit_score_scaling_and_failure_status() -
     )
 
     diagnostic = diagnostics[0]
-    assert diagnostic["score_scaling"] == "unit_inverse_fisher"
+    assert diagnostic["score_scaling"] == "raw_student_t_log_scale_score"
     assert diagnostic["state_variable"] == "log_sigma"
     assert diagnostic["invalid_state_status"] == "unavailable_gas_filter_failed"
 
     failure = benchmark_advanced._gas_filter_failure_record(
         model_name="gas_t_location_scale",
         tail_level=0.95,
-        failure_reason="nonfinite_unit_scaled_score",
+        failure_reason="nonfinite_raw_student_t_log_scale_score",
     )
     assert failure["fit_status"] == "unavailable_gas_filter_failed"
-    assert failure["score_scaling"] == "unit_inverse_fisher"
+    assert failure["score_scaling"] == "raw_student_t_log_scale_score"
     assert failure["state_variable"] == "log_sigma"
+
+
+def test_derivative_free_optimizer_runs_bounded_restarts_on_flat_objective() -> None:
+    result = advanced_math._run_derivative_free_optimizer(
+        objective=lambda params: 1.0,
+        x0=np.array([1.0, 0.5]),
+        model_name="direct_fz_loss_sav",
+        tail_level=0.95,
+        forecast_date="2026-01-05",
+    )
+
+    assert result["restart_count"] == paper_module.ADVANCED_OPTIMIZER_MAX_RESTARTS
+    assert result["restart_reason"] == "no_optimizer_improvement"
+    assert result["initial_objective_value"] == 1.0
 
 
 def test_care_expectile_calibration_uses_training_window_only() -> None:
@@ -1447,6 +1462,30 @@ def test_canonical_fx_nulls_beyond_stale_fallback_window() -> None:
     assert fx["fx_fallback_reason"] == "fred_fx_stale_beyond_fill_window"
 
 
+def test_fred_h10_release_age_uses_us_release_calendar_not_utc_date() -> None:
+    context = paper_core._canonical_fx_context(
+        massive_daily_records=[],
+        fred_records=[
+            {
+                "series_id": "DEXJPUS",
+                "observation_date": "2026-01-09",
+                "vendor_available_ts_utc": datetime(2026, 1, 12, 21, 15, tzinfo=UTC),
+                "value": 160.0,
+            }
+        ],
+        calendar_records=[],
+    )
+
+    fx = paper_core._canonical_fx_asof(
+        context,
+        us_date="2026-01-12",
+        cutoff=datetime(2026, 1, 13, 1, 0, tzinfo=UTC),
+    )
+
+    assert fx["fx_source"] == "fred_h10_latest_released"
+    assert fx["fx_release_age_days"] == 0
+
+
 def test_calendar_map_statuses_cover_desync_and_holiday_trading() -> None:
     records = paper_module.build_calendar_map_records(
         target_rows=[
@@ -1612,15 +1651,13 @@ def test_vendor_payload_helpers_and_marker(tmp_path: Path) -> None:
 
 def test_cache_coverage_guards_prevent_partial_month_reuse(tmp_path: Path) -> None:
     parquet_path = tmp_path / "data.parquet"
-    metadata_path = parquet_path.with_suffix(parquet_path.suffix + ".metadata.json")
-    metadata_path.write_text(
-        json.dumps(
-            {
-                "requested_dates": ["2026-01-05", "2026-01-06"],
-                "requested_range": ["2026-01-05", "2026-01-09"],
-            }
-        ),
-        encoding="utf-8",
+    paper_core.atomic_write_parquet(
+        parquet_path,
+        [{"requested_date": "2026-01-05", "value": 1.0}],
+        metadata={
+            "requested_dates": ["2026-01-05", "2026-01-06"],
+            "requested_range": ["2026-01-05", "2026-01-09"],
+        },
     )
 
     assert paper_core._cache_covers_dates(parquet_path, ["2026-01-05"])
@@ -1737,6 +1774,25 @@ def _synthetic_forecasts(
     return rows
 
 
+def _with_panel_signature_fields(row: dict[str, object]) -> dict[str, object]:
+    forecast_date = str(row["forecast_date"])
+    current = datetime.fromisoformat(forecast_date)
+    realized_loss = float(row.get("realized_loss") or 0.0)
+    return {
+        **row,
+        "target_open_ts_utc": row.get("target_open_ts_utc")
+        or datetime(current.year, current.month, current.day, 23, 45, tzinfo=UTC),
+        "model_cutoff_ts_utc": row.get("model_cutoff_ts_utc")
+        or datetime(current.year, current.month, current.day, 21, 0, tzinfo=UTC),
+        "gap_t": row.get("gap_t", -realized_loss),
+        "forecast_sample": row.get("forecast_sample", True),
+        "forecast_sample_reason": row.get("forecast_sample_reason"),
+        "target_clean_sample": row.get("target_clean_sample", True),
+        "join_miss_reason": row.get("join_miss_reason"),
+        "mapping_status": row.get("mapping_status", "normal_trading"),
+    }
+
+
 def test_common_sample_eviction_and_headline_artifacts() -> None:
     dates = [f"2026-01-{day:02d}" for day in range(1, 21)]
     forecasts = [
@@ -1797,7 +1853,7 @@ def test_common_sample_eviction_and_headline_artifacts() -> None:
 
 def test_hln_tmax_mcs_eliminates_worst_model_on_balanced_loss_matrix() -> None:
     loss_matrix: list[dict[str, object]] = []
-    for index in range(160):
+    for index in range(260):
         forecast_date = (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=index)).date()
         for model_name, base_loss in (
             ("best", 0.10),
@@ -1810,6 +1866,8 @@ def test_hln_tmax_mcs_eliminates_worst_model_on_balanced_loss_matrix() -> None:
                     "model_name": model_name,
                     "information_set": "set_a",
                     "tail_level": 0.95,
+                    "realized_loss": 1.0 if index % 10 == 0 else 0.0,
+                    "var_forecast": 0.5,
                     "fz_loss": base_loss + float(index % 7) / 1000.0,
                 }
             )
@@ -1820,10 +1878,86 @@ def test_hln_tmax_mcs_eliminates_worst_model_on_balanced_loss_matrix() -> None:
     assert by_model["best"]["included_in_mcs"] is True
     assert by_model["worst"]["included_in_mcs"] is False
     assert by_model["worst"]["elimination_step"] == 1
-    assert by_model["worst"]["block_length"] == max(5, round(160 ** (1 / 3)))
+    assert by_model["worst"]["block_length"] == max(5, round(260 ** (1 / 3)))
     assert by_model["worst"]["method_note"] == "hln_tmax_moving_block_bootstrap"
     assert by_model["worst"]["tmax_stat"] is not None
     assert by_model["worst"]["active_model_set"] is not None
+
+
+def test_headline_dm_and_mcs_gate_on_common_rows_and_tail_events() -> None:
+    loss_matrix: list[dict[str, object]] = []
+    for index in range(130):
+        forecast_date = (datetime(2026, 2, 1, tzinfo=UTC) + timedelta(days=index)).date()
+        for model_name, fz in (("historical_quantile", 0.20), ("candidate", 0.18)):
+            loss_matrix.append(
+                {
+                    "forecast_date": forecast_date.isoformat(),
+                    "target_family": "full_gap_settle_to_open",
+                    "model_name": model_name,
+                    "information_set": "target_history_only",
+                    "tail_level": 0.95,
+                    "refit_frequency": "monthly",
+                    "realized_loss": 1.0 if index % 25 == 0 else 0.1,
+                    "var_forecast": 0.5,
+                    "fz_loss": fz,
+                }
+            )
+
+    dm = paper_module.build_block_bootstrap_dm_records(
+        loss_matrix,
+        suite="benchmark",
+        anchor_model="historical_quantile",
+        anchor_information_set="target_history_only",
+        reps=19,
+    )
+    mcs = paper_module.build_mcs_records(loss_matrix, suite="benchmark", reps=19)
+
+    assert dm[0]["inference_status"] == "ok_block_bootstrap_dm"
+    assert dm[0]["target_family"] == "full_gap_settle_to_open"
+    assert dm[0]["refit_frequency"] == "monthly"
+    assert dm[0]["joint_exception_count"] >= 5
+    assert all(
+        row["mcs_status"] == "unavailable_insufficient_common_rows_for_inference" for row in mcs
+    )
+
+
+def test_loss_matrix_grouping_keeps_target_and_refit_frequency_separate() -> None:
+    loss_matrix: list[dict[str, object]] = []
+    for target_family, refit_frequency in (
+        ("full_gap_settle_to_open", "monthly"),
+        ("residual_usclosemark_to_open", "daily"),
+    ):
+        for index in range(130):
+            forecast_date = (datetime(2026, 6, 1, tzinfo=UTC) + timedelta(days=index)).date()
+            for model_name, fz in (("historical_quantile", 0.20), ("candidate", 0.19)):
+                loss_matrix.append(
+                    {
+                        "forecast_date": forecast_date.isoformat(),
+                        "target_family": target_family,
+                        "model_name": model_name,
+                        "information_set": "target_history_only",
+                        "tail_level": 0.95,
+                        "refit_frequency": refit_frequency,
+                        "realized_loss": 1.0 if index % 20 == 0 else 0.1,
+                        "var_forecast": 0.5,
+                        "fz_loss": fz,
+                    }
+                )
+
+    dm = paper_module.build_block_bootstrap_dm_records(
+        loss_matrix,
+        suite="benchmark",
+        anchor_model="historical_quantile",
+        anchor_information_set="target_history_only",
+        reps=19,
+    )
+
+    assert {
+        (row["target_family"], row["refit_frequency"], row["candidate_model_name"]) for row in dm
+    } == {
+        ("full_gap_settle_to_open", "monthly", "candidate"),
+        ("residual_usclosemark_to_open", "daily", "candidate"),
+    }
 
 
 def test_incremental_and_dst_artifacts_use_block_bootstrap_dm_labels() -> None:
@@ -2434,13 +2568,15 @@ def test_evaluate_benchmark_suite_and_latex_export_with_synthetic_panel(
     panel_dir = run_dir / "panel"
     panel_dir.mkdir(parents=True)
     rows = [
-        {
-            "forecast_date": (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=day))
-            .date()
-            .isoformat(),
-            "clean_sample": True,
-            "realized_loss": float(day) / 100.0,
-        }
+        _with_panel_signature_fields(
+            {
+                "forecast_date": (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=day))
+                .date()
+                .isoformat(),
+                "clean_sample": True,
+                "realized_loss": float(day) / 100.0,
+            }
+        )
         for day in range(80)
     ]
     pl.DataFrame(rows).write_parquet(panel_dir / "modeling_panel.parquet")
@@ -2513,13 +2649,15 @@ def test_benchmark_advanced_wiring_is_nonblocking_and_sharded(
     panel_dir = run_dir / "panel"
     panel_dir.mkdir(parents=True)
     rows = [
-        {
-            "forecast_date": (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=day))
-            .date()
-            .isoformat(),
-            "clean_sample": True,
-            "realized_loss": float(day) / 100.0,
-        }
+        _with_panel_signature_fields(
+            {
+                "forecast_date": (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=day))
+                .date()
+                .isoformat(),
+                "clean_sample": True,
+                "realized_loss": float(day) / 100.0,
+            }
+        )
         for day in range(70)
     ]
     pl.DataFrame(rows).write_parquet(panel_dir / "modeling_panel.parquet")
@@ -2636,13 +2774,15 @@ def test_benchmark_tagged_dispatch_preserves_serial_floor_then_advanced_order(
     panel_dir = run_dir / "panel"
     panel_dir.mkdir(parents=True)
     rows = [
-        {
-            "forecast_date": (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=day))
-            .date()
-            .isoformat(),
-            "clean_sample": True,
-            "realized_loss": float(day) / 100.0,
-        }
+        _with_panel_signature_fields(
+            {
+                "forecast_date": (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=day))
+                .date()
+                .isoformat(),
+                "clean_sample": True,
+                "realized_loss": float(day) / 100.0,
+            }
+        )
         for day in range(70)
     ]
     pl.DataFrame(rows).write_parquet(panel_dir / "modeling_panel.parquet")
@@ -2704,13 +2844,15 @@ def test_benchmark_floor_suite_skips_advanced_models(
     panel_dir = run_dir / "panel"
     panel_dir.mkdir(parents=True)
     rows = [
-        {
-            "forecast_date": (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=day))
-            .date()
-            .isoformat(),
-            "clean_sample": True,
-            "realized_loss": float(day) / 100.0,
-        }
+        _with_panel_signature_fields(
+            {
+                "forecast_date": (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=day))
+                .date()
+                .isoformat(),
+                "clean_sample": True,
+                "realized_loss": float(day) / 100.0,
+            }
+        )
         for day in range(70)
     ]
     pl.DataFrame(rows).write_parquet(panel_dir / "modeling_panel.parquet")
@@ -3010,20 +3152,22 @@ def test_evaluate_ml_tail_suite_writes_lightgbm_ladder_artifacts(
     for day in range(90):
         current = start + timedelta(days=day)
         rows.append(
-            {
-                "forecast_date": current.date().isoformat(),
-                "target_family": "full_gap_settle_to_open",
-                "clean_sample": True,
-                "realized_loss": float(day % 20) / 100.0,
-                "gap_t": -float(day % 20) / 100.0,
-                "dst_regime": "EDT" if day % 2 else "EST",
-                "absorption_regime": "post_us_close_night_absorption"
-                if day % 2
-                else "coincident_us_ose_night_close",
-                "spy_return": float(day) / 1000.0,
-                "ewj_return": float(day % 7) / 1000.0,
-                "ewh_return": float(day % 5) / 1000.0,
-            }
+            _with_panel_signature_fields(
+                {
+                    "forecast_date": current.date().isoformat(),
+                    "target_family": "full_gap_settle_to_open",
+                    "clean_sample": True,
+                    "realized_loss": float(day % 20) / 100.0,
+                    "gap_t": -float(day % 20) / 100.0,
+                    "dst_regime": "EDT" if day % 2 else "EST",
+                    "absorption_regime": "post_us_close_night_absorption"
+                    if day % 2
+                    else "coincident_us_ose_night_close",
+                    "spy_return": float(day) / 1000.0,
+                    "ewj_return": float(day % 7) / 1000.0,
+                    "ewh_return": float(day % 5) / 1000.0,
+                }
+            )
         )
     pl.DataFrame(rows).write_parquet(panel_dir / "modeling_panel.parquet")
     pl.DataFrame(
@@ -3108,6 +3252,13 @@ def test_benchmark_and_ml_tail_require_current_leakage_summary(tmp_path: Path) -
                 "clean_sample": True,
                 "realized_loss": 0.01,
                 "gap_t": -0.01,
+                "target_open_ts_utc": datetime(2026, 1, 1, 23, 45, tzinfo=UTC),
+                "model_cutoff_ts_utc": datetime(2025, 12, 31, 21, 0, tzinfo=UTC),
+                "forecast_sample": True,
+                "forecast_sample_reason": None,
+                "target_clean_sample": True,
+                "join_miss_reason": None,
+                "mapping_status": "normal_trading",
             }
         ]
     ).write_parquet(panel_dir / "modeling_panel.parquet")
@@ -3130,6 +3281,13 @@ def test_benchmark_and_ml_tail_require_current_leakage_summary(tmp_path: Path) -
                 "clean_sample": True,
                 "realized_loss": 0.02,
                 "gap_t": -0.02,
+                "target_open_ts_utc": datetime(2026, 1, 2, 23, 45, tzinfo=UTC),
+                "model_cutoff_ts_utc": datetime(2026, 1, 1, 21, 0, tzinfo=UTC),
+                "forecast_sample": True,
+                "forecast_sample_reason": None,
+                "target_clean_sample": True,
+                "join_miss_reason": None,
+                "mapping_status": "normal_trading",
             }
         ]
     ).write_parquet(panel_dir / "modeling_panel.parquet")
@@ -3147,6 +3305,13 @@ def test_write_leakage_check_outputs_summary(tmp_path: Path) -> None:
                 "forecast_date": "2026-01-05",
                 "model_cutoff_ts_utc": datetime(2026, 1, 2, 21, 30, tzinfo=UTC),
                 "target_open_ts_utc": datetime(2026, 1, 4, 23, 45, tzinfo=UTC),
+                "gap_t": -0.02,
+                "realized_loss": 0.02,
+                "forecast_sample": True,
+                "forecast_sample_reason": None,
+                "target_clean_sample": True,
+                "join_miss_reason": None,
+                "mapping_status": "normal_trading",
                 "spy_return": 0.01,
                 "spy_return__available_ts_utc": datetime(2026, 1, 2, 21, 15, tzinfo=UTC),
                 "spy_return__fill_method": "direct",
@@ -3223,6 +3388,24 @@ def test_leakage_binding_uses_deterministic_panel_signature(tmp_path: Path) -> N
     )
     with pytest.raises(paper_module.PipelineRunError, match="stale leakage check artifact"):
         paper_core._assert_leakage_gate(run_dir)
+
+
+def test_leakage_signature_fails_closed_on_missing_signature_column() -> None:
+    frame = pl.DataFrame(
+        [
+            {
+                "forecast_date": "2026-01-05",
+                "target_open_ts_utc": datetime(2026, 1, 5, tzinfo=UTC),
+            }
+        ]
+    )
+
+    with pytest.raises(paper_module.PipelineRunError, match="panel signature columns missing"):
+        paper_core._deterministic_frame_signature(
+            frame,
+            columns=paper_module.PANEL_SIGNATURE_COLUMNS,
+            sort_columns=("forecast_date",),
+        )
 
 
 def test_build_panel_with_synthetic_vendor_rows(

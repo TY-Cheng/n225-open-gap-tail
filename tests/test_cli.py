@@ -81,7 +81,6 @@ def test_status_reports_environment_without_secret_values(
     monkeypatch.setenv("FRED_SERIES", ",".join(CORE_FRED_SERIES))
     monkeypatch.setenv("MASSIVE_API_KEY", "massive-secret")
     monkeypatch.setenv("JQUANTS_API_KEY", "jquants-secret")
-    monkeypatch.setenv("JQUANTS_API_PLAN", "free")
     monkeypatch.setenv("JQUANTS_DERIVATIVES_DAILY_ENABLED", "false")
     monkeypatch.setenv("JQUANTS_DERIVATIVES_INTRADAY_ENABLED", "false")
     monkeypatch.setenv("JPX_DATACUBE_EMAIL", "researcher@example.com")
@@ -108,10 +107,9 @@ def test_status_reports_environment_without_secret_values(
     assert "calendar us exchange: XNYS" in result.output
     assert "calendar jpx exchange: JPX" in result.output
     assert "nikkei contract roll days before last trade: 5" in result.output
-    assert "j-quants api version: v2" in result.output
     assert "j-quants api base url: https://api.jquants.com/v2" in result.output
     assert "j-quants api key configured: True" in result.output
-    assert "j-quants api plan: free" in result.output
+    assert "j-quants required plan: premium" in result.output
     assert "j-quants equity master enabled: True" in result.output
     assert "j-quants equity daily enabled: True" in result.output
     assert "j-quants derivatives daily enabled: False" in result.output

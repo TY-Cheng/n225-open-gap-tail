@@ -322,6 +322,26 @@ def file_xxhash64(path: Path) -> str:
     return digest.hexdigest()
 
 
+def read_verified_parquet_metadata(path: Path) -> dict[str, object]:
+    """Read sidecar metadata only when it matches the parquet payload hash."""
+    metadata_path = path.with_suffix(path.suffix + ".metadata.json")
+    metadata = read_json(metadata_path)
+    if not path.exists() or not metadata:
+        return {}
+    if metadata.get("chunk_hash_algo") != CHUNK_HASH_ALGO:
+        return {}
+    expected_hash = metadata.get("chunk_hash")
+    if not isinstance(expected_hash, str) or not expected_hash:
+        return {}
+    try:
+        actual_hash = file_xxhash64(path)
+    except OSError:
+        return {}
+    if actual_hash != expected_hash:
+        return {}
+    return metadata
+
+
 def cleanup_orphan_tmp_files(
     root: Path,
     *,

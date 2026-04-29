@@ -65,11 +65,11 @@ The pipeline is now producing full-run research-candidate evidence from the dura
 | ML-tail headline ladder | Yes, after review | Strict information-set ladder; currently direct quantile survived the gate. |
 | ML-tail per-model rows | No | Model-specific OOS diagnostics; samples need not match across model families. |
 | Restricted result matrix | No headline claim | Matched-date comparison for model families and within-model increments. |
-| DST, stress, Murphy, hedge-trigger diagnostics | Diagnostic only | Useful for interpretation and robustness, not automatic model superiority. |
+| DST, stress, Murphy, hedge-trigger diagnostics | Diagnostic only | Useful for interpretation and risk monitoring, not automatic model superiority. |
 
 - Headline claims require a clean committed run, a shared common sample, zero leakage failures, and author-reviewed tables.
 - Restricted rows can explain model-family behavior on matched dates, but they cannot replace the headline information ladder.
-- Diagnostic rows can motivate discussion and future checks; they should not be worded as superiority or risk-management usefulness claims.
+- Diagnostic rows can motivate discussion and future checks; they should not be worded as superiority or risk-management usefulness claims without their own evidence gates.
 
 ## Results And Discussion
 
@@ -84,14 +84,14 @@ The pipeline is now producing full-run research-candidate evidence from the dura
 
 ### Benchmark floor and advanced benchmarks
 
-- `benchmark_metrics.parquet` reports `6` common-sample benchmark model rows, while benchmark forecasts contain `10557` model-date rows.
+- `benchmark_metrics.parquet` reports `12` common-sample rows across `6` benchmark model families and `2` tail side(s), while benchmark forecasts contain `21114` model-date rows.
 - Benchmark-floor models are external target-history and econometric baselines; this section does not rank them.
-- Advanced benchmark rows are implemented for `10` model families and contribute `6597` nonblocking forecast rows; these rows are claim-gated diagnostics unless a manuscript table explicitly promotes them through the same sample and inference review.
+- Advanced benchmark rows are implemented for `10` model families and contribute `13194` nonblocking forecast rows; these rows are claim-gated diagnostics unless a manuscript table explicitly promotes them through the same sample and inference review.
 
 ### ML-tail headline ladder
 
 `ml_tail_metrics.parquet` defines the headline ML-tail information-set ladder for this run.
-- The headline artifact contains `4` information sets and `1` tail level(s); the retained headline model rows are `lightgbm_direct_quantile`.
+- The headline artifact contains `4` information sets, `1` tail level(s), and `2` tail side(s); the retained headline model rows are `lightgbm_direct_quantile`.
 - The implemented ML-tail registry is `lightgbm_direct_quantile`, `lightgbm_location_scale`, `lightgbm_standardized_loss_pot_gpd`, but the headline ladder should be read only from `ml_tail_metrics.parquet`.
 - The ladder is used to assess candidate incremental U.S.-close information under strict common-sample rules; it does not by itself establish forecast improvement.
 
@@ -104,26 +104,27 @@ The pipeline is now producing full-run research-candidate evidence from the dura
 
 ### Coverage and inference gates
 
-- Coverage review flags `4/4` headline rows with breach rates more than 2.5 percentage points from nominal coverage; Kupiec p-values fall below 0.05 in `4/4` rows and Christoffersen p-values fall below 0.05 in `0/4` rows where reported.
-- Model-eviction artifacts record `4` retained rows and `8` non-retained rows under the headline sample policy.
+- Coverage review flags `8/8` headline rows with breach rates more than 2.5 percentage points from nominal coverage; Kupiec p-values fall below 0.05 in `8/8` rows and Christoffersen p-values fall below 0.05 in `0/8` rows where reported.
+- Model-eviction artifacts record `8` retained rows and `16` non-retained rows under the headline sample policy.
 - Block-bootstrap DM and HLN Tmax MCS artifacts are unconditional forecast-comparison diagnostics; any p-value should be read on average across the unconditional evaluation sample, not as condition-specific evidence.
 - Loss differentials alone do not constitute an improvement claim; coverage, exception counts, sample gates, and inference status must be reviewed together.
-- Tail-event and inference gates report `0` restricted rows with insufficient tail-event power and `0/18` unavailable DM/MCS inference rows.
+- Tail-event and inference gates report `0` restricted rows with insufficient tail-event power and `0/36` unavailable DM/MCS inference rows.
 
 ### Supporting diagnostics
 
 - Supporting LaTeX diagnostics are exported for `4/4` registered table families.
-- `ml_tail_dst_attenuation.parquet` contains `6` DST attenuation rows; these are descriptive timing-regime forecast diagnostics. They do not establish a structural timing mechanism.
-- ES severity diagnostics contain `10` finite rows with mean exceedance severity ranging from `0.00567755` to `0.0117881`; this is conditional-on-exception evidence.
-- The diagnostic 75th-percentile VaR trigger rule marks `3688` model-date rows; `292` of those rows coincide with VaR exceptions out of `998` total exceptions, and mean triggered exception severity is `0.0124703`. This is a pre-open risk-monitoring diagnostic, not hedge PnL, transaction-cost, or trading-alpha evidence.
-- Stress-window diagnostics contain `198` rows, and Murphy diagnostics contain `800` ML-tail rows.
+- `ml_tail_dst_attenuation.parquet` contains `12` DST attenuation rows; these are descriptive timing-regime forecast diagnostics. They do not establish a structural timing mechanism.
+- ES severity diagnostics contain `20` finite rows with mean exceedance severity ranging from `0.00567755` to `0.0127453`; this is conditional-on-exception evidence.
+- The diagnostic 75th-percentile VaR trigger rule marks `7260` model-date rows; `585` of those rows coincide with VaR exceptions out of `1977` total exceptions, and mean triggered exception severity is `0.013498`. This is a pre-open risk-monitoring diagnostic, not hedge PnL, transaction-cost, or trading-alpha evidence.
+- Stress-window diagnostics contain `396` rows, and Murphy diagnostics contain `1600` ML-tail rows.
 - Feature-unavailability diagnostics are empty or not available for this run.
 
 ### Not yet claimed
 
-- Instrumented conditional predictive ability is not implemented in the current artifacts; the reported DM and MCS outputs are unconditional average-sample forecast-comparison diagnostics.
+- Instrumented conditional predictive ability appears as a side-specific ML-tail information-ladder diagnostic across `2` tail side(s), with `6` registered row(s), of which `6` pass their HAC-Wald gates; it does not generate VaR/ES forecasts and does not replace DM/MCS.
 - DST attenuation rows are descriptive forecast evidence; structural DST causal identification is not claimed.
 - No hedge PnL, transaction-cost, or trading-alpha analysis is performed. The trigger table is a pre-open risk-monitoring diagnostic only.
+- Left-tail and right-tail outputs are both economic tail-risk surfaces for futures positions; neither side should be promoted beyond the sample, coverage, and inference gates without author review.
 - The current evidence does not create an automatic model-win statement; any manuscript claim still requires author review of sample gates, coverage, loss metrics, and inference diagnostics.
 
 
@@ -240,21 +241,27 @@ The pipeline is now producing full-run research-candidate evidence from the dura
 
 ## Benchmark Suite
 
-Status: `completed`; forecast rows: `10557`; metric rows: `6`; failures: `0`.
+Status: `completed`; forecast rows: `21114`; metric rows: `12`; failures: `0`.
 
 | Benchmark layer | Status | Forecast rows | Diagnostic rows | Failures | How to read it |
 | --- | --- | --- | --- | --- | --- |
-| floor | `completed` | `3960` | `6` | `0` | Implemented benchmark evidence for target-history and econometric floor models. |
-| advanced | `completed_nonblocking` | `6597` | `393` | `0` | Implemented nonblocking advanced benchmark forecasts; review with common-sample gates. |
+| floor | `completed` | `7920` | `12` | `0` | Implemented benchmark evidence for target-history and econometric floor models. |
+| advanced | `completed_nonblocking` | `13194` | `786` | `0` | Implemented nonblocking advanced benchmark forecasts; review with common-sample gates. |
 
-| Model | Information set | Rows | VaR breach rate | Exceptions | Mean quantile loss | Mean FZ loss |
-| --- | --- | --- | --- | --- | --- | --- |
-| ewma_vol_scaled | target_history_only | 660 | 5.303% | 35 | 0.00139284 | -3.65391 |
-| garch_t | target_history_only | 660 | 6.364% | 42 | 0.00135148 | -3.70351 |
-| gjr_garch_evt | target_history_only | 660 | 5.606% | 37 | 0.00133621 | -3.73138 |
-| gjr_garch_t | target_history_only | 660 | 6.515% | 43 | 0.00134109 | -3.70805 |
-| historical_quantile | target_history_only | 660 | 6.061% | 40 | 0.00147857 | -3.51331 |
-| rolling_quantile | target_history_only | 660 | 6.061% | 40 | 0.00147852 | -3.50579 |
+| Model | Information set | Tail side | Rows | VaR breach rate | Exceptions | Mean quantile loss | Mean FZ loss |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| ewma_vol_scaled | target_history_only | left_tail | 660 | 5.303% | 35 | 0.00139284 | -3.65391 |
+| ewma_vol_scaled | target_history_only | right_tail | 660 | 4.545% | 30 | 0.00131597 | -3.69643 |
+| garch_t | target_history_only | left_tail | 660 | 6.364% | 42 | 0.00135148 | -3.70351 |
+| garch_t | target_history_only | right_tail | 660 | 3.939% | 26 | 0.00122288 | -3.78658 |
+| gjr_garch_evt | target_history_only | left_tail | 660 | 5.606% | 37 | 0.00133621 | -3.73138 |
+| gjr_garch_evt | target_history_only | right_tail | 660 | 5.303% | 35 | 0.00118016 | -3.80061 |
+| gjr_garch_t | target_history_only | left_tail | 660 | 6.515% | 43 | 0.00134109 | -3.70805 |
+| gjr_garch_t | target_history_only | right_tail | 660 | 3.788% | 25 | 0.00117451 | -3.81439 |
+| historical_quantile | target_history_only | left_tail | 660 | 6.061% | 40 | 0.00147857 | -3.51331 |
+| historical_quantile | target_history_only | right_tail | 660 | 6.364% | 42 | 0.00146455 | -3.43788 |
+| rolling_quantile | target_history_only | left_tail | 660 | 6.061% | 40 | 0.00147852 | -3.50579 |
+| rolling_quantile | target_history_only | right_tail | 660 | 6.667% | 44 | 0.00147175 | -3.43306 |
 
 - Benchmark floor rows set the target-history/econometric floor that ML models should be interpreted against.
 - Advanced benchmark families are nonblocking; rows with valid forecasts are empirical evidence subject to the same sample and inference gates, while unavailable rows remain diagnostics.
@@ -263,27 +270,31 @@ Status: `completed`; forecast rows: `10557`; metric rows: `6`; failures: `0`.
 
 ## ML-Tail Headline Ladder
 
-Status: `completed_lightgbm_ml_tail_models`; implemented models: `lightgbm_direct_quantile`, `lightgbm_location_scale`, `lightgbm_standardized_loss_pot_gpd`; forecast rows: `3872`; failures: `0`.
+Status: `completed_lightgbm_ml_tail_models`; implemented models: `lightgbm_direct_quantile`, `lightgbm_location_scale`, `lightgbm_standardized_loss_pot_gpd`; forecast rows: `7744`; failures: `0`.
 
-| Model | Information set | Rows | VaR breach rate | Exceptions | Mean quantile loss | Mean FZ loss |
-| --- | --- | --- | --- | --- | --- | --- |
-| lightgbm_direct_quantile | japan_only | 660 | 9.545% | 63 | 0.00147071 | -3.3637 |
-| lightgbm_direct_quantile | japan_only_plus_us_close_core | 660 | 11.515% | 76 | 0.00120487 | -3.43912 |
-| lightgbm_direct_quantile | japan_only_plus_us_close_core_plus_japan_proxy | 660 | 12.576% | 83 | 0.00115289 | -3.62124 |
-| lightgbm_direct_quantile | japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy | 660 | 12.424% | 82 | 0.00115654 | -3.58631 |
+| Model | Information set | Tail side | Rows | VaR breach rate | Exceptions | Mean quantile loss | Mean FZ loss |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| lightgbm_direct_quantile | japan_only | left_tail | 660 | 9.545% | 63 | 0.00147071 | -3.3637 |
+| lightgbm_direct_quantile | japan_only_plus_us_close_core | left_tail | 660 | 11.515% | 76 | 0.00120487 | -3.43912 |
+| lightgbm_direct_quantile | japan_only_plus_us_close_core_plus_japan_proxy | left_tail | 660 | 12.576% | 83 | 0.00115289 | -3.62124 |
+| lightgbm_direct_quantile | japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy | left_tail | 660 | 12.424% | 82 | 0.00115654 | -3.58631 |
+| lightgbm_direct_quantile | japan_only | right_tail | 660 | 9.091% | 60 | 0.00134569 | -3.50952 |
+| lightgbm_direct_quantile | japan_only_plus_us_close_core | right_tail | 660 | 11.061% | 73 | 0.00134147 | -3.16245 |
+| lightgbm_direct_quantile | japan_only_plus_us_close_core_plus_japan_proxy | right_tail | 660 | 11.667% | 77 | 0.00128302 | -3.36953 |
+| lightgbm_direct_quantile | japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy | right_tail | 660 | 11.667% | 77 | 0.00127586 | -3.39674 |
 
 - This headline table remains strict and currently reports direct LightGBM quantile across the information ladder.
 - Location-scale and POT-GPD are implemented, but their shorter common coverage keeps them out of the headline ladder.
 - Differences across information blocks are candidate forecast evidence only after the common-sample, coverage, and inference diagnostics are reviewed.
-- Coverage review: `4/4` headline rows differ from the expected breach rate by more than 2.5 percentage points, so quantile/FZ loss differences alone must not be read as forecast improvement.
+- Coverage review: `8/8` headline rows differ from the expected breach rate by more than 2.5 percentage points, so quantile/FZ loss differences alone must not be read as forecast improvement.
 
 ### ML-tail artifact relationship
 
 | Artifact | Rows | Role | Claim boundary |
 | --- | --- | --- | --- |
-| `ml_tail_metrics.parquet` | 4 | Headline ML-tail information-set ladder | Eligible for headline discussion after author review. |
-| `ml_tail_metrics_per_model.parquet` | 12 | Per-model diagnostics on each model's own valid OOS rows | Not a cross-model comparison and not a replacement headline table. |
-| `ml_tail_result_matrix.parquet` | 72 | Restricted common-sample VaR-only and VaR-ES comparisons | Restricted evidence; direct quantile rows here are comparison anchors. |
+| `ml_tail_metrics.parquet` | 8 | Headline ML-tail information-set ladder | Eligible for headline discussion after author review. |
+| `ml_tail_metrics_per_model.parquet` | 24 | Per-model diagnostics on each model's own valid OOS rows | Not a cross-model comparison and not a replacement headline table. |
+| `ml_tail_result_matrix.parquet` | 144 | Restricted common-sample VaR-only and VaR-ES comparisons | Restricted evidence; direct quantile rows here are comparison anchors. |
 
 - `ml_tail_metrics.parquet` is the headline ladder artifact. In this run it contains direct-quantile rows that survived the strict common-sample gate.
 - `ml_tail_metrics_per_model.parquet` reports each implemented ML-tail model on its own valid OOS rows; it is useful for debugging coverage but is not a cross-model comparison table.
@@ -293,12 +304,12 @@ Status: `completed_lightgbm_ml_tail_models`; implemented models: `lightgbm_direc
 
 | Family | Axis | Loss | Rows | Common N | Date range | Joint exceptions |
 | --- | --- | --- | --- | --- | --- | --- |
-| information_set_ladder | information_set_increment | var_coverage | 12 | 154 to 660 | 2023-03-24 to 2026-04-28 | 16 to 112 |
-| information_set_ladder | information_set_increment | var_es_fz_loss | 12 | 154 to 660 | 2023-03-24 to 2026-04-28 | 16 to 112 |
-| information_set_ladder | information_set_increment | var_quantile_loss | 12 | 154 to 660 | 2023-03-24 to 2026-04-28 | 16 to 112 |
-| tail_model_family | model_family | var_coverage | 12 | 154 to 154 | 2025-08-01 to 2026-04-28 | 17 to 19 |
-| tail_model_family | model_family | var_es_fz_loss | 12 | 154 to 154 | 2025-08-01 to 2026-04-28 | 17 to 19 |
-| tail_model_family | model_family | var_quantile_loss | 12 | 154 to 154 | 2025-08-01 to 2026-04-28 | 17 to 19 |
+| information_set_ladder | information_set_increment | var_coverage | 24 | 154 to 660 | 2023-03-24 to 2026-04-28 | 16 to 112 |
+| information_set_ladder | information_set_increment | var_es_fz_loss | 24 | 154 to 660 | 2023-03-24 to 2026-04-28 | 16 to 112 |
+| information_set_ladder | information_set_increment | var_quantile_loss | 24 | 154 to 660 | 2023-03-24 to 2026-04-28 | 16 to 112 |
+| tail_model_family | model_family | var_coverage | 24 | 154 to 154 | 2025-08-01 to 2026-04-28 | 17 to 23 |
+| tail_model_family | model_family | var_es_fz_loss | 24 | 154 to 154 | 2025-08-01 to 2026-04-28 | 17 to 23 |
+| tail_model_family | model_family | var_quantile_loss | 24 | 154 to 154 | 2025-08-01 to 2026-04-28 | 17 to 23 |
 
 - The result matrix is the right place to compare direct quantile, location-scale, and POT-GPD on their restricted common dates.
 - It separates VaR-only losses from VaR-ES joint scoring, so VaR-only claims are not confused with ES claims.
@@ -309,10 +320,10 @@ Status: `completed_lightgbm_ml_tail_models`; implemented models: `lightgbm_direc
 
 | Suite | Rows | Window labels |
 | --- | --- | --- |
-| benchmark | 66 | `loss_top_decile` |
-| ml_tail | 132 | `loss_top_decile`, `vix_top_decile` |
+| benchmark | 132 | `loss_top_decile` |
+| ml_tail | 264 | `loss_top_decile`, `vix_top_decile` |
 
-- Stress windows identify high-loss or high-volatility subsamples for robustness diagnostics.
+- Stress windows identify high-loss or high-volatility subsamples for two-sided risk diagnostics.
 - These rows use reproducible full-sample classifiers in this first pass, so they should be described as diagnostics rather than a live stress classifier.
 - They are useful for finding whether model behavior changes in difficult regimes before writing manuscript discussion.
 
@@ -341,6 +352,7 @@ Status: `completed_lightgbm_ml_tail_models`; implemented models: `lightgbm_direc
 | ml_tail_result_matrix_mcs | `reports/runs/tailrisk_20160719_20260429_20260429T075652Z_commit_e12bc995/metrics/ml_tail_result_matrix_mcs.parquet` | yes |
 | ml_tail_dm_inference | `reports/runs/tailrisk_20160719_20260429_20260429T075652Z_commit_e12bc995/metrics/ml_tail_dm_inference.parquet` | yes |
 | ml_tail_mcs | `reports/runs/tailrisk_20160719_20260429_20260429T075652Z_commit_e12bc995/metrics/ml_tail_mcs.parquet` | yes |
+| ml_tail_cpa_inference | `reports/runs/tailrisk_20160719_20260429_20260429T075652Z_commit_e12bc995/metrics/ml_tail_cpa_inference.parquet` | yes |
 | ml_tail_model_eviction | `reports/runs/tailrisk_20160719_20260429_20260429T075652Z_commit_e12bc995/metrics/ml_tail_model_eviction.parquet` | yes |
 | ml_tail_dst_attenuation | `reports/runs/tailrisk_20160719_20260429_20260429T075652Z_commit_e12bc995/metrics/ml_tail_dst_attenuation.parquet` | yes |
 | ml_tail_murphy | `reports/runs/tailrisk_20160719_20260429_20260429T075652Z_commit_e12bc995/metrics/ml_tail_murphy.parquet` | yes |

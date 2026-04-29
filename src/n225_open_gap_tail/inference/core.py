@@ -23,14 +23,17 @@ def build_common_sample_artifacts(
     grouped = _group_forecasts_by_key(valid_rows)
     evictions: list[dict[str, object]] = []
     headline_forecasts: list[dict[str, object]] = []
-    status_by_tail: dict[float, str] = {}
-    for target_family, tail_level, refit_frequency in sorted(
-        {(key[0], key[3], key[4]) for key in grouped}
+    status_by_tail: dict[tuple[str, float], str] = {}
+    for target_family, tail_side, tail_level, refit_frequency in sorted(
+        {(key[0], key[5], key[3], key[4]) for key in grouped}
     ):
         keys = sorted(
             key
             for key in grouped
-            if key[0] == target_family and key[3] == tail_level and key[4] == refit_frequency
+            if key[0] == target_family
+            and key[5] == tail_side
+            and key[3] == tail_level
+            and key[4] == refit_frequency
         )
         anchor_key = (
             target_family,
@@ -38,10 +41,11 @@ def build_common_sample_artifacts(
             anchor_information_set,
             tail_level,
             refit_frequency,
+            tail_side,
         )
         anchor_dates = set(grouped.get(anchor_key, {}))
         if not anchor_dates:
-            status_by_tail[tail_level] = "unavailable_missing_anchor"
+            status_by_tail[(tail_side, tail_level)] = "unavailable_missing_anchor"
             for key in keys:
                 evictions.append(
                     _model_eviction_record(
@@ -60,7 +64,7 @@ def build_common_sample_artifacts(
                 )
             continue
 
-        retained_keys: list[tuple[str, str, str, float, str]] = []
+        retained_keys: list[tuple[str, str, str, float, str, str]] = []
         pending_rows: list[dict[str, object]] = []
         for key in keys:
             overlap_rows = len(set(grouped[key]).intersection(anchor_dates))
@@ -93,7 +97,7 @@ def build_common_sample_artifacts(
             tail_status = "common_sample_unstable"
         else:
             tail_status = common_sample_status(common_dates)
-        status_by_tail[tail_level] = tail_status
+        status_by_tail[(tail_side, tail_level)] = tail_status
         for row in pending_rows:
             row["common_rows"] = len(common_dates)
             row["common_anchor_coverage"] = common_anchor_coverage
@@ -148,9 +152,11 @@ def build_loss_matrix_records(
                 "suite": suite,
                 "forecast_date": row["forecast_date"],
                 "target_family": row.get("target_family") or "full_gap_settle_to_open",
+                "tail_side": row.get("tail_side") or PRIMARY_TAIL_SIDE,
                 "model_name": row["model_name"],
                 "information_set": row.get("information_set") or "target_history_only",
                 "tail_level": tail_level,
+                "refit_frequency": row.get("refit_frequency"),
                 "realized_loss": loss,
                 "var_forecast": var_forecast,
                 "es_forecast": es_forecast,
@@ -165,6 +171,7 @@ def build_loss_matrix_records(
         records,
         key=lambda item: (
             _required_float(item["tail_level"]),
+            str(item.get("tail_side") or PRIMARY_TAIL_SIDE),
             str(item["model_name"]),
             str(item["information_set"]),
             str(item["forecast_date"]),
@@ -184,8 +191,8 @@ def build_block_bootstrap_dm_records(
     grouped = _group_loss_matrix_by_key(loss_matrix)
     rng = np.random.default_rng(seed)
     records: list[dict[str, object]] = []
-    for target_family, tail_level, refit_frequency in sorted(
-        {(key[0], key[3], key[4]) for key in grouped}
+    for target_family, tail_side, tail_level, refit_frequency in sorted(
+        {(key[0], key[5], key[3], key[4]) for key in grouped}
     ):
         anchor_key = (
             target_family,
@@ -193,12 +200,16 @@ def build_block_bootstrap_dm_records(
             anchor_information_set,
             tail_level,
             refit_frequency,
+            tail_side,
         )
         anchor_rows = grouped.get(anchor_key, {})
         for candidate_key in sorted(
             key
             for key in grouped
-            if key[0] == target_family and key[3] == tail_level and key[4] == refit_frequency
+            if key[0] == target_family
+            and key[5] == tail_side
+            and key[3] == tail_level
+            and key[4] == refit_frequency
         ):
             if candidate_key == anchor_key:
                 continue
@@ -238,6 +249,7 @@ def build_block_bootstrap_dm_records(
                 {
                     "suite": suite,
                     "target_family": target_family,
+                    "tail_side": tail_side,
                     "tail_level": tail_level,
                     "refit_frequency": refit_frequency or None,
                     "baseline_model_name": anchor_model,
@@ -275,13 +287,16 @@ def build_mcs_records(
     grouped = _group_loss_matrix_by_key(loss_matrix)
     rng = np.random.default_rng(seed)
     records: list[dict[str, object]] = []
-    for target_family, tail_level, refit_frequency in sorted(
-        {(key[0], key[3], key[4]) for key in grouped}
+    for target_family, tail_side, tail_level, refit_frequency in sorted(
+        {(key[0], key[5], key[3], key[4]) for key in grouped}
     ):
         keys = sorted(
             key
             for key in grouped
-            if key[0] == target_family and key[3] == tail_level and key[4] == refit_frequency
+            if key[0] == target_family
+            and key[5] == tail_side
+            and key[3] == tail_level
+            and key[4] == refit_frequency
         )
         if not keys:
             continue
@@ -319,11 +334,11 @@ def build_mcs_records(
         }
         mean_losses = {key: _safe_mean(values) for key, values in losses_by_key.items()}
         active = {key for key, value in mean_losses.items() if value is not None}
-        eliminated_step: dict[tuple[str, str, str, float, str], int] = {}
-        elimination_pvalue: dict[tuple[str, str, str, float, str], float | None] = {}
-        elimination_tmax: dict[tuple[str, str, str, float, str], float | None] = {}
-        elimination_active_set: dict[tuple[str, str, str, float, str], str | None] = {}
-        model_tmax_component: dict[tuple[str, str, str, float, str], float | None] = {}
+        eliminated_step: dict[tuple[str, str, str, float, str, str], int] = {}
+        elimination_pvalue: dict[tuple[str, str, str, float, str, str], float | None] = {}
+        elimination_tmax: dict[tuple[str, str, str, float, str, str], float | None] = {}
+        elimination_active_set: dict[tuple[str, str, str, float, str, str], str | None] = {}
+        model_tmax_component: dict[tuple[str, str, str, float, str, str], float | None] = {}
         final_tmax_stat: float | None = None
         final_pvalue: float | None = None
         block_length = max(5, round(len(common_dates) ** (1.0 / 3.0)))
@@ -388,7 +403,7 @@ def build_mcs_records(
 def _mcs_record(
     *,
     suite: str,
-    key: tuple[str, str, str, float, str],
+    key: tuple[str, str, str, float, str, str],
     rows: int,
     mean_fz_loss: float | None,
     included: bool,
@@ -409,6 +424,7 @@ def _mcs_record(
     return {
         "suite": suite,
         "target_family": key[0],
+        "tail_side": key[5],
         "tail_level": key[3],
         "refit_frequency": key[4] or None,
         "model_name": key[1],
@@ -472,11 +488,12 @@ def _hln_tmax_mcs_step(
     return {"tmax_stat": tmax_stat, "pvalue": pvalue, "t_values": t_values}
 
 
-def _mcs_key_set_json(keys: list[tuple[str, str, str, float, str]]) -> str:
+def _mcs_key_set_json(keys: list[tuple[str, str, str, float, str, str]]) -> str:
     return json.dumps(
         [
             {
                 "target_family": key[0],
+                "tail_side": key[5],
                 "model_name": key[1],
                 "information_set": key[2],
                 "tail_level": key[3],
@@ -539,6 +556,7 @@ def build_murphy_records(
                 {
                     "suite": suite,
                     "target_family": key[0],
+                    "tail_side": key[5],
                     "model_name": key[1],
                     "information_set": key[2],
                     "tail_level": key[3],
@@ -558,49 +576,55 @@ def build_stress_window_records(
     *,
     suite: str,
 ) -> list[dict[str, object]]:
-    loss_by_date: dict[str, float] = {}
-    vix_by_date: dict[str, float] = {}
-    for row in _valid_forecast_rows(forecasts):
-        forecast_date = str(row["forecast_date"])
-        loss = _optional_float(row.get("realized_loss"))
-        if loss is not None and math.isfinite(loss):
-            loss_by_date[forecast_date] = loss
-        vix = _optional_float(row.get("vix_level"))
-        if vix is not None and math.isfinite(vix):
-            vix_by_date[forecast_date] = vix
     records: list[dict[str, object]] = []
-    if loss_by_date:
-        threshold = float(np.quantile(np.array(list(loss_by_date.values()), dtype=float), 0.90))
-        records.extend(
-            {
-                "suite": suite,
-                "window_name": "loss_top_decile",
-                "forecast_date": forecast_date,
-                "threshold_value": threshold,
-                "realized_loss": loss,
-                "vix_level": vix_by_date.get(forecast_date),
-                "classifier_policy": "full_sample_reproducible_decile",
-                "rolling_classifier_status": "future_work_not_used_in_first_round",
-            }
-            for forecast_date, loss in sorted(loss_by_date.items())
-            if loss >= threshold
-        )
-    if vix_by_date:
-        threshold = float(np.quantile(np.array(list(vix_by_date.values()), dtype=float), 0.90))
-        records.extend(
-            {
-                "suite": suite,
-                "window_name": "vix_top_decile",
-                "forecast_date": forecast_date,
-                "threshold_value": threshold,
-                "realized_loss": loss_by_date.get(forecast_date),
-                "vix_level": vix,
-                "classifier_policy": "full_sample_reproducible_decile",
-                "rolling_classifier_status": "future_work_not_used_in_first_round",
-            }
-            for forecast_date, vix in sorted(vix_by_date.items())
-            if vix >= threshold
-        )
+    valid_rows = _valid_forecast_rows(forecasts)
+    for tail_side in sorted({str(row.get("tail_side") or PRIMARY_TAIL_SIDE) for row in valid_rows}):
+        loss_by_date: dict[str, float] = {}
+        vix_by_date: dict[str, float] = {}
+        for row in valid_rows:
+            if str(row.get("tail_side") or PRIMARY_TAIL_SIDE) != tail_side:
+                continue
+            forecast_date = str(row["forecast_date"])
+            loss = _optional_float(row.get("realized_loss"))
+            if loss is not None and math.isfinite(loss):
+                loss_by_date[forecast_date] = loss
+            vix = _optional_float(row.get("vix_level"))
+            if vix is not None and math.isfinite(vix):
+                vix_by_date[forecast_date] = vix
+        if loss_by_date:
+            threshold = float(np.quantile(np.array(list(loss_by_date.values()), dtype=float), 0.90))
+            records.extend(
+                {
+                    "suite": suite,
+                    "tail_side": tail_side,
+                    "window_name": "loss_top_decile",
+                    "forecast_date": forecast_date,
+                    "threshold_value": threshold,
+                    "realized_loss": loss,
+                    "vix_level": vix_by_date.get(forecast_date),
+                    "classifier_policy": "full_sample_reproducible_decile",
+                    "rolling_classifier_status": "future_work_not_used_in_first_round",
+                }
+                for forecast_date, loss in sorted(loss_by_date.items())
+                if loss >= threshold
+            )
+        if vix_by_date:
+            threshold = float(np.quantile(np.array(list(vix_by_date.values()), dtype=float), 0.90))
+            records.extend(
+                {
+                    "suite": suite,
+                    "tail_side": tail_side,
+                    "window_name": "vix_top_decile",
+                    "forecast_date": forecast_date,
+                    "threshold_value": threshold,
+                    "realized_loss": loss_by_date.get(forecast_date),
+                    "vix_level": vix,
+                    "classifier_policy": "full_sample_reproducible_decile",
+                    "rolling_classifier_status": "future_work_not_used_in_first_round",
+                }
+                for forecast_date, vix in sorted(vix_by_date.items())
+                if vix >= threshold
+            )
     return records
 
 
@@ -612,20 +636,21 @@ def _valid_forecast_rows(forecasts: list[dict[str, object]]) -> list[dict[str, o
     ]
 
 
-def _forecast_key(row: Mapping[str, object]) -> tuple[str, str, str, float, str]:
+def _forecast_key(row: Mapping[str, object]) -> tuple[str, str, str, float, str, str]:
     return (
         str(row.get("target_family") or "full_gap_settle_to_open"),
         str(row["model_name"]),
         str(row.get("information_set") or "target_history_only"),
         _required_float(row["tail_level"]),
         str(row.get("refit_frequency") or ""),
+        str(row.get("tail_side") or PRIMARY_TAIL_SIDE),
     )
 
 
 def _group_forecasts_by_key(
     forecasts: list[dict[str, object]],
-) -> dict[tuple[str, str, str, float, str], dict[str, dict[str, object]]]:
-    grouped: dict[tuple[str, str, str, float, str], dict[str, dict[str, object]]] = {}
+) -> dict[tuple[str, str, str, float, str, str], dict[str, dict[str, object]]]:
+    grouped: dict[tuple[str, str, str, float, str, str], dict[str, dict[str, object]]] = {}
     for row in forecasts:
         grouped.setdefault(_forecast_key(row), {})[str(row["forecast_date"])] = row
     return grouped
@@ -633,8 +658,8 @@ def _group_forecasts_by_key(
 
 def _group_loss_matrix_by_key(
     rows: list[dict[str, object]],
-) -> dict[tuple[str, str, str, float, str], dict[str, dict[str, object]]]:
-    grouped: dict[tuple[str, str, str, float, str], dict[str, dict[str, object]]] = {}
+) -> dict[tuple[str, str, str, float, str, str], dict[str, dict[str, object]]]:
+    grouped: dict[tuple[str, str, str, float, str, str], dict[str, dict[str, object]]] = {}
     for row in rows:
         key = (
             str(row.get("target_family") or "full_gap_settle_to_open"),
@@ -642,14 +667,15 @@ def _group_loss_matrix_by_key(
             str(row.get("information_set") or "target_history_only"),
             _required_float(row["tail_level"]),
             str(row.get("refit_frequency") or ""),
+            str(row.get("tail_side") or PRIMARY_TAIL_SIDE),
         )
         grouped.setdefault(key, {})[str(row["forecast_date"])] = row
     return grouped
 
 
 def _loss_matrix_joint_exception_count(
-    grouped: Mapping[tuple[str, str, str, float, str], Mapping[str, Mapping[str, object]]],
-    keys: list[tuple[str, str, str, float, str]],
+    grouped: Mapping[tuple[str, str, str, float, str, str], Mapping[str, Mapping[str, object]]],
+    keys: list[tuple[str, str, str, float, str, str]],
     common_dates: list[str],
 ) -> int:
     count = 0
@@ -687,8 +713,8 @@ def _headline_mcs_gate_status(common_n: int, joint_exception_count: int) -> str:
 def _model_eviction_record(
     *,
     suite: str,
-    key: tuple[str, str, str, float, str],
-    anchor_key: tuple[str, str, str, float, str],
+    key: tuple[str, str, str, float, str, str],
+    anchor_key: tuple[str, str, str, float, str, str],
     anchor_rows: int,
     overlap_rows: int,
     coverage_ratio: float,
@@ -701,6 +727,7 @@ def _model_eviction_record(
     return {
         "suite": suite,
         "target_family": key[0],
+        "tail_side": key[5],
         "model_name": key[1],
         "information_set": key[2],
         "tail_level": key[3],
@@ -720,7 +747,7 @@ def _model_eviction_record(
     }
 
 
-def _combined_common_sample_status(status_by_tail: Mapping[float, str]) -> str:
+def _combined_common_sample_status(status_by_tail: Mapping[object, str]) -> str:
     statuses = set(status_by_tail.values())
     if not statuses:
         return "unavailable_empty_forecasts"

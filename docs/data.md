@@ -372,7 +372,10 @@ The main paper focuses on downside tail risk:
 
 EVT diagnostics should include mean-excess behavior, Hill or tail-index estimates where appropriate, threshold sensitivity, and shape/scale stability.
 
-Upper-tail labels are optional robustness or appendix work, not first-phase implementation.
+Upper-tail labels are part of the two-sided futures risk surface. They use the
+same positive-loss convention as lower-tail labels, with `right_tail` defined as
+the original opening gap in loss units and evaluated under the same sample,
+coverage, and inference gates.
 
 ## Model-Ready Loss Fields
 

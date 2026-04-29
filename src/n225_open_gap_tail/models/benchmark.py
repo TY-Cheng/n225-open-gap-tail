@@ -24,17 +24,22 @@ def resolve_run_dir(settings: Settings, run_id: str) -> Path:
 def _evaluate_benchmark_shard(payload: dict[str, object]) -> dict[str, list[dict[str, object]]]:
     validate_worker_payload(payload)
     panel_path = Path(str(payload["panel_path"]))
+    tail_side = normalize_tail_side(payload.get("tail_side"))
     tail_level = _required_float(payload["tail_level"])
     models = cast(tuple[str, ...], payload["models"])
+    panel_columns = pl.scan_parquet(panel_path).collect_schema().names()
+    selected_columns = ["forecast_date", "realized_loss"]
+    if "gap_t" in panel_columns:
+        selected_columns.append("gap_t")
     frame = (
         pl.scan_parquet(panel_path)
         .filter(pl.col("clean_sample") == True)  # noqa: E712
-        .select(["forecast_date", "realized_loss"])
+        .select(selected_columns)
         .drop_nulls()
         .sort("forecast_date")
         .collect()
     )
-    rows = frame.to_dicts()
+    rows = _rows_for_tail_side(frame.to_dicts(), tail_side=tail_side)
     oos_diagnostics = find_oos_start_diagnostics(rows, tail_level=tail_level)
     oos_start = cast(str | None, oos_diagnostics["oos_start"])
     if oos_start is None:
@@ -48,8 +53,13 @@ def _evaluate_benchmark_shard(payload: dict[str, object]) -> dict[str, list[dict
                     "model_variant": model_name,
                     "refit_frequency": None,
                     "advanced_model_nonblocking": False,
+                    "tail_side": tail_side,
                     "tail_level": tail_level,
-                    "shard_id": _forecast_shard_id(model_name, tail_level),
+                    "shard_id": _forecast_shard_id(
+                        model_name,
+                        tail_level,
+                        tail_side=tail_side,
+                    ),
                     "fit_status": "unavailable_insufficient_oos_start",
                     "oos_failure_reason": oos_diagnostics["failure_reason"],
                     "train_n": oos_diagnostics["train_n"],
@@ -71,6 +81,7 @@ def _evaluate_benchmark_shard(payload: dict[str, object]) -> dict[str, list[dict
         model_rows, model_diag, model_failures = _forecast_model_sequence(
             rows=rows,
             model_name=model_name,
+            tail_side=tail_side,
             tail_level=tail_level,
             oos_start=oos_start,
         )
@@ -84,6 +95,7 @@ def _forecast_model_sequence(
     *,
     rows: list[dict[str, object]],
     model_name: str,
+    tail_side: str,
     tail_level: float,
     oos_start: str,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
@@ -115,6 +127,7 @@ def _forecast_model_sequence(
                 {
                     "forecast_date": row["forecast_date"],
                     "target_family": "full_gap_settle_to_open",
+                    "tail_side": tail_side,
                     "model_name": model_name,
                     "benchmark_tier": "floor",
                     "model_family": _floor_model_family(model_name),
@@ -147,6 +160,7 @@ def _forecast_model_sequence(
                     "model_variant": model_name,
                     "refit_frequency": None,
                     "advanced_model_nonblocking": False,
+                    "tail_side": tail_side,
                     "tail_level": tail_level,
                     "train_n": int(train.size),
                     "optimizer_status": forecast.get("optimizer_status"),
@@ -179,6 +193,7 @@ def _forecast_model_sequence(
                     "model_variant": model_name,
                     "refit_frequency": None,
                     "advanced_model_nonblocking": False,
+                    "tail_side": tail_side,
                     "tail_level": tail_level,
                     "fit_status": "unavailable_optimizer_failed",
                     "failure_reason": str(exc),
@@ -188,6 +203,18 @@ def _forecast_model_sequence(
                 }
             )
     return forecasts, diagnostics, failures
+
+
+def _rows_for_tail_side(
+    rows: list[dict[str, object]], *, tail_side: str
+) -> list[dict[str, object]]:
+    output: list[dict[str, object]] = []
+    for row in rows:
+        loss = realized_loss_for_tail_side(row, tail_side)
+        if loss is None:
+            continue
+        output.append({**row, "tail_side": tail_side, "realized_loss": loss})
+    return output
 
 
 def _floor_model_family(model_name: str) -> str:

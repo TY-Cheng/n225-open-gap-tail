@@ -170,6 +170,7 @@ def _predict_ml_tail_location_scale_forecast(
     model_name: str,
     information_set: str,
     tail_level: float,
+    tail_side: str = PRIMARY_TAIL_SIDE,
     bundle: Mapping[str, object],
 ) -> dict[str, object]:
     location_model = bundle["location_model"]
@@ -206,6 +207,7 @@ def _predict_ml_tail_location_scale_forecast(
     return {
         "forecast_date": row["forecast_date"],
         "target_family": row.get("target_family") or "full_gap_settle_to_open",
+        "tail_side": tail_side,
         "model_name": model_name,
         "information_set": information_set,
         "tail_level": tail_level,
@@ -249,6 +251,7 @@ def _ml_tail_location_scale_diagnostic(
     model_name: str,
     information_set: str,
     tail_level: float,
+    tail_side: str = PRIMARY_TAIL_SIDE,
     refit_month: str,
     bundle: Mapping[str, object],
 ) -> dict[str, object]:
@@ -256,6 +259,7 @@ def _ml_tail_location_scale_diagnostic(
     return {
         "forecast_date": row["forecast_date"],
         "target_family": row.get("target_family") or "full_gap_settle_to_open",
+        "tail_side": tail_side,
         "model_name": model_name,
         "information_set": information_set,
         "tail_level": tail_level,
@@ -298,12 +302,14 @@ def _ml_tail_unavailable_feature_forecast(
     model_name: str,
     information_set: str,
     tail_level: float,
+    tail_side: str = PRIMARY_TAIL_SIDE,
     bundle: Mapping[str, object],
     unavailable_features: list[str],
 ) -> dict[str, object]:
     return {
         "forecast_date": row["forecast_date"],
         "target_family": row.get("target_family") or "full_gap_settle_to_open",
+        "tail_side": tail_side,
         "model_name": model_name,
         "information_set": information_set,
         "tail_level": tail_level,
@@ -382,6 +388,7 @@ def build_ml_tail_feature_unavailability_date_records(
                 {
                     "forecast_date": row.get("forecast_date"),
                     "target_family": row.get("target_family"),
+                    "tail_side": row.get("tail_side") or PRIMARY_TAIL_SIDE,
                     "model_name": row.get("model_name"),
                     "information_set": row.get("information_set"),
                     "tail_level": row.get("tail_level"),
@@ -409,15 +416,16 @@ def build_ml_tail_feature_unavailability_date_records(
 def build_ml_tail_feature_unavailability_records(
     forecasts: list[dict[str, object]],
 ) -> list[dict[str, object]]:
-    denominators: dict[tuple[str, str, float], int] = {}
-    dates_by_key: dict[tuple[str, str, float, str], list[str]] = {}
+    denominators: dict[tuple[str, str, str, float], int] = {}
+    dates_by_key: dict[tuple[str, str, str, float, str], list[str]] = {}
     for row in forecasts:
         model_name = str(row.get("model_name") or "")
         information_set = str(row.get("information_set") or "")
+        tail_side = str(row.get("tail_side") or PRIMARY_TAIL_SIDE)
         tail_level = _optional_float(row.get("tail_level"))
         if not model_name or not information_set or tail_level is None:
             continue
-        denominator_key = (model_name, information_set, tail_level)
+        denominator_key = (model_name, information_set, tail_side, tail_level)
         denominators[denominator_key] = denominators.get(denominator_key, 0) + 1
         if row.get("fit_status") != "unavailable_feature_not_valid_at_cutoff":
             continue
@@ -425,13 +433,16 @@ def build_ml_tail_feature_unavailability_records(
             key = (*denominator_key, feature)
             dates_by_key.setdefault(key, []).append(str(row.get("forecast_date") or ""))
     records: list[dict[str, object]] = []
-    for (model_name, information_set, tail_level, feature), dates in sorted(dates_by_key.items()):
-        denominator = denominators.get((model_name, information_set, tail_level), 0)
+    for (model_name, information_set, tail_side, tail_level, feature), dates in sorted(
+        dates_by_key.items()
+    ):
+        denominator = denominators.get((model_name, information_set, tail_side, tail_level), 0)
         clean_dates = sorted(date_value for date_value in dates if date_value)
         records.append(
             {
                 "model_name": model_name,
                 "information_set": information_set,
+                "tail_side": tail_side,
                 "tail_level": tail_level,
                 "feature": feature,
                 "source_family": _feature_source_family(feature),

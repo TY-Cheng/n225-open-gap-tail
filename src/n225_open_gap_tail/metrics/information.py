@@ -16,6 +16,7 @@ def build_incremental_information_records(
     model_names = sorted(
         {str(row.get("model_name") or "") for row in forecasts if row.get("model_name")}
     )
+    tail_sides = sorted({str(row.get("tail_side") or PRIMARY_TAIL_SIDE) for row in forecasts})
     comparisons = [
         (information_sets[index], information_sets[index + 1])
         for index in range(len(information_sets) - 1)
@@ -24,25 +25,28 @@ def build_incremental_information_records(
         comparisons.insert(0, (baseline_information_set, information_sets[-1]))
     records: list[dict[str, object]] = []
     for model_name in model_names:
-        for tail_level in TAIL_LEVELS:
-            for base_info, expanded_info in comparisons:
-                paired = _paired_forecast_rows(
-                    forecasts,
-                    model_name=model_name,
-                    tail_level=tail_level,
-                    base_information_set=base_info,
-                    expanded_information_set=expanded_info,
-                )
-                records.append(
-                    _incremental_record_from_pairs(
-                        paired,
+        for tail_side in tail_sides:
+            for tail_level in TAIL_LEVELS:
+                for base_info, expanded_info in comparisons:
+                    paired = _paired_forecast_rows(
+                        forecasts,
                         model_name=model_name,
+                        tail_side=tail_side,
                         tail_level=tail_level,
                         base_information_set=base_info,
                         expanded_information_set=expanded_info,
-                        dst_regime=None,
                     )
-                )
+                    records.append(
+                        _incremental_record_from_pairs(
+                            paired,
+                            model_name=model_name,
+                            tail_side=tail_side,
+                            tail_level=tail_level,
+                            base_information_set=base_info,
+                            expanded_information_set=expanded_info,
+                            dst_regime=None,
+                        )
+                    )
     return records
 
 
@@ -56,54 +60,59 @@ def build_dst_attenuation_records(
     model_names = sorted(
         {str(row.get("model_name") or "") for row in forecasts if row.get("model_name")}
     )
+    tail_sides = sorted({str(row.get("tail_side") or PRIMARY_TAIL_SIDE) for row in forecasts})
     for model_name in model_names:
-        for tail_level in TAIL_LEVELS:
-            regime_records: dict[str, dict[str, object]] = {}
-            for regime in ("EST", "EDT"):
-                paired = _paired_forecast_rows(
-                    forecasts,
-                    model_name=model_name,
-                    tail_level=tail_level,
-                    base_information_set=baseline_information_set,
-                    expanded_information_set=expanded_information_set,
-                    dst_regime=regime,
+        for tail_side in tail_sides:
+            for tail_level in TAIL_LEVELS:
+                regime_records: dict[str, dict[str, object]] = {}
+                for regime in ("EST", "EDT"):
+                    paired = _paired_forecast_rows(
+                        forecasts,
+                        model_name=model_name,
+                        tail_side=tail_side,
+                        tail_level=tail_level,
+                        base_information_set=baseline_information_set,
+                        expanded_information_set=expanded_information_set,
+                        dst_regime=regime,
+                    )
+                    row = _incremental_record_from_pairs(
+                        paired,
+                        model_name=model_name,
+                        tail_side=tail_side,
+                        tail_level=tail_level,
+                        base_information_set=baseline_information_set,
+                        expanded_information_set=expanded_information_set,
+                        dst_regime=regime,
+                    )
+                    regime_records[regime] = row
+                    records.append(row)
+                est_gain = _optional_float(regime_records.get("EST", {}).get("mean_fz_gain"))
+                edt_gain = _optional_float(regime_records.get("EDT", {}).get("mean_fz_gain"))
+                stable = est_gain is not None and est_gain > 0 and edt_gain is not None
+                alpha_absorb: float | None = None
+                if est_gain is not None and est_gain > 0 and edt_gain is not None:
+                    alpha_absorb = float(1.0 - edt_gain / est_gain)
+                records.append(
+                    {
+                        "model_name": model_name,
+                        "tail_side": tail_side,
+                        "tail_level": tail_level,
+                        "base_information_set": baseline_information_set,
+                        "expanded_information_set": expanded_information_set,
+                        "dst_regime": "absorption_coefficient",
+                        "paired_rows": None,
+                        "mean_quantile_gain": None,
+                        "mean_fz_gain": None,
+                        "alpha_absorb": alpha_absorb,
+                        "alpha_absorb_status": "ok" if stable else "unavailable_unstable_est_gain",
+                        "inference_status": "diagnostic_ratio_no_direct_dm_test",
+                        "dm_method": None,
+                        "dm_pvalue_one_sided": None,
+                        "dm_block_length": None,
+                        "dm_reps": None,
+                        "dm_seed": None,
+                    }
                 )
-                row = _incremental_record_from_pairs(
-                    paired,
-                    model_name=model_name,
-                    tail_level=tail_level,
-                    base_information_set=baseline_information_set,
-                    expanded_information_set=expanded_information_set,
-                    dst_regime=regime,
-                )
-                regime_records[regime] = row
-                records.append(row)
-            est_gain = _optional_float(regime_records.get("EST", {}).get("mean_fz_gain"))
-            edt_gain = _optional_float(regime_records.get("EDT", {}).get("mean_fz_gain"))
-            stable = est_gain is not None and est_gain > 0 and edt_gain is not None
-            alpha_absorb: float | None = None
-            if est_gain is not None and est_gain > 0 and edt_gain is not None:
-                alpha_absorb = float(1.0 - edt_gain / est_gain)
-            records.append(
-                {
-                    "model_name": model_name,
-                    "tail_level": tail_level,
-                    "base_information_set": baseline_information_set,
-                    "expanded_information_set": expanded_information_set,
-                    "dst_regime": "absorption_coefficient",
-                    "paired_rows": None,
-                    "mean_quantile_gain": None,
-                    "mean_fz_gain": None,
-                    "alpha_absorb": alpha_absorb,
-                    "alpha_absorb_status": "ok" if stable else "unavailable_unstable_est_gain",
-                    "inference_status": "diagnostic_ratio_no_direct_dm_test",
-                    "dm_method": None,
-                    "dm_pvalue_one_sided": None,
-                    "dm_block_length": None,
-                    "dm_reps": None,
-                    "dm_seed": None,
-                }
-            )
     return records
 
 
@@ -111,6 +120,7 @@ def _paired_forecast_rows(
     forecasts: list[dict[str, object]],
     *,
     model_name: str,
+    tail_side: str,
     tail_level: float,
     base_information_set: str,
     expanded_information_set: str,
@@ -122,6 +132,8 @@ def _paired_forecast_rows(
         if row.get("fit_status") != "ok" or row.get("is_valid_forecast") is not True:
             continue
         if str(row.get("model_name") or "") != model_name:
+            continue
+        if str(row.get("tail_side") or PRIMARY_TAIL_SIDE) != tail_side:
             continue
         if _required_float(row["tail_level"]) != tail_level:
             continue
@@ -140,6 +152,7 @@ def _incremental_record_from_pairs(
     paired: list[tuple[dict[str, object], dict[str, object]]],
     *,
     model_name: str,
+    tail_side: str,
     tail_level: float,
     base_information_set: str,
     expanded_information_set: str,
@@ -186,6 +199,7 @@ def _incremental_record_from_pairs(
     )
     return {
         "model_name": model_name,
+        "tail_side": tail_side,
         "tail_level": tail_level,
         "base_information_set": base_information_set,
         "expanded_information_set": expanded_information_set,

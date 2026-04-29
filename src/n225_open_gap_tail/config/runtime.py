@@ -102,6 +102,11 @@ FETCH_FRED_SERIES_FOR_PIPELINE = tuple(
     )
 )
 TAIL_LEVELS = PIPELINE_CONFIG.model_policy.tail_levels
+TAIL_SIDES = PIPELINE_CONFIG.model_policy.tail_sides
+PRIMARY_TAIL_SIDE = PIPELINE_CONFIG.model_policy.primary_tail_side
+TAIL_SIDE_LEFT = "left_tail"
+TAIL_SIDE_RIGHT = "right_tail"
+TAIL_SIDE_BOTH = "both"
 EWMA_MAIN_LAMBDA = PIPELINE_CONFIG.model_policy.ewma_lambda
 EWMA_SENSITIVITY_LAMBDAS = PIPELINE_CONFIG.model_policy.ewma_sensitivity_lambdas
 DEFAULT_MIN_TRAIN_ROWS = PIPELINE_CONFIG.model_policy.min_train_rows
@@ -198,6 +203,46 @@ PANEL_SIGNATURE_COLUMNS = (
     "join_miss_reason",
     "mapping_status",
 )
+
+
+def normalize_tail_side(value: object | None) -> str:
+    tail_side = str(value or PRIMARY_TAIL_SIDE).strip().lower().replace("-", "_")
+    if tail_side not in {*TAIL_SIDES, TAIL_SIDE_BOTH}:
+        expected = ", ".join((*TAIL_SIDES, TAIL_SIDE_BOTH))
+        raise PipelineRunError(f"Unknown tail_side {value!r}; expected one of {expected}")
+    return tail_side
+
+
+def tail_side_values(value: object | None) -> tuple[str, ...]:
+    tail_side = normalize_tail_side(value)
+    return TAIL_SIDES if tail_side == TAIL_SIDE_BOTH else (tail_side,)
+
+
+def realized_loss_for_tail_side(row: Mapping[str, object], tail_side: str) -> float | None:
+    normalized = normalize_tail_side(tail_side)
+    if normalized == TAIL_SIDE_LEFT:
+        gap = _optional_float(row.get("gap_t"))
+        if gap is not None:
+            return -gap
+        existing = _optional_float(row.get("realized_loss"))
+        if existing is not None:
+            return existing
+        return None
+    if normalized == TAIL_SIDE_RIGHT:
+        return _optional_float(row.get("gap_t"))
+    return None
+
+
+def rows_for_tail_side(rows: list[dict[str, object]], *, tail_side: str) -> list[dict[str, object]]:
+    output: list[dict[str, object]] = []
+    for row in rows:
+        loss = realized_loss_for_tail_side(row, tail_side)
+        if loss is None:
+            continue
+        output.append({**row, "tail_side": normalize_tail_side(tail_side), "realized_loss": loss})
+    return output
+
+
 ML_TAIL_HISTORY_FEATURES = (
     "loss_lag_1",
     "loss_lag_2",
@@ -655,6 +700,7 @@ _IMPLEMENTATION_MODULES = (
     "n225_open_gap_tail.forecasting.evaluation",
     "n225_open_gap_tail.models.ml_tail",
     "n225_open_gap_tail.models.ml_tail_oof",
+    "n225_open_gap_tail.metrics.cpa",
     "n225_open_gap_tail.metrics.information",
     "n225_open_gap_tail.metrics.result_matrix_grouping",
     "n225_open_gap_tail.metrics.result_matrix_scoring",

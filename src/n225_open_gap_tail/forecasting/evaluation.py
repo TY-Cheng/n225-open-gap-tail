@@ -18,12 +18,19 @@ def evaluate_suite(
     workers: int = 1,
     suite: str = "benchmark",
     force: bool = False,
+    tail_side: str = TAIL_SIDE_BOTH,
 ) -> EvaluationResult:
     normalized_suite = suite.lower().replace("-", "_")
     if normalized_suite == "benchmark":
-        return evaluate_benchmark_suite(run_dir=run_dir, workers=workers, force=force)
+        return evaluate_benchmark_suite(
+            run_dir=run_dir, workers=workers, force=force, tail_side=tail_side
+        )
     if normalized_suite == "benchmark_floor":
-        return evaluate_benchmark_floor_suite(run_dir=run_dir, workers=workers, force=force)
+        return evaluate_benchmark_floor_suite(
+            run_dir=run_dir, workers=workers, force=force, tail_side=tail_side
+        )
     if normalized_suite == "ml_tail":
-        return evaluate_ml_tail_suite(run_dir=run_dir, workers=workers, force=force)
+        return evaluate_ml_tail_suite(
+            run_dir=run_dir, workers=workers, force=force, tail_side=tail_side
+        )
     raise PipelineRunError(f"Unknown evaluation suite: {suite}")

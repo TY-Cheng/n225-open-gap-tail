@@ -57,12 +57,21 @@ def _forecast_stateful_sequence(
     model_name: str,
     tail_level: float,
     oos_start: str,
+    tail_side: str | None = None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
+    tail_side = normalize_tail_side(tail_side or (rows[0].get("tail_side") if rows else None))
     clean = _clean_loss_rows(rows)
     if not clean:
         return (
             [],
-            [_unavailable_diagnostic(model_name, tail_level, "unavailable_no_clean_rows")],
+            [
+                _unavailable_diagnostic(
+                    model_name,
+                    tail_level,
+                    "unavailable_no_clean_rows",
+                    tail_side=tail_side,
+                )
+            ],
             [],
         )
     start_date = date.fromisoformat(oos_start)
@@ -101,6 +110,7 @@ def _forecast_stateful_sequence(
                 _fit_diagnostic_row(
                     fit=fit,
                     model_name=model_name,
+                    tail_side=tail_side,
                     tail_level=tail_level,
                     forecast_date=forecast_date_str,
                     train=train,
@@ -126,6 +136,7 @@ def _forecast_stateful_sequence(
                 {
                     "forecast_date": row["forecast_date"],
                     "target_family": "full_gap_settle_to_open",
+                    "tail_side": tail_side,
                     "model_name": model_name,
                     "information_set": "target_history_only",
                     "tail_level": tail_level,
@@ -174,6 +185,7 @@ def _forecast_stateful_sequence(
                 {
                     "forecast_date": row["forecast_date"],
                     "model_name": model_name,
+                    "tail_side": tail_side,
                     "tail_level": tail_level,
                     "fit_status": "invalid_forecast",
                     "failure_reason": invalid_reason,
@@ -188,6 +200,7 @@ def _forecast_stateful_sequence(
                 model_name,
                 tail_level,
                 "unavailable_advanced_model_no_forecasts",
+                tail_side=tail_side,
             )
         )
     return forecasts, diagnostics, failures
@@ -515,6 +528,7 @@ def _fit_diagnostic_row(
     *,
     fit: dict[str, object],
     model_name: str,
+    tail_side: str,
     tail_level: float,
     forecast_date: str,
     train: np.ndarray,
@@ -525,6 +539,7 @@ def _fit_diagnostic_row(
     return {
         "forecast_date": forecast_date,
         "model_name": model_name,
+        "tail_side": tail_side,
         "tail_level": tail_level,
         "fit_status": fit.get("fit_status"),
         "failure_reason": fit.get("failure_reason"),
@@ -598,9 +613,12 @@ def _unavailable_diagnostic(
     model_name: str,
     tail_level: float,
     reason: str,
+    *,
+    tail_side: str = PRIMARY_TAIL_SIDE,
 ) -> dict[str, object]:
     return {
         "model_name": model_name,
+        "tail_side": tail_side,
         "tail_level": tail_level,
         "fit_status": reason,
         "failure_reason": reason,
@@ -737,12 +755,14 @@ def _sample_expectile(values: np.ndarray, *, tau: float) -> float | None:
 def _gas_filter_failure_record(
     *,
     model_name: str,
+    tail_side: str = PRIMARY_TAIL_SIDE,
     tail_level: float,
     failure_reason: str,
 ) -> dict[str, object]:
     return _advanced_benchmark_record(
         {
             "model_name": model_name,
+            "tail_side": tail_side,
             "tail_level": tail_level,
             "fit_status": "unavailable_gas_filter_failed",
             "failure_reason": failure_reason,
@@ -764,6 +784,7 @@ def _advanced_benchmark_record(
         **row,
         "model_name": row.get("model_name") or model_name,
         "target_family": row.get("target_family") or "full_gap_settle_to_open",
+        "tail_side": row.get("tail_side") or PRIMARY_TAIL_SIDE,
         "information_set": row.get("information_set") or "target_history_only",
         "benchmark_tier": "advanced",
         "model_family": row.get("model_family") or model_meta["model_family"],

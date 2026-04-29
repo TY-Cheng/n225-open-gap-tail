@@ -88,6 +88,7 @@ def _result_matrix_sample_audit_record(
         "claim_scope": "restricted_model_comparison_not_headline",
         "headline_claim_allowed": False,
         "target_family": group.get("target_family"),
+        "tail_side": group.get("tail_side") or PRIMARY_TAIL_SIDE,
         "information_set": group.get("information_set"),
         "model_name": group.get("fixed_model_name"),
         "tail_level": tail_level,
@@ -175,6 +176,7 @@ def _result_matrix_metric_row(
         "claim_scope": claim_scope,
         "headline_claim_allowed": headline_claim_allowed,
         "target_family": group.get("target_family"),
+        "tail_side": group.get("tail_side") or PRIMARY_TAIL_SIDE,
         "information_set": entity
         if entity_field == "information_set"
         else group.get("information_set"),
@@ -229,6 +231,7 @@ def _result_matrix_unavailable_row(
         "claim_scope": claim_scope,
         "headline_claim_allowed": headline_claim_allowed,
         "target_family": group.get("target_family"),
+        "tail_side": group.get("tail_side") or PRIMARY_TAIL_SIDE,
         "information_set": entity
         if entity_field == "information_set"
         else group.get("information_set"),
@@ -317,6 +320,7 @@ def _build_result_matrix_dm_records(
                 "claim_scope": "restricted_model_comparison_not_headline",
                 "headline_claim_allowed": False,
                 "target_family": group.get("target_family"),
+                "tail_side": group.get("tail_side") or PRIMARY_TAIL_SIDE,
                 "information_set": group.get("information_set")
                 if entity_field == "model_name"
                 else baseline_entity,
@@ -370,6 +374,7 @@ def _build_result_matrix_mcs_records(
                 "claim_scope": "restricted_model_comparison_not_headline",
                 "headline_claim_allowed": False,
                 "target_family": group.get("target_family"),
+                "tail_side": group.get("tail_side") or PRIMARY_TAIL_SIDE,
                 "information_set": group.get("information_set"),
                 "model_name": entity,
                 "tail_level": group.get("tail_level"),
@@ -422,6 +427,7 @@ def _build_result_matrix_mcs_records(
             "claim_scope": "restricted_model_comparison_not_headline",
             "headline_claim_allowed": False,
             "target_family": group.get("target_family"),
+            "tail_side": group.get("tail_side") or PRIMARY_TAIL_SIDE,
             "information_set": group.get("information_set"),
             "model_name": entity,
             "tail_level": group.get("tail_level"),

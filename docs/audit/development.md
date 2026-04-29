@@ -72,7 +72,7 @@ Implement the pipeline in this order:
      `full_gap_settle_to_open`, `full_gap_close_to_open`, `residual_usclosemark_to_open`, and `residual_nightclose_to_day_open`.
    - Mark `residual_usclosemark_to_open` as unavailable unless an intraday Nikkei futures reference mark is licensed, timestamped, and available at the U.S. cash close.
    - Every empirical claim must specify forecast origin, reference price, target family, and information cutoff.
-   - Keep upper-tail modeling out of the first implementation except as an explicitly optional robustness extension.
+   - Treat upper-tail modeling as the right-tail futures risk surface, evaluated under the same gates as left-tail downside risk.
 
 1. Configuration and schemas
    - Add typed settings for J-Quants and Massive.com access without exposing secret values.
@@ -175,7 +175,7 @@ Implement the pipeline in this order:
     - Produce reproducible tables and figures under ignored report/artifact directories.
     - Report quantile loss, VaR coverage, conditional coverage or independence tests, dynamic quantile diagnostics where feasible, Fissler-Ziegel joint VaR-ES score, ES exceedance severity diagnostics, and tail ranking metrics.
     - Build Murphy diagrams for VaR-ES dominance diagnostics; treat them as diagnostic plots, not standalone significance tests.
-    - Build model-comparison artifacts with block-bootstrap DM and HLN Tmax MCS when the OOS loss series supports it. True instrumented conditional predictive ability regression remains a separate future implementation.
+    - Build model-comparison artifacts with block-bootstrap DM and HLN Tmax MCS when the OOS loss series supports it. Side-specific instrumented conditional predictive ability diagnostics are implemented for ML-tail direct-quantile information-set comparisons.
     - Inspect `ml_tail_feature_unavailability.parquet` and
       `ml_tail_feature_unavailability_dates.parquet` before changing model-eviction thresholds;
       release-lagged FRED rates should be handled by timestamp-safe fill metadata, while

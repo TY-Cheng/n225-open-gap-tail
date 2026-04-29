@@ -113,6 +113,9 @@ class LeakagePolicy:
 @dataclass(frozen=True)
 class ModelPolicy:
     tail_levels: tuple[float, ...] = (0.95, 0.975)
+    tail_sides: tuple[str, ...] = ("left_tail", "right_tail")
+    primary_tail_side: str = "left_tail"
+    tail_side_policy: str = "positive_loss_units_left_minus_gap_right_gap_shared_tail_levels"
     ewma_lambda: float = 0.94
     ewma_sensitivity_lambdas: tuple[float, ...] = (0.90, 0.97)
     min_train_rows: int = 1000

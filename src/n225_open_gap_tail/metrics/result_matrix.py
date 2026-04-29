@@ -23,13 +23,14 @@ def build_metric_records(
     sample_policy: str = "per_model_oos",
     common_sample_status_value: str | None = None,
 ) -> list[dict[str, object]]:
-    grouped: dict[tuple[str, str, str, float, str | None], list[dict[str, object]]] = {}
+    grouped: dict[tuple[str, str, str, str, float, str | None], list[dict[str, object]]] = {}
     for row in forecasts:
         if row.get("fit_status") == "ok" and row.get("is_valid_forecast") is True:
             grouped.setdefault(
                 (
                     str(row["model_name"]),
                     str(row.get("target_family") or "full_gap_settle_to_open"),
+                    str(row.get("tail_side") or PRIMARY_TAIL_SIDE),
                     str(row.get("information_set") or "target_history_only"),
                     _required_float(row["tail_level"]),
                     str(row["refit_frequency"]) if row.get("refit_frequency") else None,
@@ -37,9 +38,14 @@ def build_metric_records(
                 [],
             ).append(row)
     records: list[dict[str, object]] = []
-    for (model, target_family, information_set, tail_level, refit_frequency), rows in sorted(
-        grouped.items()
-    ):
+    for (
+        model,
+        target_family,
+        tail_side,
+        information_set,
+        tail_level,
+        refit_frequency,
+    ), rows in sorted(grouped.items()):
         losses: Any = np.array([_required_float(row["realized_loss"]) for row in rows], dtype=float)
         var: Any = np.array([_required_float(row["var_forecast"]) for row in rows], dtype=float)
         es: Any = np.array([_required_float(row["es_forecast"]) for row in rows], dtype=float)
@@ -52,6 +58,7 @@ def build_metric_records(
             {
                 "model_name": model,
                 "target_family": target_family,
+                "tail_side": tail_side,
                 "information_set": information_set,
                 "tail_level": tail_level,
                 "refit_frequency": refit_frequency,

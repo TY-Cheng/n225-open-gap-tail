@@ -31,17 +31,22 @@ def _evaluate_benchmark_advanced_shard(
 ) -> dict[str, list[dict[str, object]]]:
     validate_worker_payload(payload)
     panel_path = Path(str(payload["panel_path"]))
+    tail_side = normalize_tail_side(payload.get("tail_side"))
     tail_level = _required_float(payload["tail_level"])
     models = cast(tuple[str, ...], payload["models"])
+    panel_columns = pl.scan_parquet(panel_path).collect_schema().names()
+    selected_columns = ["forecast_date", "realized_loss"]
+    if "gap_t" in panel_columns:
+        selected_columns.append("gap_t")
     frame = (
         pl.scan_parquet(panel_path)
         .filter(pl.col("clean_sample") == True)  # noqa: E712
-        .select(["forecast_date", "realized_loss"])
+        .select(selected_columns)
         .drop_nulls()
         .sort("forecast_date")
         .collect()
     )
-    rows = frame.to_dicts()
+    rows = rows_for_tail_side(frame.to_dicts(), tail_side=tail_side)
     oos_diagnostics = find_oos_start_diagnostics(rows, tail_level=tail_level)
     oos_start = cast(str | None, oos_diagnostics["oos_start"])
     if oos_start is None:
@@ -51,10 +56,12 @@ def _evaluate_benchmark_advanced_shard(
                 _advanced_benchmark_record(
                     {
                         "model_name": model_name,
+                        "tail_side": tail_side,
                         "tail_level": tail_level,
                         "shard_id": _forecast_shard_id(
                             model_name,
                             tail_level,
+                            tail_side=tail_side,
                             refit_frequency=BENCHMARK_ADVANCED_REFIT_FREQUENCY,
                         ),
                         "fit_status": "unavailable_insufficient_oos_start",
@@ -87,6 +94,7 @@ def _evaluate_benchmark_advanced_shard(
             model_failures = [
                 {
                     "model_name": model_name,
+                    "tail_side": tail_side,
                     "tail_level": tail_level,
                     "fit_status": "unavailable_advanced_optimizer_failed",
                     "failure_reason": str(exc),

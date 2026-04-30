@@ -43,9 +43,99 @@ hide:
 - The design also supports 97.5% VaR/ES evaluation, but those results should be promoted only if common-sample size, exception counts, and EVT diagnostics are sufficient.
 - Main data sources:
     - J-Quants Premium: Nikkei 225 Futures prices, settlement, volume, and open interest.
-    - Massive: U.S. ETFs, Japan proxy ETFs, Asia proxy ETFs, and SPY intraday-derived predictors.
-    - FRED: rates, FX, and macro-financial predictors with publication-lag controls.
+    - Massive: U.S. ETFs, sector ETFs, dollar ETF proxy, Japan proxy ETFs, Asia proxy ETFs, and SPY intraday-derived predictors.
+    - FRED: Treasury rates, VIX, H.10 USD/JPY, and audited credit-spread controls with publication-lag controls.
     - CBOE: volatility-index predictors, including VIX.
+
+## Forecast Computation Flow
+
+The empirical unit is one OSE target date \(t\). For that date, the model uses
+only information available by the matched U.S. cash-market close plus the
+registered data-availability lag, then forecasts the tail risk of the next OSE
+Nikkei 225 Futures day-session open.
+
+```mermaid
+flowchart TD
+    T["OSE target date t<br/>Nikkei 225 Futures large contract<br/>day-session open at 08:45 JST"]
+    C["Matched U.S. session s(t)<br/>official U.S. cash close<br/>regular close or NYSE early close"]
+    Cutoff["Model cutoff<br/>U.S. cash close + vendor lag<br/>must precede OSE open"]
+
+    JQ["J-Quants futures history<br/>prior settlement, prior day close, night close<br/>volume, open interest, roll/SQ flags"]
+    JP["Japan-only state<br/>lagged gaps and losses<br/>rolling volatility and rolling 95% loss quantile<br/>calendar, DST, absorption timing"]
+
+    MCore["Massive U.S. close core<br/>SPY, QQQ, DIA, IWM<br/>sector ETFs XLK...XLC<br/>TLT, GLD, USO, EEM, FXI, SMH, HYG, LQD"]
+    MSpy["SPY minute late-session features<br/>last-30m return, last-60m return<br/>late-session range, volume surge, final-window momentum"]
+    Fred["FRED and Cboe controls<br/>DGS2, DGS10, T10Y2Y, VIXCLS<br/>DEXJPUS H.10 USD/JPY<br/>Cboe VIX close and range"]
+    Proxy["Proxy ETF blocks<br/>Japan: EWJ, DXJ<br/>Asia: EWY, EWT, EWH<br/>UUP and credit spreads audited but not headline"]
+
+    InfoA["Nested information set A<br/>japan_only"]
+    InfoB["Nested information set B<br/>japan_only + U.S. close core"]
+    InfoC["Nested information set C<br/>+ Japan proxy ETFs"]
+    InfoD["Nested information set D<br/>+ Asia proxy ETFs"]
+
+    Target["Primary target<br/>settlement-to-open gap<br/>log(open_t) - log(settlement_{t-1})"]
+    LossL["left_tail loss<br/>-gap_t<br/>downside open risk"]
+    LossR["right_tail loss<br/>gap_t<br/>upside open risk"]
+
+    Bench["Benchmark floor<br/>historical and rolling quantile<br/>EWMA, GARCH-t, GJR-GARCH-t, GJR-GARCH-EVT"]
+    Adv["Advanced econometric benchmarks<br/>CAViaR, CARE, GAS<br/>Taylor-style ALD and direct FZ VaR-ES"]
+    ML["ML tail models<br/>LightGBM direct quantile<br/>LightGBM location-scale<br/>LightGBM standardized-loss POT-GPD"]
+
+    Forecast["Forecast output<br/>VaR in positive loss units<br/>ES where the model supplies a valid VaR-ES pair"]
+    Metrics["Backtesting metrics<br/>breach rate, exception count<br/>Kupiec and Christoffersen tests<br/>quantile loss, FZ loss, Murphy diagrams<br/>ES exceedance severity"]
+    Inference["Model comparison and interpretation<br/>DM and MCS on paired OOS losses<br/>CPA loss-differential regressions on ex-ante observables<br/>DST, stress-window, and trigger diagnostics"]
+
+    C --> Cutoff
+    T --> Target
+    JQ --> JP
+    Cutoff --> MCore
+    Cutoff --> MSpy
+    Cutoff --> Fred
+    Cutoff --> Proxy
+    JP --> InfoA
+    JP --> InfoB
+    MCore --> InfoB
+    MSpy --> InfoB
+    Fred --> InfoB
+    InfoB --> InfoC
+    Proxy --> InfoC
+    InfoC --> InfoD
+    Proxy --> InfoD
+    Target --> LossL
+    Target --> LossR
+    InfoA --> ML
+    InfoB --> ML
+    InfoC --> ML
+    InfoD --> ML
+    JP --> Bench
+    JP --> Adv
+    LossL --> Bench
+    LossL --> Adv
+    LossL --> ML
+    LossR --> Bench
+    LossR --> Adv
+    LossR --> ML
+    Bench --> Forecast
+    Adv --> Forecast
+    ML --> Forecast
+    Forecast --> Metrics
+    Metrics --> Inference
+```
+
+Operationally, the calculation proceeds as follows:
+
+- Map each OSE target date \(t\) to the relevant U.S. session \(s(t)\), accounting for U.S. holidays, Japan holidays, NYSE early closes, and DST.
+- Set the forecast origin to the U.S. cash close plus the configured vendor lag. No predictor is eligible unless its availability timestamp is no later than this cutoff.
+- Construct the main gap from the previous settlement to the OSE day-session open:
+
+  `gap_t = log(day_session_open_t) - log(previous_settlement_{t-1})`.
+
+- Convert the same gap into two separate loss surfaces:
+    - downside risk: `left_tail_loss_t = -gap_t`;
+    - upside risk: `right_tail_loss_t = gap_t`.
+- Estimate benchmark, advanced benchmark, and ML tail models on expanding historical windows, with monthly refits for the ML tail models.
+- Store VaR and ES forecasts in positive loss units. A VaR exception is always `realized_loss_t > var_forecast_t`.
+- Compare forecasts on common out-of-sample dates using calibration tests, quantile loss, FZ loss for valid VaR-ES pairs, DM/MCS inference, CPA loss-differential regressions, and supporting diagnostics.
 
 ## Risk Surfaces
 

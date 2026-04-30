@@ -12,7 +12,7 @@ This page is the canonical source for source roles, source status, target formul
 | Source | Role | Project status | Timing interpretation |
 | --- | --- | --- | --- |
 | J-Quants Futures OHLC | OSE Nikkei 225 Futures target source and contract metadata source | Premium futures access is configured locally for historical audits | Ex-post historical research target source, not a live pre-open feed. |
-| Massive.com | U.S. close-side ETF, equity, sector, FX, and index predictors | Configured licensed API | Predictor source with UTC timestamps converted explicitly to ET. |
+| Massive.com | U.S. close-side ETF, equity, sector, dollar ETF proxy, Japan proxy, Asia proxy, and index predictors | Configured licensed API | Predictor source with UTC timestamps converted explicitly to ET. Massive is not the canonical USD/JPY source in the current run. |
 | NYSE calendar | U.S. regular close, holiday, and early-close cutoff logic | Core public timing source | Determines the U.S. cash close used for the forecast origin. |
 | JPX calendar and trading-hour rules | OSE business-day, day/night session, holiday-trading, roll/SQ context | Core official timing source | Determines OSE target eligibility and holiday/session flags. |
 | FRED | Treasury yields, selected rates proxies, and public macro series | Configured public API | Historical control source; vintage-safe work requires ALFRED-style handling where needed. |
@@ -37,32 +37,157 @@ JQUANTS_DERIVATIVES_DAILY_ENABLED="true"
 JQUANTS_DERIVATIVES_INTRADAY_ENABLED="false"
 ```
 
-Massive and FRED predictor settings are:
+Massive and FRED predictor settings separate endpoint credentials from the
+research-config feature-set blocks. The `.env` file supplies API keys and base
+URLs; the run manifest and `config/research_config.json` record the exact
+feature-set universe. For the current clean run, the fetched Massive daily
+universe is the union of the core, optional, Japan proxy, and Asia proxy blocks:
 
-```bash
+```text
 MASSIVE_API_KEY="replace-me"
 MASSIVE_BASE_URL="https://api.massive.com"
-MASSIVE_DAILY_TICKERS="SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,XLY,XLP,XLB,XLU,XLC,TLT,GLD,USO,EEM,FXI,SMH,HYG,LQD,EWJ,DXJ,EWY,EWT,EWH"
 MASSIVE_MINUTE_TICKER="SPY"
 MASSIVE_PROBE_TICKERS="I:VIX"
 
+massive_core = SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,XLY,XLP,XLB,XLU,XLC,TLT,GLD,USO,EEM,FXI,SMH,HYG,LQD
+massive_optional = UUP
+massive_japan_proxy = EWJ,DXJ
+massive_asia_proxy = EWY,EWT,EWH
+
 FRED_BASE_URL="https://fred.stlouisfed.org"
-FRED_SERIES="VIXCLS,DGS2,DGS10,T10Y2Y,DEXJPUS"
+fred_core = VIXCLS,DGS2,DGS10,T10Y2Y
+fred_fallback = DEXJPUS
+fred_credit_enriched = BAMLH0A0HYM2,BAMLC0A0CM
 ```
 
-These snippets are the run core defaults. Smoke commands can override them with smaller ticker or series lists.
+These snippets describe the full clean-run fetch universe. Smoke commands can
+override them with smaller ticker or series lists. The headline ML nested
+information sets do not use every fetched field: optional `UUP` and credit-spread
+series are cached and audited, but they remain outside the registered headline
+ML information sets unless a future specification explicitly promotes them.
 
 Short-history and robustness-only candidates stay out of `core_full_history`:
 
 ```bash
 POST_2018_FRED_SERIES="SOFR,EFFR"
-FRED_CREDIT_ENRICHED_SERIES="BAMLH0A0HYM2,BAMLC0A0CM"
-JAPAN_PROXY_MASSIVE_TICKERS="EWJ,DXJ"
-ASIA_PROXY_MASSIVE_TICKERS="EWY,EWT,EWH"
-OPTIONAL_MASSIVE_TICKERS="UUP"
+FRED_ROBUSTNESS_SERIES="NFCI,ANFCI,STLFSI4"
 ```
 
-FRED uses current historical values with conservative availability semantics and is not ALFRED/vintage-safe unless a future run explicitly records realtime or vintage parameters. `DEXJPUS` is handled as a Federal Reserve H.10 weekly-batch as-of FX control: the previous business week's observations are unavailable until the following H.10 release timestamp. Massive FX is not part of the default tail-risk pipeline.
+FRED uses current historical values with conservative availability semantics and is not ALFRED/vintage-safe unless a future run explicitly records realtime or vintage parameters. `DEXJPUS` is handled as a Federal Reserve H.10 weekly-batch as-of FX control: the previous business week's observations are unavailable until the following H.10 release timestamp. Massive FX is not part of the default tail-risk pipeline. `UUP`, when fetched, is a U.S.-traded dollar ETF proxy and should not be described as a USD/JPY exchange-rate source.
+
+## Current Clean-Run Data Inventory
+
+The current paper-facing evidence map is generated from:
+
+```text
+run_id = tailrisk_20160719_20260429_20260429T115723Z_commit_57b1ddab
+requested window = 2016-07-19 to 2026-04-29
+clean modeling sample = 2018-06-20 to 2026-04-28
+clean forecast observations = 1,660
+```
+
+The clean sample begins after all required target fields, Massive core fields,
+FRED core fields, and the canonical FRED H.10 USD/JPY control satisfy the
+registered coverage and timing requirements. The gold modeling panel contains
+2,393 target-date rows before the clean-sample filter.
+
+### Active Target and Calendar Inputs
+
+- Target source: J-Quants Premium historical OSE Nikkei 225 Futures daily/session
+  OHLC for the large Nikkei 225 Futures contract.
+- Primary target family: `full_gap_settle_to_open`, defined as
+  `log(OSE day-session open_t) - log(previous settlement_{t-1})`.
+- Additional audited target fields: `full_gap_close_to_open` and
+  `residual_nightclose_to_day_open`.
+- Disabled target extension: `residual_usclosemark_to_open`, because the current
+  run does not include a licensed timestamped intraday OSE, CME, SGX, or
+  equivalent Nikkei futures mark at the U.S. cash close.
+- Calendar sources: JPX/OSE trading-day and session rules, NYSE holidays and
+  early closes, U.S. DST rules, roll-window flags, SQ-window flags, and
+  contract-expiry metadata.
+- Timing fields recorded in the panel include `model_cutoff_ts_utc`,
+  `target_open_ts_utc`, `dst_regime`, `absorption_regime`,
+  `us_close_to_ose_night_close_minutes`, `mapping_status`, and
+  `join_miss_reason`.
+
+### Active Massive Daily Inputs
+
+The clean run fetches these Massive daily symbols:
+
+| Block | Symbols | Features used or audited |
+| --- | --- | --- |
+| Broad U.S. beta | `SPY`, `QQQ`, `DIA`, `IWM` | Close-to-close log returns and high-low log ranges. |
+| U.S. sectors | `XLK`, `XLF`, `XLE`, `XLV`, `XLI`, `XLY`, `XLP`, `XLB`, `XLU`, `XLC` | Sector returns and ranges. |
+| Duration, safe-haven, commodity, EM, semiconductor, and credit-risk proxies | `TLT`, `GLD`, `USO`, `EEM`, `FXI`, `SMH`, `HYG`, `LQD` | Returns and ranges. |
+| Dollar ETF proxy | `UUP` | Cached and audited as `massive_optional`; not part of the headline ML nested information sets. |
+| Japan proxy block | `EWJ`, `DXJ` | Returns and ranges; enters the third ML information set. |
+| Asia proxy block | `EWY`, `EWT`, `EWH` | Returns and ranges; enters the fourth ML information set. |
+
+All Massive daily fields are frozen at the `US_CASH_CLOSE` forecast origin after
+the configured vendor-availability lag. Massive timestamps are stored in UTC
+and converted to U.S. Eastern Time before session alignment.
+
+### Active Massive Intraday Input
+
+The only intraday Massive source in the clean run is `SPY` minute data. It
+produces:
+
+- `spy_late_30m_return`;
+- `spy_late_60m_return`;
+- `spy_late_session_range`;
+- `spy_late_volume_surge`;
+- `spy_final_window_momentum`.
+
+These variables proxy late-session U.S. trading pressure and are frozen at the
+same U.S. close cutoff as the daily Massive predictors.
+
+### Active FRED and Cboe Inputs
+
+The clean run fetches these FRED series:
+
+| Block | Series | Panel variables |
+| --- | --- | --- |
+| Core rates and volatility | `VIXCLS`, `DGS2`, `DGS10`, `T10Y2Y` | Levels and first differences, plus `fred_rates_staleness_days`. |
+| Canonical USD/JPY FX control | `DEXJPUS` | `fx_usdjpy_level`, `fx_usdjpy_return`, `fx_observation_age_days`, `fx_release_age_days`. |
+| Credit-spread enriched block | `BAMLH0A0HYM2`, `BAMLC0A0CM` | Levels and first differences; cached and audited, but outside the headline ML nested information sets in the current run. |
+
+The clean run also uses Cboe VIX historical data:
+
+- `cboe_vix_close`;
+- `cboe_vix_range`.
+
+FRED and Cboe volatility fields are both retained because they serve different
+audit roles: FRED `VIXCLS` is handled through the same conservative release-lag
+machinery as other FRED series, while Cboe VIX supplies the volatility-index
+predictor used in the point-in-time U.S. close information set.
+
+### Active ML Nested Information Sets
+
+The headline ML comparison uses four nested information sets:
+
+| Information set | Active blocks |
+| --- | --- |
+| `japan_only` | Lagged loss and gap history, rolling loss moments, rolling 95% loss quantile, calendar month terms, DST regime, and absorption-regime timing. |
+| `japan_only_plus_us_close_core` | `japan_only` plus Massive U.S. core daily features, SPY late-session features, FRED core rates/VIX features, Cboe VIX features, and FRED H.10 USD/JPY. |
+| `japan_only_plus_us_close_core_plus_japan_proxy` | Previous set plus `EWJ` and `DXJ` returns and ranges. |
+| `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy` | Previous set plus `EWY`, `EWT`, and `EWH` returns and ranges. |
+
+The headline ML nested sets do not include `UUP`, FRED credit-spread enriched
+series, SOFR/EFFR, NFCI/ANFCI/STLFSI4, SKEW, VIX term-structure proxies, or
+macro-event flags in the current clean run.
+
+### Planned or Candidate Inputs Not Active in the Clean Run
+
+- FOMC, CPI, payroll, BOJ, and major Japan macro event flags are planned
+  candidate controls. They are not active feature artifacts in the current clean
+  run.
+- SOFR and EFFR are post-2018 enriched FRED candidates and are not part of the
+  current `core_full_history` feature set.
+- NFCI, ANFCI, and STLFSI4 are FRED robustness candidates and are not active in
+  the current clean run.
+- Cboe SKEW, VIX9D, VIX3M, VIX6M, option-implied skew, volatility-surface
+  measures, and variance-risk-premium proxies require a separate timestamp and
+  coverage audit before they can enter core claims.
 
 The utility smoke/build commands are engineering checks only:
 
@@ -107,10 +232,10 @@ The first-paper predictor universe is pre-registered by economic role rather tha
 | U.S. tail/skew proxies | Cboe SKEW, VIX9D, VIX3M, VIX6M | Cboe or licensed source | Tier 1.5/Tier 2 depending access and coverage | Option-implied left-tail and volatility-term-structure information. |
 | Treasury rates | DGS2, DGS10, T10Y2Y | FRED | Current historical values with +1 U.S. business-day availability lag; not ALFRED/vintage-safe by default | Rate level and curve slope. SOFR/EFFR are post-2018 enriched candidates only. |
 | Credit spreads | BAMLH0A0HYM2, BAMLC0A0CM | FRED/ICE BofA | Enriched/robustness block unless coverage supports inclusion | Credit-stress proxy for global downside tail risk without shortening the required core sample by default. |
-| Event flags | FOMC, CPI, payrolls, BOJ, major Japan macro releases | Official calendars | Timestamped event flags, no numeric surprises in core design | Scheduled risk-event controls without macro feature fishing. |
+| Event flags | FOMC, CPI, payrolls, BOJ, major Japan macro releases | Official calendars | Planned candidate controls; not active feature artifacts in the current clean run | Scheduled risk-event controls without macro feature fishing. |
 | Lagged Japanese futures state | Prior gap, lagged day return, lagged night return, volume/OI changes, roll/SQ flags | J-Quants futures after Premium access | Historical target-side variables, lagged before cutoff | Domestic state, liquidity proxy, and contract-state controls. |
 
-The Massive ticker selection covers U.S. market beta, technology and growth exposure, small-cap risk appetite, sector dispersion, FX, duration, safe-haven demand, commodities, Asia/EM risk, and semiconductors. Japan and Asia proxy tickers are cached with the panel but enter the ML tail nested information-set ladder separately from the broad U.S. core block.
+The Massive ticker selection covers U.S. market beta, technology and growth exposure, small-cap risk appetite, sector dispersion, a U.S. dollar ETF proxy, duration, safe-haven demand, commodities, Asia/EM risk, and semiconductors. Canonical USD/JPY comes from FRED `DEXJPUS`, not Massive. Japan and Asia proxy tickers are cached with the panel but enter the ML tail nested information-set ladder separately from the broad U.S. core block.
 
 ## Data Availability Timeline
 
@@ -305,13 +430,13 @@ The data lake is intentionally tiered to prevent feature fishing.
 
 ### Tier 1: Core Controls and Predictors
 
-- Massive U.S. ETF, sector, equity-index, and USD/JPY predictors.
+- Massive U.S. ETF, sector, equity-index, dollar ETF proxy, Japan proxy, and Asia proxy predictors. Canonical USD/JPY is the FRED H.10 `DEXJPUS` series.
 - SPY minute-bar late-session features: last-30-minute return, last-hour return, late-session range, late-60-minute volume surge, and final-window reversal or momentum, all frozen at U.S. close plus the configured vendor-availability lag. The volume-surge baseline is recomputed across loaded cache partitions so monthly Hive chunks do not create artificial first-session missing values.
 - Massive core block additions: XLY, XLP, XLB, XLU, XLC, TLT, GLD, USO, EEM, FXI, SMH, HYG, and LQD after source and coverage audit.
 - Massive ML tail proxy blocks: Japan proxy (`EWJ`, `DXJ`) and Asia proxy (`EWY`, `EWT`, `EWH`) are cached now but interpreted separately from the core U.S. close block.
 - Cboe or FRED VIX close; VIX high, low, and range only when the source supports them.
-- FRED 2-year and 10-year Treasury yields, T10Y2Y yield-curve slope, and ICE BofA credit-spread proxies. SOFR/EFFR funding proxies are `post_2018_enriched`, not `core_full_history`.
-- Major event flags: FOMC, CPI, payrolls, BOJ policy events, and major Japan macro releases.
+- FRED 2-year and 10-year Treasury yields, T10Y2Y yield-curve slope, and ICE BofA credit-spread proxies. Credit spreads are fetched and audited as an enriched block in the clean run but remain outside the headline ML nested information sets. SOFR/EFFR funding proxies are `post_2018_enriched`, not `core_full_history`.
+- Planned event flags: FOMC, CPI, payrolls, BOJ policy events, and major Japan macro releases. These are not active feature artifacts in the current clean run.
 - Lagged Japanese futures variables: prior gap, lagged OSE day return, lagged OSE night return when available, volume/open-interest changes, roll/SQ flags, and holiday-adjacent flags.
 
 ### Tier 1.5: Tail-Risk Proxy Candidates

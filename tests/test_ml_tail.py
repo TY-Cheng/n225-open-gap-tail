@@ -1,0 +1,433 @@
+# mypy: ignore-errors
+# ruff: noqa: F401,I001,UP035
+from __future__ import annotations
+
+import ast
+import importlib
+import json
+import math
+import sys
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import cast
+
+import numpy as np
+import polars as pl
+import pytest
+
+import n225_open_gap_tail.config.runtime as pipeline_runtime
+import n225_open_gap_tail.data_lake.artifacts as artifact_utils
+import n225_open_gap_tail.data_lake.cache_ops as paper_cache
+import n225_open_gap_tail.features as paper_features
+import n225_open_gap_tail.forecasting as paper_core
+import n225_open_gap_tail.forecasting as paper_evaluation
+import n225_open_gap_tail.forecasting as paper_module
+import n225_open_gap_tail.forecasting._benchmark_suite as benchmark_suite
+import n225_open_gap_tail.forecasting._ml_tail_suite as ml_tail_suite
+import n225_open_gap_tail.inference as paper_inference
+import n225_open_gap_tail.metrics.cpa as cpa_module
+import n225_open_gap_tail.metrics.stat_utils as stat_utils
+import n225_open_gap_tail.models.benchmark_advanced as benchmark_advanced
+import n225_open_gap_tail.models.benchmark_advanced_math as advanced_math
+import n225_open_gap_tail.panel as paper_leakage
+import n225_open_gap_tail.panel as paper_panel
+import n225_open_gap_tail.reporting as paper_reporting
+import n225_open_gap_tail.reporting.figures as reporting_figures
+import n225_open_gap_tail.reporting.latex as reporting_latex
+import n225_open_gap_tail.reporting.tables as reporting_tables
+from n225_open_gap_tail.config import Settings
+from n225_open_gap_tail.data_lake import VendorErrorClass
+from n225_open_gap_tail.forecasting import (
+    build_feature_coverage_records,
+    build_feature_matrix_gate_records,
+    build_fields_coverage_audit_records,
+    build_leakage_check_records,
+    build_ml_tail_modeling_rows,
+    build_modeling_panel_records,
+    build_panel,
+    build_run_id,
+    build_spy_late_session_feature_records,
+    drop_low_variance_features,
+    empirical_excess_es_companion,
+    evaluate_benchmark_floor_suite,
+    evaluate_benchmark_suite,
+    evaluate_ml_tail_suite,
+    evaluate_suite,
+    export_tables,
+    filtered_historical_es,
+    find_oos_start_date,
+    global_oos_intersection,
+    kupiec_pof_test,
+    ml_tail_feature_columns_for_information_set,
+    pairwise_oos_intersection,
+    quantile_loss,
+    static_empirical_es,
+    validate_forecast_values,
+    validate_worker_payload,
+    write_leakage_check,
+)
+
+
+def _patch_paper_module(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    value: object,
+) -> None:
+    """Patch copied globals across the functional modules used by this test suite."""
+    module_names = (
+        "n225_open_gap_tail.config.runtime",
+        "n225_open_gap_tail.forecasting",
+        "n225_open_gap_tail.panel.build",
+        "n225_open_gap_tail.panel.leakage",
+        "n225_open_gap_tail.models.benchmark",
+        "n225_open_gap_tail.models.benchmark_advanced",
+        "n225_open_gap_tail.models.ml_tail",
+        "n225_open_gap_tail.models.ml_tail_oof",
+        "n225_open_gap_tail.metrics.information",
+        "n225_open_gap_tail.metrics.result_matrix",
+        "n225_open_gap_tail.inference.core",
+        "n225_open_gap_tail.features.asof",
+        "n225_open_gap_tail.features.jquants_spy",
+        "n225_open_gap_tail.data_lake.cache_ops",
+        "n225_open_gap_tail.reporting.tables",
+        "n225_open_gap_tail.reporting.latex",
+        "n225_open_gap_tail.reporting.figures",
+        "n225_open_gap_tail.forecasting._guards",
+        "n225_open_gap_tail.forecasting._benchmark_suite",
+        "n225_open_gap_tail.forecasting._ml_tail_suite",
+        "n225_open_gap_tail.forecasting.evaluation",
+        "n225_open_gap_tail.forecasting.artifacts",
+        "n225_open_gap_tail.models.benchmark_advanced_math",
+        "n225_open_gap_tail.models.benchmark_advanced_stateful",
+        "n225_open_gap_tail.metrics.cpa",
+        "n225_open_gap_tail.metrics.result_matrix_grouping",
+        "n225_open_gap_tail.metrics.result_matrix_scoring",
+        "n225_open_gap_tail.metrics.result_matrix_notes",
+        "n225_open_gap_tail.metrics.stat_utils",
+        "n225_open_gap_tail.diagnostics.git",
+    )
+    for module_name in dict.fromkeys(module_names):
+        module = sys.modules.get(module_name)
+        if module is not None and hasattr(module, name):
+            monkeypatch.setattr(module, name, value)
+
+
+def _with_panel_signature_fields(row: dict[str, object]) -> dict[str, object]:
+    forecast_date = str(row["forecast_date"])
+    current = datetime.fromisoformat(forecast_date)
+    realized_loss = float(row.get("realized_loss") or 0.0)
+    return {
+        **row,
+        "target_open_ts_utc": row.get("target_open_ts_utc")
+        or datetime(current.year, current.month, current.day, 23, 45, tzinfo=UTC),
+        "model_cutoff_ts_utc": row.get("model_cutoff_ts_utc")
+        or datetime(current.year, current.month, current.day, 21, 0, tzinfo=UTC),
+        "gap_t": row.get("gap_t", -realized_loss),
+        "forecast_sample": row.get("forecast_sample", True),
+        "forecast_sample_reason": row.get("forecast_sample_reason"),
+        "target_clean_sample": row.get("target_clean_sample", True),
+        "join_miss_reason": row.get("join_miss_reason"),
+        "mapping_status": row.get("mapping_status", "normal_trading"),
+    }
+
+
+def _synthetic_ml_tail_location_scale_rows(n: int = 90) -> list[dict[str, object]]:
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    rows: list[dict[str, object]] = []
+    for index in range(n):
+        current = start + timedelta(days=index)
+        seasonal = math.sin(index / 3.0)
+        loss = 0.04 + 0.01 * seasonal + (0.09 if index % 17 == 0 else 0.0)
+        rows.append(
+            {
+                "forecast_date": current.date().isoformat(),
+                "target_family": "full_gap_settle_to_open",
+                "clean_sample": True,
+                "realized_loss": loss,
+                "gap_t": -loss,
+                "dst_regime": "EDT" if index % 2 else "EST",
+                "absorption_regime": "post_us_close_night_absorption",
+                "feature_x": float(index) / 10.0,
+                "feature_cycle": float(index % 5),
+            }
+        )
+    return rows
+
+
+def test_ml_tail_marks_active_feature_missing_as_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 5)
+    rows = []
+    for day in range(1, 9):
+        rows.append(
+            {
+                "forecast_date": f"2026-04-{day:02d}",
+                "target_family": "full_gap_settle_to_open",
+                "clean_sample": True,
+                "realized_loss": 0.01 + day / 1000.0,
+                "feature_x": None if day == 6 else float(day),
+            }
+        )
+
+    result = paper_core._forecast_ml_tail_lightgbm_sequence(
+        rows=rows,
+        model_name=paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
+        information_set="japan_only_plus_us_close_core",
+        candidate_features=["feature_x"],
+        tail_level=0.95,
+        oos_start="2026-04-06",
+    )
+
+    assert any(
+        row["fit_status"] == "unavailable_feature_not_valid_at_cutoff"
+        for row in result["forecasts"]
+    )
+
+
+def test_ml_tail_feature_unavailability_artifacts_aggregate_and_explode_dates() -> None:
+    forecasts = [
+        {
+            "forecast_date": "2026-04-06",
+            "target_family": "full_gap_settle_to_open",
+            "model_name": "lightgbm_direct_quantile",
+            "information_set": "japan_only_plus_us_close_core",
+            "tail_level": 0.95,
+            "fit_status": "unavailable_feature_not_valid_at_cutoff",
+            "failure_reason": "spy_late_volume_surge,fred_dgs10_level",
+            "dst_regime": "EDT",
+            "absorption_regime": "post_us_close_night_absorption",
+        },
+        {
+            "forecast_date": "2026-04-07",
+            "target_family": "full_gap_settle_to_open",
+            "model_name": "lightgbm_direct_quantile",
+            "information_set": "japan_only_plus_us_close_core",
+            "tail_level": 0.95,
+            "fit_status": "ok",
+            "failure_reason": None,
+        },
+    ]
+
+    aggregate = paper_module.build_ml_tail_feature_unavailability_records(forecasts)
+    exploded = paper_module.build_ml_tail_feature_unavailability_date_records(forecasts)
+
+    by_feature = {row["feature"]: row for row in aggregate}
+    assert by_feature["spy_late_volume_surge"]["missing_count"] == 1
+    assert by_feature["spy_late_volume_surge"]["missing_rate"] == 0.5
+    assert by_feature["fred_dgs10_level"]["source_block"] == "fred_core"
+    assert {row["feature"] for row in exploded} == {
+        "spy_late_volume_surge",
+        "fred_dgs10_level",
+    }
+    assert all(row["forecast_date"] == "2026-04-06" for row in exploded)
+
+
+def test_blocked_expanding_oof_folds_are_strictly_past_to_future() -> None:
+    folds = paper_core._blocked_expanding_oof_folds(
+        30,
+        n_splits=4,
+        min_train_rows=10,
+    )
+
+    assert folds
+    for train_index, validation_index in folds:
+        assert train_index
+        assert validation_index
+        assert max(train_index) < min(validation_index)
+    assert folds[0][0] == list(range(10))
+
+
+def test_ml_tail_oof_location_scale_smearing_is_positive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lightgbm as lgb
+
+    _patch_paper_module(monkeypatch, "ML_TAIL_MIN_OOF_TRAIN_ROWS", 10)
+    oof = paper_core._ml_tail_oof_location_scale(
+        train_rows=_synthetic_ml_tail_location_scale_rows(70),
+        candidate_features=["feature_x", "feature_cycle"],
+        information_set="japan_only_plus_us_close_core",
+        tail_level=0.95,
+        lgb=lgb,
+    )
+
+    assert cast(int, oof["location_oof_count"]) > 0
+    assert cast(int, oof["scale_oof_count"]) > 0
+    assert cast(float, oof["smearing_factor"]) > 0
+    standardized = cast(np.ndarray, oof["standardized_losses"])
+    assert standardized.size > 0
+    assert np.isfinite(standardized).all()
+
+
+def test_ml_tail_location_scale_sequence_outputs_valid_forecasts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 25)
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 1)
+    _patch_paper_module(monkeypatch, "ML_TAIL_MIN_OOF_TRAIN_ROWS", 8)
+
+    result = paper_core._forecast_ml_tail_lightgbm_sequence(
+        rows=_synthetic_ml_tail_location_scale_rows(80),
+        model_name=paper_module.ML_TAIL_LOCATION_SCALE_MODEL,
+        information_set="japan_only_plus_us_close_core",
+        candidate_features=["feature_x", "feature_cycle"],
+        tail_level=0.95,
+        oos_start="2026-02-10",
+    )
+
+    ok = [row for row in result["forecasts"] if row["fit_status"] == "ok"]
+    assert ok
+    assert ok[0]["es_companion_type"] == "oof_filtered_historical_standardized_es"
+    assert cast(float, ok[0]["es_forecast"]) >= cast(float, ok[0]["var_forecast"])
+    assert cast(float, ok[0]["scale_forecast"]) > 0
+    assert cast(float, ok[0]["scale_smearing_factor"]) > 0
+    assert ok[0]["standardization_method"] == "blocked_expanding_oof_location_scale_duan_smearing"
+
+
+def test_ml_tail_standardized_pot_gpd_sequence_records_evt_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 25)
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 1)
+    _patch_paper_module(monkeypatch, "ML_TAIL_MIN_OOF_TRAIN_ROWS", 8)
+    monkeypatch.setattr(
+        "n225_open_gap_tail.forecasting.stats.genpareto.fit",
+        lambda *args, **kwargs: (0.1, 0.0, 1.0),
+    )
+
+    result = paper_core._forecast_ml_tail_lightgbm_sequence(
+        rows=_synthetic_ml_tail_location_scale_rows(90),
+        model_name=paper_module.ML_TAIL_STANDARDIZED_POT_GPD_MODEL,
+        information_set="japan_only_plus_us_close_core",
+        candidate_features=["feature_x", "feature_cycle"],
+        tail_level=0.95,
+        oos_start="2026-02-10",
+    )
+
+    ok = [row for row in result["forecasts"] if row["fit_status"] == "ok"]
+    assert ok
+    assert ok[0]["es_companion_type"] == "oof_standardized_loss_pot_gpd"
+    assert ok[0]["evt_shape"] == pytest.approx(0.1)
+    assert ok[0]["evt_scale"] == pytest.approx(1.0)
+    assert ok[0]["threshold_value"] is not None
+    assert cast(float, ok[0]["es_forecast"]) >= cast(float, ok[0]["var_forecast"])
+
+
+def test_ml_tail_standardized_pot_gpd_shape_above_one_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lightgbm as lgb
+
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 25)
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 1)
+    _patch_paper_module(monkeypatch, "ML_TAIL_MIN_OOF_TRAIN_ROWS", 8)
+    monkeypatch.setattr(
+        "n225_open_gap_tail.forecasting.stats.genpareto.fit",
+        lambda *args, **kwargs: (1.2, 0.0, 1.0),
+    )
+
+    with pytest.raises(paper_module.PipelineRunError, match="unavailable_evt_shape_es_infinite"):
+        paper_core._fit_ml_tail_location_scale_bundle(
+            train_rows=_synthetic_ml_tail_location_scale_rows(80),
+            candidate_features=["feature_x", "feature_cycle"],
+            model_name=paper_module.ML_TAIL_STANDARDIZED_POT_GPD_MODEL,
+            information_set="japan_only_plus_us_close_core",
+            tail_level=0.95,
+            lgb=lgb,
+        )
+
+
+def test_evaluate_ml_tail_suite_writes_lightgbm_ladder_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "reports" / "runs" / "ml_tail_synthetic"
+    panel_dir = run_dir / "panel"
+    audits_dir = run_dir / "audits"
+    panel_dir.mkdir(parents=True)
+    audits_dir.mkdir(parents=True)
+    rows = []
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    for day in range(90):
+        current = start + timedelta(days=day)
+        rows.append(
+            _with_panel_signature_fields(
+                {
+                    "forecast_date": current.date().isoformat(),
+                    "target_family": "full_gap_settle_to_open",
+                    "clean_sample": True,
+                    "realized_loss": float(day % 20) / 100.0,
+                    "gap_t": -float(day % 20) / 100.0,
+                    "dst_regime": "EDT" if day % 2 else "EST",
+                    "absorption_regime": "post_us_close_night_absorption"
+                    if day % 2
+                    else "coincident_us_ose_night_close",
+                    "spy_return": float(day) / 1000.0,
+                    "ewj_return": float(day % 7) / 1000.0,
+                    "ewh_return": float(day % 5) / 1000.0,
+                }
+            )
+        )
+    pl.DataFrame(rows).write_parquet(panel_dir / "modeling_panel.parquet")
+    pl.DataFrame(
+        [
+            {"feature": "spy_return", "source_block": "us_core"},
+            {"feature": "ewj_return", "source_block": "japan_proxy"},
+            {"feature": "ewh_return", "source_block": "asia_proxy"},
+        ]
+    ).write_parquet(panel_dir / "feature_coverage.parquet")
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"config_hash": paper_module.PIPELINE_CONFIG.config_hash()}),
+        encoding="utf-8",
+    )
+    write_leakage_check(run_dir=run_dir)
+    _patch_paper_module(monkeypatch, "DEFAULT_EARLIEST_OOS_START", "2026-01-01")
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 30)
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 1)
+    _patch_paper_module(monkeypatch, "TAIL_LEVELS", (0.95,))
+
+    result = evaluate_ml_tail_suite(run_dir=run_dir, workers=1)
+
+    assert result.status == "completed_lightgbm_ml_tail_models"
+    assert (run_dir / "forecasts" / "ml_tail_forecasts.parquet").exists()
+    forecasts = pl.read_parquet(run_dir / "forecasts" / "ml_tail_forecasts.parquet")
+    assert forecasts["information_set"].n_unique() == 4
+    assert set(forecasts["tail_side"].to_list()) == {"left_tail", "right_tail"}
+    assert (run_dir / "metrics" / "ml_tail_incremental_information.parquet").exists()
+    assert (run_dir / "metrics" / "ml_tail_dst_attenuation.parquet").exists()
+    assert (run_dir / "metrics" / "ml_tail_feature_unavailability.parquet").exists()
+    assert (run_dir / "metrics" / "ml_tail_feature_unavailability_dates.parquet").exists()
+    assert (run_dir / "metrics" / "ml_tail_cpa_inference.parquet").exists()
+    assert (run_dir / "metrics" / "cross_model_cpa_inference.parquet").exists()
+    assert (run_dir / "metrics" / "ml_tail_result_matrix.parquet").exists()
+    assert (run_dir / "metrics" / "ml_tail_result_matrix_sample_audit.parquet").exists()
+    assert (run_dir / "metrics" / "ml_tail_result_matrix_dm.parquet").exists()
+    assert (run_dir / "metrics" / "ml_tail_result_matrix_mcs.parquet").exists()
+    assert (run_dir / "metrics" / "ml_tail_result_matrix_notes.md").exists()
+    result_matrix = pl.read_parquet(run_dir / "metrics" / "ml_tail_result_matrix.parquet")
+    cpa = pl.read_parquet(run_dir / "metrics" / "ml_tail_cpa_inference.parquet")
+    cross_cpa = pl.read_parquet(run_dir / "metrics" / "cross_model_cpa_inference.parquet")
+    assert set(cpa["tail_side"].to_list()) == {"left_tail", "right_tail"}
+    assert "var_quantile_loss" in set(cpa["loss_family"].to_list())
+    assert set(cross_cpa["inference_status"].to_list()) == {"skipped_missing_benchmark_forecasts"}
+    assert {
+        "var_quantile_loss",
+        "var_coverage",
+        "var_es_fz_loss",
+    }.issubset(set(result_matrix["loss_family"].to_list()))
+    incremental_text = json.dumps(
+        pl.read_parquet(run_dir / "metrics" / "ml_tail_incremental_information.parquet").to_dicts()
+    )
+    dst_text = json.dumps(
+        pl.read_parquet(run_dir / "metrics" / "ml_tail_dst_attenuation.parquet").to_dicts()
+    )
+    assert "conditional predictive ability" not in incremental_text
+    assert "conditional predictive ability" not in dst_text
+    status = json.loads((run_dir / "metrics" / "ml_tail_status.json").read_text(encoding="utf-8"))
+    assert set(status["implemented_components"]) == set(paper_module.ML_TAIL_MODEL_NAMES)
+    assert status["unavailable_components"] == {}
+    assert status["registered_information_sets"]["model_d"].endswith("plus_asia_proxy")
+    assert status["cpa_inference_rows"] == cpa.height
+    assert status["cross_model_cpa_inference_rows"] == cross_cpa.height
+    assert status["cross_model_cpa_status"] == "skipped_missing_benchmark_forecasts"

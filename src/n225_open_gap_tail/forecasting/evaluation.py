@@ -1,10 +1,10 @@
-# mypy: ignore-errors
 # ruff: noqa: F401,I001,UP035
 from __future__ import annotations
 
+from pathlib import Path
+
 from n225_open_gap_tail.config.runtime import (
     EvaluationResult as EvaluationResult,
-    Path,
     PipelineRunError,
     TAIL_SIDE_BOTH,
 )

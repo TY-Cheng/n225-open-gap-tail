@@ -1,4 +1,3 @@
-# mypy: ignore-errors
 # ruff: noqa: F401
 from __future__ import annotations
 
@@ -7,8 +6,8 @@ from typing import cast
 
 from n225_open_gap_tail.config.runtime import (
     PipelineRunError,
-    read_json,
 )
+from n225_open_gap_tail.data_lake.io import read_json
 from n225_open_gap_tail.metrics.information import _gold_artifact_path
 from n225_open_gap_tail.panel.leakage import _current_leakage_binding
 

@@ -262,7 +262,7 @@ def _results_ml_tail_headline_discussion(
     coverage_warning = _ml_tail_coverage_warning(ml_tail_metrics)
     saturation_note = _information_set_saturation_note(ml_tail_metrics)
     lines = [
-        "`ml_tail_metrics.parquet` defines the headline ML-tail information-set ladder for this run.",
+        "- `ml_tail_metrics.parquet` defines the headline ML-tail information-set ladder for this run.",
         f"- The headline artifact contains `{information_sets}` information sets, `{tail_levels}` tail level(s), and `{tail_side_count}` tail side(s); the retained headline model rows are {models}.",
         f"- The implemented ML-tail registry is {implemented}, but the headline ladder should be read only from `ml_tail_metrics.parquet`.",
         "- The ladder reports downside-risk and upside-risk surfaces separately. The registered artifacts show different left/right patterns, and the generator does not assume that the two sides share the same economic mechanism.",

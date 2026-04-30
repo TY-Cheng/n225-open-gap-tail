@@ -3,123 +3,153 @@ hide:
   - navigation
 ---
 
-# Deferred Extensions
+# Future Work
 
-This page records work that should remain outside the first paper until the target-data, feature, baseline, LightGBM, EVT, and evaluation gates are reproducible.
+This page records extensions that should remain outside the current paper unless they
+become necessary for interpretation. The present paper is a point-in-time out-of-sample
+forecast evaluation of OSE Nikkei 225 Futures opening-gap VaR and Expected Shortfall. It
+already covers benchmark models, ML tail models, left-tail and right-tail risk surfaces,
+coverage diagnostics, loss-based comparison, CPA regressions, Murphy diagrams, DST
+diagnostics, ES severity, and risk-trigger summaries.
 
-Scope guardrail: the first paper is a session-aligned historical risk-forecasting study. Extensions should be activated only when they sharpen that study or become a clearly separate paper.
+Future work should therefore do one of two things: either sharpen the economic
+interpretation of the current evidence, or define a clearly separate paper.
 
-## Not Deferred From The First Paper
+## Extension Summary
 
-The following items are now part of the first-paper contract, subject to the stability and sample-size gates in [Paper Plan](paper_plan.md) and [Development Audit](audit/development.md):
-
-- DST absorption and the absorption coefficient.
-- LightGBM standardized-loss POT-GPD.
-- Direct FZ-loss or CARE-style VaR-ES benchmark.
-- CAViaR.
-- Taylor/ALD VaR-ES when stable on the audited sample.
-- Murphy diagrams and Model Confidence Set when the out-of-sample loss series supports them.
-- SPY late-session minute-bar features after timestamp validation.
-
-## Extension Portfolio
-
-Extension | Research contribution | When to activate
+Extension | Research question | When to pursue
 --- | --- | ---
-Intraday U.S.-close Nikkei reference mark | Converts the ideal `residual_usclosemark_to_open` target from a documented extension into a main residual-risk target. | After licensed OSE, CME, SGX, or equivalent intraday Nikkei futures marks are available with timestamps.
-Options-implied tail-risk proxies | Tests whether VIX, VVIX, SKEW, VIX term structure, or SPX option-implied tail measures add information beyond ETFs and rates. | After the daily target pipeline is stable and baseline predictor groups are working.
-Night-session microstructure | Separates full overnight gap risk from opening-auction residual risk using night-session path, volume, and liquidity features. | After night-session OHLC and, ideally, intraday OSE data are licensed.
-Richer econometric benchmark suite | Adds robustness variants beyond the implemented nonblocking CAViaR, CARE/expectile, Taylor ALD, direct FZ-loss, GAS-t, and GAS-POT benchmark families, including realized-measure models, neural VaR/ES, and broader distributional forecast comparisons. | After the implemented advanced benchmark rows are author-reviewed under the same sample, coverage, and inference gates as the benchmark floor.
-Real-time pre-open monitoring | Turns the historical design into a live pre-open risk monitor. | Only after live data feeds, vendor availability timestamps, and operational alerting are specified.
-Reproducibility package | Makes the project submission-ready with pinned source manifests and table/figure reproduction commands. | Before manuscript circulation.
+Intraday U.S.-close Nikkei reference mark | Does U.S. close information predict the opening-auction residual after conditioning on a Nikkei futures price observed at the U.S. cash close? | After licensed OSE, CME, SGX, or equivalent intraday Nikkei futures marks are available with reliable timestamps.
+EVT and high-quantile evaluation | Does the LightGBM POT-GPD layer improve VaR-ES performance beyond direct LightGBM quantile forecasts, especially at more extreme quantiles? | After the 95% common-sample comparison is stable, and before any 97.5% claim is made.
+Richer option-implied tail-risk predictors | Do option-implied measures beyond VIX close add incremental information for opening-gap tail risk? | After the core U.S. close information sets are settled and richer option data can be timestamped.
+Night-session microstructure and absorption | How much U.S. information is incorporated during the OSE night session, and what remains for the day-session open? | After night-session OHLC or intraday OSE data are available with session-level timestamps.
+Real-time pre-open risk monitoring | Can the historical forecast design be converted into a live pre-open risk-monitoring process? | Only after live feeds, vendor availability, failure handling, and alert logs are specified.
+Submission reproducibility package | Can every table and figure be reproduced from documented commands and source manifests? | Before manuscript circulation.
 
-## Extension 1: Intraday U.S.-Close Nikkei Reference Mark
+## 1. Intraday U.S.-Close Nikkei Reference Mark
 
-### Research Question
+### Question
 
-Does U.S. close information predict residual OSE day-session opening risk after conditioning on a Nikkei futures mark observed at the U.S. cash close?
+Does U.S. close information predict residual OSE day-session opening risk after
+conditioning on a Nikkei futures price observed at the U.S. cash close?
 
-### Incremental Data
+### Data Requirements
 
-- OSE intraday Nikkei 225 Futures marks.
-- CME yen-denominated or USD-denominated Nikkei futures marks.
-- SGX Nikkei futures marks if available.
-- Source-specific timestamp and availability fields.
+- OSE intraday Nikkei 225 Futures prices, or a licensed equivalent.
+- CME or SGX Nikkei futures marks if they provide a reliable U.S.-close reference.
+- Source-specific timestamps and data-availability records.
 
 ### Guardrails
 
 - Do not synthesize a U.S.-close Nikkei mark from daily data.
-- Do not use a mark observed after the model cutoff.
-- Keep this target unavailable until a licensed intraday source exists.
+- Do not use a mark observed after the forecast origin.
+- Keep the U.S.-close-mark target unavailable until a licensed intraday source exists.
+- Keep full settlement-to-open risk separate from U.S.-close-mark-to-open residual risk.
 
-## Extension 2: Options-Implied Tail-Risk Layer
+## 2. EVT and High-Quantile Evaluation
 
-### Research Question
+### Question
 
-Do U.S. implied-volatility and option-implied tail-risk measures improve pre-open downside risk forecasts beyond equity ETFs, USD/JPY, and Treasury-rate proxies?
+Does the LightGBM standardized-loss POT-GPD layer improve VaR-ES performance relative to
+direct LightGBM quantile forecasts?
 
-### Candidate Sources
+### First Comparison
 
-- Cboe historical VIX and related index files.
-- FRED `VIXCLS` for historical VIX close.
-- Licensed Cboe DataShop or institutional option data for richer tail measures.
-- VIX futures term structure if available.
+- Compare 95% direct LightGBM quantile forecasts against 95% LightGBM POT-GPD forecasts.
+- Use common out-of-sample dates.
+- Evaluate VaR coverage, quantile loss, FZ joint VaR-ES loss, ES exceedance severity, and
+  exception counts together.
 
-### Acceptance Criteria
+### Conditions for 97.5% Results
 
-- Each implied-risk predictor has a timestamp and source role.
-- Delayed historical series are labeled as historical predictors, not live data.
-- Incremental information is tested through ablations, not feature-importance prose alone.
+97.5% VaR/ES results should be promoted only if the evidence supports them:
 
-## Extension 3: Night-Session Microstructure
+- sufficient common-sample observations;
+- sufficient out-of-sample exceptions;
+- stable GPD shape and scale estimates;
+- threshold-sensitivity checks;
+- interpretable ES severity diagnostics;
+- clear separation between left-tail and right-tail results.
 
-### Research Question
+Computing a 97.5% forecast is not, by itself, enough to make a 97.5% empirical claim.
 
-How much of the U.S. close signal is absorbed during the OSE night session, and what remains for the day-session opening auction?
+## 3. Richer Option-Implied Tail-Risk Predictors
 
-### Candidate Features
+### Question
+
+Do option-implied measures beyond the VIX close add information about OSE opening-gap tail
+risk beyond ETFs, rates, FX, and the existing volatility-index controls?
+
+### Candidate Predictors
+
+- VVIX.
+- SKEW or related option-implied tail measures.
+- VIX futures term structure.
+- SPX option-implied tail or variance-risk-premium measures, subject to data access.
+
+### Guardrails
+
+- Record the observation timestamp and the practical availability time for each predictor.
+- Treat delayed historical series as historical predictors, not live pre-open data.
+- Test incremental value through pre-specified information-set additions or ablations.
+- Do not rely on feature-importance narratives without out-of-sample loss and coverage
+  evidence.
+
+## 4. Night-Session Microstructure and Absorption
+
+### Question
+
+How much of the U.S. close signal is incorporated during the OSE night session, and what
+part remains for the next day-session open?
+
+### Candidate Measures
 
 - Night-session return.
 - Night-session range.
-- Volume and open-interest changes.
 - Last-hour night-session movement.
-- Opening-auction residual gap.
+- Night-session volume and liquidity measures.
+- Opening-auction residual gap after conditioning on the night-session close.
 
 ### Guardrails
 
-- Do not interpret full opening-gap predictability as residual pre-open predictability.
-- Keep full-gap and residual-gap tables separate.
-- Report holiday, roll, and SQ-window sensitivity.
+- Do not interpret full settlement-to-open predictability as opening-auction residual
+  predictability.
+- Keep settlement-to-open, close-to-open, night-close-to-open, and U.S.-close-mark-to-open
+  targets in separate tables.
+- Report holiday, roll-window, SQ-window, and early-close sensitivity.
 
-## Extension 4: Production Risk Monitor
+## 5. Real-Time Pre-Open Risk Monitoring
 
-### Research Question
+### Question
 
-Can the historical forecasting design be converted into a timestamp-safe pre-open alert system?
+Can the historical forecast design be converted into a live pre-open risk-monitoring
+process?
 
 ### Required Additions
 
-- Live or near-live Massive/Cboe/FRED alternatives for U.S. close predictors.
-- Live OSE, CME, SGX, or broker feed for Nikkei futures reference marks.
-- Explicit vendor-availability timestamps.
-- Alert logs, failure modes, and monitoring.
+- Live or near-live U.S. close predictors.
+- A live OSE, CME, SGX, or broker feed for Nikkei futures reference prices.
+- Vendor-availability timestamps and missing-data rules.
+- Alert logs, failure handling, and monitoring procedures.
 
 ### Guardrails
 
-- Do not call the historical backtest production-ready.
+- Do not describe the historical backtest as production-ready.
 - Do not rely on J-Quants daily futures OHLC as a live pre-open feed.
-- Separate risk alerts from execution or trading strategy claims.
+- Keep risk alerts separate from execution, transaction-cost, and trading-alpha claims.
 
-## Extension 5: Reproducibility Package
+## 6. Submission Reproducibility Package
 
-Before manuscript circulation, build a reproducibility package with:
+Before manuscript circulation, prepare a reproducibility package with:
 
 - data-source manifest and access notes;
 - source as-of dates and hashes where permitted;
 - schema reports for raw, interim, and processed tables;
 - target audit report;
-- feature leakage checklist;
+- point-in-time feature checklist;
 - model configuration files;
 - table and figure reproduction commands;
 - smoke fixtures for reviewers without vendor data.
 
-Submission criterion: every manuscript table and figure maps to one command and one artifact path.
+Submission criterion: every manuscript table and figure should map to one documented
+command and one output path.

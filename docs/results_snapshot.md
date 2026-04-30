@@ -96,7 +96,7 @@ The pipeline is now producing full-run research-candidate evidence from the dura
 
 ### Left/right ML-tail headline ladder
 
-`ml_tail_metrics.parquet` defines the headline ML-tail information-set ladder for this run.
+- `ml_tail_metrics.parquet` defines the headline ML-tail information-set ladder for this run.
 - The headline artifact contains `4` information sets, `1` tail level(s), and `2` tail side(s); the retained headline model rows are `lightgbm_direct_quantile`.
 - The implemented ML-tail registry is `lightgbm_direct_quantile`, `lightgbm_location_scale`, `lightgbm_standardized_loss_pot_gpd`, but the headline ladder should be read only from `ml_tail_metrics.parquet`.
 - The ladder reports downside-risk and upside-risk surfaces separately. The registered artifacts show different left/right patterns, and the generator does not assume that the two sides share the same economic mechanism.

@@ -1,10 +1,119 @@
 # N225 Open Gap Tail Risk
 
-Research code for **The Incremental Content of U.S. Close Information for Pre-Open Downside Tail Risk: Evidence from OSE Nikkei 225 Futures**.
+Research code for a point-in-time out-of-sample study of OSE Nikkei 225 Futures
+opening-gap tail risk.
 
-The intended target is the next Osaka Exchange Nikkei 225 futures day-session opening gap, measured from the prior relevant OSE close or settlement to the next day-session open. The feature set should only use information observable before the Japan day-session open, with special attention to the U.S. cash close, U.S. futures marks, volatility indexes, USD/JPY, and cross-market ETF or sector signals.
+The paper asks whether information observed at the U.S. cash-market close helps forecast
+the VaR and Expected Shortfall (ES) of the next OSE day-session open. The setting is not a
+generic overnight-return exercise: OSE futures trade through an active night session, so
+U.S. information may be partially incorporated before the Japanese opening auction.
 
-## Setup
+## What This Repository Does
+
+- Builds a point-in-time forecast panel for Nikkei 225 Futures opening-gap risk.
+- Evaluates downside and upside opening-gap risk as separate tail surfaces.
+- Tests nested information sets built around Japan-only history, U.S. close variables,
+  Japan proxy ETFs, and Asia proxy ETFs.
+- Compares benchmark econometric models, advanced tail-risk benchmarks, and LightGBM tail
+  specifications.
+- Reports VaR coverage, quantile loss, Fissler-Ziegel VaR-ES loss, DM/MCS inference,
+  conditional predictive ability diagnostics, Murphy diagrams, and supporting risk
+  diagnostics.
+
+The repository does not implement a live trading system, portfolio allocation rule, or
+execution-cost study.
+
+## Current Empirical Snapshot
+
+The current clean snapshot is based on the completed run
+`tailrisk_20160719_20260429_20260429T115723Z_commit_57b1ddab`.
+
+- Clean evaluation window: `2018-06-20` to `2026-04-28`.
+- Forecast sample: `1660` trading-day observations.
+- Headline risk level: 95% VaR, corresponding to a nominal 5% exception rate.
+- Benchmark floor median breach rate: about 6.1%.
+- ML direct-quantile breach rates across nested information sets: about 9.1% to 12.6%.
+
+This means lower average loss values for the ML tail models must be read together with
+coverage diagnostics. In the current evidence, the direct-quantile LightGBM models often
+produce less conservative VaR estimates than the benchmark floor.
+
+The current results are research-candidate evidence. Final manuscript claims still require
+author review of the tables, figures, and claim boundaries.
+
+## Research Design
+
+### Target
+
+The main target is the settlement-to-open gap:
+
+```text
+log(OSE day-session open) - log(previous settlement)
+```
+
+Forecasts are evaluated in positive loss units:
+
+- `left_tail`: downside opening-gap risk, `realized_loss = -gap_t`.
+- `right_tail`: upside opening-gap risk, `realized_loss = gap_t`.
+
+For both sides, a VaR exception is defined as:
+
+```text
+realized_loss > var_forecast
+```
+
+Left and right tails are evaluated separately. The empirical results should not be
+averaged across sides or interpreted as the same economic mechanism.
+
+### Information Sets
+
+- `japan_only`: target history, lagged Japanese futures variables, rolling volatility,
+  volume/open-interest information, and Japanese calendar variables.
+- `japan_only_plus_us_close_core`: adds U.S. close equity, volatility, FX, and rates
+  predictors available before the OSE open.
+- `japan_only_plus_us_close_core_plus_japan_proxy`: adds U.S.-traded Japan proxy ETFs,
+  including `EWJ` and `DXJ`.
+- `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy`: adds Asia proxy ETFs,
+  including `EWY`, `EWT`, and `EWH`.
+
+### Models
+
+- Benchmark floor: historical quantile, rolling quantile, volatility-scaled quantile,
+  GARCH/GJR-GARCH, and GJR-GARCH-EVT.
+- Advanced econometric benchmarks: CAViaR, CARE/expectile models, GAS models, Taylor-style
+  asymmetric-Laplace VaR-ES specifications, and joint VaR-ES estimation through
+  Fissler-Ziegel scoring where convergence and validity checks are satisfied.
+- ML tail models: flexible, tree-based direct quantile estimation via gradient boosting
+  (LightGBM), LightGBM location-scale models, and LightGBM standardized-loss POT-GPD.
+
+ML tail models are refit monthly using expanding training windows. LightGBM
+hyperparameters are held fixed across information sets and refit dates to limit
+data-dependent tuning.
+
+## Point-in-Time Controls
+
+Every predictor used for a forecast must satisfy:
+
+```text
+feature_available_ts_utc <= model_cutoff_ts_utc < target_open_ts_utc
+```
+
+The current audit reports no hard look-ahead-bias failures. FRED macro-financial
+predictors use conservative publication lags, but they do not use unrevised real-time
+ALFRED vintages. This is a data limitation and should be disclosed in empirical writing.
+
+## Data Sources
+
+- J-Quants Premium: Nikkei 225 Futures daily prices, settlement, volume, and open interest.
+- Massive: U.S. ETFs, Japan proxy ETFs, Asia proxy ETFs, and SPY intraday-derived
+  predictors.
+- FRED: rates, FX, and macro-financial predictors with publication-lag controls.
+- CBOE: volatility-index predictors, including VIX.
+
+Source credentials belong in `.env`. Do not commit `.env`; keep shareable defaults in
+`.env.example`.
+
+## Quick Start
 
 This repo uses `uv` and `just`. The local virtual environment is controlled by `.env`:
 
@@ -12,177 +121,76 @@ This repo uses `uv` and `just`. The local virtual environment is controlled by `
 UV_PROJECT_ENVIRONMENT="${HOME}/.venvs/n225-open-gap-tail"
 ```
 
+Typical local checks:
+
 ```bash
 just status
 just check
 ```
 
-`just check` syncs the uv environment, formats and fixes `src` and `tests`, runs mypy and
-pytest, and performs a strict docs build. Do not commit `.env`; put shareable defaults in
-`.env.example`.
+`just check` syncs the uv environment, formats and fixes `src` and `tests`, runs mypy,
+runs pytest, and performs a strict MkDocs build.
 
-J-Quants should be configured through the V2 API key flow. The run futures
-target pipeline requires local Premium futures access:
+To serve the documentation site:
 
 ```bash
-JQUANTS_API_KEY="replace-me"
-JQUANTS_API_BASE_URL="https://api.jquants.com/v2"
-JQUANTS_EQUITY_MASTER_ENABLED="true"
-JQUANTS_EQUITY_DAILY_ENABLED="true"
-JQUANTS_DERIVATIVES_DAILY_ENABLED="true"
-JQUANTS_DERIVATIVES_INTRADAY_ENABLED="false"
+just docs
 ```
 
-Massive.com should be configured as the U.S. predictor source:
+## Research Run
 
-```bash
-MASSIVE_API_KEY="replace-me"
-MASSIVE_BASE_URL="https://api.massive.com"
-MASSIVE_DAILY_TICKERS="SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,XLY,XLP,XLB,XLU,XLC,TLT,GLD,USO,EEM,FXI,SMH,HYG,LQD,EWJ,DXJ,EWY,EWT,EWH"
-MASSIVE_MINUTE_TICKER="SPY"
-MASSIVE_PROBE_TICKERS="I:VIX"
-```
-
-FRED, calendars, and rule-based Nikkei futures metadata use non-secret settings:
-
-```bash
-FRED_SERIES="VIXCLS,DGS2,DGS10,T10Y2Y,DEXJPUS"
-CALENDAR_US_EXCHANGE="XNYS"
-CALENDAR_JPX_EXCHANGE="JPX"
-NIKKEI_CONTRACT_ROLL_DAYS_BEFORE_LAST_TRADE="5"
-NIKKEI_CONTRACT_MONTHS="3,6,9,12"
-```
-
-## Data Plan
-
-Minimum viable dataset:
-
-- OSE Nikkei 225 futures contract metadata, trading calendar, session definitions, day-session open, close or settlement, volume, open interest, and roll dates.
-- U.S. close information: SPY, QQQ, DIA, IWM, sector ETFs, VIX-style indexes, U.S. index futures or ETFs, rates proxies, USD/JPY, and major macro/news calendar flags.
-- Japan context: Nikkei 225 spot index OHLC, Japan holidays, previous Japan cash and futures session behavior.
-- Modeling labels: opening gap return, exceedance indicator, tail threshold, realized next-session adverse move, and train/test split timestamps.
-
-Current source view:
-
-- Massive.com is useful for U.S. close-side predictors, especially U.S. equities, ETFs, indexes, options, and CME-group futures as available by plan. It is not the primary source for OSE/JPX Nikkei 225 futures.
-- JPX/J-Quants API is the right first source for daily OSE futures OHLC if the target is the Japanese Nikkei 225 futures contract. New development should use the V2 API key flow. The current local setup has Premium futures access for historical target audits; this remains a research source, not a live pre-open feed.
-- JPX/J-Quants DataCube is the escalation path for one-minute or tick data if the opening print or session mechanics need higher-frequency validation.
-- Nikkei Indexes can support spot Nikkei 225 OHLC, but that is not a substitute for the futures open/close target.
-
-See `docs/data.md` for the data contract and source checklist.
-
-## Repository Layout
-
-```text
-src/n225_open_gap_tail/   Source tree
-tests/                    Unit and smoke tests
-docs/                     Project notes and workflow docs
-data/                     Local data only; ignored by git
-reports/                  Local model outputs; ignored by git
-notebooks/                Exploratory notebooks
-```
-
-The source tree is organized by function rather than by research-stage labels. This repo
-runs in uv non-package mode (`tool.uv.package = false`); the code is not built or installed
-as a wheel.
-
-```text
-n225_open_gap_tail/
-  cli.py
-  config/       Settings, research configuration, and shared runtime constants
-  data_lake/    Atomic Parquet IO, schemas, Hive cache paths, and cache markers
-  sources/      J-Quants, Massive, FRED, Cboe, and source readiness probes
-  market/       Exchange calendars and Nikkei futures contract metadata
-  features/     Timestamp-safe feature construction and as-of joins
-  panel/        Durable gold panel construction and leakage binding
-  forecasting/  Suite orchestration, run locking, and artifact routing
-  models/       Benchmark and ML tail model implementations
-  metrics/      VaR/ES losses, coverage tests, result matrix, and diagnostics
-  inference/    Block-bootstrap DM, HLN Tmax MCS, Murphy, and stress diagnostics
-  reporting/    LaTeX tables and notes
-  diagnostics/  Snapshot and local git provenance helpers
-```
-
-## Data Utility Commands
-
-```bash
-PYTHONPATH=src uv run python -m n225_open_gap_tail.cli jquants-smoke
-PYTHONPATH=src uv run python -m n225_open_gap_tail.cli massive-smoke
-PYTHONPATH=src uv run python -m n225_open_gap_tail.cli fred-smoke
-PYTHONPATH=src uv run python -m n225_open_gap_tail.cli calendar-build
-PYTHONPATH=src uv run python -m n225_open_gap_tail.cli contracts-build
-```
-
-These commands are debugging utilities, not the run workflow. They write through the same
-cache vocabulary as the main pipeline: vendor payloads under `data/bronze/` and typed
-normalized outputs under `data/silver/`.
-
-For run work, use `just full`; do not mix utility smoke artifacts with research-run
-evidence.
-
-The manuscript-facing snapshot is generated separately from completed full-run artifacts:
-
-```bash
-just snapshot
-```
-
-It reads the latest completed `reports/runs/<run_id>` and durable `data/gold/` artifacts
-to regenerate `docs/results_snapshot.md` without calling vendors.
-
-## Research-Grade Workflow
-
-The unified run entrypoint is:
+The full workflow is:
 
 ```bash
 just full
 ```
 
-`full` runs local checks, builds the cache-first modeling panel, runs the Benchmark baseline floor,
-audits feature leakage timestamps, runs the ML tail LightGBM information-set ladder, and
-exports LaTeX table fragments under ignored
-`reports/runs/`. The default panel start is `2016-07-19`; the run manifest then
-computes `combined_clean_start` from required features only: J-Quants required-field
-coverage, XLC-inclusive Massive core coverage, FRED core coverage, and the canonical
-FRED H.10 USD/JPY control. These outputs are
-`research_candidate_not_final_manuscript` until manually reviewed.
+It runs checks, builds the point-in-time panel, evaluates benchmark and ML-tail suites,
+exports LaTeX tables and figures, and writes run outputs under ignored `reports/runs/`.
 
-The data path is typed and resumable:
+For a completed run, regenerate the snapshot without fetching vendor data:
 
-- J-Quants, Massive, FRED, calendar, and rule-based contract caches use ignored
-  `data/bronze/` and `data/silver/`.
-- Durable gold artifacts are stored under `data/gold/tailrisk_panel/schema_version=1/run_id=<run_id>/`.
-  `reports/runs/<run_id>/` keeps run-specific forecasts, metrics, audits, and tables.
-- Parquet writes are atomic and carry `xxhash64` chunk hashes plus schema hashes.
-- Old orphan `.tmp` files are garbage-collected at run start.
-- FRED current-historical caches are labeled `vintage_safe=false`; `DEXJPUS` is treated
-  as a Federal Reserve H.10 weekly-batch as-of FX control, not a live FX mark.
-- FRED current-historical caches use a 30-day TTL that is
-  evaluated once at run start, not mid-run.
-- Non-FX FRED predictors are selected feature-by-feature using timestamp-safe as-of
-  logic. Release-lag fills carry explicit metadata, filled diffs are marked, and
-  `fred_rates_staleness_days` enters the expanded ML tail block as an auditable staleness
-  feature.
-- SPY minute bars are reduced chunk-by-chunk to late-session features using the official
-  NYSE close or early close; the late-volume-surge baseline is recomputed across loaded
-  cache partitions, and full raw minute history is not retained by default.
-- Derivatives intraday remains disabled, so `residual_usclosemark_to_open` is extension-only.
-- ML tail writes feature-unavailability diagnostics under
-  `reports/runs/<run_id>/metrics/`, including aggregate and date-level Parquet
-  tables for missing active features.
-- ML tail runs three registered LightGBM model families when the leakage gate passes:
-  direct quantile, fully out-of-fold location-scale with Duan smearing, and
-  fully out-of-fold standardized-loss POT-GPD. Location-scale/POT forecasts that fail
-  sample, scale, or GPD validity gates are recorded as unavailable diagnostics rather than
-  invalid paper-metric rows.
-- ML tail keeps the strict headline information-set ladder in `ml_tail_metrics.parquet` and
-  writes a separate `ml_tail_result_matrix*` layer for restricted common-sample VaR-only
-  and VaR-ES comparisons across LightGBM tail-model families. These matrix rows are
-  marked `headline_claim_allowed=false`; they support audit and discussion, not
-  automatic superiority claims.
+```bash
+just snapshot latest
+```
 
-For custom windows or workers, pass recipe arguments positionally, for example
-`just full 2022-01-01 "" 4`. The lower-level recipes remain available for debugging:
-`_build-panel`, `_evaluate`, `_leakage-check`, and `_export-tables`.
-`_evaluate` uses staged dispatch: `benchmark` runs the baseline floor; `ml_tail` runs the
-LightGBM direct-quantile, location-scale, and standardized-loss POT-GPD information-set
-ladder; richer econometric suites remain future work until they have real implementations.
+Useful lower-level commands are available for debugging:
+
+```bash
+just _build-panel
+just _evaluate <run_id> 4 benchmark false both
+just _evaluate <run_id> 4 ml-tail false both
+just _export-tables <run_id>
+```
+
+## Outputs
+
+- `docs/results_snapshot.md`: generated evidence map for the latest completed run.
+- `reports/runs/<run_id>/latex/tables/`: paper-facing LaTeX tables.
+- `reports/runs/<run_id>/latex/figures/`: paper-facing figures.
+- `reports/runs/<run_id>/latex/table_manifest.json`: table provenance.
+- `reports/runs/<run_id>/latex/figure_manifest.json`: figure provenance.
+- `data/` and `reports/`: local data and model outputs, ignored by git.
+
+## Claim Boundaries
+
+- The contribution is a forecast-evaluation design for Nikkei 225 Futures opening-gap
+  VaR/ES, not a new machine-learning algorithm.
+- Conditional predictive ability results are loss-differential regressions on ex-ante
+  observables. They do not generate VaR or ES forecasts.
+- DST results are descriptive timing-regime evidence, not structural identification.
+- Trigger diagnostics are risk-monitoring summaries, not trading-strategy evidence.
+- The U.S.-close-mark target is deferred until licensed intraday Nikkei futures marks are
+  available.
+- EVT results should first be judged at 95% VaR on common out-of-sample dates. Promotion
+  of 97.5% results requires sufficient common-sample size, exception counts, and stable
+  POT-GPD diagnostics.
+
+## More Detail
+
+- `docs/paper_plan.md`: research questions, model families, evaluation design, and claim
+  boundaries.
+- `docs/results_snapshot.md`: generated evidence map for the current completed run.
+- `docs/data.md`: source roles, target hierarchy, point-in-time controls, and data
+  limitations.
+- `docs/future_work.md`: extensions that should remain separate from the current paper.

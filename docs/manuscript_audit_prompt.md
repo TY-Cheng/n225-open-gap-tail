@@ -1,4 +1,4 @@
-# Manuscript Audit
+# Manuscript Audit Prompt
 
 Use this prompt when the LaTeX manuscript exists and needs to be checked against the evidence.
 

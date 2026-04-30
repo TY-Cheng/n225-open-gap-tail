@@ -1,4 +1,3 @@
-# mypy: ignore-errors
 # ruff: noqa: F401,I001,UP035
 from __future__ import annotations
 

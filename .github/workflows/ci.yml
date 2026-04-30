@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Ruff format check
+        run: uv run ruff format --check src tests
+
+      - name: Ruff lint
+        run: uv run ruff check src tests
+
+      - name: Mypy
+        run: uv run mypy src tests
+
+      - name: Pytest
+        run: uv run pytest
+
+      - name: Strict docs build
+        run: uv run mkdocs build --strict
+
+      - name: Legacy-name guard
+        run: python scripts/lint_legacy_names.py
+
+      - name: Architecture guard
+        run: python scripts/lint_architecture.py

@@ -148,7 +148,7 @@ def _figure_key_readings(family: str) -> list[str]:
     readings = {
         "coverage": [
             "- Key readings: bars report realized VaR exception rates against the nominal line.",
-            "- Read this with Kupiec/Christoffersen fields, exception counts, and sample gates.",
+            "- Read this first: exception-rate deviations set the boundary for any loss-based interpretation.",
         ],
         "benchmark_murphy": [
             "- Key readings: curves report benchmark elementary-score diagnostics on a common grid.",
@@ -156,15 +156,15 @@ def _figure_key_readings(family: str) -> list[str]:
         ],
         "ml_tail_murphy": [
             "- Key readings: curves report the ML-tail headline information ladder on a common grid.",
-            "- Interpret curve separation together with coverage and unconditional inference gates.",
+            "- Interpret curve separation together with the headline coverage warning and unconditional inference gates.",
         ],
         "dst": [
             "- Key readings: bars summarize timing-regime forecast diagnostics.",
-            "- Treat this as descriptive timing evidence, not structural identification.",
+            "- Treat this as descriptive timing evidence; left/right patterns should not be assigned a shared structural mechanism.",
         ],
         "severity": [
             "- Key readings: bars report conditional-on-exception severity diagnostics.",
-            "- Severity is useful for risk interpretation but is not a standalone model claim.",
+            "- Severity is reported for risk interpretation but is not a standalone model-selection claim.",
         ],
         "trigger": [
             "- Key readings: bars report pre-open risk-trigger diagnostics by model family.",

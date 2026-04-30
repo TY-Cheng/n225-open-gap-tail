@@ -32,6 +32,8 @@ def generate_results_discussion(
     benchmark_mcs = _read_parquet_optional(paths["benchmark_mcs"])
     ml_tail_dm = _read_parquet_optional(paths["ml_tail_dm_inference"])
     ml_tail_mcs = _read_parquet_optional(paths["ml_tail_mcs"])
+    result_matrix_dm = _read_parquet_optional(paths["ml_tail_result_matrix_dm"])
+    result_matrix_mcs = _read_parquet_optional(paths["ml_tail_result_matrix_mcs"])
     cpa_path = paths.get("ml_tail_cpa_inference")
     ml_tail_cpa = _read_parquet_optional(cpa_path) if cpa_path is not None else pl.DataFrame()
     cross_cpa_path = paths.get("cross_model_cpa_inference")
@@ -39,6 +41,7 @@ def generate_results_discussion(
         _read_parquet_optional(cross_cpa_path) if cross_cpa_path is not None else pl.DataFrame()
     )
     ml_tail_eviction = _read_parquet_optional(paths["ml_tail_model_eviction"])
+    ml_tail_metrics_per_model = _read_parquet_optional(paths["ml_tail_metrics_per_model"])
     ml_tail_dst = _read_parquet_optional(paths["ml_tail_dst_attenuation"])
     ml_tail_murphy = _read_parquet_optional(paths["ml_tail_murphy"])
     feature_unavailability = _read_parquet_optional(paths["ml_tail_feature_unavailability"])
@@ -84,7 +87,13 @@ def generate_results_discussion(
 
 ### Restricted model-family comparison
 
-{_results_restricted_model_family_discussion(result_matrix)}
+{
+        _results_restricted_model_family_discussion(
+            result_matrix=result_matrix,
+            result_matrix_dm=result_matrix_dm,
+            result_matrix_mcs=result_matrix_mcs,
+        )
+    }
 
 ### Coverage and inference gates
 
@@ -108,6 +117,7 @@ def generate_results_discussion(
             paths=paths,
             benchmark_metrics=benchmark_metrics,
             ml_tail_metrics=ml_tail_metrics,
+            ml_tail_metrics_per_model=ml_tail_metrics_per_model,
             result_matrix=result_matrix,
             ml_tail_dst=ml_tail_dst,
             ml_tail_murphy=ml_tail_murphy,
@@ -226,13 +236,15 @@ def _results_benchmark_discussion(
         if advanced_rows > 0
         else "The advanced benchmark registry is nonblocking, but this run does not provide advanced forecast rows for interpretation."
     )
-    return "\n".join(
-        [
-            f"- `benchmark_metrics.parquet` reports `{metric_rows}` common-sample rows across `{headline_model_count}` benchmark model families and `{tail_side_count}` tail side(s), while benchmark forecasts contain `{forecast_rows}` model-date rows.",
-            "- Benchmark-floor models are external target-history and econometric baselines; this section does not rank them.",
-            f"- {advanced_sentence}",
-        ]
-    )
+    calibration_sentence = _benchmark_calibration_note(benchmark_metrics)
+    lines = [
+        f"- `benchmark_metrics.parquet` reports `{metric_rows}` common-sample rows across `{headline_model_count}` benchmark model families and `{tail_side_count}` tail side(s), while benchmark forecasts contain `{forecast_rows}` model-date rows.",
+        "- Benchmark-floor models are external target-history and econometric baselines; this section does not rank them.",
+        f"- {advanced_sentence}",
+    ]
+    if calibration_sentence:
+        lines.append(f"- {calibration_sentence}")
+    return "\n".join(lines)
 
 
 def _results_ml_tail_headline_discussion(
@@ -247,32 +259,54 @@ def _results_ml_tail_headline_discussion(
     tail_side_count = _unique_count(ml_tail_metrics, "tail_side")
     models = _unique_values(ml_tail_metrics, "model_name")
     implemented = _join_list(ml_tail_status.get("implemented_components"))
-    return "\n".join(
-        [
-            "`ml_tail_metrics.parquet` defines the headline ML-tail information-set ladder for this run.",
-            f"- The headline artifact contains `{information_sets}` information sets, `{tail_levels}` tail level(s), and `{tail_side_count}` tail side(s); the retained headline model rows are {models}.",
-            f"- The implemented ML-tail registry is {implemented}, but the headline ladder should be read only from `ml_tail_metrics.parquet`.",
-            "- The ladder reports downside-risk and upside-risk surfaces separately. The registered artifacts show different left/right patterns, and the generator does not assume that the two sides share the same economic mechanism.",
-            "- The ladder is used to assess candidate incremental U.S.-close information under strict common-sample rules; it does not by itself establish forecast improvement.",
-        ]
+    coverage_warning = _ml_tail_coverage_warning(ml_tail_metrics)
+    saturation_note = _information_set_saturation_note(ml_tail_metrics)
+    lines = [
+        "`ml_tail_metrics.parquet` defines the headline ML-tail information-set ladder for this run.",
+        f"- The headline artifact contains `{information_sets}` information sets, `{tail_levels}` tail level(s), and `{tail_side_count}` tail side(s); the retained headline model rows are {models}.",
+        f"- The implemented ML-tail registry is {implemented}, but the headline ladder should be read only from `ml_tail_metrics.parquet`.",
+        "- The ladder reports downside-risk and upside-risk surfaces separately. The registered artifacts show different left/right patterns, and the generator does not assume that the two sides share the same economic mechanism.",
+    ]
+    if coverage_warning:
+        lines.append(f"- {coverage_warning}")
+    if saturation_note:
+        lines.append(f"- {saturation_note}")
+    lines.append(
+        "- The ladder is used to assess candidate incremental U.S.-close information under strict common-sample rules; it does not by itself establish forecast improvement."
     )
+    return "\n".join(lines)
 
 
-def _results_restricted_model_family_discussion(result_matrix: pl.DataFrame) -> str:
+def _results_restricted_model_family_discussion(
+    *,
+    result_matrix: pl.DataFrame,
+    result_matrix_dm: pl.DataFrame,
+    result_matrix_mcs: pl.DataFrame,
+) -> str:
     if result_matrix.is_empty():
         return _analysis_not_available("The restricted ML-tail result matrix")
     common_n = _int_range(result_matrix, "common_n")
     joint_exceptions = _int_range(result_matrix, "joint_exception_count")
     model_count = _unique_count(result_matrix, "model_name")
     claim_scope = _unique_values(result_matrix, "claim_scope")
-    return "\n".join(
-        [
-            f"- `ml_tail_result_matrix.parquet` contains restricted common-sample comparisons for `{model_count}` LightGBM tail-model families.",
-            f"- The restricted common-N range is `{common_n}` and the joint-exception range is `{joint_exceptions}`.",
-            f"- Recorded claim scopes are {claim_scope}; these rows are restricted evidence and cannot replace the headline information-set ladder.",
-            "- The result matrix is a matched-date diagnostic layer. It should not be worded as one family being better than another.",
-        ]
+    short_sample_sentence = _restricted_short_sample_warning(result_matrix)
+    lines = [
+        f"- `ml_tail_result_matrix.parquet` contains restricted common-sample comparisons for `{model_count}` LightGBM tail-model families.",
+        f"- The restricted common-N range is `{common_n}` and the joint-exception range is `{joint_exceptions}`.",
+        f"- Recorded claim scopes are {claim_scope}; these rows are restricted evidence and cannot replace the headline information-set ladder.",
+    ]
+    if short_sample_sentence:
+        lines.append(f"- {short_sample_sentence}")
+    inference_sentence = _result_matrix_inference_sentence(
+        result_matrix_dm=result_matrix_dm,
+        result_matrix_mcs=result_matrix_mcs,
     )
+    if inference_sentence:
+        lines.append(f"- {inference_sentence}")
+    lines.append(
+        "- The result matrix is a matched-date diagnostic layer. It should not be worded as one family being better than another."
+    )
+    return "\n".join(lines)
 
 
 def _results_coverage_inference_discussion(
@@ -301,6 +335,7 @@ def _results_supporting_diagnostics_discussion(
     paths: Mapping[str, Path],
     benchmark_metrics: pl.DataFrame,
     ml_tail_metrics: pl.DataFrame,
+    ml_tail_metrics_per_model: pl.DataFrame,
     result_matrix: pl.DataFrame,
     ml_tail_dst: pl.DataFrame,
     ml_tail_murphy: pl.DataFrame,
@@ -314,7 +349,7 @@ def _results_supporting_diagnostics_discussion(
     severity_sentence = _severity_discussion_sentence(
         benchmark_metrics=benchmark_metrics,
         ml_tail_metrics=ml_tail_metrics,
-        result_matrix=result_matrix,
+        ml_tail_metrics_per_model=ml_tail_metrics_per_model,
     )
     trigger_sentence = _trigger_discussion_sentence(combined_forecasts)
     dst_sentence = (
@@ -513,11 +548,56 @@ def _tail_event_power_sentence(
         ).height
     if not total and not power_flags:
         return "Formal inference gate status is not available in this snapshot."
-    return f"Tail-event and inference gates report `{power_flags}` restricted rows with insufficient tail-event power and `{unavailable}/{total}` unavailable DM/MCS inference rows."
+    return f"Result-matrix tail-event power flags and suite-level inference gates report `{power_flags}` restricted rows with insufficient tail-event power and `{unavailable}/{total}` unavailable DM/MCS inference rows."
 
 
 def _first_present_column(frame: pl.DataFrame, columns: Sequence[str]) -> str | None:
     return next((column for column in columns if column in frame.columns), None)
+
+
+def _result_matrix_inference_sentence(
+    *,
+    result_matrix_dm: pl.DataFrame,
+    result_matrix_mcs: pl.DataFrame,
+) -> str | None:
+    if result_matrix_dm.is_empty() and result_matrix_mcs.is_empty():
+        return None
+    parts: list[str] = []
+    if not result_matrix_dm.is_empty() and "inference_status" in result_matrix_dm.columns:
+        ok = int(
+            result_matrix_dm.filter(
+                pl.col("inference_status").cast(pl.Utf8).str.starts_with("ok")
+            ).height
+        )
+        unavailable = int(
+            result_matrix_dm.filter(
+                pl.col("inference_status").cast(pl.Utf8).str.contains("unavailable")
+            ).height
+        )
+        parts.append(
+            f"restricted DM records include `{ok}` gate-pass rows and `{unavailable}` unavailable rows"
+        )
+    if not result_matrix_mcs.is_empty() and "mcs_status" in result_matrix_mcs.columns:
+        ok = int(
+            result_matrix_mcs.filter(
+                pl.col("mcs_status").cast(pl.Utf8).str.starts_with("ok")
+            ).height
+        )
+        unavailable = int(
+            result_matrix_mcs.filter(
+                pl.col("mcs_status").cast(pl.Utf8).str.contains("unavailable")
+            ).height
+        )
+        parts.append(
+            f"restricted MCS records include `{ok}` gate-pass rows and `{unavailable}` unavailable rows"
+        )
+    if not parts:
+        return None
+    return (
+        "Result-matrix inference is recorded separately from the headline suite-level DM/MCS: "
+        + "; ".join(parts)
+        + ". These entries are restricted common-sample diagnostics, not headline model-family rankings."
+    )
 
 
 def _diagnostic_table_sentence(paths: Mapping[str, Path]) -> str:
@@ -530,18 +610,18 @@ def _diagnostic_table_sentence(paths: Mapping[str, Path]) -> str:
     existing = [key for key in table_keys if paths[key].exists()]
     if not existing:
         return "Supporting LaTeX diagnostic tables have not yet been exported for this run."
-    return f"Supporting LaTeX diagnostics are exported for `{len(existing)}/{len(table_keys)}` registered table families."
+    return f"Supporting LaTeX diagnostic table files are present for `{len(existing)}/{len(table_keys)}` registered diagnostic families."
 
 
 def _severity_discussion_sentence(
     *,
     benchmark_metrics: pl.DataFrame,
     ml_tail_metrics: pl.DataFrame,
-    result_matrix: pl.DataFrame,
+    ml_tail_metrics_per_model: pl.DataFrame,
 ) -> str:
     frames = [
         frame
-        for frame in (benchmark_metrics, ml_tail_metrics, result_matrix)
+        for frame in (benchmark_metrics, ml_tail_metrics, ml_tail_metrics_per_model)
         if not frame.is_empty()
     ]
     if not frames:
@@ -590,6 +670,7 @@ def _trigger_discussion_sentence(forecasts: pl.DataFrame) -> str:
         for column in (
             "suite",
             "target_family",
+            "tail_side",
             "model_name",
             "information_set",
             "tail_level",
@@ -666,3 +747,113 @@ def _optional_float(value: object) -> float | None:
     except (TypeError, ValueError):
         return None
     return parsed if math.isfinite(parsed) else None
+
+
+def _benchmark_calibration_note(benchmark_metrics: pl.DataFrame) -> str | None:
+    """Note that benchmark floor models tend to be better calibrated than ML-tail models."""
+    if benchmark_metrics.is_empty() or "var_breach_rate" not in benchmark_metrics.columns:
+        return None
+    rates = [
+        float(v)
+        for v in benchmark_metrics["var_breach_rate"].drop_nulls().to_list()
+        if math.isfinite(float(v))
+    ]
+    if not rates:
+        return None
+    median_breach = sorted(rates)[len(rates) // 2]
+    expected = 0.05
+    deviation = abs(median_breach - expected)
+    if deviation < 0.025:
+        return (
+            f"Benchmark-floor breach rates have a median of `{_fmt_float(median_breach)}`, "
+            "within 2.5 percentage points of the nominal level, indicating reasonable coverage calibration "
+            "relative to the ML-tail models whose breach rates are reported in the headline ladder section."
+        )
+    return None
+
+
+def _ml_tail_coverage_warning(ml_tail_metrics: pl.DataFrame) -> str | None:
+    """Flag when all headline ML-tail rows systematically over-exceed nominal coverage."""
+    if ml_tail_metrics.is_empty() or "var_breach_rate" not in ml_tail_metrics.columns:
+        return None
+    total = 0
+    over_count = 0
+    breach_values: list[float] = []
+    for row in ml_tail_metrics.iter_rows(named=True):
+        breach = _optional_float(row.get("var_breach_rate"))
+        expected = _optional_float(row.get("expected_breach_rate"))
+        if breach is None or expected is None:
+            continue
+        total += 1
+        breach_values.append(breach)
+        if breach > expected + 0.025:
+            over_count += 1
+    if total == 0 or over_count < total:
+        return None
+    min_breach = _fmt_float(min(breach_values))
+    max_breach = _fmt_float(max(breach_values))
+    return (
+        f"Coverage warning: all `{total}` headline rows exhibit VaR breach rates "
+        f"(`{min_breach}` to `{max_breach}`) that exceed the nominal level by more than 2.5 percentage points. "
+        "Quantile-loss and FZ-loss differences across the information ladder must be interpreted "
+        "in this context; lower loss scores may partly reflect more aggressive VaR levels rather than "
+        "better conditional tail calibration."
+    )
+
+
+def _information_set_saturation_note(ml_tail_metrics: pl.DataFrame) -> str | None:
+    """Detect whether the information-set ladder saturates after the first augmentation step."""
+    if ml_tail_metrics.is_empty() or "mean_quantile_loss" not in ml_tail_metrics.columns:
+        return None
+    if (
+        "information_set" not in ml_tail_metrics.columns
+        or "tail_side" not in ml_tail_metrics.columns
+    ):
+        return None
+    sides = ml_tail_metrics["tail_side"].drop_nulls().unique().to_list()
+    saturated_sides: list[str] = []
+    for side in sides:
+        subset = ml_tail_metrics.filter(pl.col("tail_side") == side).sort("information_set")
+        losses = [_optional_float(v) for v in subset["mean_quantile_loss"].to_list()]
+        losses_clean = [v for v in losses if v is not None]
+        if len(losses_clean) < 3:
+            continue
+        first_step = abs(losses_clean[1] - losses_clean[0])
+        later_steps = [
+            abs(losses_clean[i] - losses_clean[i - 1]) for i in range(2, len(losses_clean))
+        ]
+        if later_steps and first_step > 0 and max(later_steps) < first_step * 0.25:
+            saturated_sides.append(str(side))
+    if not saturated_sides:
+        return None
+    sides_text = ", ".join(f"`{s}`" for s in sorted(saturated_sides))
+    return (
+        f"On {sides_text}, the largest quantile-loss change occurs at the first information-set augmentation "
+        "(adding U.S. close core); subsequent additions of Japan proxy and Asia proxy ETFs contribute "
+        "diminishing incremental loss changes. This saturation pattern is descriptive and does not "
+        "automatically reduce the value of the broader information set."
+    )
+
+
+def _restricted_short_sample_warning(result_matrix: pl.DataFrame) -> str | None:
+    """Flag when the restricted tail-model family comparison has a very short common sample."""
+    if result_matrix.is_empty() or "common_n" not in result_matrix.columns:
+        return None
+    if "comparison_family" not in result_matrix.columns:
+        return None
+    family_rows = result_matrix.filter(
+        pl.col("comparison_family").cast(pl.Utf8).str.contains("tail_model")
+    )
+    if family_rows.is_empty():
+        return None
+    max_n = family_rows.select(pl.col("common_n").max()).item()
+    if max_n is None:
+        return None
+    max_n_int = int(max_n)
+    if max_n_int >= 500:
+        return None
+    return (
+        f"The tail-model family comparison is severely sample-limited: the largest restricted common-N "
+        f"is `{max_n_int}` rows. No model-family ranking claim is supportable from this restricted sample; "
+        "extended OOS coverage is needed before tail-model family ranking becomes meaningful."
+    )

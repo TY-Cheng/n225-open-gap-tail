@@ -166,7 +166,7 @@ Implement the pipeline in this order:
    - Use timestamp-safe training-window information only; never calibrate EVT tails on in-sample fitted standardized residuals.
    - Select thresholds using mean-excess linearity plus GPD shape and scale stability above the threshold.
    - Current threshold-grid diagnostics record exceedance count, mean excess, GPD shape and scale, shape/scale deltas, selected-threshold flags, and sensitivity across nearby thresholds.
-   - Danielsson-style double-bootstrap, Beirlant-Goegebeur style sequential checks, and additional Hill/tail-index diagnostics are not current-paper requirements. Revisit them only if EVT threshold selection becomes a primary contribution or if author review promotes extreme-tail extrapolation beyond the current sample gates.
+   - Additional automated EVT threshold-selection procedures are not current-paper requirements. Revisit them only if EVT threshold selection becomes a primary contribution or if author review promotes extreme-tail extrapolation beyond the current sample gates.
    - Enforce a minimum exceedance count before reporting an alpha level.
    - Report empirical levels such as 5%, 2.5%, and 1% separately from extrapolated levels.
    - Do not claim 0.1% performance unless the sample size supports meaningful evaluation.

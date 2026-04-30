@@ -623,7 +623,11 @@ def test_results_discussion_private_helpers_cover_fallbacks(tmp_path: Path) -> N
     )
     assert (
         "not yet been performed"
-        in results_discussion_module._results_restricted_model_family_discussion(pl.DataFrame())
+        in results_discussion_module._results_restricted_model_family_discussion(
+            result_matrix=pl.DataFrame(),
+            result_matrix_dm=pl.DataFrame(),
+            result_matrix_mcs=pl.DataFrame(),
+        )
     )
     assert results_discussion_module._int_range(pl.DataFrame(), "common_n") == "not available"
     assert (
@@ -664,6 +668,24 @@ def test_results_discussion_private_helpers_cover_fallbacks(tmp_path: Path) -> N
     )
     assert "1` restricted rows" in gate_sentence
     assert "1/1` unavailable" in gate_sentence
+    result_matrix_inference = results_discussion_module._result_matrix_inference_sentence(
+        result_matrix_dm=pl.DataFrame(
+            [
+                {"inference_status": "ok_block_bootstrap_dm"},
+                {"inference_status": "unavailable_descriptive_coverage_metric"},
+            ]
+        ),
+        result_matrix_mcs=pl.DataFrame([{"mcs_status": "unavailable_insufficient_common_rows"}]),
+    )
+    assert result_matrix_inference is not None
+    assert (
+        "restricted DM records include `1` gate-pass rows and `1` unavailable rows"
+        in result_matrix_inference
+    )
+    assert (
+        "restricted MCS records include `0` gate-pass rows and `1` unavailable rows"
+        in result_matrix_inference
+    )
 
     paths = {
         "dst_attenuation_table": tmp_path / "dst.tex",
@@ -678,17 +700,17 @@ def test_results_discussion_private_helpers_cover_fallbacks(tmp_path: Path) -> N
     assert "not yet been performed" in results_discussion_module._severity_discussion_sentence(
         benchmark_metrics=pl.DataFrame(),
         ml_tail_metrics=pl.DataFrame(),
-        result_matrix=pl.DataFrame(),
+        ml_tail_metrics_per_model=pl.DataFrame(),
     )
     assert "not available" in results_discussion_module._severity_discussion_sentence(
         benchmark_metrics=pl.DataFrame([{"model_name": "m"}]),
         ml_tail_metrics=pl.DataFrame(),
-        result_matrix=pl.DataFrame(),
+        ml_tail_metrics_per_model=pl.DataFrame(),
     )
     assert "no finite" in results_discussion_module._severity_discussion_sentence(
         benchmark_metrics=pl.DataFrame([{"mean_exceedance_severity": None}]),
         ml_tail_metrics=pl.DataFrame(),
-        result_matrix=pl.DataFrame(),
+        ml_tail_metrics_per_model=pl.DataFrame(),
     )
 
     combined = results_discussion_module._combine_forecasts_for_snapshot(
@@ -753,6 +775,209 @@ def test_snapshot_private_helpers_cover_defensive_edges() -> None:
     assert snapshot_module._markdown_cell("a|b\nc") == "a\\|b c"
     assert results_discussion_module._optional_float("bad") is None
     assert results_discussion_module._fmt_float(float("inf")) == "inf"
+
+
+def test_results_discussion_manuscript_audit_helpers_cover_branches(tmp_path: Path) -> None:
+    cpa_text = results_discussion_module._results_cpa_discussion(
+        pl.DataFrame(
+            [
+                {
+                    "tail_side": "left_tail",
+                    "loss_family": "var_quantile_loss",
+                    "inference_status": "ok_newey_west_hac_wald_cpa",
+                }
+            ]
+        ),
+        pl.DataFrame(
+            [
+                {
+                    "loss_family": "var_es_fz_loss",
+                    "inference_status": "ok_newey_west_hac_wald_cpa",
+                }
+            ]
+        ),
+    )
+    assert "conditional loss-difference diagnostic" in cpa_text
+    assert "1` HAC-Wald gate pass" in cpa_text
+
+    missing_panel_audit = results_discussion_module._results_data_timing_audit(
+        manifest={"combined_clean_start": "2018-06-20"},
+        data_vintage={"fred_vintage_safe": False},
+        leakage_summary={"status": "pass", "failures": 0, "warnings": 0},
+        panel=pl.DataFrame([{"forecast_date": "2018-06-20"}]),
+        calendar=pl.DataFrame(),
+    )
+    assert "could not verify pre-start forecast rows" in missing_panel_audit
+
+    calibrated = results_discussion_module._results_benchmark_discussion(
+        benchmark_status={"forecast_rows": 2, "benchmark_advanced_forecast_rows": 1},
+        benchmark_metrics=pl.DataFrame(
+            [
+                {"model_name": "a", "tail_side": "left_tail", "var_breach_rate": 0.05},
+                {"model_name": "b", "tail_side": "right_tail", "var_breach_rate": 0.06},
+            ]
+        ),
+        benchmark_forecasts=pl.DataFrame(
+            [
+                {"benchmark_tier": "floor", "model_name": "a"},
+                {"benchmark_tier": "advanced", "model_name": "c"},
+            ]
+        ),
+    )
+    assert "reasonable coverage calibration" in calibrated
+
+    headline = results_discussion_module._results_ml_tail_headline_discussion(
+        ml_tail_status={"implemented_components": ["lightgbm_direct_quantile"]},
+        ml_tail_metrics=pl.DataFrame(
+            [
+                {
+                    "model_name": "lightgbm_direct_quantile",
+                    "information_set": "japan_only",
+                    "tail_side": "left_tail",
+                    "tail_level": 0.95,
+                    "var_breach_rate": 0.095,
+                    "expected_breach_rate": 0.05,
+                    "mean_quantile_loss": 0.0020,
+                },
+                {
+                    "model_name": "lightgbm_direct_quantile",
+                    "information_set": "japan_only_plus_us_close_core",
+                    "tail_side": "left_tail",
+                    "tail_level": 0.95,
+                    "var_breach_rate": 0.10,
+                    "expected_breach_rate": 0.05,
+                    "mean_quantile_loss": 0.0010,
+                },
+                {
+                    "model_name": "lightgbm_direct_quantile",
+                    "information_set": "japan_only_plus_us_close_core_plus_japan_proxy",
+                    "tail_side": "left_tail",
+                    "tail_level": 0.95,
+                    "var_breach_rate": 0.11,
+                    "expected_breach_rate": 0.05,
+                    "mean_quantile_loss": 0.0009,
+                },
+                {
+                    "model_name": "lightgbm_direct_quantile",
+                    "information_set": (
+                        "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy"
+                    ),
+                    "tail_side": "left_tail",
+                    "tail_level": 0.95,
+                    "var_breach_rate": 0.12,
+                    "expected_breach_rate": 0.05,
+                    "mean_quantile_loss": 0.00085,
+                },
+            ]
+        ),
+    )
+    assert "Coverage warning" in headline
+    assert "largest quantile-loss change" in headline
+
+    restricted = results_discussion_module._results_restricted_model_family_discussion(
+        result_matrix=pl.DataFrame(
+            [
+                {
+                    "comparison_family": "tail_model_family",
+                    "model_name": "lightgbm_location_scale",
+                    "common_n": 154,
+                    "joint_exception_count": 17,
+                    "claim_scope": "restricted_model_comparison_not_headline",
+                }
+            ]
+        ),
+        result_matrix_dm=pl.DataFrame([{"inference_status": "ok_block_bootstrap_dm"}]),
+        result_matrix_mcs=pl.DataFrame([{"mcs_status": "unavailable_insufficient_common_rows"}]),
+    )
+    assert "severely sample-limited" in restricted
+    assert "restricted DM records include `1` gate-pass rows" in restricted
+
+    assert (
+        results_discussion_module._result_matrix_inference_sentence(
+            result_matrix_dm=pl.DataFrame([{"status": "missing_owner_column"}]),
+            result_matrix_mcs=pl.DataFrame(),
+        )
+        is None
+    )
+    assert "do not include PNG" in results_discussion_module._figure_reference_discussion(
+        {"figures": [{"name": "x", "format": "pdf"}]}
+    )
+    assert "not recorded" in results_discussion_module._figure_reference_discussion(
+        {"figures": ["bad", {"name": "x", "format": "png", "path": "x.png"}]}
+    )
+    assert "not available" in results_discussion_module._tail_event_power_sentence(
+        pl.DataFrame(),
+        (pl.DataFrame([{"status": "no_status_column"}]),),
+    )
+
+    severity = results_discussion_module._severity_discussion_sentence(
+        benchmark_metrics=pl.DataFrame([{"mean_exceedance_severity": 0.01}]),
+        ml_tail_metrics=pl.DataFrame([{"mean_exceedance_severity": 0.02}]),
+        ml_tail_metrics_per_model=pl.DataFrame([{"mean_exceedance_severity": 0.03}]),
+    )
+    assert "3` finite rows" in severity
+
+    trigger = results_discussion_module._trigger_discussion_sentence(
+        pl.DataFrame(
+            [
+                {
+                    "suite": "ml_tail",
+                    "tail_side": "left_tail",
+                    "model_name": "m",
+                    "information_set": "i",
+                    "tail_level": 0.95,
+                    "var_forecast": 1.0,
+                    "realized_loss": 0.9,
+                    "is_valid_forecast": True,
+                },
+                {
+                    "suite": "ml_tail",
+                    "tail_side": "right_tail",
+                    "model_name": "m",
+                    "information_set": "i",
+                    "tail_level": 0.95,
+                    "var_forecast": 1.0,
+                    "realized_loss": 1.2,
+                    "is_valid_forecast": True,
+                },
+            ]
+        )
+    )
+    assert "marks `2` model-date rows" in trigger
+
+    assert results_discussion_module._benchmark_calibration_note(pl.DataFrame()) is None
+    assert (
+        results_discussion_module._benchmark_calibration_note(
+            pl.DataFrame([{"var_breach_rate": 0.20}])
+        )
+        is None
+    )
+    assert (
+        results_discussion_module._ml_tail_coverage_warning(
+            pl.DataFrame([{"var_breach_rate": 0.05, "expected_breach_rate": 0.05}])
+        )
+        is None
+    )
+    assert (
+        results_discussion_module._information_set_saturation_note(
+            pl.DataFrame([{"mean_quantile_loss": 1.0}])
+        )
+        is None
+    )
+    assert results_discussion_module._restricted_short_sample_warning(pl.DataFrame()) is None
+    assert (
+        results_discussion_module._restricted_short_sample_warning(
+            pl.DataFrame([{"comparison_family": "information_set_ladder", "common_n": 660}])
+        )
+        is None
+    )
+    assert (
+        results_discussion_module._restricted_short_sample_warning(
+            pl.DataFrame([{"comparison_family": "tail_model_family", "common_n": 660}])
+        )
+        is None
+    )
+    assert results_discussion_module._read_parquet_optional(tmp_path / "missing.parquet").is_empty()
 
 
 def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:

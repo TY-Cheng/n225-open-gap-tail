@@ -92,6 +92,7 @@ The pipeline is now producing full-run research-candidate evidence from the dura
 - `benchmark_metrics.parquet` reports `12` common-sample rows across `6` benchmark model families and `2` tail side(s), while benchmark forecasts contain `21114` model-date rows.
 - Benchmark-floor models are external target-history and econometric baselines; this section does not rank them.
 - Advanced benchmark rows are implemented for `10` model families and contribute `13194` nonblocking forecast rows; these rows are claim-gated diagnostics unless a manuscript table explicitly promotes them through the same sample and inference review.
+- Benchmark-floor breach rates have a median of `0.0606061`, within 2.5 percentage points of the nominal level, indicating reasonable coverage calibration relative to the ML-tail models whose breach rates are reported in the headline ladder section.
 
 ### Left/right ML-tail headline ladder
 
@@ -99,6 +100,8 @@ The pipeline is now producing full-run research-candidate evidence from the dura
 - The headline artifact contains `4` information sets, `1` tail level(s), and `2` tail side(s); the retained headline model rows are `lightgbm_direct_quantile`.
 - The implemented ML-tail registry is `lightgbm_direct_quantile`, `lightgbm_location_scale`, `lightgbm_standardized_loss_pot_gpd`, but the headline ladder should be read only from `ml_tail_metrics.parquet`.
 - The ladder reports downside-risk and upside-risk surfaces separately. The registered artifacts show different left/right patterns, and the generator does not assume that the two sides share the same economic mechanism.
+- Coverage warning: all `8` headline rows exhibit VaR breach rates (`0.0909091` to `0.125758`) that exceed the nominal level by more than 2.5 percentage points. Quantile-loss and FZ-loss differences across the information ladder must be interpreted in this context; lower loss scores may partly reflect more aggressive VaR levels rather than better conditional tail calibration.
+- On `left_tail`, the largest quantile-loss change occurs at the first information-set augmentation (adding U.S. close core); subsequent additions of Japan proxy and Asia proxy ETFs contribute diminishing incremental loss changes. This saturation pattern is descriptive and does not automatically reduce the value of the broader information set.
 - The ladder is used to assess candidate incremental U.S.-close information under strict common-sample rules; it does not by itself establish forecast improvement.
 
 ### Restricted model-family comparison
@@ -106,6 +109,8 @@ The pipeline is now producing full-run research-candidate evidence from the dura
 - `ml_tail_result_matrix.parquet` contains restricted common-sample comparisons for `3` LightGBM tail-model families.
 - The restricted common-N range is `154 to 660` and the joint-exception range is `16 to 112`.
 - Recorded claim scopes are `restricted_model_comparison_not_headline`; these rows are restricted evidence and cannot replace the headline information-set ladder.
+- The tail-model family comparison is severely sample-limited: the largest restricted common-N is `154` rows. No model-family ranking claim is supportable from this restricted sample; extended OOS coverage is needed before tail-model family ranking becomes meaningful.
+- Result-matrix inference is recorded separately from the headline suite-level DM/MCS: restricted DM records include `68` gate-pass rows and `34` unavailable rows; restricted MCS records include `0` gate-pass rows and `72` unavailable rows. These entries are restricted common-sample diagnostics, not headline model-family rankings.
 - The result matrix is a matched-date diagnostic layer. It should not be worded as one family being better than another.
 
 ### Coverage and inference gates
@@ -114,7 +119,7 @@ The pipeline is now producing full-run research-candidate evidence from the dura
 - Model-eviction artifacts record `8` retained rows and `16` non-retained rows under the headline sample policy.
 - Block-bootstrap DM and HLN Tmax MCS artifacts are unconditional forecast-comparison diagnostics; any p-value should be read on average across the unconditional evaluation sample, not as condition-specific evidence.
 - Loss differentials alone do not constitute an improvement claim; coverage, exception counts, sample gates, and inference status must be reviewed together.
-- Tail-event and inference gates report `0` restricted rows with insufficient tail-event power and `0/36` unavailable DM/MCS inference rows.
+- Result-matrix tail-event power flags and suite-level inference gates report `0` restricted rows with insufficient tail-event power and `0/36` unavailable DM/MCS inference rows.
 
 ### CPA as conditional loss-difference diagnostics
 
@@ -124,10 +129,10 @@ The pipeline is now producing full-run research-candidate evidence from the dura
 
 ### Supporting diagnostics
 
-- Supporting LaTeX diagnostics are exported for `4/4` registered table families.
+- Supporting LaTeX diagnostic table files are present for `4/4` registered diagnostic families.
 - `ml_tail_dst_attenuation.parquet` contains `12` DST attenuation rows; these are descriptive timing-regime forecast diagnostics. They do not establish a structural timing mechanism.
-- ES severity diagnostics contain `20` finite rows with mean exceedance severity ranging from `0.00567755` to `0.0127453`; this is conditional-on-exception evidence.
-- The diagnostic 75th-percentile VaR trigger rule marks `7260` model-date rows; `585` of those rows coincide with VaR exceptions out of `1977` total exceptions, and mean triggered exception severity is `0.013498`. This is a pre-open risk-monitoring diagnostic, not hedge PnL, transaction-cost, or trading-alpha evidence.
+- ES severity diagnostics contain `44` finite rows with mean exceedance severity ranging from `0.00406489` to `0.016966`; this is conditional-on-exception evidence.
+- The diagnostic 75th-percentile VaR trigger rule marks `7320` model-date rows; `592` of those rows coincide with VaR exceptions out of `1977` total exceptions, and mean triggered exception severity is `0.0133733`. This is a pre-open risk-monitoring diagnostic, not hedge PnL, transaction-cost, or trading-alpha evidence.
 - Stress-window diagnostics contain `396` rows, and Murphy diagnostics contain `1600` ML-tail rows.
 - Feature-unavailability diagnostics are empty or not available for this run.
 - Figure manifest references:
@@ -386,7 +391,7 @@ Status: `completed_lightgbm_ml_tail_models`; implemented models: `lightgbm_direc
 ### Figure 1. Coverage Breach-Rate Diagnostics
 
 - Key readings: bars report realized VaR exception rates against the nominal line.
-- Read this with Kupiec/Christoffersen fields, exception counts, and sample gates.
+- Read this first: exception-rate deviations set the boundary for any loss-based interpretation.
 
 ![coverage_breach_rates_left_tail](figures/tailrisk_20160719_20260429_20260429T115723Z_commit_57b1ddab/coverage_breach_rates_left_tail.png)
 
@@ -412,7 +417,7 @@ _Figure: `benchmark_murphy_right_tail`. Source: `metrics/benchmark_murphy.parque
 ### Figure 3. ML-Tail Murphy Diagnostics
 
 - Key readings: curves report the ML-tail headline information ladder on a common grid.
-- Interpret curve separation together with coverage and unconditional inference gates.
+- Interpret curve separation together with the headline coverage warning and unconditional inference gates.
 
 ![ml_tail_murphy_left_tail](figures/tailrisk_20160719_20260429_20260429T115723Z_commit_57b1ddab/ml_tail_murphy_left_tail.png)
 
@@ -425,7 +430,7 @@ _Figure: `ml_tail_murphy_right_tail`. Source: `metrics/ml_tail_murphy.parquet`. 
 ### Figure 4. DST Attenuation Diagnostics
 
 - Key readings: bars summarize timing-regime forecast diagnostics.
-- Treat this as descriptive timing evidence, not structural identification.
+- Treat this as descriptive timing evidence; left/right patterns should not be assigned a shared structural mechanism.
 
 ![dst_attenuation_left_tail](figures/tailrisk_20160719_20260429_20260429T115723Z_commit_57b1ddab/dst_attenuation_left_tail.png)
 
@@ -438,7 +443,7 @@ _Figure: `dst_attenuation_right_tail`. Source: `metrics/ml_tail_dst_attenuation.
 ### Figure 5. ES Severity Diagnostics
 
 - Key readings: bars report conditional-on-exception severity diagnostics.
-- Severity is useful for risk interpretation but is not a standalone model claim.
+- Severity is reported for risk interpretation but is not a standalone model-selection claim.
 
 ![es_severity_left_tail](figures/tailrisk_20160719_20260429_20260429T115723Z_commit_57b1ddab/es_severity_left_tail.png)
 

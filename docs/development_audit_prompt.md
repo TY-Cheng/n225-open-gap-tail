@@ -3,9 +3,9 @@
 Use this as the single handoff for the next coding agent. It combines the development prompt with the audit checklist, so implementation and review use the same research contract.
 
 ```text
-You are working in the n225-open-gap-tail repository. Your task is to build the first reproducible research pipeline for "The Incremental Content of U.S. Close Information for Pre-Open Downside Tail Risk: Evidence from OSE Nikkei 225 Futures".
+You are working in the n225-open-gap-tail repository. Your task is to build and audit the reproducible research pipeline for "U.S. Close Information and Pre-Open Tail Risk in OSE Nikkei 225 Futures".
 
-The research is about OSE Nikkei 225 Futures downside pre-open tail risk, not generic Japanese equity overnight returns. OSE futures have a night session, so every model, table, and claim must state its forecast origin, reference price, target family, and information cutoff.
+The research is about OSE Nikkei 225 Futures pre-open tail risk, not generic Japanese equity overnight returns. Both left-tail downside risk and right-tail upside risk are modeled as separate futures risk surfaces. OSE futures have a night session, so every model, table, and claim must state its forecast origin, reference price, target family, tail side, and information cutoff.
 
 Start by auditing the current repository state against this contract. Only proceed to new implementation after documenting any blockers, non-blocking risks, missing tests, and documentation drift.
 
@@ -15,10 +15,9 @@ Before editing anything, read these files in order:
 2. docs/results_snapshot.md
 3. docs/data.md
 4. docs/paper_plan.md
-5. docs/development_audit_prompt.md
-6. .env.example
-7. pyproject.toml
-8. justfile
+5. .env.example
+6. pyproject.toml
+7. justfile
 
 Respect the existing workflow:
 
@@ -60,8 +59,10 @@ Current implementation status:
 - Main data-engineering path is implemented: source probes, cache-first bronze/silver reads, durable gold panel artifacts, calendar map, target audit, feature coverage, leakage binding, and run-specific reports.
 - Benchmark floor is implemented for historical, rolling, EWMA/vol-scaled, GARCH/GJR, and GJR-GARCH-EVT style models behind gates. The advanced benchmark suite is implemented as a nonblocking benchmark layer with CAViaR, CARE/expectile, Taylor ALD, direct FZ-loss, GAS-t, and GAS-POT forecast rows plus optimizer diagnostics.
 - ML tail path is implemented for `lightgbm_direct_quantile`, fully out-of-fold `lightgbm_location_scale`, and fully out-of-fold `lightgbm_standardized_loss_pot_gpd` over the registered nested information ladder.
-- Result governance is implemented for headline metrics, per-model diagnostics, result matrix artifacts, feature-unavailability diagnostics, block-bootstrap DM, HLN Tmax MCS, Murphy diagnostics, stress windows, and DST attenuation records.
+- Conditional predictive ability diagnostics are implemented in `src/n225_open_gap_tail/metrics/cpa.py` for ML-tail information-set comparisons and registered cross-model comparisons. CPA rows are HAC-Wald conditional loss-difference diagnostics, not headline model-selection claims.
+- Result governance is implemented for headline metrics, per-model diagnostics, result matrix artifacts, feature-unavailability diagnostics, block-bootstrap DM, HLN Tmax MCS, Murphy diagnostics, stress windows, DST attenuation records, and CPA inference records.
 - The report layer now exports manuscript-facing ES severity, diagnostic VaR-trigger, DST attenuation, claim-scope, and result-matrix summary table fragments. These are still governance/reporting artifacts: ES severity is conditional on VaR exceptions, VaR-trigger rows are not hedge PnL or trading-alpha evidence, and DST attenuation is descriptive forecast evidence rather than a structural causal mechanism.
+- Results snapshot prose and gallery assembly are implemented in `src/n225_open_gap_tail/diagnostics/results_discussion.py` and `src/n225_open_gap_tail/diagnostics/snapshot_gallery.py`. These modules generate discussion text, evidence maps, table manifests, and figure galleries from artifacts; they do not create new empirical evidence.
 
 Implement the pipeline in this order:
 
@@ -135,7 +136,7 @@ Implement the pipeline in this order:
    - CAViaR SAV/asymmetric-slope variants are implemented as stateful recursive advanced benchmarks with empirical ES companions and optimizer diagnostics.
    - CARE/expectile-style VaR-ES, Taylor-style ALD VaR-ES, and direct FZ-loss variants are implemented as nonblocking advanced benchmark models with explicit VaR-ES semantics.
    - GAS-t and GAS-POT are implemented as score-driven advanced benchmarks; keep them appendix/diagnostic unless the sample gates and author review support stronger use.
-   - GAS-t currently uses the registered raw Student-t log-scale score recursion (`score_scaling=raw_student_t_log_scale_score`) with log-scale state; invalid score/state, invalid `nu`, or exploding scale must emit `unavailable_gas_filter_failed`. A true unit-inverse-Fisher GAS variant requires a separate formula change and rerun.
+   - GAS-t currently uses the registered raw Student-t log-scale score recursion (`score_scaling=raw_student_t_log_scale_score`) with log-scale state; invalid score/state, invalid `nu`, or exploding scale must emit `unavailable_gas_filter_failed`.
    - CARE is expectile-based and separate from Taylor ALD. Its expectile level must be calibrated on the training window by grid search to match the target VaR exception rate, with `expectile_tau`, calibration breach rate, objective, and status recorded.
    - Full advanced benchmark evaluation is runtime-heavy: expect roughly 4--8 hours single-threaded for all optimizer-based model-by-tail shards; use `benchmark-floor` for fast checks and parallelize only across model/tail shards.
    - If a main advanced benchmark is numerically unstable or sample-inadequate, label it unavailable with a reason; do not replace it with weak evidence.
@@ -164,8 +165,8 @@ Implement the pipeline in this order:
    - Fit POT-GPD on standardized losses as the first reported hybrid specification; other EVT interfaces remain robustness extensions.
    - Use timestamp-safe training-window information only; never calibrate EVT tails on in-sample fitted standardized residuals.
    - Select thresholds using mean-excess linearity plus GPD shape and scale stability above the threshold.
-   - Store threshold grid diagnostics: exceedance count, mean excess, Hill or tail-index estimates where appropriate, shape stability, scale stability, and sensitivity across nearby thresholds.
-   - Add optional automated threshold diagnostics such as Danielsson-style double-bootstrap or Beirlant-Goegebeur style sequential checks when implementation is stable.
+   - Current threshold-grid diagnostics record exceedance count, mean excess, GPD shape and scale, shape/scale deltas, selected-threshold flags, and sensitivity across nearby thresholds.
+   - Danielsson-style double-bootstrap, Beirlant-Goegebeur style sequential checks, and additional Hill/tail-index diagnostics are not current-paper requirements. Revisit them only if EVT threshold selection becomes a primary contribution or if author review promotes extreme-tail extrapolation beyond the current sample gates.
    - Enforce a minimum exceedance count before reporting an alpha level.
    - Report empirical levels such as 5%, 2.5%, and 1% separately from extrapolated levels.
    - Do not claim 0.1% performance unless the sample size supports meaningful evaluation.
@@ -175,7 +176,8 @@ Implement the pipeline in this order:
     - Produce reproducible tables and figures under ignored report/artifact directories.
     - Report quantile loss, VaR coverage, conditional coverage or independence tests, dynamic quantile diagnostics where feasible, Fissler-Ziegel joint VaR-ES score, ES exceedance severity diagnostics, and tail ranking metrics.
     - Build Murphy diagrams for VaR-ES dominance diagnostics; treat them as diagnostic plots, not standalone significance tests.
-    - Build model-comparison artifacts with block-bootstrap DM and HLN Tmax MCS when the OOS loss series supports it. Side-specific instrumented conditional predictive ability diagnostics are implemented for ML-tail direct-quantile information-set comparisons.
+    - Build model-comparison artifacts with block-bootstrap DM and HLN Tmax MCS when the OOS loss series supports it. Side-specific instrumented CPA diagnostics are implemented for ML-tail information-set comparisons and registered cross-model comparisons; treat CPA as conditional loss-difference evidence, not automatic model selection.
+    - Generate `results_snapshot.md` prose, evidence maps, table manifests, and figure galleries from the diagnostics modules. Keep generated discussion tied to artifact availability, sample gates, coverage warnings, and claim-scope labels.
     - Inspect `ml_tail_feature_unavailability.parquet` and
       `ml_tail_feature_unavailability_dates.parquet` before changing model-eviction thresholds;
       release-lagged FRED rates should be handled by timestamp-safe fill metadata, while
@@ -184,7 +186,7 @@ Implement the pipeline in this order:
       artifacts for restricted VaR-only and VaR-ES comparisons across LightGBM tail-model
       families and within-model information-set increments; these rows are diagnostic or
       restricted evidence and must not be promoted into automatic superiority claims.
-    - Report quantile-score calibration and sharpness decomposition when implementation is stable.
+    - Additional forecast-distribution scoring extensions are not current evidence. Do not add them to the current paper unless a later review requires stable definitions, artifact schemas, tests, and manuscript wording.
     - Build incremental-information tables in this order:
       Japan-only, Japan plus U.S. close core, Japan plus U.S. close core plus Japan proxy,
       and Japan plus U.S. close core plus Japan proxy plus Asia proxy.

@@ -83,16 +83,16 @@ FRED uses current historical values with conservative availability semantics and
 The current paper-facing evidence map is generated from:
 
 ```text
-run_id = tailrisk_20160719_20260429_20260429T115723Z_commit_57b1ddab
-requested window = 2016-07-19 to 2026-04-29
-clean modeling sample = 2018-06-20 to 2026-04-28
+run_id = tailrisk_20160719_20260501_20260501T032942Z_commit_d4b10baf
+requested window = 2016-07-19 to 2026-05-01
+clean modeling sample = 2018-06-20 to 2026-04-30
 clean forecast observations = 1,660
 ```
 
 The clean sample begins after all required target fields, Massive core fields,
 FRED core fields, and the canonical FRED H.10 USD/JPY control satisfy the
 registered coverage and timing requirements. The gold modeling panel contains
-2,393 target-date rows before the clean-sample filter.
+2,394 target-date rows before the clean-sample filter.
 
 ### Active Target and Calendar Inputs
 
@@ -211,11 +211,16 @@ Every modeling row must state a forecast origin and model cutoff.
 
 | Forecast origin | Nominal timestamp | Known information | Target open | Main use |
 | --- | ---: | --- | --- | --- |
-| `US_CASH_CLOSE` | Official U.S. cash close, normally 16:00 ET and adjusted for early closes | U.S. ETF, index, sector, FX, VIX, rates, and event information available at the cutoff | Next eligible OSE day open at 08:45 JST | Main pre-open risk forecast origin. |
+| `US_CASH_CLOSE` | Official U.S. cash close, normally 16:00 ET and adjusted for early closes | U.S. ETF, index, sector, FX, VIX, rates, and other predictor fields available by the U.S. close cutoff | Next eligible OSE day open at 08:45 JST | Main pre-open risk forecast origin. |
 | `OSE_NIGHT_CLOSE` | 06:00 JST | OSE night close if available as an audited historical field or live licensed feed | Same OSE day open at 08:45 JST | Night-session absorption robustness and residual decomposition. |
 | `PREV_OSE_DAY_CLOSE` | 15:45 JST | Previous OSE day-session close and settlement context | Next eligible OSE day open | Full opening-level risk target. |
 
 J-Quants futures OHLC can support historical reconstruction of targets and residual decompositions after the subscription is available. It should not be described as a live source for the `US_CASH_CLOSE` or `OSE_NIGHT_CLOSE` production information set.
+
+The phrase "U.S. close information" is a cutoff definition, not a claim that
+all U.S. after-close or overnight events are observed. A predictor can enter the
+`US_CASH_CLOSE` information set only when its source timestamp and configured
+availability lag place it at or before the model cutoff.
 
 ## Predictor Universe
 

@@ -27,6 +27,7 @@ from n225_open_gap_tail.diagnostics.snapshot_gallery import (
 from n225_open_gap_tail.diagnostics.snapshot_gallery import (
     table_manifest_markdown as _table_manifest_markdown,
 )
+from n225_open_gap_tail.diagnostics.snapshot_qa import discussion_qa_markdown as _discussion_qa
 
 
 @dataclass(frozen=True)
@@ -378,6 +379,12 @@ def _full_run_results_markdown(
     evidence_map = _evidence_map_mermaid()
     table_manifest_table = _table_manifest_markdown(table_manifest)
     figure_gallery = _figure_gallery_markdown(figure_manifest=figure_manifest, run_id=run_id)
+    discussion_qa = _discussion_qa(
+        advanced_implementation_text=advanced_implementation_text,
+        advanced_implementation_bullet=advanced_implementation_bullet,
+        advanced_bottom_line_bullet=advanced_bottom_line_bullet,
+        claim_scope_table=claim_scope_table,
+    )
 
     return f"""---
 hide:
@@ -392,64 +399,7 @@ hide:
 > final manuscript claims require a clean committed run and author review of the
 > tables and notes.
 
-## Discussion Q&A
-
-### What is this project testing?
-
-It tests whether timestamp-safe information available after the U.S. cash close helps forecast the downside tail of the next Osaka Nikkei 225 Futures day-session open.
-
-- The object is tail risk, not average return prediction or an execution rule.
-- The comparison is organized as an information ladder: Japan-only history first, then U.S. close core, then Japan proxy ETFs, then Asia proxy ETFs.
-- The current page reports what the pipeline produced; it does not automatically make a model-selection claim.
-
-### What exactly is being forecast?
-
-The primary target is the loss version of the settle-to-open Nikkei futures gap for the OSE day-session open.
-
-- A positive realized loss means the opening gap moved against the lower-tail risk direction being evaluated.
-- Roll/SQ windows and invalid reference prices are excluded from clean target evidence.
-- The residual U.S.-close mark target is disabled in this run because there is no licensed timestamped intraday Nikkei mark.
-
-### Why is timing the central issue?
-
-The forecast origin is the U.S. close plus vendor lag, and it must occur before the OSE target open.
-
-- Every joined predictor is audited against `feature_available_ts_utc <= model_cutoff_ts_utc < target_open_ts_utc`.
-- FRED features are treated with timestamp-safe release lags; FRED historical values are not ALFRED vintage-safe.
-- Leakage audit failures are zero in this run, but warnings remain visible below rather than hidden.
-
-### What has been implemented?
-
-{advanced_implementation_text}
-
-- Benchmark floor models include target-history baselines and GARCH/EVT-style econometric floors.
-- {advanced_implementation_bullet}
-- ML-tail models include direct LightGBM quantile, location-scale LightGBM, and standardized-loss POT-GPD.
-- The headline ML-tail table remains strict: it currently keeps direct quantile rows because the newer tail-model variants have shorter common coverage.
-
-### How should broad readers interpret the metrics?
-
-Coverage diagnostics ask whether VaR exceptions are too frequent or too rare; quantile loss scores VaR accuracy; FZ loss scores VaR-ES pairs.
-
-- Lower quantile loss is better only within a common sample and claim boundary.
-- FZ loss is only meaningful for valid VaR-ES pairs and needs enough exceptions to avoid short-sample overinterpretation.
-- Restricted result-matrix rows are useful diagnostics, not replacements for the headline information-set ladder.
-
-### What is the current bottom line?
-
-The pipeline is now producing full-run research-candidate evidence from the durable gold layer.
-
-- The gold sample starts at the dynamic combined clean start, not the 2016 cache lower bound.
-- {advanced_bottom_line_bullet}
-- Before manuscript claims, review the headline/restricted/diagnostic boundaries, inference gates, and vintage limitations rather than selecting a model from one metric.
-
-### Which results can support headline claims?
-
-{claim_scope_table}
-
-- Headline claims require a clean committed run, a shared common sample, zero leakage failures, and author-reviewed tables.
-- Restricted rows can explain model-family behavior on matched dates, but they cannot replace the headline information ladder.
-- Diagnostic rows can motivate discussion and future checks; they should not be worded as model-selection or risk-management usefulness claims without their own evidence gates.
+{discussion_qa}
 
 {results_discussion}
 

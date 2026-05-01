@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -104,14 +105,26 @@ def test_source_probe_classifies_http_and_exceptions() -> None:
 
 
 def test_source_probe_reports_missing_auth() -> None:
-    settings = Settings(jquants_api_key="", massive_api_key="")
+    settings = Settings(
+        jquants_api_key_file="",
+        massive_api_key_file="",
+        massive_flat_file_key_file="",
+    )
 
     assert source_probe._probe_jquants(settings).status == "auth_failed"
     assert source_probe._probe_massive(settings).status == "auth_failed"
 
 
-def test_source_probe_success_paths(monkeypatch: pytest.MonkeyPatch) -> None:
-    settings = Settings(jquants_api_key="jq", massive_api_key="massive")
+def test_source_probe_success_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    jquants_key_file = tmp_path / "jquants.keyfile"
+    massive_key_file = tmp_path / "massive.keyfile"
+    jquants_key_file.write_text("jq\n", encoding="utf-8")
+    massive_key_file.write_text("massive\n", encoding="utf-8")
+    settings = Settings(
+        jquants_api_key_file=str(jquants_key_file),
+        massive_api_key_file=str(massive_key_file),
+        massive_flat_file_key_file="",
+    )
     monkeypatch.setattr(source_probe, "JQuantsV2Client", _JQuantsClient)
     monkeypatch.setattr(source_probe, "MassiveClient", _MassiveClient)
     monkeypatch.setattr(source_probe, "FredClient", _FredClient)

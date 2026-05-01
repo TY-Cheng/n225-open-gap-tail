@@ -259,7 +259,6 @@ def test_write_massive_smoke_sample_writes_bronze_json_and_silver_parquet(
     settings = Settings(
         bronze_data_dir=tmp_path / "bronze",
         silver_data_dir=tmp_path / "silver",
-        massive_api_key="massive-secret",
         massive_base_url="https://api.massive.test",
     )
     client = MassiveClient(
@@ -305,7 +304,7 @@ def test_write_massive_smoke_sample_writes_bronze_json_and_silver_parquet(
 
 
 def test_massive_validation_errors_are_explicit() -> None:
-    with pytest.raises(MassiveApiError, match="MASSIVE_API_KEY"):
+    with pytest.raises(MassiveApiError, match="Massive API key"):
         MassiveClient(api_key="")
 
     with pytest.raises(MassiveApiError, match="missing numeric"):

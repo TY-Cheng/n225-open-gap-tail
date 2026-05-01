@@ -62,7 +62,7 @@ class MassiveClient:
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         if not api_key:
-            raise MassiveApiError("MASSIVE_API_KEY is required")
+            raise MassiveApiError("Massive API key is required")
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._client = httpx.Client(timeout=timeout_seconds, transport=transport)
@@ -299,7 +299,7 @@ def write_massive_smoke_sample(
 ) -> MassiveSmokeResult:
     should_close = client is None
     active_client = client or MassiveClient(
-        api_key=settings.massive_api_key,
+        api_key=settings.read_massive_api_key(),
         base_url=settings.massive_base_url,
         timeout_seconds=settings.massive_request_timeout_seconds,
         min_request_interval_seconds=settings.massive_min_request_interval_seconds,

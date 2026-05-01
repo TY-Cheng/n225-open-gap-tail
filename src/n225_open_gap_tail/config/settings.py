@@ -1,9 +1,25 @@
+from __future__ import annotations
+
+import os
 from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from n225_open_gap_tail.config.research import CORE_FRED_SERIES, CORE_MASSIVE_TICKERS
+
+
+def _read_secret_file(path_value: str, *, env_name: str) -> str:
+    if not path_value.strip():
+        raise ValueError(f"{env_name} is not configured")
+    path = Path(os.path.expanduser(os.path.expandvars(path_value))).resolve()
+    try:
+        secret = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise ValueError(f"{env_name} points to an unreadable file: {path}") from exc
+    if not secret:
+        raise ValueError(f"{env_name} points to an empty file: {path}")
+    return secret
 
 
 def split_csv(value: str) -> tuple[str, ...]:
@@ -27,7 +43,8 @@ class Settings(BaseSettings):
     gold_data_dir: Path = Field(default=Path("data/gold"))
     reports_dir: Path = Field(default=Path("reports"))
 
-    massive_api_key: str = ""
+    massive_api_key_file: str = ""
+    massive_flat_file_key_file: str = ""
     massive_base_url: str = "https://api.massive.com"
     massive_request_timeout_seconds: int = 30
     massive_min_request_interval_seconds: float = 0.0
@@ -53,7 +70,7 @@ class Settings(BaseSettings):
     nikkei_contract_roll_days_before_last_trade: int = 5
     nikkei_contract_months: str = "3,6,9,12"
 
-    jquants_api_key: str = ""
+    jquants_api_key_file: str = ""
     jquants_api_base_url: str = "https://api.jquants.com/v2"
     jquants_equity_master_enabled: bool = True
     jquants_equity_daily_enabled: bool = True
@@ -64,6 +81,18 @@ class Settings(BaseSettings):
     jpx_datacube_email: str = ""
     jpx_datacube_password: str = ""
     jpx_datacube_base_url: str = "https://dc.jpx-jquants.com"
+
+    def read_massive_api_key(self) -> str:
+        return _read_secret_file(self.massive_api_key_file, env_name="MASSIVE_API_KEY_FILE")
+
+    def read_massive_flat_file_key(self) -> str:
+        return _read_secret_file(
+            self.massive_flat_file_key_file,
+            env_name="MASSIVE_FLAT_FILE_KEY_FILE",
+        )
+
+    def read_jquants_api_key(self) -> str:
+        return _read_secret_file(self.jquants_api_key_file, env_name="JQUANTS_API_KEY_FILE")
 
     def required_directories(self) -> tuple[Path, ...]:
         return (

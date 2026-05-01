@@ -68,6 +68,12 @@ def test_status_reports_environment_without_secret_values(
     silver_dir = data_dir / "silver"
     gold_dir = data_dir / "gold"
     reports_dir = tmp_path / "reports"
+    massive_key_file = tmp_path / "massive.keyfile"
+    massive_flat_file_key_file = tmp_path / "massive-flat-file.keyfile"
+    jquants_key_file = tmp_path / "jquants.keyfile"
+    massive_key_file.write_text("massive-secret\n", encoding="utf-8")
+    massive_flat_file_key_file.write_text("massive-flat-file-secret\n", encoding="utf-8")
+    jquants_key_file.write_text("jquants-secret\n", encoding="utf-8")
     for directory in (data_dir, bronze_dir, silver_dir, gold_dir, reports_dir):
         directory.mkdir(parents=True, exist_ok=True)
 
@@ -79,8 +85,12 @@ def test_status_reports_environment_without_secret_values(
     monkeypatch.setenv("REPORTS_DIR", str(reports_dir))
     monkeypatch.setenv("MASSIVE_DAILY_TICKERS", ",".join(CORE_MASSIVE_TICKERS))
     monkeypatch.setenv("FRED_SERIES", ",".join(CORE_FRED_SERIES))
-    monkeypatch.setenv("MASSIVE_API_KEY", "massive-secret")
-    monkeypatch.setenv("JQUANTS_API_KEY", "jquants-secret")
+    monkeypatch.setenv("MASSIVE_API_KEY", "ignored-direct-massive-secret")
+    monkeypatch.setenv("MASSIVE_API_KEY_FILE", str(massive_key_file))
+    monkeypatch.setenv("MASSIVE_FLAT_FILE_KEY", "ignored-direct-flat-file-secret")
+    monkeypatch.setenv("MASSIVE_FLAT_FILE_KEY_FILE", str(massive_flat_file_key_file))
+    monkeypatch.setenv("JQUANTS_API_KEY", "ignored-direct-jquants-secret")
+    monkeypatch.setenv("JQUANTS_API_KEY_FILE", str(jquants_key_file))
     monkeypatch.setenv("JQUANTS_DERIVATIVES_DAILY_ENABLED", "false")
     monkeypatch.setenv("JQUANTS_DERIVATIVES_INTRADAY_ENABLED", "false")
     monkeypatch.setenv("JPX_DATACUBE_EMAIL", "researcher@example.com")
@@ -97,7 +107,8 @@ def test_status_reports_environment_without_secret_values(
     assert "data/raw" not in result.output
     assert "data/interim" not in result.output
     assert "data/processed" not in result.output
-    assert "massive api key configured: True" in result.output
+    assert "massive api key file configured: True" in result.output
+    assert "massive flat-file key file configured: True" in result.output
     assert "massive api base url: https://api.massive.com" in result.output
     assert "massive daily ticker count: 22" in result.output
     assert "massive minute ticker: SPY" in result.output
@@ -108,7 +119,7 @@ def test_status_reports_environment_without_secret_values(
     assert "calendar jpx exchange: JPX" in result.output
     assert "nikkei contract roll days before last trade: 5" in result.output
     assert "j-quants api base url: https://api.jquants.com/v2" in result.output
-    assert "j-quants api key configured: True" in result.output
+    assert "j-quants api key file configured: True" in result.output
     assert "j-quants required plan: premium" in result.output
     assert "j-quants equity master enabled: True" in result.output
     assert "j-quants equity daily enabled: True" in result.output
@@ -116,7 +127,9 @@ def test_status_reports_environment_without_secret_values(
     assert "j-quants derivatives intraday enabled: False" in result.output
     assert "jpx datacube email configured: True" in result.output
     assert "massive-secret" not in result.output
+    assert "massive-flat-file-secret" not in result.output
     assert "jquants-secret" not in result.output
+    assert "ignored-direct" not in result.output
     assert "researcher@example.com" not in result.output
 
 

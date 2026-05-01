@@ -45,7 +45,10 @@ def status() -> None:
     typer.echo("directories:")
     for directory in settings.required_directories():
         typer.echo(f"  - {directory}: {'ok' if directory.exists() else 'missing'}")
-    typer.echo(f"massive api key configured: {bool(settings.massive_api_key)}")
+    typer.echo(f"massive api key file configured: {bool(settings.massive_api_key_file)}")
+    typer.echo(
+        f"massive flat-file key file configured: {bool(settings.massive_flat_file_key_file)}"
+    )
     typer.echo(f"massive api base url: {settings.massive_base_url}")
     typer.echo(f"massive daily ticker count: {len(settings.massive_daily_ticker_list())}")
     typer.echo(f"massive minute ticker: {settings.massive_minute_ticker}")
@@ -61,7 +64,7 @@ def status() -> None:
         f"{settings.nikkei_contract_roll_days_before_last_trade}"
     )
     typer.echo(f"j-quants api base url: {settings.jquants_api_base_url}")
-    typer.echo(f"j-quants api key configured: {bool(settings.jquants_api_key)}")
+    typer.echo(f"j-quants api key file configured: {bool(settings.jquants_api_key_file)}")
     typer.echo("j-quants required plan: premium")
     typer.echo(f"j-quants equity master enabled: {settings.jquants_equity_master_enabled}")
     typer.echo(f"j-quants equity daily enabled: {settings.jquants_equity_daily_enabled}")

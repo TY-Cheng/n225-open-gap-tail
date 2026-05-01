@@ -53,11 +53,10 @@ def _exception_result(source: str, exc: BaseException) -> SourceProbeResult:
 
 
 def _probe_jquants(settings: Settings) -> SourceProbeResult:
-    if not settings.jquants_api_key:
-        return SourceProbeResult("jquants", "auth_failed", "JQUANTS_API_KEY is not configured")
     try:
+        api_key = settings.read_jquants_api_key()
         with JQuantsV2Client(
-            api_key=settings.jquants_api_key,
+            api_key=api_key,
             base_url=settings.jquants_api_base_url,
             timeout_seconds=settings.jquants_request_timeout_seconds,
         ) as client:
@@ -72,6 +71,8 @@ def _probe_jquants(settings: Settings) -> SourceProbeResult:
             f"futures_daily_probe rows={payload.row_count}",
             payload.http_status,
         )
+    except ValueError as exc:
+        return SourceProbeResult("jquants", "auth_failed", str(exc))
     except JQuantsApiError as exc:
         return _exception_result("jquants", exc)
     except Exception as exc:  # pragma: no cover - network/environment dependent
@@ -79,11 +80,10 @@ def _probe_jquants(settings: Settings) -> SourceProbeResult:
 
 
 def _probe_massive(settings: Settings) -> SourceProbeResult:
-    if not settings.massive_api_key:
-        return SourceProbeResult("massive", "auth_failed", "MASSIVE_API_KEY is not configured")
     try:
+        api_key = settings.read_massive_api_key()
         with MassiveClient(
-            api_key=settings.massive_api_key,
+            api_key=api_key,
             base_url=settings.massive_base_url,
             timeout_seconds=settings.massive_request_timeout_seconds,
             min_request_interval_seconds=settings.massive_min_request_interval_seconds,
@@ -105,6 +105,8 @@ def _probe_massive(settings: Settings) -> SourceProbeResult:
             f"SPY day rows={payload.row_count}",
             payload.http_status,
         )
+    except ValueError as exc:
+        return SourceProbeResult("massive", "auth_failed", str(exc))
     except MassiveApiError as exc:
         return _exception_result("massive", exc)
     except Exception as exc:  # pragma: no cover - network/environment dependent

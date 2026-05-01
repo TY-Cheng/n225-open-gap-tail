@@ -49,7 +49,7 @@ def test_jquants_client_paginates_and_sends_api_key() -> None:
 
 
 def test_jquants_client_requires_api_key() -> None:
-    with pytest.raises(JQuantsApiError, match="JQUANTS_API_KEY is required"):
+    with pytest.raises(JQuantsApiError, match="J-Quants API key is required"):
         JQuantsV2Client(api_key="")
 
 
@@ -152,7 +152,6 @@ def test_write_jquants_smoke_sample_writes_bronze_artifact(tmp_path: Path) -> No
 
     settings = Settings(
         bronze_data_dir=tmp_path / "bronze",
-        jquants_api_key="secret",
         jquants_api_base_url="https://example.test/v2",
     )
     client = JQuantsV2Client(

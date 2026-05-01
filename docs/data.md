@@ -29,7 +29,7 @@ target pipeline requires Premium futures access for the historical derivatives e
 intraday derivatives remain disabled unless a licensed intraday mark is added:
 
 ```bash
-JQUANTS_API_KEY="replace-me"
+JQUANTS_API_KEY_FILE="/path/to/jquants.keyfile"
 JQUANTS_API_BASE_URL="https://api.jquants.com/v2"
 JQUANTS_EQUITY_MASTER_ENABLED="true"
 JQUANTS_EQUITY_DAILY_ENABLED="true"
@@ -38,13 +38,16 @@ JQUANTS_DERIVATIVES_INTRADAY_ENABLED="false"
 ```
 
 Massive and FRED predictor settings separate endpoint credentials from the
-research-config feature-set blocks. The `.env` file supplies API keys and base
-URLs; the run manifest and `config/research_config.json` record the exact
+research-config feature-set blocks. The `.env` file supplies key-file paths
+and base URLs, not raw API-key values; `MASSIVE_API_KEY` and `JQUANTS_API_KEY`
+are not runtime configuration paths. The run manifest and
+`config/research_config.json` record the exact
 feature-set universe. For the current clean run, the fetched Massive daily
 universe is the union of the core, optional, Japan proxy, and Asia proxy blocks:
 
 ```text
-MASSIVE_API_KEY="replace-me"
+MASSIVE_API_KEY_FILE="/path/to/massive.keyfile"
+MASSIVE_FLAT_FILE_KEY_FILE="/path/to/massive-flat-file.keyfile"
 MASSIVE_BASE_URL="https://api.massive.com"
 MASSIVE_MINUTE_TICKER="SPY"
 MASSIVE_PROBE_TICKERS="I:VIX"

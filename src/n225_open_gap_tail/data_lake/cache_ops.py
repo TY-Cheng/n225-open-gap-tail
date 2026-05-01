@@ -372,7 +372,7 @@ def _fetch_jquants_futures_rows(
         dates_by_month.setdefault((parsed.year, parsed.month), []).append(trading_date)
     bronze_root = settings.data_dir / "bronze"
     with JQuantsV2Client(
-        api_key=settings.jquants_api_key,
+        api_key=settings.read_jquants_api_key(),
         base_url=settings.jquants_api_base_url,
         timeout_seconds=settings.jquants_request_timeout_seconds,
     ) as client:
@@ -448,7 +448,7 @@ def _fetch_massive_predictors(
     bronze_root = settings.data_dir / "bronze"
     silver_root = settings.data_dir / "silver"
     with MassiveClient(
-        api_key=settings.massive_api_key,
+        api_key=settings.read_massive_api_key(),
         base_url=settings.massive_base_url,
         timeout_seconds=settings.massive_request_timeout_seconds,
         min_request_interval_seconds=settings.massive_min_request_interval_seconds,

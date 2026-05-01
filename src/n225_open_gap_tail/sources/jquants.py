@@ -53,7 +53,7 @@ class JQuantsV2Client:
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         if not api_key:
-            raise JQuantsApiError("JQUANTS_API_KEY is required")
+            raise JQuantsApiError("J-Quants API key is required")
         self._base_url = base_url.rstrip("/")
         self._client = httpx.Client(timeout=timeout_seconds, transport=transport)
         self._headers = {
@@ -187,7 +187,7 @@ def write_jquants_smoke_sample(
 ) -> JQuantsSmokeResult:
     should_close = client is None
     active_client = client or JQuantsV2Client(
-        api_key=settings.jquants_api_key,
+        api_key=settings.read_jquants_api_key(),
         base_url=settings.jquants_api_base_url,
         timeout_seconds=settings.jquants_request_timeout_seconds,
     )

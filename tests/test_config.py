@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from n225_open_gap_tail.config import Settings, split_csv
 from n225_open_gap_tail.config.research import CORE_FRED_SERIES, CORE_MASSIVE_TICKERS
 
@@ -73,6 +75,48 @@ def test_required_directories_preserve_configured_paths(tmp_path: Path) -> None:
         tmp_path / "data/gold",
         tmp_path / "reports",
     )
+
+
+def test_api_keys_resolve_from_secret_files(tmp_path: Path) -> None:
+    massive_key_file = tmp_path / "massive.keyfile"
+    massive_flat_file_key_file = tmp_path / "massive-flat-file.keyfile"
+    jquants_key_file = tmp_path / "jquants.keyfile"
+    massive_key_file.write_text("massive-secret\n", encoding="utf-8")
+    massive_flat_file_key_file.write_text("massive-flat-file-secret\n", encoding="utf-8")
+    jquants_key_file.write_text("jquants-secret\n", encoding="utf-8")
+
+    settings = Settings(
+        massive_api_key_file=str(massive_key_file),
+        massive_flat_file_key_file=str(massive_flat_file_key_file),
+        jquants_api_key_file=str(jquants_key_file),
+    )
+
+    assert settings.read_massive_api_key() == "massive-secret"
+    assert settings.read_massive_flat_file_key() == "massive-flat-file-secret"
+    assert settings.read_jquants_api_key() == "jquants-secret"
+
+
+def test_direct_api_key_environment_variables_are_ignored(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("MASSIVE_API_KEY", "inline-massive-secret")
+    monkeypatch.setenv("MASSIVE_FLAT_FILE_KEY", "inline-flat-file-secret")
+    monkeypatch.setenv("JQUANTS_API_KEY", "inline-jquants-secret")
+
+    settings = Settings(
+        massive_api_key_file="",
+        massive_flat_file_key_file="",
+        jquants_api_key_file="",
+    )
+
+    with pytest.raises(ValueError, match="MASSIVE_API_KEY_FILE is not configured"):
+        settings.read_massive_api_key()
+    with pytest.raises(ValueError, match="MASSIVE_FLAT_FILE_KEY_FILE is not configured"):
+        settings.read_massive_flat_file_key()
+    with pytest.raises(ValueError, match="JQUANTS_API_KEY_FILE is not configured"):
+        settings.read_jquants_api_key()
 
 
 def test_split_csv_removes_empty_tokens() -> None:

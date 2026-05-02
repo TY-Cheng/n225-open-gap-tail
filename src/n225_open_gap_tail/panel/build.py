@@ -38,6 +38,11 @@ from n225_open_gap_tail.config.runtime import (
     JQUANTS_BRONZE_SCHEMA,
     JQUANTS_SILVER_SCHEMA,
     MAIN_SAMPLE_START,
+    MASSIVE_MINUTE_ASIA_PROXY_TICKERS_FOR_PIPELINE,
+    MASSIVE_MINUTE_FEATURE_SCHEMA,
+    MASSIVE_MINUTE_JAPAN_PROXY_TICKERS_FOR_PIPELINE,
+    MASSIVE_MINUTE_TICKERS_FOR_PIPELINE,
+    MASSIVE_MINUTE_US_CORE_TICKERS_FOR_PIPELINE,
     Mapping,
     MappingStatus,
     ML_TAIL_HISTORY_FEATURES,
@@ -74,6 +79,12 @@ from n225_open_gap_tail.features.asof import (
     _spy_minute_feature_map,
 )
 from n225_open_gap_tail.features.descriptions import _feature_description, _safe_name
+from n225_open_gap_tail.features.n225_history import add_n225_history_features
+from n225_open_gap_tail.features.registry import (
+    _feature_dictionary_includes,
+    _feature_source_block,
+    _feature_source_family,
+)
 from n225_open_gap_tail.features.jquants_spy import (
     _write_jquants_silver_cache,
     add_jquants_silver_flags,
@@ -179,7 +190,7 @@ def build_panel(
     )
     _pipeline_log(
         f"Massive predictors available: daily_rows={len(massive_daily)}, "
-        f"spy_minute_feature_rows={len(spy_minutes)}"
+        f"minute_feature_rows={len(spy_minutes)}"
     )
     fred_pull_ts = datetime.now(UTC)
     _pipeline_log(f"FRED predictors fetch/cache start window={predictor_start}..{end_date}")
@@ -375,14 +386,21 @@ def build_panel(
                 "jquants_bronze_schema_hash": JQUANTS_BRONZE_SCHEMA.hash,
                 "jquants_silver_schema_hash": JQUANTS_SILVER_SCHEMA.hash,
                 "calendar_map_schema_hash": CALENDAR_MAP_SCHEMA.hash,
+                "massive_minute_feature_schema_hash": MASSIVE_MINUTE_FEATURE_SCHEMA.hash,
                 "spy_minute_feature_schema_hash": SPY_MINUTE_FEATURE_SCHEMA.hash,
                 "fred_cache_schema_hash": FRED_CACHE_SCHEMA.hash,
             },
-            "feature_set_version": FeatureSetVersion.CORE_FULL_HISTORY.value,
+            "feature_set_version": PIPELINE_CONFIG.feature_sets.version.value,
+            "feature_engineering_policy": PIPELINE_CONFIG.to_jsonable().get("feature_engineering"),
             "massive_core_symbols": CORE_MASSIVE_TICKERS_FOR_PIPELINE,
             "massive_optional_symbols": OPTIONAL_MASSIVE_TICKERS_FOR_PIPELINE,
             "massive_japan_proxy_symbols": JAPAN_PROXY_MASSIVE_TICKERS_FOR_PIPELINE,
             "massive_asia_proxy_symbols": ASIA_PROXY_MASSIVE_TICKERS_FOR_PIPELINE,
+            "massive_minute_us_core_symbols": MASSIVE_MINUTE_US_CORE_TICKERS_FOR_PIPELINE,
+            "massive_minute_japan_proxy_symbols": (MASSIVE_MINUTE_JAPAN_PROXY_TICKERS_FOR_PIPELINE),
+            "massive_minute_asia_proxy_symbols": MASSIVE_MINUTE_ASIA_PROXY_TICKERS_FOR_PIPELINE,
+            "massive_minute_symbols": settings.massive_minute_ticker_list(),
+            "massive_minute_registered_symbols": MASSIVE_MINUTE_TICKERS_FOR_PIPELINE,
             "massive_fetched_symbols": FETCH_MASSIVE_TICKERS_FOR_PIPELINE,
             "massive_symbols": FETCH_MASSIVE_TICKERS_FOR_PIPELINE,
             "fred_core_series": CORE_FRED_SERIES_FOR_PIPELINE,
@@ -531,6 +549,17 @@ def build_modeling_panel_records(
             "residual_usclosemark_status": (
                 PIPELINE_CONFIG.target_policy.residual_usclosemark_status
             ),
+            "jquants_vendor_available_ts_utc": target.get("jquants_vendor_available_ts_utc"),
+            "day_session_open": target.get("day_session_open"),
+            "day_session_high": target.get("day_session_high"),
+            "day_session_low": target.get("day_session_low"),
+            "day_session_close": target.get("day_session_close"),
+            "night_session_open": target.get("night_session_open"),
+            "night_session_high": target.get("night_session_high"),
+            "night_session_low": target.get("night_session_low"),
+            "night_session_close": target.get("night_session_close"),
+            "last_trading_day": target.get("last_trading_day"),
+            "special_quotation_day": target.get("special_quotation_day"),
             "volume": target.get("volume"),
             "open_interest": target.get("open_interest"),
             "volume_oi_anomaly": target.get("volume_oi_anomaly"),
@@ -569,7 +598,7 @@ def build_modeling_panel_records(
         record.update(_canonical_fx_asof(fx_context, us_date=us_date, cutoff=cutoff))
         panel.append(record)
     panel.sort(key=lambda row: str(row["forecast_date"]))
-    return panel
+    return add_n225_history_features(panel)
 
 
 def apply_combined_clean_start(
@@ -640,6 +669,17 @@ def build_feature_coverage_records(panel: list[dict[str, object]]) -> list[dict[
         "residual_nightclose_to_day_open",
         "residual_usclosemark_to_open",
         "residual_usclosemark_status",
+        "jquants_vendor_available_ts_utc",
+        "day_session_open",
+        "day_session_high",
+        "day_session_low",
+        "day_session_close",
+        "night_session_open",
+        "night_session_high",
+        "night_session_low",
+        "night_session_close",
+        "last_trading_day",
+        "special_quotation_day",
         "volume",
         "open_interest",
         "volume_oi_anomaly",
@@ -696,6 +736,7 @@ def build_effective_predictor_start(
         "fred_core": [],
         "fx_core": [],
         "spy_minute": [],
+        "massive_minute": [],
     }
     for row in coverage_rows:
         first_valid = row.get("first_valid_date")
@@ -855,68 +896,8 @@ def build_feature_dictionary(panel: list[dict[str, object]]) -> dict[str, str]:
     return {
         field: _feature_description(field)
         for field in sorted(set().union(*(row.keys() for row in panel)) if panel else set())
-        if "__" not in field
-        and (
-            field.endswith("_return")
-            or field.endswith("_range")
-            or field.endswith("_diff")
-            or field.endswith("_days")
-            or field.startswith("fred_")
-            or field.startswith("cboe_")
-            or field.startswith("spy_late_")
-            or field.startswith("spy_final_")
-        )
+        if _feature_dictionary_includes(field)
     }
-
-
-def _feature_source_family(field: str) -> str:
-    if field.startswith("fx_usdjpy_"):
-        return "fx_core"
-    if field.startswith("fred_"):
-        if field.startswith("fred_baml"):
-            return "fred_credit_enriched"
-        return "fred_core"
-    if field.startswith("cboe_"):
-        return "cboe_volatility"
-    if field.startswith("spy_late_") or field.startswith("spy_final_"):
-        return "spy_minute"
-    if _feature_matches_tickers(field, OPTIONAL_MASSIVE_TICKERS_FOR_PIPELINE):
-        return "massive_optional"
-    if _feature_matches_tickers(field, JAPAN_PROXY_MASSIVE_TICKERS_FOR_PIPELINE):
-        return "japan_proxy"
-    if _feature_matches_tickers(field, ASIA_PROXY_MASSIVE_TICKERS_FOR_PIPELINE):
-        return "asia_proxy"
-    if field.endswith("_return") or field.endswith("_range"):
-        return "massive_daily"
-    return "unknown"
-
-
-def _feature_source_block(field: str) -> str:
-    if field.startswith("fx_usdjpy_"):
-        return "fx_core"
-    if field.startswith("fred_"):
-        if field.startswith("fred_baml"):
-            return "fred_credit_enriched"
-        return "fred_core"
-    if field.startswith("cboe_"):
-        # Cboe is the preferred VIX source, but it enters the same volatility block
-        # as FRED VIX in the registered ML tail information-set ladder.
-        return "fred_core"
-    if field.startswith("spy_late_") or field.startswith("spy_final_"):
-        return "us_late_session"
-    if _feature_matches_tickers(field, OPTIONAL_MASSIVE_TICKERS_FOR_PIPELINE):
-        return "massive_optional"
-    if _feature_matches_tickers(field, JAPAN_PROXY_MASSIVE_TICKERS_FOR_PIPELINE):
-        return "japan_proxy"
-    if _feature_matches_tickers(field, ASIA_PROXY_MASSIVE_TICKERS_FOR_PIPELINE):
-        return "asia_proxy"
-    if _feature_matches_tickers(field, CORE_MASSIVE_TICKERS_FOR_PIPELINE):
-        return "us_core"
-    return "unknown"
-
-
-def _feature_matches_tickers(field: str, tickers: tuple[str, ...]) -> bool:
-    return any(field.startswith(f"{_safe_name(ticker)}_") for ticker in tickers)
 
 
 def _panel_join_miss_reason(alignment: Mapping[str, object], us_date: str) -> str | None:

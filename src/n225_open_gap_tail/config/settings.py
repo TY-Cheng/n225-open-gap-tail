@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     massive_max_retries: int = 2
     massive_rate_limit_backoff_seconds: float = 60.0
     massive_daily_tickers: str = ",".join(CORE_MASSIVE_TICKERS)
+    massive_minute_tickers: str = ""
     massive_minute_ticker: str = "SPY"
     massive_probe_tickers: str = "I:VIX"
     massive_regular_session_start_et: str = "09:30"
@@ -108,6 +109,10 @@ class Settings(BaseSettings):
 
     def massive_probe_ticker_list(self) -> tuple[str, ...]:
         return split_csv(self.massive_probe_tickers)
+
+    def massive_minute_ticker_list(self) -> tuple[str, ...]:
+        tickers = split_csv(self.massive_minute_tickers)
+        return tickers if tickers else (self.massive_minute_ticker.strip() or "SPY",)
 
     def fred_series_list(self) -> tuple[str, ...]:
         return split_csv(self.fred_series)

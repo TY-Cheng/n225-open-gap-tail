@@ -41,10 +41,30 @@ def _safe_name(value: str) -> str:
 
 
 def _feature_description(field: str) -> str:
+    if field.startswith("n225_"):
+        return "lagged Nikkei 225 futures history feature built only from prior clean rows"
     if field.startswith("fx_usdjpy_"):
         return "canonical USDJPY FX control using timestamp-safe FRED H.10 availability"
+    if "_late_60m_realized_var" in field:
+        return "late-session realized variance from one-minute U.S.-listed instrument bars"
+    if "_late_60m_up_semivar" in field or "_late_60m_down_semivar" in field:
+        return "late-session realized semivariance from one-minute U.S.-listed instrument bars"
+    if "_late_60m_skew" in field or "_late_60m_excess_kurtosis" in field:
+        return "noisy late-session small-sample realized moment from one-minute bars"
+    if field.startswith("spy_late_") and (
+        "_late_volume_" in field or field.endswith("_volume_surge")
+    ):
+        return "SPY late-session volume feature normalized within ticker using prior history"
+    if "_late_volume_" in field or field.endswith("_volume_surge"):
+        return "late-session volume feature normalized within ticker using prior history"
     if field.endswith("_days"):
         return "timestamp-safe source staleness or release-lag diagnostic used as a predictor"
+    if field.startswith("spy_late_"):
+        return "SPY late-session minute-bar feature frozen at the U.S. close cutoff"
+    if "_late_" in field or field.endswith("_final_window_momentum"):
+        return (
+            "U.S.-listed instrument late-session minute-bar feature frozen at the U.S. close cutoff"
+        )
     if field.endswith("_return"):
         return "close-to-close log return frozen at U.S. close information set"
     if field.endswith("_range"):
@@ -53,8 +73,6 @@ def _feature_description(field: str) -> str:
         return "first difference of daily source value"
     if field.endswith("_level"):
         return "daily source level with conservative research availability semantics"
-    if field.startswith("spy_late_"):
-        return "SPY late-session minute-bar feature frozen at the U.S. close cutoff"
     return "run predictor candidate"
 
 

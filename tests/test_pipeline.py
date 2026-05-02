@@ -6,7 +6,7 @@ import importlib
 import json
 import math
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
@@ -33,6 +33,48 @@ import n225_open_gap_tail.reporting.figures as reporting_figures
 import n225_open_gap_tail.reporting.latex as reporting_latex
 from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.data_lake import VendorErrorClass
+from n225_open_gap_tail.features.descriptions import (
+    _optional_float as _description_optional_float,
+)
+from n225_open_gap_tail.features.descriptions import (
+    _optional_text,
+)
+from n225_open_gap_tail.features.descriptions import (
+    _required_float as _description_required_float,
+)
+from n225_open_gap_tail.features.jquants_spy import (
+    _realized_var as _minute_realized_var,
+)
+from n225_open_gap_tail.features.jquants_spy import (
+    _sample_excess_kurtosis as _minute_sample_excess_kurtosis,
+)
+from n225_open_gap_tail.features.jquants_spy import (
+    _sample_skew as _minute_sample_skew,
+)
+from n225_open_gap_tail.features.jquants_spy import (
+    _semivar as _minute_semivar,
+)
+from n225_open_gap_tail.features.jquants_spy import (
+    build_massive_late_session_feature_records as build_feature_minute_records,
+)
+from n225_open_gap_tail.features.n225_history import (
+    _contract_month_number,
+    _is_finite_or_none,
+    _parse_date,
+    add_n225_history_features,
+)
+from n225_open_gap_tail.features.n225_history import (
+    _log_return as _n225_log_return,
+)
+from n225_open_gap_tail.features.n225_history import (
+    _sample_excess_kurtosis as _n225_sample_excess_kurtosis,
+)
+from n225_open_gap_tail.features.n225_history import (
+    _sample_skew as _n225_sample_skew,
+)
+from n225_open_gap_tail.features.n225_history import (
+    _semivar_if_enough as _n225_semivar_if_enough,
+)
 from n225_open_gap_tail.forecasting import (
     build_feature_coverage_records,
     build_feature_matrix_gate_records,
@@ -480,6 +522,10 @@ def test_ml_tail_information_sets_select_nested_feature_blocks() -> None:
     coverage_rows: list[dict[str, object]] = [
         {"feature": "spy_return", "source_block": "us_core"},
         {"feature": "spy_late_30m_return", "source_block": "us_late_session"},
+        {"feature": "qqq_late_30m_return", "source_block": "us_late_session"},
+        {"feature": "ewj_late_30m_return", "source_block": "japan_proxy"},
+        {"feature": "ewh_late_30m_return", "source_block": "asia_proxy"},
+        {"feature": "n225_day_range_lag_1", "source_block": "japan_only"},
         {"feature": "fred_vixcls_level", "source_block": "fred_core"},
         {"feature": "fred_rates_staleness_days", "source_block": "fred_core"},
         {"feature": "fx_usdjpy_level", "source_block": "fx_core"},
@@ -506,12 +552,22 @@ def test_ml_tail_information_sets_select_nested_feature_blocks() -> None:
     )
 
     assert "loss_lag_1" in japan_only
+    assert "n225_day_range_lag_1" in japan_only
     assert "spy_return" not in japan_only
+    assert "spy_late_30m_return" in us_core
+    assert "qqq_late_30m_return" in us_core
+    assert "ewj_late_30m_return" not in us_core
+    assert "ewh_late_30m_return" not in us_core
     assert "fx_usdjpy_level" in us_core
     assert "fred_rates_staleness_days" in us_core
     assert "fred_bamlh0a0hym2_level" not in us_core
     assert "ewj_return" in japan_proxy
+    assert "ewj_late_30m_return" in japan_proxy
     assert "ewh_return" in asia_proxy
+    assert "ewh_late_30m_return" in asia_proxy
+    assert paper_core._feature_source_block("ewj_late_30m_return") == "japan_proxy"
+    assert paper_core._feature_source_block("ewh_late_30m_return") == "asia_proxy"
+    assert paper_core._feature_source_block("spy_late_30m_return") == "us_late_session"
 
 
 def test_build_ml_tail_modeling_rows_uses_only_lagged_loss_history() -> None:
@@ -543,6 +599,183 @@ def test_build_ml_tail_modeling_rows_uses_only_lagged_loss_history() -> None:
     assert rows[1]["calendar_dst_edt"] == 1.0
     assert rows[1]["calendar_absorption_post_us_close"] == 1.0
     assert rows[1]["spy_return"] == 0.02
+
+
+def test_n225_history_features_use_prior_clean_rows_and_insufficient_history() -> None:
+    base_rows = [
+        {
+            "forecast_date": f"2026-01-{day:02d}",
+            "clean_sample": True,
+            "contract_month": "2026-03",
+            "last_trading_day": "2026-03-12",
+            "special_quotation_day": "2026-03-13",
+            "day_session_open": 100.0 + day,
+            "day_session_high": 102.0 + day,
+            "day_session_low": 99.0 + day,
+            "day_session_close": 101.0 + day,
+            "night_session_open": 99.0 + day,
+            "night_session_high": 101.0 + day,
+            "night_session_low": 98.0 + day,
+            "night_session_close": 100.0 + day,
+            "volume": 100.0 + day,
+            "open_interest": 1000.0 + day,
+            "jquants_vendor_available_ts_utc": datetime(2026, 1, day, 18, tzinfo=UTC),
+        }
+        for day in range(1, 4)
+    ]
+
+    enriched = add_n225_history_features(base_rows)
+    mutated = [dict(row) for row in base_rows]
+    mutated[1]["day_session_high"] = 999.0
+    mutated_enriched = add_n225_history_features(mutated)
+
+    assert enriched[0]["n225_day_return_lag_1"] is None
+    assert enriched[1]["n225_day_return_lag_1"] == pytest.approx(math.log(102.0 / 101.0))
+    assert enriched[1]["n225_day_range_lag_1"] == pytest.approx(math.log(103.0 / 100.0))
+    assert enriched[1]["n225_volume_log1p_lag_1"] == pytest.approx(math.log1p(101.0))
+    assert enriched[1]["n225_days_to_last_trade"] == float(
+        (date(2026, 3, 12) - date(2026, 1, 2)).days
+    )
+    assert enriched[1]["n225_contract_month_sin"] == pytest.approx(math.sin(math.pi / 3.0))
+    assert enriched[1]["n225_session_skew_120"] is None
+    assert enriched[2]["n225_volume_zscore_60"] is None
+    assert mutated_enriched[1]["n225_day_range_lag_1"] == enriched[1]["n225_day_range_lag_1"]
+    assert mutated_enriched[2]["n225_day_range_lag_1"] != enriched[2]["n225_day_range_lag_1"]
+
+
+def test_n225_history_features_compute_rolling_moments_and_controls() -> None:
+    base_rows = []
+    for index in range(123):
+        forecast_date = date(2025, 1, 2) + timedelta(days=index)
+        open_price = 100.0 + index * 0.2
+        day_move = ((-1) ** index) * (0.001 + (index % 7) * 0.0002)
+        night_move = ((-1) ** (index + 1)) * (0.0008 + (index % 5) * 0.0002)
+        base_rows.append(
+            {
+                "forecast_date": forecast_date.isoformat(),
+                "clean_sample": index != 60,
+                "contract_month": "2025-03",
+                "last_trading_day": "2025-03-12",
+                "special_quotation_day": "2025-03-13",
+                "day_session_open": open_price,
+                "day_session_high": open_price * 1.01,
+                "day_session_low": open_price * 0.99,
+                "day_session_close": open_price * (1.0 + day_move),
+                "night_session_open": open_price * 0.995,
+                "night_session_high": open_price * 1.004,
+                "night_session_low": open_price * 0.986,
+                "night_session_close": open_price * 0.995 * (1.0 + night_move),
+                "volume": 1000.0 + index * 3.0,
+                "open_interest": 5000.0 + index * 2.0,
+                "jquants_vendor_available_ts_utc": datetime(2025, 1, 2, 18, tzinfo=UTC)
+                + timedelta(days=index),
+            }
+        )
+
+    enriched = add_n225_history_features(base_rows)
+    target = enriched[-1]
+
+    assert target["n225_session_range_mean_20"] is not None
+    assert target["n225_session_parkinson_var_mean_20"] is not None
+    assert target["n225_session_up_semivar_20"] is not None
+    assert target["n225_session_down_semivar_20"] is not None
+    assert target["n225_session_skew_120"] is not None
+    assert target["n225_session_excess_kurtosis_120"] is not None
+    assert target["n225_volume_zscore_60"] is not None
+    assert target["n225_open_interest_zscore_60"] is not None
+    assert target["n225_volume_log_change_lag_1"] is not None
+    assert target["n225_open_interest_log_change_lag_1"] is not None
+    assert target["n225_volume_oi_ratio_lag_1"] is not None
+    assert target["n225_days_to_sq"] == float((date(2025, 3, 13) - date(2025, 5, 4)).days)
+
+
+def test_n225_history_features_null_invalid_ohlc_and_bad_dates() -> None:
+    rows = [
+        {
+            "forecast_date": "2025-01-02",
+            "clean_sample": True,
+            "contract_month": "bad",
+            "last_trading_day": "bad-date",
+            "special_quotation_day": None,
+            "day_session_open": 100.0,
+            "day_session_high": 99.0,
+            "day_session_low": 101.0,
+            "day_session_close": 100.5,
+            "night_session_open": 100.0,
+            "night_session_high": 101.0,
+            "night_session_low": 99.0,
+            "night_session_close": 100.2,
+            "volume": -1.0,
+            "open_interest": 0.0,
+            "jquants_vendor_available_ts_utc": datetime(2025, 1, 2, 18, tzinfo=UTC),
+        },
+        {
+            "forecast_date": "2025-01-03",
+            "clean_sample": True,
+            "contract_month": "bad",
+            "last_trading_day": "bad-date",
+            "special_quotation_day": None,
+            "day_session_open": 100.0,
+            "day_session_high": 101.0,
+            "day_session_low": 99.0,
+            "day_session_close": 100.5,
+            "night_session_open": 100.0,
+            "night_session_high": 101.0,
+            "night_session_low": 99.0,
+            "night_session_close": 100.2,
+            "volume": 1.0,
+            "open_interest": 0.0,
+        },
+    ]
+
+    enriched = add_n225_history_features(rows)
+
+    assert enriched[1]["n225_day_range_lag_1"] is None
+    assert enriched[1]["n225_day_parkinson_var_lag_1"] is None
+    assert enriched[1]["n225_volume_log1p_lag_1"] is None
+    assert enriched[1]["n225_volume_oi_ratio_lag_1"] is None
+    assert enriched[1]["n225_days_to_last_trade"] is None
+    assert enriched[1]["n225_contract_month_sin"] is None
+
+
+def test_n225_history_features_respect_current_model_cutoff() -> None:
+    rows = []
+    for index, forecast_date in enumerate(("2025-01-06", "2025-01-07", "2025-01-08")):
+        rows.append(
+            {
+                "forecast_date": forecast_date,
+                "model_cutoff_ts_utc": datetime(2025, 1, 7, 21, tzinfo=UTC),
+                "clean_sample": True,
+                "contract_month": "2025-03",
+                "last_trading_day": "2025-03-12",
+                "special_quotation_day": "2025-03-13",
+                "day_session_open": 100.0 + index,
+                "day_session_high": 102.0 + index,
+                "day_session_low": 99.0 + index,
+                "day_session_close": 101.0 + index,
+                "night_session_open": 100.0 + index,
+                "night_session_high": 101.0 + index,
+                "night_session_low": 99.0 + index,
+                "night_session_close": 100.5 + index,
+                "volume": 1000.0 + index,
+                "open_interest": 5000.0 + index,
+                "jquants_vendor_available_ts_utc": datetime(
+                    2025,
+                    1,
+                    6 + index,
+                    18 if index != 1 else 22,
+                    tzinfo=UTC,
+                ),
+            }
+        )
+
+    enriched = add_n225_history_features(rows)
+
+    assert enriched[2]["n225_day_return_lag_1__source_date"] == "2025-01-06"
+    assert enriched[2]["n225_day_return_lag_1__available_ts_utc"] == datetime(
+        2025, 1, 6, 18, tzinfo=UTC
+    )
+    assert enriched[2]["n225_day_return_lag_1"] == pytest.approx(math.log(101.0 / 100.0))
 
 
 def test_worker_payload_rejects_dataframe_objects() -> None:
@@ -849,6 +1082,74 @@ def test_spy_minute_features_use_official_early_close_and_exclude_after_hours() 
     assert features[0]["feature_available_ts_utc"] == official_close + timedelta(minutes=5)
     assert features[0]["close"] != 999.0
     assert features[0]["spy_late_30m_return"] is not None
+
+
+def test_generic_minute_builder_computes_moments_and_per_ticker_volume_features() -> None:
+    minute_records = []
+    for day_index, day in enumerate(("2026-01-02", "2026-01-05", "2026-01-06")):
+        day_date = date.fromisoformat(day)
+        official_close = datetime(day_date.year, day_date.month, day_date.day, 21, 0, tzinfo=UTC)
+        volume = 10.0 * (day_index + 1)
+        for minute in range(61):
+            close = 100.0 + day_index + minute * 0.02 + ((-1) ** minute) * 0.1
+            minute_records.append(
+                {
+                    "ticker": "QQQ",
+                    "bar_date_et": day,
+                    "bar_end_ts_utc": official_close - timedelta(minutes=60 - minute),
+                    "is_us_regular_session": True,
+                    "close": close,
+                    "high": close + 0.2,
+                    "low": close - 0.2,
+                    "volume": volume,
+                }
+            )
+        minute_records.append(
+            {
+                "ticker": "QQQ",
+                "bar_date_et": day,
+                "bar_end_ts_utc": official_close + timedelta(hours=1),
+                "is_us_regular_session": False,
+                "close": 999.0,
+                "high": 999.0,
+                "low": 999.0,
+                "volume": 999.0,
+            }
+        )
+
+    features = build_feature_minute_records(
+        minute_records,
+        calendar_records=[
+            {
+                "calendar_date": day,
+                "us_close_ts_utc": datetime(
+                    date.fromisoformat(day).year,
+                    date.fromisoformat(day).month,
+                    date.fromisoformat(day).day,
+                    21,
+                    0,
+                    tzinfo=UTC,
+                ),
+            }
+            for day in ("2026-01-02", "2026-01-05", "2026-01-06")
+        ],
+        vendor_lag_minutes=15,
+        ticker="QQQ",
+    )
+
+    assert len(features) == 3
+    assert features[-1]["safe_ticker"] == "qqq"
+    assert features[-1]["selected_close_bar_end_ts_utc"] == datetime(2026, 1, 6, 21, 0, tzinfo=UTC)
+    assert features[-1]["feature_available_ts_utc"] == datetime(2026, 1, 6, 21, 15, tzinfo=UTC)
+    assert features[-1]["close"] != 999.0
+    assert features[-1]["late_60m_realized_var"] is not None
+    assert features[-1]["late_60m_up_semivar"] > 0.0
+    assert features[-1]["late_60m_down_semivar"] > 0.0
+    assert features[-1]["late_60m_skew"] is not None
+    assert features[-1]["late_60m_excess_kurtosis"] is not None
+    assert features[-1]["late_volume_surge"] == pytest.approx(2.0)
+    assert features[-1]["late_volume_zscore_20"] is not None
+    assert features[-1]["late_volume_percentile_20"] == pytest.approx(1.0)
 
 
 def test_massive_daily_features_use_official_early_close_availability() -> None:
@@ -1294,8 +1595,12 @@ def test_jquants_silver_flags_and_cache_writer(tmp_path: Path) -> None:
         "last_trading_day": "2026-03-12",
         "special_quotation_day": "2026-03-13",
         "day_session_open": None,
+        "day_session_high": 101.0,
+        "day_session_low": 99.0,
         "day_session_close": 100.0,
         "night_session_open": 99.0,
+        "night_session_high": 101.0,
+        "night_session_low": 98.0,
         "night_session_close": 100.0,
         "settlement_price": 100.0,
         "volume": 1.0,
@@ -1308,13 +1613,19 @@ def test_jquants_silver_flags_and_cache_writer(tmp_path: Path) -> None:
     flagged = paper_module.add_jquants_silver_flags([row])
 
     assert flagged[0]["invalid_day_session_open"] is True
+    assert flagged[0]["invalid_day_session_high"] is False
+    assert flagged[0]["day_session_ohlc_violation"] is False
     assert flagged[0]["invalid_settlement_price"] is False
+    bad_hilo = paper_module.add_jquants_silver_flags(
+        [{**row, "day_session_open": 100.0, "day_session_high": 98.0, "day_session_low": 101.0}]
+    )
+    assert bad_hilo[0]["day_session_ohlc_violation"] is True
 
     settings = Settings(data_dir=tmp_path / "data")
     paper_core._write_jquants_silver_cache(settings=settings, rows=flagged)
     assert (
         tmp_path
-        / "data/silver/jquants_nk225f_daily/schema_version=1/year=2026/month=01/data.parquet"
+        / "data/silver/jquants_nk225f_daily/schema_version=2/year=2026/month=01/data.parquet"
     ).exists()
 
 
@@ -1368,6 +1679,42 @@ def test_derived_spy_volume_surge_recomputes_across_cache_partitions() -> None:
 
     assert features["2026-01-30"]["spy_late_volume_surge"] is None
     assert features["2026-02-02"]["spy_late_volume_surge"] == pytest.approx(1.5)
+
+
+def test_generic_minute_features_are_prefixed_and_volume_normalized_by_ticker() -> None:
+    rows = [
+        {
+            "ticker": ticker,
+            "safe_ticker": ticker.lower(),
+            "bar_date_et": day,
+            "feature_available_ts_utc": datetime(2026, 1, 2, 21, 15, tzinfo=UTC),
+            "late_30m_return": 0.01,
+            "late_60m_return": 0.02,
+            "late_60m_realized_var": 0.0001,
+            "late_60m_up_semivar": 0.00007,
+            "late_60m_down_semivar": 0.00003,
+            "late_60m_skew": None,
+            "late_60m_excess_kurtosis": None,
+            "late_session_range": 0.03,
+            "late_volume_surge": None,
+            "late_volume_zscore_20": None,
+            "late_volume_percentile_20": None,
+            "final_window_momentum": -0.01,
+            "late_60m_volume_for_surge": volume,
+        }
+        for ticker, values in {"QQQ": (100.0, 200.0), "EWJ": (1000.0, 500.0)}.items()
+        for day, volume in zip(("2026-01-02", "2026-01-05"), values, strict=True)
+    ]
+
+    features = paper_core._spy_minute_feature_map(rows)
+
+    assert features["2026-01-05"]["qqq_late_volume_surge"] == pytest.approx(2.0)
+    assert features["2026-01-05"]["ewj_late_volume_surge"] == pytest.approx(0.5)
+    assert features["2026-01-05"]["qqq_late_60m_realized_var"] == pytest.approx(0.0001)
+    assert features["2026-01-05"]["ewj_late_30m_return"] == pytest.approx(0.01)
+    assert features["2026-01-05"]["ewj_late_30m_return__available_ts_utc"] == datetime(
+        2026, 1, 2, 21, 15, tzinfo=UTC
+    )
 
 
 def test_vendor_payload_helpers_and_marker(tmp_path: Path) -> None:
@@ -1444,6 +1791,42 @@ def test_cache_coverage_guards_prevent_partial_month_reuse(tmp_path: Path) -> No
 
 def test_low_level_feature_and_bronze_helpers_cover_edge_cases() -> None:
     assert paper_core._feature_description("other") == "run predictor candidate"
+    assert "Nikkei 225 futures history" in paper_core._feature_description("n225_day_return_lag_1")
+    assert "USDJPY FX control" in paper_core._feature_description("fx_usdjpy_level")
+    assert "realized variance" in paper_core._feature_description("qqq_late_60m_realized_var")
+    assert "realized semivariance" in paper_core._feature_description("qqq_late_60m_up_semivar")
+    assert "small-sample realized moment" in paper_core._feature_description("qqq_late_60m_skew")
+    assert "SPY late-session volume" in paper_core._feature_description("spy_late_volume_surge")
+    assert "normalized within ticker" in paper_core._feature_description(
+        "qqq_late_volume_zscore_20"
+    )
+    assert "staleness" in paper_core._feature_description("fred_rates_staleness_days")
+    assert "close-to-close" in paper_core._feature_description("spy_return")
+    assert "high-low" in paper_core._feature_description("spy_range")
+    assert "first difference" in paper_core._feature_description("fred_rate_diff")
+    assert "daily source level" in paper_core._feature_description("fred_rate_level")
+    assert "SPY late-session minute-bar" in paper_core._feature_description("spy_late_30m_return")
+    assert "U.S.-listed instrument" in paper_core._feature_description("qqq_final_window_momentum")
+    assert _optional_text(None) is None
+    assert _optional_text(" ") is None
+    assert _description_optional_float(True) is None
+    assert _description_optional_float("bad") is None
+    with pytest.raises(paper_module.PipelineRunError):
+        _description_required_float("bad")
+    assert _minute_realized_var([]) is None
+    assert _minute_semivar([], positive=True) is None
+    assert _minute_semivar([-0.1, -0.2], positive=True) == 0.0
+    assert _minute_sample_skew([0.1]) is None
+    assert _minute_sample_skew([0.0] * 30) is None
+    assert _minute_sample_excess_kurtosis([0.1]) is None
+    assert _minute_sample_excess_kurtosis([0.0] * 30) is None
+    assert _n225_log_return(0.0, 1.0) is None
+    assert _n225_semivar_if_enough([0.1, 0.2], min_periods=2, positive=False) == 0.0
+    assert _n225_sample_skew([1.0, 1.0], min_periods=2) is None
+    assert _n225_sample_excess_kurtosis([1.0, 1.0], min_periods=2) is None
+    assert not _is_finite_or_none(float("inf"))
+    assert _parse_date(date(2026, 1, 1)) == date(2026, 1, 1)
+    assert _contract_month_number("") is None
     assert paper_core._feature_source_family("unknown") == "unknown"
     assert "EWH" in paper_module.FETCH_MASSIVE_TICKERS_FOR_PIPELINE
     assert "EWH" not in paper_module.CORE_MASSIVE_TICKERS_FOR_PIPELINE
@@ -1457,10 +1840,16 @@ def test_low_level_feature_and_bronze_helpers_cover_edge_cases() -> None:
     assert paper_core._feature_source_family("cboe_vix_close") == "cboe_volatility"
     assert paper_core._feature_source_family("uup_return") == "massive_optional"
     assert paper_core._feature_source_family("c_usdjpy_return") == "massive_daily"
+    assert paper_core._feature_source_family("n225_session_skew_120") == "japan_history"
+    assert paper_core._feature_source_family("qqq_late_60m_realized_var") == "massive_minute"
     assert paper_core._feature_source_block("fred_bamlh0a0hym2_level") == ("fred_credit_enriched")
     assert paper_core._feature_source_block("cboe_vix_close") == "fred_core"
     assert paper_core._feature_source_block("uup_return") == "massive_optional"
     assert paper_core._feature_source_block("qqq_return") == "us_core"
+    assert paper_core._feature_source_block("qqq_late_60m_realized_var") == "us_late_session"
+    assert paper_core._feature_source_block("dxj_late_30m_return") == "japan_proxy"
+    assert paper_core._feature_source_block("ewy_late_30m_return") == "asia_proxy"
+    assert paper_core._feature_source_block("n225_session_skew_120") == "japan_only"
     assert paper_core._panel_join_miss_reason({}, "") == "calendar_desync"
     assert (
         paper_core._panel_join_miss_reason(
@@ -2801,7 +3190,7 @@ def test_private_pipeline_helpers_cover_defensive_edges(
     assert paper_core._window_range([None], [None]) is None
     assert paper_core._safe_name("C:USDJPY") == "c_usdjpy"
     assert paper_core._feature_description("fx_usdjpy_level").startswith("canonical USDJPY")
-    assert paper_core._feature_description("spy_late_30m_return").startswith("close-to-close")
+    assert paper_core._feature_description("spy_late_30m_return").startswith("SPY late-session")
     assert paper_core._feature_description("fred_vixcls_diff").startswith("first difference")
     assert paper_core._feature_description("fred_vixcls_level").startswith("daily source level")
     assert paper_core._feature_description("spy_late_volume_surge").startswith("SPY late-session")
@@ -3191,7 +3580,12 @@ def _raw_futures_row(
     trading_date: str,
     *,
     ao: float = 50200,
+    ah: float = 50400,
+    al: float = 50100,
     ac: float = 50300,
+    eo: float = 50050,
+    eh: float = 50200,
+    el: float = 50000,
     ec: float = 50100,
     settle: float = 50000,
 ) -> dict[str, object]:
@@ -3202,8 +3596,12 @@ def _raw_futures_row(
         "CM": "2026-03",
         "CCMFlag": True,
         "AO": ao,
+        "AH": ah,
+        "AL": al,
         "AC": ac,
-        "EO": 50050,
+        "EO": eo,
+        "EH": eh,
+        "EL": el,
         "EC": ec,
         "Settle": settle,
         "Vo": 100,

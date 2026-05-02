@@ -50,8 +50,12 @@ def test_schema_probe_maps_jquants_short_fields_and_counts_zero_prices() -> None
     assert probe["product_counts"] == {"NK225F": 2}
     assert probe["zero_price_counts"] == {
         "day_session_open": 1,
+        "day_session_high": 0,
+        "day_session_low": 0,
         "day_session_close": 0,
         "night_session_open": 0,
+        "night_session_high": 0,
+        "night_session_low": 0,
         "night_session_close": 0,
         "settlement_price": 0,
     }
@@ -1137,8 +1141,12 @@ def _raw_row(
     code: str,
     *,
     ao: float = 50800,
+    ah: float = 51900,
+    al: float = 50700,
     ac: float = 51820,
     eo: float = 50450,
+    eh: float = 50700,
+    el: float = 50300,
     ec: float = 50620,
     settle: float = 51820,
 ) -> dict[str, object]:
@@ -1149,8 +1157,12 @@ def _raw_row(
         "CM": contract_month,
         "CCMFlag": 1,
         "AO": ao,
+        "AH": ah,
+        "AL": al,
         "AC": ac,
         "EO": eo,
+        "EH": eh,
+        "EL": el,
         "EC": ec,
         "Settle": settle,
         "Vo": 47001,

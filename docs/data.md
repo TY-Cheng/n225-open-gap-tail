@@ -49,6 +49,7 @@ universe is the union of the core, optional, Japan proxy, and Asia proxy blocks:
 MASSIVE_API_KEY_FILE="/path/to/massive.keyfile"
 MASSIVE_FLAT_FILE_KEY_FILE="/path/to/massive-flat-file.keyfile"
 MASSIVE_BASE_URL="https://api.massive.com"
+MASSIVE_MINUTE_TICKERS="SPY,QQQ,DIA,IWM,EWJ,DXJ,EEM,FXI,EWY,EWT,EWH,TLT,HYG,GLD"
 MASSIVE_MINUTE_TICKER="SPY"
 MASSIVE_PROBE_TICKERS="I:VIX"
 
@@ -132,17 +133,25 @@ and converted to U.S. Eastern Time before session alignment.
 
 ### Active Massive Intraday Input
 
-The only intraday Massive source in the clean run is `SPY` minute data. It
-produces:
+The headline v2 feature set uses a curated set of U.S.-listed minute-bar ETF
+proxies rather than adding more daily ETF controls. `SPY` remains backward
+compatible through the canonical `spy_late_*` / `spy_final_*` names. Additional
+tickers use lower-case ticker prefixes. The derived minute features include:
 
-- `spy_late_30m_return`;
-- `spy_late_60m_return`;
-- `spy_late_session_range`;
-- `spy_late_volume_surge`;
-- `spy_final_window_momentum`.
+- late 30- and 60-minute log returns;
+- late 60-minute realized variance and up/down semivariance;
+- late 60-minute skewness and excess kurtosis, recorded as noisy small-sample
+  estimators rather than asymptotic realized moments;
+- late-session range;
+- within-ticker late-volume surge, z-score, and percentile using prior rolling
+  history only;
+- final-window momentum.
 
 These variables proxy late-session U.S. trading pressure and are frozen at the
-same U.S. close cutoff as the daily Massive predictors.
+same U.S. close cutoff as the daily Massive predictors. The deterministic block
+map keeps U.S. core minute proxies in `us_late_session`, `EWJ/DXJ` minute
+features in `japan_proxy`, and `EEM/FXI/EWY/EWT/EWH` minute features in
+`asia_proxy`.
 
 ### Active FRED and Cboe Inputs
 
@@ -285,8 +294,8 @@ Physical layout uses Hive-style Parquet partitions with schema version in the pa
 
 ```text
 data/bronze/jquants_futures_daily/schema_version=1/year=2016/month=07/data.parquet
-data/silver/jquants_nk225f_daily/schema_version=1/year=2016/month=07/data.parquet
-data/silver/massive_spy_minute_features/schema_version=2/ticker=spy/year=2016/month=07/data.parquet
+data/silver/jquants_nk225f_daily/schema_version=2/year=2016/month=07/data.parquet
+data/silver/massive_minute_features/schema_version=1/ticker=spy/year=2016/month=07/data.parquet
 data/bronze/calendar_sessions/schema_version=1/start=2016-07-19/end=2026-04-28/metadata.json
 data/silver/calendar_sessions/schema_version=1/start=2016-07-19/end=2026-04-28/data.parquet
 data/bronze/nikkei_contracts_rule_based/schema_version=1/start=2016-07-19/end=2026-04-28/metadata.json

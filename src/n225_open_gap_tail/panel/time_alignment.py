@@ -18,6 +18,8 @@ def build_time_alignment_records(
     us_closes.sort(key=lambda row: _as_datetime(row["us_close_ts_utc"]))
     minute_by_date: dict[str, list[dict[str, object]]] = {}
     for record in spy_minute_records:
+        if str(record.get("ticker") or "SPY").upper() != "SPY":
+            continue
         minute_by_date.setdefault(str(record["bar_date_et"]), []).append(record)
     for records in minute_by_date.values():
         records.sort(key=lambda row: _as_datetime(row["bar_end_ts_utc"]))

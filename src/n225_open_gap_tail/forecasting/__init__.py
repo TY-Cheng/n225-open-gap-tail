@@ -50,11 +50,13 @@ from n225_open_gap_tail.panel.build import (
     ml_tail_feature_columns_for_information_set as ml_tail_feature_columns_for_information_set,
 )
 from n225_open_gap_tail.panel.build import (
-    _feature_source_block as _feature_source_block,
-    _feature_source_family as _feature_source_family,
     _forecast_sample_exclusion_reason as _forecast_sample_exclusion_reason,
     _max_date_strings as _max_date_strings,
     _panel_join_miss_reason as _panel_join_miss_reason,
+)
+from n225_open_gap_tail.features.registry import (
+    _feature_source_block as _feature_source_block,
+    _feature_source_family as _feature_source_family,
 )
 from n225_open_gap_tail.panel.leakage import *
 from n225_open_gap_tail.panel.leakage import (

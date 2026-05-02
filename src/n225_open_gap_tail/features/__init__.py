@@ -5,5 +5,6 @@ from n225_open_gap_tail.config.runtime import drop_low_variance_features
 from .asof import *
 from .descriptions import *
 from .jquants_spy import *
+from .n225_history import *
 
 __all__ = [name for name in globals() if not name.startswith("_")]

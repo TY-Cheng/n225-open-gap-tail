@@ -55,6 +55,26 @@ ASIA_PROXY_MASSIVE_TICKERS: tuple[str, ...] = ("EWY", "EWT", "EWH")
 ROBUSTNESS_MASSIVE_TICKERS: tuple[str, ...] = (
     JAPAN_PROXY_MASSIVE_TICKERS + ASIA_PROXY_MASSIVE_TICKERS
 )
+MASSIVE_MINUTE_US_CORE_TICKERS: tuple[str, ...] = (
+    "SPY",
+    "QQQ",
+    "DIA",
+    "IWM",
+    "TLT",
+    "HYG",
+    "GLD",
+)
+MASSIVE_MINUTE_JAPAN_PROXY_TICKERS: tuple[str, ...] = ("EWJ", "DXJ")
+MASSIVE_MINUTE_ASIA_PROXY_TICKERS: tuple[str, ...] = ("EEM", "FXI", "EWY", "EWT", "EWH")
+MASSIVE_MINUTE_TICKERS: tuple[str, ...] = tuple(
+    dict.fromkeys(
+        (
+            *MASSIVE_MINUTE_US_CORE_TICKERS,
+            *MASSIVE_MINUTE_JAPAN_PROXY_TICKERS,
+            *MASSIVE_MINUTE_ASIA_PROXY_TICKERS,
+        )
+    )
+)
 
 CORE_FRED_SERIES: tuple[str, ...] = (
     "VIXCLS",
@@ -76,6 +96,9 @@ class FeatureSetConfig:
     massive_japan_proxy: tuple[str, ...] = JAPAN_PROXY_MASSIVE_TICKERS
     massive_asia_proxy: tuple[str, ...] = ASIA_PROXY_MASSIVE_TICKERS
     massive_robustness: tuple[str, ...] = ROBUSTNESS_MASSIVE_TICKERS
+    massive_minute_us_core: tuple[str, ...] = MASSIVE_MINUTE_US_CORE_TICKERS
+    massive_minute_japan_proxy: tuple[str, ...] = MASSIVE_MINUTE_JAPAN_PROXY_TICKERS
+    massive_minute_asia_proxy: tuple[str, ...] = MASSIVE_MINUTE_ASIA_PROXY_TICKERS
     fred_core: tuple[str, ...] = CORE_FRED_SERIES
     fred_fallback: tuple[str, ...] = FRED_FALLBACK_SERIES
     fred_credit_enriched: tuple[str, ...] = FRED_CREDIT_ENRICHED_SERIES
@@ -87,6 +110,11 @@ class FeatureSetConfig:
         "lagged_day_night_returns",
         "rolling_volatility",
         "volume_open_interest_changes",
+        "volume_oi_z_scores",
+        "session_range_variance",
+        "session_semivariance",
+        "session_higher_moments",
+        "contract_calendar_controls",
         "roll_sq_flags",
         "holiday_early_close_dst_flags",
     )
@@ -96,6 +124,24 @@ class FeatureSetConfig:
     ml_tail_model_d_information_set: str = (
         "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy"
     )
+
+
+@dataclass(frozen=True)
+class FeatureEngineeringPolicy:
+    """Controls deterministic headline feature engineering."""
+
+    n225_range_window: int = 20
+    n225_range_min_periods: int = 20
+    n225_semivariance_window: int = 20
+    n225_semivariance_min_periods: int = 20
+    n225_higher_moment_window: int = 120
+    n225_higher_moment_min_periods: int = 120
+    n225_volume_oi_zscore_window: int = 60
+    n225_volume_oi_zscore_min_periods: int = 20
+    massive_minute_late_window: int = 60
+    massive_minute_moment_min_periods: int = 30
+    massive_minute_volume_baseline_window: int = 20
+    winsorization_policy: str = "none_raw_estimators_no_full_sample_winsorization"
 
 
 @dataclass(frozen=True)
@@ -171,6 +217,7 @@ class TargetPolicy:
 class ResearchConfig:
     claim_level: ClaimLevel = ClaimLevel.RESEARCH_CANDIDATE
     feature_sets: FeatureSetConfig = field(default_factory=FeatureSetConfig)
+    feature_engineering: FeatureEngineeringPolicy = field(default_factory=FeatureEngineeringPolicy)
     leakage_policy: LeakagePolicy = field(default_factory=LeakagePolicy)
     model_policy: ModelPolicy = field(default_factory=ModelPolicy)
     evaluation_policy: EvaluationPolicy = field(default_factory=EvaluationPolicy)

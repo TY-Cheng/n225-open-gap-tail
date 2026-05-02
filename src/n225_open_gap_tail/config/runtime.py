@@ -37,6 +37,7 @@ from n225_open_gap_tail.data_lake.io import (
     JQUANTS_BRONZE_SCHEMA,
     JQUANTS_SILVER_SCHEMA,
     MAIN_SAMPLE_START,
+    MASSIVE_MINUTE_FEATURE_SCHEMA,
     SPY_MINUTE_FEATURE_SCHEMA,
     VendorErrorClass,
     atomic_write_parquet,
@@ -79,6 +80,22 @@ OPTIONAL_MASSIVE_TICKERS_FOR_PIPELINE = tuple(
 )
 JAPAN_PROXY_MASSIVE_TICKERS_FOR_PIPELINE = PIPELINE_CONFIG.feature_sets.massive_japan_proxy
 ASIA_PROXY_MASSIVE_TICKERS_FOR_PIPELINE = PIPELINE_CONFIG.feature_sets.massive_asia_proxy
+MASSIVE_MINUTE_US_CORE_TICKERS_FOR_PIPELINE = PIPELINE_CONFIG.feature_sets.massive_minute_us_core
+MASSIVE_MINUTE_JAPAN_PROXY_TICKERS_FOR_PIPELINE = (
+    PIPELINE_CONFIG.feature_sets.massive_minute_japan_proxy
+)
+MASSIVE_MINUTE_ASIA_PROXY_TICKERS_FOR_PIPELINE = (
+    PIPELINE_CONFIG.feature_sets.massive_minute_asia_proxy
+)
+MASSIVE_MINUTE_TICKERS_FOR_PIPELINE = tuple(
+    dict.fromkeys(
+        (
+            *MASSIVE_MINUTE_US_CORE_TICKERS_FOR_PIPELINE,
+            *MASSIVE_MINUTE_JAPAN_PROXY_TICKERS_FOR_PIPELINE,
+            *MASSIVE_MINUTE_ASIA_PROXY_TICKERS_FOR_PIPELINE,
+        )
+    )
+)
 FETCH_MASSIVE_TICKERS_FOR_PIPELINE = tuple(
     dict.fromkeys(
         (
@@ -257,6 +274,29 @@ ML_TAIL_HISTORY_FEATURES = (
     "calendar_month_cos",
     "calendar_dst_edt",
     "calendar_absorption_post_us_close",
+    "n225_day_return_lag_1",
+    "n225_night_return_lag_1",
+    "n225_day_range_lag_1",
+    "n225_night_range_lag_1",
+    "n225_day_parkinson_var_lag_1",
+    "n225_night_parkinson_var_lag_1",
+    "n225_session_range_mean_20",
+    "n225_session_parkinson_var_mean_20",
+    "n225_session_up_semivar_20",
+    "n225_session_down_semivar_20",
+    "n225_session_skew_120",
+    "n225_session_excess_kurtosis_120",
+    "n225_volume_log1p_lag_1",
+    "n225_open_interest_log1p_lag_1",
+    "n225_volume_log_change_lag_1",
+    "n225_open_interest_log_change_lag_1",
+    "n225_volume_zscore_60",
+    "n225_open_interest_zscore_60",
+    "n225_volume_oi_ratio_lag_1",
+    "n225_days_to_last_trade",
+    "n225_days_to_sq",
+    "n225_contract_month_sin",
+    "n225_contract_month_cos",
 )
 FRED_RATE_STALENESS_FEATURE = "fred_rates_staleness_days"
 FRED_RATE_STALENESS_SERIES = ("DGS2", "DGS10", "T10Y2Y")

@@ -239,11 +239,20 @@ def _feature_value_names(record: Mapping[str, object]) -> list[str]:
         for key in record
         if "__" not in key
         and (
-            key.endswith("_return")
+            key.startswith("n225_")
+            or key.endswith("_return")
             or key.endswith("_range")
             or key.endswith("_diff")
             or key.endswith("_level")
             or key.endswith("_days")
+            or key.endswith("_var")
+            or key.endswith("_semivar")
+            or key.endswith("_skew")
+            or key.endswith("_kurtosis")
+            or key.endswith("_volume_surge")
+            or key.endswith("_window_momentum")
+            or "_zscore_" in key
+            or "_percentile_" in key
             or key.startswith("spy_late_")
             or key.startswith("spy_final_")
         )
@@ -688,6 +697,56 @@ def _fred_fx_unavailable_reason(
 
 
 def _spy_minute_feature_map(records: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+    if any("late_30m_return" in row for row in records):
+        from n225_open_gap_tail.features.jquants_spy import (
+            _records_with_recomputed_minute_volume_features,
+        )
+
+        records = _records_with_recomputed_minute_volume_features(records)
+        derived_features: dict[str, dict[str, object]] = {}
+        for row in records:
+            date_key = str(row.get("bar_date_et") or "")
+            safe_ticker = _safe_name(str(row.get("safe_ticker") or row.get("ticker") or "SPY"))
+            if not date_key or not safe_ticker:
+                continue
+            prefix = "spy" if safe_ticker == "spy" else safe_ticker
+            row_features = {
+                f"{prefix}_late_30m_return": _optional_float(row.get("late_30m_return")),
+                f"{prefix}_late_60m_return": _optional_float(row.get("late_60m_return")),
+                f"{prefix}_late_60m_realized_var": _optional_float(
+                    row.get("late_60m_realized_var")
+                ),
+                f"{prefix}_late_60m_up_semivar": _optional_float(row.get("late_60m_up_semivar")),
+                f"{prefix}_late_60m_down_semivar": _optional_float(
+                    row.get("late_60m_down_semivar")
+                ),
+                f"{prefix}_late_60m_skew": _optional_float(row.get("late_60m_skew")),
+                f"{prefix}_late_60m_excess_kurtosis": _optional_float(
+                    row.get("late_60m_excess_kurtosis")
+                ),
+                f"{prefix}_late_session_range": _optional_float(row.get("late_session_range")),
+                f"{prefix}_late_volume_surge": _optional_float(row.get("late_volume_surge")),
+                f"{prefix}_late_volume_zscore_20": _optional_float(
+                    row.get("late_volume_zscore_20")
+                ),
+                f"{prefix}_late_volume_percentile_20": _optional_float(
+                    row.get("late_volume_percentile_20")
+                ),
+                f"{prefix}_final_window_momentum": _optional_float(
+                    row.get("final_window_momentum")
+                ),
+            }
+            target = derived_features.setdefault(date_key, {})
+            target.update(row_features)
+            available_ts = _coerce_datetime(row.get("feature_available_ts_utc"))
+            for feature_name in _feature_value_names(row_features):
+                _stamp_feature_metadata(
+                    target,
+                    feature_name=feature_name,
+                    available_ts_utc=available_ts,
+                    source_date=date_key,
+                )
+        return derived_features
     if any("spy_late_30m_return" in row for row in records):
         from n225_open_gap_tail.features.jquants_spy import (
             _records_with_recomputed_spy_late_volume_surge,

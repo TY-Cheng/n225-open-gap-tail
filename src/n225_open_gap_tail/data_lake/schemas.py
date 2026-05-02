@@ -96,7 +96,12 @@ REQUIRED_MARKET_STRUCTURE_FLAGS = (
 
 JQUANTS_FUTURES_FIELD_USES = {
     "DaySessionOpen": "target_open",
+    "DaySessionHigh": "range_and_parkinson_history_proxy",
+    "DaySessionLow": "range_and_parkinson_history_proxy",
     "DaySessionClose": "full_gap_close_reference",
+    "NightSessionOpen": "night_session_history_proxy",
+    "NightSessionHigh": "range_and_parkinson_history_proxy",
+    "NightSessionLow": "range_and_parkinson_history_proxy",
     "NightSessionClose": "nightclose_residual_reference",
     "SettlementPrice": "full_gap_settlement_reference",
     "Volume": "liquidity_proxy",

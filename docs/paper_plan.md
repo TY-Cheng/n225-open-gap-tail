@@ -39,8 +39,8 @@ hide:
 
 - Current clean evaluation window: `2018-06-20` to `2026-04-28`.
 - Current forecast-sample size: `1660` trading-day observations.
-- Current headline tail level: 95% VaR, corresponding to a nominal 5% exception rate.
-- The design also supports 97.5% VaR/ES evaluation, but those results should be promoted only if common-sample size, exception counts, and EVT diagnostics are sufficient.
+- Current registered headline tail level: 95% VaR, corresponding to a nominal 5% exception rate.
+- 97.5% VaR/ES is not part of the current headline pipeline. It can be reconsidered only as a separate future specification with sufficient common-sample size, exception counts, and EVT diagnostics.
 - Main data sources:
     - J-Quants Premium: Nikkei 225 Futures prices, settlement, volume, and open interest.
     - Massive: U.S. ETFs, sector ETFs, dollar ETF proxy, Japan proxy ETFs, Asia proxy ETFs, and SPY intraday-derived predictors.
@@ -61,17 +61,20 @@ flowchart TD
     Cutoff["Model cutoff<br/>U.S. cash close + vendor lag<br/>must precede OSE open"]
 
     JQ["J-Quants futures history<br/>prior settlement, prior day close, night close<br/>volume, open interest, roll/SQ flags"]
-    JP["Japan-only state<br/>lagged gaps and losses<br/>rolling volatility and rolling 95% loss quantile<br/>calendar, DST, absorption timing"]
+    JQOpt["J-Quants NK225E option chain<br/>prior trading-date option-implied state<br/>implied volatility, open interest, volume, days-to-SQ"]
+    JP["Japan-only state<br/>lagged gaps and losses<br/>rolling volatility and rolling 95% loss quantile<br/>calendar, DST, absorption timing<br/>lagged domestic option state when available"]
 
     MCore["Massive U.S. close core<br/>SPY, QQQ, DIA, IWM<br/>sector ETFs XLK...XLC<br/>TLT, GLD, USO, EEM, FXI, SMH, HYG, LQD"]
-    MSpy["SPY minute late-session features<br/>last-30m return, last-60m return<br/>late-session range, volume surge, final-window momentum"]
+    MSpy["U.S.-listed minute late-session features<br/>canonical SPY names plus curated ETF prefixes<br/>returns, realized variance, semivariance, range, volume pressure"]
     Fred["FRED and Cboe controls<br/>DGS2, DGS10, T10Y2Y, VIXCLS<br/>DEXJPUS H.10 USD/JPY<br/>Cboe VIX close and range"]
     Proxy["Proxy ETF blocks<br/>Japan: EWJ, DXJ<br/>Asia: EWY, EWT, EWH<br/>UUP and credit spreads audited but not headline"]
+    Options["U.S.-listed options candidate layer<br/>SPY/QQQ/IWM, EWJ/DXJ, ADR aggregate candidates<br/>disabled until historical IV/Greeks/OI or reconstructable source passes audit"]
 
     InfoA["Nested information set A<br/>japan_only"]
     InfoB["Nested information set B<br/>japan_only + U.S. close core"]
     InfoC["Nested information set C<br/>+ Japan proxy ETFs"]
     InfoD["Nested information set D<br/>+ Asia proxy ETFs"]
+    InfoE["Nested information set E<br/>+ options_risk if audit passes"]
 
     Target["Primary target<br/>settlement-to-open gap<br/>log(open_t) - log(settlement_{t-1})"]
     LossL["left_tail loss<br/>-gap_t<br/>downside open risk"]
@@ -79,7 +82,7 @@ flowchart TD
 
     Bench["Benchmark floor<br/>historical and rolling quantile<br/>EWMA, GARCH-t, GJR-GARCH-t, GJR-GARCH-EVT"]
     Adv["Advanced econometric benchmarks<br/>CAViaR, CARE, GAS<br/>Taylor-style ALD and direct FZ VaR-ES"]
-    ML["ML tail models<br/>LightGBM direct quantile<br/>LightGBM location-scale<br/>LightGBM standardized-loss POT-GPD"]
+    ML["ML tail models<br/>LightGBM direct quantile<br/>location-scale empirical<br/>plain and stabilized standardized-loss POT-GPD"]
 
     Forecast["Forecast output<br/>VaR in positive loss units<br/>ES where the model supplies a valid VaR-ES pair"]
     Metrics["Backtesting metrics<br/>breach rate, exception count<br/>Kupiec and Christoffersen tests<br/>quantile loss, FZ loss, Murphy diagrams<br/>ES exceedance severity"]
@@ -88,10 +91,13 @@ flowchart TD
     C --> Cutoff
     T --> Target
     JQ --> JP
+    JQOpt --> JP
     Cutoff --> MCore
     Cutoff --> MSpy
     Cutoff --> Fred
     Cutoff --> Proxy
+    Cutoff --> JQOpt
+    Cutoff --> Options
     JP --> InfoA
     JP --> InfoB
     MCore --> InfoB
@@ -101,12 +107,15 @@ flowchart TD
     Proxy --> InfoC
     InfoC --> InfoD
     Proxy --> InfoD
+    InfoD --> InfoE
+    Options --> InfoE
     Target --> LossL
     Target --> LossR
     InfoA --> ML
     InfoB --> ML
     InfoC --> ML
     InfoD --> ML
+    InfoE --> ML
     JP --> Bench
     JP --> Adv
     LossL --> Bench
@@ -174,9 +183,13 @@ Operationally, the calculation proceeds as follows:
     - Adds U.S.-traded Japan proxy ETFs such as `EWJ` and `DXJ`.
 - `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy`
     - Adds Asia proxy ETFs such as `EWY`, `EWT`, and `EWH`.
+- `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy_plus_options_risk`
+    - Adds audited options-risk features only if historical entitlement, field coverage, liquidity, and timestamp-safety checks pass.
+    - The layer is registered but disabled by default when historical options features cannot be reconstructed safely.
 - Interpretation:
     - The nested information sets test marginal predictive content.
     - Proxy ETF blocks are pre-specified robustness and mechanism checks, not an exhaustive variable search.
+    - The options layer is a conditional information layer for the same N225 futures target, not a shift to a Japanese-stock cross-section paper.
 
 ## Forecasting Models
 
@@ -194,24 +207,44 @@ Operationally, the calculation proceeds as follows:
     - Joint VaR-ES estimation via Fissler-Ziegel (FZ) scoring-function minimization, subject to numerical convergence checks.
 - ML tail specifications:
     - Flexible, tree-based direct quantile estimation via gradient boosting (LightGBM).
-    - LightGBM location-scale models.
-    - LightGBM standardized-loss Peaks-Over-Threshold Generalized Pareto Distribution (POT-GPD).
+    - LightGBM location-scale empirical tail calibration.
+    - LightGBM standardized-loss Peaks-Over-Threshold Generalized Pareto Distribution (POT-GPD) with a plain MLE comparator.
+    - LightGBM standardized-loss POT-GPD stabilized variant, reported transparently as a finite-sample regularized filtered-EVT variant.
+    - Intermediate capped-MLE, EVI-shrink, and EI-weighted POT-GPD variants for ablation evidence, not as headline model-family claims.
 - Estimation protocol:
+    - All specifications follow the same point-in-time out-of-sample forecasting protocol and the same minimum training-history requirement.
+    - Most specifications use expanding pre-forecast training histories.
+    - The rolling empirical quantile benchmark is the exception: by design, it uses the most recent 1,000 clean observations.
     - ML tail models are refit monthly using expanding training windows.
     - LightGBM hyperparameters are held fixed across information sets and refit dates to limit data-dependent tuning bias.
+    - The comparison is therefore aligned in forecast timing and sample discipline, but not in predictor dimensionality; benchmark models are target-history-only, whereas the ML specifications evaluate nested information sets.
 
 ## EVT Protocol
 
 - EVT is used for tail calibration and ES extrapolation, not as a standalone contribution.
-- POT-GPD is fitted to training-window standardized losses after conditional filtering.
+- Plain POT-GPD is fitted to training-window standardized losses after conditional filtering and remains the standard filtered-EVT comparator.
+- Stabilized POT-GPD is a finite-sample regularized filtered-EVT variant, not plain standard POT-GPD.
 - VaR and ES forecasts are transformed back into the target loss units.
-- The first comparison should focus on 95% direct LightGBM quantile forecasts versus 95% LightGBM POT-GPD forecasts on common out-of-sample dates.
-- 97.5% results require:
-    - enough common-sample observations;
-    - enough out-of-sample exceptions;
-    - stable POT-GPD shape and scale estimates;
-    - threshold-sensitivity checks;
-    - ES severity and coverage diagnostics.
+- The primary comparison focuses on 95% direct LightGBM quantile forecasts, 95% location-scale empirical forecasts, 95% plain standardized-loss POT-GPD forecasts, and 95% stabilized standardized-loss POT-GPD forecasts on common out-of-sample dates.
+- Tail calibration gates are decoupled from the LightGBM final model training gate so the location-scale and POT-GPD variants can be evaluated without shortening the direct-quantile sample unnecessarily.
+- The stabilized variant records `evt_variant`, `evt_shape_method`, `evt_cap_policy`, `evt_evi_status`, `evt_ei_status`, `cap_hit`, `xi_mle`, `xi_evi_anchor`, `theta_hat`, `n_eff`, scale-refit status, and ES finite/unavailable status.
+- The primary EVI anchor is the de Haan-Ferreira moment estimator. Hill is diagnostic only and interpreted only when diagnostics support positive heavy-tail shape; Pickands is a cross-check.
+- The primary extremal-index estimator is Ferro-Segers. K-gaps is a robustness diagnostic. EI weighting is used only as a finite-sample effective-exceedance heuristic, not as a new GPD likelihood.
+- Shape cap sensitivity reports conservative `(-0.1, 0.5)`, baseline `(-0.25, 0.75)`, and loose `(-0.5, 1.0)` caps. If any sensitivity run has `xi_final >= 1`, ES is marked unavailable for that run.
+
+## Options-Risk Layer Protocol
+
+- The options-risk layer uses options only as an additional information set for the same N225 futures settle-to-open VaR/ES target.
+- J-Quants Nikkei 225 large options (`NK225E`) are not part of the U.S. `options_risk` layer. They enter the domestic `japan_only` block as lagged option-implied state only, using prior available option-chain aggregates and excluding same target-date option rows.
+- Massive live option snapshots are not used for historical backfill.
+- Historical options features enter only after an audit verifies entitlement, field availability, timestamp safety, liquidity, and sufficient rolling valid-contract coverage.
+- Candidate underlyings are capped before modeling:
+    - core U.S. options: `SPY`, `QQQ`, `IWM`;
+    - Japan ETF options: `EWJ`, `DXJ`;
+    - primary ADR aggregate options: `TM`, `SONY`, `MUFG`, `SMFG`, `MFG`.
+- DTE buckets are short `7-30` and medium `31-90`. ATM uses delta-neutral selection when delta is available or computed; otherwise closest-to-spot or closest-to-forward is recorded as the fallback method.
+- ADR aggregate features use median and 20% trimmed mean as primary summaries; max, breadth, and count are diagnostics.
+- Curated headline options features are capped at 30. Raw per-contract and per-ADR outputs remain audit or appendix material.
 
 ## Evaluation and Inference
 
@@ -251,9 +284,13 @@ Operationally, the calculation proceeds as follows:
     - The largest reduction in quantile loss occurs when core U.S. close variables are added.
     - Japan proxy and Asia proxy blocks appear to add less marginal loss reduction after U.S. close core variables are included.
 - Restricted model-family comparison:
-    - Location-scale and POT-GPD specifications are implemented.
+    - Location-scale empirical, plain POT-GPD, and stabilized POT-GPD specifications are implemented.
     - Their common out-of-sample comparison is shorter than the direct-quantile headline sample.
-    - These results are useful for model-family evidence, but they should not replace the headline nested-information-set analysis.
+    - These results are useful for model-family evidence, but they should not replace the headline nested-information-set analysis unless they pass the registered headline coverage and common-sample gates.
+- Options-risk layer:
+    - The layer is registered and audited.
+    - U.S.-listed options should remain disabled in headline claims when historical options entitlement or timestamp-safe feature reconstruction is not proven.
+    - J-Quants `NK225E` option-implied features are domestic, lagged, and source-audited separately inside `japan_only`.
 - CPA:
     - CPA is an inference layer over loss differentials.
     - It does not generate VaR or ES forecasts.
@@ -264,12 +301,14 @@ Operationally, the calculation proceeds as follows:
 - Main text candidates:
     - data and timing audit;
     - benchmark common-sample table;
-    - ML direct-quantile nested-information-set table;
+    - ML headline nested-information-set table for direct quantile and any eligible location-scale or POT-GPD variants;
     - left-tail and right-tail coverage breach-rate figure;
     - ML tail Murphy diagrams, read together with coverage diagnostics.
 - Appendix candidates:
     - full benchmark metrics;
     - restricted model-family result matrix;
+    - EVT ablation, shape-stability, extremal-index, and cap-sensitivity diagnostics;
+    - options source, coverage, and liquidity audit artifacts;
     - result-matrix DM/MCS notes;
     - CPA tables;
     - DST attenuation figures;
@@ -311,6 +350,8 @@ Operationally, the calculation proceeds as follows:
 - No live deployment claim from historical J-Quants OHLC data.
 - No `residual_usclosemark_to_open` claim without licensed timestamped intraday Nikkei futures marks.
 - No claim that LightGBM-EVT is a new ML algorithm.
+- No claim that stabilized POT-GPD is the same object as plain maximum-likelihood POT-GPD.
+- No options-risk headline claim unless historical options entitlement, timestamp safety, and liquidity gates pass.
 - No model-family ranking claim from restricted short samples.
 - No extreme-tail claim without sufficient exceptions and rolling out-of-sample diagnostics.
 

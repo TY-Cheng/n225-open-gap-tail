@@ -5,6 +5,7 @@ from .cboe import *
 from .fred import *
 from .jquants import *
 from .jquants_futures import *
+from .jquants_options import *
 from .massive import *
 from .probe import *
 

@@ -270,8 +270,8 @@ def _claim_scope_to_latex(*, manifest: Mapping[str, object] | None = None) -> st
         ),
         (
             "ml_tail_metrics.parquet",
-            "headline ML-tail information ladder",
-            "yes; current headline ladder is direct quantile",
+            "headline ML-tail nested information sets",
+            "yes; current headline comparison is direct quantile",
         ),
         (
             "ml_tail_metrics_per_model.parquet",

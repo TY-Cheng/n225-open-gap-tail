@@ -12,6 +12,12 @@ from typing import Any, cast
 import polars as pl
 
 from n225_open_gap_tail.config import Settings
+from n225_open_gap_tail.data_lake.artifacts import (
+    _gold_leakage_dir,
+    _gold_panel_dir,
+    _legacy_gold_leakage_dir,
+    _legacy_gold_panel_dir,
+)
 from n225_open_gap_tail.diagnostics.results_discussion import (
     generate_results_discussion as _generate_results_discussion,
 )
@@ -124,11 +130,19 @@ def _full_run_snapshot_paths(
 ) -> dict[str, Path]:
     run_id = str(manifest.get("run_id") or run_dir.name)
     gold_artifacts = _dict_value(manifest.get("gold_artifacts"))
-    gold_panel_root = (
-        settings.gold_data_dir / "tailrisk_panel" / "schema_version=1" / f"run_id={run_id}"
-    )
-    leakage_root = (
-        settings.gold_data_dir / "leakage_summary" / "schema_version=1" / f"run_id={run_id}"
+    gold_panel_root = _gold_panel_dir(settings.gold_data_dir, run_id)
+    legacy_gold_panel_root = _legacy_gold_panel_dir(settings.gold_data_dir, run_id)
+    if not gold_panel_root.exists() and legacy_gold_panel_root.exists():
+        gold_panel_root = legacy_gold_panel_root
+    leakage_root = _gold_leakage_dir(settings.gold_data_dir, run_id)
+    legacy_leakage_root = _legacy_gold_leakage_dir(settings.gold_data_dir, run_id)
+    if (
+        not (leakage_root / "summary.json").exists()
+        and (legacy_leakage_root / "summary.json").exists()
+    ):
+        leakage_root = legacy_leakage_root
+    leakage_summary = Path(
+        str(gold_artifacts.get("leakage_summary", leakage_root / "summary.json"))
     )
     return {
         "manifest": run_dir / "manifest.json",
@@ -147,7 +161,7 @@ def _full_run_snapshot_paths(
                 gold_artifacts.get("feature_coverage", gold_panel_root / "feature_coverage.parquet")
             )
         ),
-        "leakage_summary": leakage_root / "summary.json",
+        "leakage_summary": leakage_summary,
         "benchmark_status": run_dir / "metrics" / "benchmark_status.json",
         "benchmark_metrics": run_dir / "metrics" / "benchmark_metrics.parquet",
         "benchmark_forecasts": run_dir / "forecasts" / "benchmark_forecasts.parquet",
@@ -318,6 +332,7 @@ def _full_run_results_markdown(
     ml_coverage_review = _coverage_review_sentence(ml_tail_metrics)
     result_matrix_table = _result_matrix_summary_table(result_matrix)
     claim_scope_table = _claim_scope_markdown_table()
+    opening_gap_scale_text = _opening_gap_scale_text(panel)
     metric_artifact_table = _metric_artifact_relationship_table(
         ml_tail_metrics=ml_tail_metrics,
         ml_tail_metrics_per_model=ml_tail_metrics_per_model,
@@ -384,6 +399,7 @@ def _full_run_results_markdown(
         advanced_implementation_bullet=advanced_implementation_bullet,
         advanced_bottom_line_bullet=advanced_bottom_line_bullet,
         claim_scope_table=claim_scope_table,
+        opening_gap_scale_text=opening_gap_scale_text,
     )
 
     return f"""---
@@ -423,7 +439,7 @@ hide:
 
 - The left branch binds vendor and calendar inputs into a timestamp-audited gold panel.
 - The middle branch compares benchmark floors, advanced econometric benchmarks, and ML-tail forecasts on registered loss units.
-- The right branch separates headline ladders, restricted model-family comparisons, unconditional DM/MCS inference, CPA diagnostics, and supporting figures.
+- The right branch separates headline nested information sets, restricted model-family comparisons, unconditional DM/MCS inference, CPA diagnostics, and supporting figures.
 
 ## Pipeline Structure
 
@@ -463,7 +479,7 @@ hide:
 
 {feature_table}
 
-- U.S. core, proxy ETFs, SPY late-session features, CBOE VIX, FRED rates, and FRED H.10 FX are separated by source family and block.
+- U.S. core, proxy ETFs, minute late-session features, CBOE VIX, FRED rates, FRED H.10 FX, and any audit-gated options-risk fields are separated by source family and block.
 - Credit-spread FRED features are enriched/optional and visibly late-starting, so they do not move the core clean start.
 - Feature coverage should be read together with the leakage summary; high coverage alone is not enough without timestamp validity.
 
@@ -494,8 +510,8 @@ Status: `{ml_tail_status.get("status")}`; implemented models: {ml_tail_component
 
 {ml_headline_table}
 
-- This headline table remains strict and currently reports direct LightGBM quantile across the information ladder.
-- Location-scale and POT-GPD are implemented, but their shorter common coverage keeps them out of the headline ladder.
+- This headline table remains strict and reports only ML-tail rows that pass the registered common-sample and coverage gates.
+- Location-scale empirical, plain POT-GPD, and stabilized POT-GPD are headline candidates only after their valid OOS coverage, standardized-loss, exceedance, and ES-validity gates pass.
 - Differences across information blocks are candidate forecast evidence only after the common-sample, coverage, and inference diagnostics are reviewed.
 - {ml_coverage_review}
 
@@ -503,7 +519,7 @@ Status: `{ml_tail_status.get("status")}`; implemented models: {ml_tail_component
 
 {metric_artifact_table}
 
-- `ml_tail_metrics.parquet` is the headline ladder artifact. In this run it contains direct-quantile rows that survived the strict common-sample gate.
+- `ml_tail_metrics.parquet` is the headline nested-information-set artifact. It contains the ML-tail rows that survived the strict common-sample gate in this run.
 - `ml_tail_metrics_per_model.parquet` reports each implemented ML-tail model on its own valid OOS rows; it is useful for debugging coverage but is not a cross-model comparison table.
 - `ml_tail_result_matrix.parquet` creates restricted common samples for VaR-only and VaR-ES comparisons across model families and within-model information-set increments.
 
@@ -511,7 +527,7 @@ Status: `{ml_tail_status.get("status")}`; implemented models: {ml_tail_component
 
 {result_matrix_table}
 
-- The result matrix is the right place to compare direct quantile, location-scale, and POT-GPD on their restricted common dates.
+- The result matrix is the right place to compare direct quantile, location-scale empirical, plain POT-GPD, stabilized POT-GPD, and ablation variants on their restricted common dates.
 - It separates VaR-only losses from VaR-ES joint scoring, so VaR-only claims are not confused with ES claims.
 - Restricted direct-quantile performance is only a comparison anchor for the tail-model family; it does not replace the headline direct-quantile evidence.
 - DM and MCS records are emitted only where registered row-count and exception-count gates pass; otherwise the result matrix remains descriptive.
@@ -749,7 +765,7 @@ def _result_matrix_summary_table(frame: pl.DataFrame) -> str:
     )
     rows = [
         (
-            row["comparison_family"],
+            _result_matrix_display_value(row["comparison_family"]),
             row["comparison_axis"],
             row["loss_family"],
             row["rows"],
@@ -765,6 +781,13 @@ def _result_matrix_summary_table(frame: pl.DataFrame) -> str:
     )
 
 
+def _result_matrix_display_value(value: object) -> str:
+    text = str(value)
+    if text == "information_set_ladder":
+        return "nested information sets"
+    return text
+
+
 def _claim_scope_markdown_table() -> str:
     return _markdown_table(
         ("Evidence layer", "Can support headline claim?", "How to read it"),
@@ -775,9 +798,9 @@ def _claim_scope_markdown_table() -> str:
                 "External target-history/econometric floor on a shared sample.",
             ),
             (
-                "ML-tail headline ladder",
+                "ML-tail nested information sets",
                 "Yes, after review",
-                "Strict information-set ladder; currently direct quantile survived the gate.",
+                "Strict nested-information-set comparison; currently direct quantile survived the gate.",
             ),
             (
                 "ML-tail per-model rows",
@@ -810,7 +833,7 @@ def _metric_artifact_relationship_table(
             (
                 "`ml_tail_metrics.parquet`",
                 str(ml_tail_metrics.height),
-                "Headline ML-tail information-set ladder",
+                "Headline ML-tail nested-information-set comparison",
                 "Eligible for headline discussion after author review.",
             ),
             (
@@ -861,6 +884,78 @@ def _coverage_review_sentence(frame: pl.DataFrame) -> str:
         "snapshot review band, but final claims still require author review of inference "
         "and exception diagnostics."
     )
+
+
+def _opening_gap_scale_text(panel: pl.DataFrame) -> str:
+    if panel.is_empty() or "gap_t" not in panel.columns:
+        return "- Opening-gap scale is unavailable because the modeling panel is missing `gap_t`."
+    clean = panel.filter(pl.col("gap_t").is_not_null())
+    if "clean_sample" in clean.columns:
+        clean = clean.filter(pl.col("clean_sample"))
+    if clean.is_empty():
+        return (
+            "- Opening-gap scale is unavailable because no clean target rows have finite `gap_t`."
+        )
+    date_col = "forecast_date" if "forecast_date" in clean.columns else clean.columns[0]
+    min_row = clean.sort("gap_t").head(1).to_dicts()[0]
+    max_row = clean.sort("gap_t", descending=True).head(1).to_dicts()[0]
+    abs_row = (
+        clean.with_columns(pl.col("gap_t").abs().alias("_abs_gap_t"))
+        .sort("_abs_gap_t", descending=True)
+        .head(1)
+        .to_dicts()[0]
+    )
+    stats = clean.select(
+        pl.len().alias("rows"),
+        pl.col("gap_t").quantile(0.01).alias("q01"),
+        pl.col("gap_t").quantile(0.99).alias("q99"),
+    ).to_dicts()[0]
+    lines = [
+        (
+            f"- In the current clean headline sample (`n={stats['rows']}`), the settle-to-open "
+            f"gap ranges from `{_fmt_log_return(min_row['gap_t'])}` on "
+            f"`{min_row.get(date_col)}` to `{_fmt_log_return(max_row['gap_t'])}` on "
+            f"`{max_row.get(date_col)}`."
+        ),
+        (
+            f"- The largest absolute clean settle-to-open gap is "
+            f"`{_fmt_log_return(abs_row['gap_t'])}` on `{abs_row.get(date_col)}`; "
+            "this is large enough to make opening-gap tail risk a substantive risk-management "
+            "forecasting problem rather than a cosmetic return-prediction exercise."
+        ),
+        (
+            f"- The clean 1% to 99% settle-to-open range is "
+            f"`{_fmt_log_return(stats['q01'])}` to `{_fmt_log_return(stats['q99'])}`, "
+            "so the extremes are far outside the usual daily opening-gap range."
+        ),
+    ]
+    if "residual_nightclose_to_day_open" in clean.columns:
+        residual = clean.filter(pl.col("residual_nightclose_to_day_open").is_not_null())
+        if not residual.is_empty():
+            residual_stats = residual.select(
+                pl.col("residual_nightclose_to_day_open").min().alias("min"),
+                pl.col("residual_nightclose_to_day_open").max().alias("max"),
+                pl.col("residual_nightclose_to_day_open").abs().max().alias("max_abs"),
+            ).to_dicts()[0]
+            lines.append(
+                "- Even after the night-session close, the clean night-close-to-open residual "
+                f"ranges from `{_fmt_log_return(residual_stats['min'])}` to "
+                f"`{_fmt_log_return(residual_stats['max'])}`, with maximum absolute residual "
+                f"`{_fmt_log_return(residual_stats['max_abs'])}`."
+            )
+    lines.append(
+        "- These magnitudes make the empirical object an opening-tail risk problem, not only "
+        "an average next-open return-forecasting problem."
+    )
+    return "\n".join(lines)
+
+
+def _fmt_log_return(value: object) -> str:
+    parsed = _optional_float(value)
+    if parsed is None:
+        return "missing"
+    simple_pct = math.expm1(parsed) * 100.0
+    return f"{parsed:.6f} log ({simple_pct:+.2f}%)"
 
 
 def _unique_values(frame: pl.DataFrame, column: str) -> str:

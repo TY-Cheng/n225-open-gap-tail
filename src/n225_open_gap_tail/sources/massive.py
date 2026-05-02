@@ -209,6 +209,45 @@ class MassiveClient:
             payload=payload,
         )
 
+    def fetch_option_contracts(
+        self,
+        *,
+        underlying_ticker: str,
+        as_of: str,
+        expired: bool = True,
+        limit: int = 1000,
+        raise_for_status: bool = False,
+    ) -> MassiveEndpointPayload:
+        """Fetch historical option contract metadata.
+
+        This deliberately does not call the live option-chain snapshot endpoint; historical
+        features must be built from contract-level history or verified flat files.
+        """
+        path = "/v3/reference/options/contracts"
+        params = {
+            "underlying_ticker": underlying_ticker,
+            "as_of": as_of,
+            "expired": str(expired).lower(),
+            "limit": str(limit),
+        }
+        status_code, payload = self.request_json(
+            path,
+            params,
+            raise_for_status=raise_for_status,
+        )
+        rows = payload.get("results", [])
+        row_count = len(rows) if isinstance(rows, list) else 0
+        return MassiveEndpointPayload(
+            name=f"{underlying_ticker}_option_contracts",
+            ticker=underlying_ticker,
+            path=path,
+            params=params,
+            http_status=status_code,
+            ok=200 <= status_code < 300,
+            row_count=row_count,
+            payload=payload,
+        )
+
     @staticmethod
     def _decode_payload(response: httpx.Response) -> dict[str, Any]:
         try:

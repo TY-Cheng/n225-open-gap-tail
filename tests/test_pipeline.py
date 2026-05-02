@@ -474,7 +474,7 @@ def test_tail_side_loss_units_are_explicit_and_symmetric() -> None:
     assert {row["tail_side"] for row in left} == {"left_tail"}
     assert {row["tail_side"] for row in right} == {"right_tail"}
     assert pipeline_runtime.tail_side_values("both") == ("left_tail", "right_tail")
-    assert pipeline_runtime.TAIL_LEVELS == (0.95, 0.975)
+    assert pipeline_runtime.TAIL_LEVELS == (0.95,)
     with pytest.raises(paper_module.PipelineRunError, match="Unknown tail_side"):
         pipeline_runtime.normalize_tail_side("center_tail")
 
@@ -531,6 +531,7 @@ def test_ml_tail_information_sets_select_nested_feature_blocks() -> None:
         {"feature": "fx_usdjpy_level", "source_block": "fx_core"},
         {"feature": "ewj_return", "source_block": "japan_proxy"},
         {"feature": "ewh_return", "source_block": "asia_proxy"},
+        {"feature": "option_japan_adr_median_atm_iv", "source_block": "options_risk"},
         {"feature": "fred_bamlh0a0hym2_level", "source_block": "fred_credit_enriched"},
     ]
 
@@ -550,6 +551,12 @@ def test_ml_tail_information_sets_select_nested_feature_blocks() -> None:
         coverage_rows,
         information_set="japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy",
     )
+    options_risk = ml_tail_feature_columns_for_information_set(
+        coverage_rows,
+        information_set=(
+            "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy_plus_options_risk"
+        ),
+    )
 
     assert "loss_lag_1" in japan_only
     assert "n225_day_range_lag_1" in japan_only
@@ -565,9 +572,228 @@ def test_ml_tail_information_sets_select_nested_feature_blocks() -> None:
     assert "ewj_late_30m_return" in japan_proxy
     assert "ewh_return" in asia_proxy
     assert "ewh_late_30m_return" in asia_proxy
+    assert "option_japan_adr_median_atm_iv" not in asia_proxy
+    assert "option_japan_adr_median_atm_iv" in options_risk
     assert paper_core._feature_source_block("ewj_late_30m_return") == "japan_proxy"
     assert paper_core._feature_source_block("ewh_late_30m_return") == "asia_proxy"
     assert paper_core._feature_source_block("spy_late_30m_return") == "us_late_session"
+    assert paper_core._feature_source_block("option_japan_adr_median_atm_iv") == "options_risk"
+
+
+def test_options_audit_artifacts_are_disabled_until_historical_source_is_verified(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(
+        data_dir=tmp_path / "data",
+        bronze_data_dir=tmp_path / "data" / "bronze",
+        silver_data_dir=tmp_path / "data" / "silver",
+        gold_data_dir=tmp_path / "data" / "gold",
+        reports_dir=tmp_path / "reports",
+    )
+
+    source_audit = paper_core.build_options_source_audit_records(
+        settings=settings,
+        run_ts=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    feature_coverage = paper_core.build_options_feature_coverage_records(settings=settings)
+    liquidity = paper_core.build_options_liquidity_audit_records(settings=settings)
+
+    assert any(row["source_name"] == "massive_options_snapshot" for row in source_audit)
+    assert all(
+        row["headline_promotion_allowed"] is False
+        for row in source_audit
+        if str(row["source_name"]).startswith("massive_options")
+    )
+    assert any(
+        row["source_name"] == "jquants_nikkei_options" and row["headline_promotion_allowed"] is True
+        for row in source_audit
+    )
+    assert {row["source_block"] for row in feature_coverage} == {"options_risk"}
+    assert all(str(row["feature_status"]).startswith("disabled") for row in feature_coverage)
+    assert any(row["underlying"] == "SPY" for row in liquidity)
+
+
+def test_n225_option_features_use_prior_available_option_state() -> None:
+    option_rows = paper_core.normalize_jquants_nikkei225_option_rows(
+        [
+            {
+                "Date": "2026-01-05",
+                "Code": "OPT-P",
+                "ContractMonth": "2026-03",
+                "StrikePrice": 39000.0,
+                "PutCallDivision": "1",
+                "OpenInterest": 100.0,
+                "Volume": 10.0,
+                "SettlementPrice": 250.0,
+                "TheoreticalPrice": 255.0,
+                "BaseVolatility": 0.22,
+                "UnderlyingPrice": 39010.0,
+                "ImpliedVolatility": 0.24,
+                "SpecialQuotationDay": "2026-03-13",
+                "CentralContractMonthFlag": "1",
+            },
+            {
+                "Date": "2026-01-05",
+                "Code": "OPT-C",
+                "ContractMonth": "2026-03",
+                "StrikePrice": 39000.0,
+                "PutCallDivision": "2",
+                "OpenInterest": 200.0,
+                "Volume": 20.0,
+                "SettlementPrice": 260.0,
+                "TheoreticalPrice": 265.0,
+                "BaseVolatility": 0.20,
+                "UnderlyingPrice": 39010.0,
+                "ImpliedVolatility": 0.21,
+                "SpecialQuotationDay": "2026-03-13",
+                "CentralContractMonthFlag": "1",
+            },
+        ],
+        downloaded_at_utc=datetime(2026, 1, 5, 12, tzinfo=UTC),
+    )
+    option_features = paper_core.build_n225_option_feature_records(option_rows)
+    panel = paper_core.add_n225_option_features(
+        [
+            {
+                "forecast_date": "2026-01-06",
+                "model_cutoff_ts_utc": datetime(2026, 1, 5, 21, tzinfo=UTC),
+            }
+        ],
+        option_features,
+    )
+
+    assert panel[0]["n225_option_atm_iv_lag_1"] == pytest.approx(0.225)
+    assert panel[0]["n225_option_atm_put_call_iv_skew_lag_1"] == pytest.approx(0.03)
+    assert panel[0]["n225_option_put_call_oi_ratio_lag_1"] == pytest.approx(0.5)
+    assert panel[0]["n225_option_valid_contract_count_lag_1"] == pytest.approx(2.0)
+
+
+def test_n225_option_features_normalize_compact_v2_fields_and_write_silver(
+    tmp_path: Path,
+) -> None:
+    downloaded_at = datetime(2026, 1, 5, 12, tzinfo=UTC)
+    option_rows = paper_core.normalize_jquants_nikkei225_option_rows(
+        [
+            {
+                "Date": "20260105",
+                "Code": "P-ATM",
+                "CM": "2026-02",
+                "CCMFlag": "1",
+                "Strike": 52000.0,
+                "PCDiv": "1",
+                "OI": 300.0,
+                "Vo": 30.0,
+                "Settle": 210.0,
+                "Theo": 215.0,
+                "BaseVol": 20.0,
+                "UnderPx": 51990.0,
+                "IV": 24.0,
+                "IR": 0.5,
+                "SQD": "20260213",
+            },
+            {
+                "Date": "20260105",
+                "Code": "C-ATM",
+                "CM": "2026-02",
+                "CCMFlag": "1",
+                "Strike": 52000.0,
+                "PCDiv": "2",
+                "OI": 100.0,
+                "Vo": 10.0,
+                "Settle": 220.0,
+                "Theo": 225.0,
+                "BaseVol": 18.0,
+                "UnderPx": 51990.0,
+                "IV": 21.0,
+                "IR": 0.5,
+                "SQD": "20260213",
+            },
+            {
+                "Date": "20260105",
+                "Code": "BAD",
+                "CM": "2026-02",
+                "Strike": 0.0,
+                "PCDiv": "2",
+                "UnderPx": 51990.0,
+                "IV": 19.0,
+                "SQD": "20260213",
+            },
+        ],
+        downloaded_at_utc=downloaded_at,
+    )
+    features = paper_core.build_n225_option_feature_records(option_rows)
+
+    settings = Settings(
+        data_dir=tmp_path / "data",
+        bronze_data_dir=tmp_path / "data" / "bronze",
+        silver_data_dir=tmp_path / "data" / "silver",
+        gold_data_dir=tmp_path / "data" / "gold",
+        reports_dir=tmp_path / "reports",
+    )
+    paper_core.write_jquants_options_silver_cache(settings=settings, rows=option_rows)
+    silver_path = (
+        settings.data_dir
+        / "silver"
+        / "jquants_nk225_options_daily"
+        / f"schema_version={pipeline_runtime.JQUANTS_OPTIONS_SILVER_SCHEMA.version}"
+        / "year=2026"
+        / "month=01"
+        / "data.parquet"
+    )
+    option_by_code = {str(row["option_code"]): row for row in option_rows}
+    too_early_panel = paper_core.add_n225_option_features(
+        [
+            {
+                "forecast_date": "2026-01-06",
+                "model_cutoff_ts_utc": datetime(2026, 1, 5, 17, tzinfo=UTC),
+            }
+        ],
+        features,
+    )
+
+    assert silver_path.exists()
+    assert option_by_code["P-ATM"]["implied_volatility"] == pytest.approx(0.24)
+    assert option_by_code["P-ATM"]["interest_rate"] == pytest.approx(0.005)
+    assert features[0]["atm_iv"] == pytest.approx(0.225)
+    assert features[0]["atm_put_call_iv_skew"] == pytest.approx(0.03)
+    assert features[0]["put_call_oi_ratio"] == pytest.approx(3.0)
+    assert features[0]["days_to_sq"] == pytest.approx(39.0)
+    assert too_early_panel[0]["n225_option_atm_iv_lag_1"] is None
+
+
+def test_n225_option_normalization_handles_invalid_optional_fields() -> None:
+    rows = paper_core.normalize_jquants_nikkei225_option_rows(
+        [
+            {"Date": "not-a-date", "Code": "SKIP"},
+            {
+                "Date": "2026-01-05",
+                "Code": "INVALID-OPTIONAL",
+                "CentralContractMonthFlag": "0",
+                "StrikePrice": "not-a-number",
+                "PutCallDivision": "9",
+                "SettlementPrice": 0.0,
+                "TheoreticalPrice": -1.0,
+                "BaseVolatility": False,
+                "UnderlyingPrice": "bad",
+                "ImpliedVolatility": "bad",
+                "InterestRate": "bad",
+                "SpecialQuotationDay": "bad-date",
+            },
+        ],
+        downloaded_at_utc=datetime(2026, 1, 5, 12, tzinfo=UTC),
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["central_contract_month_flag"] is False
+    assert rows[0]["strike_price"] is None
+    assert rows[0]["put_call"] is None
+    assert rows[0]["settlement_price"] is None
+    assert rows[0]["theoretical_price"] is None
+    assert rows[0]["base_volatility"] is None
+    assert rows[0]["underlying_price"] is None
+    assert rows[0]["implied_volatility"] is None
+    assert rows[0]["interest_rate"] is None
+    assert rows[0]["special_quotation_day"] is None
 
 
 def test_build_ml_tail_modeling_rows_uses_only_lagged_loss_history() -> None:
@@ -2315,10 +2541,7 @@ def test_evaluate_benchmark_shard_records_unavailable_oos(tmp_path: Path) -> Non
     assert result["forecasts"] == []
     assert result["diagnostics"][0]["fit_status"] == "unavailable_insufficient_oos_start"
     assert result["diagnostics"][0]["model_name"] == "historical_quantile"
-    assert result["diagnostics"][0]["shard_id"] == (
-        "model=historical_quantile/target=full_gap_settle_to_open/"
-        "side=left_tail/info=target_history_only/tail=0_950"
-    )
+    assert result["diagnostics"][0]["shard_id"] == "hist_q__sto__L__hist__q0950"
 
 
 def test_spy_minute_features_cover_late_window_and_volume_surge() -> None:
@@ -2398,17 +2621,7 @@ def test_evaluate_benchmark_suite_and_latex_export_with_synthetic_panel(
     assert result.status == "completed"
     assert result.forecast_rows > 0
     assert (run_dir / "forecasts" / "benchmark_forecasts.parquet").exists()
-    assert (
-        run_dir
-        / "forecasts"
-        / "shards"
-        / "model=historical_quantile"
-        / "target=full_gap_settle_to_open"
-        / "side=left_tail"
-        / "info=target_history_only"
-        / "tail=0_950"
-        / "forecasts.parquet"
-    ).exists()
+    assert (run_dir / "s" / "hist_q__sto__L__hist__q0950" / "f.pq").exists()
     assert (run_dir / "metrics" / "benchmark_metrics.parquet").exists()
     assert latex.tables >= 4
     assert (latex.latex_dir / "benchmark_metrics_table.tex").exists()
@@ -2594,7 +2807,7 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
                 "mean_exceedance_severity": 0.009,
             }
             ml_rows.append(base)
-            ml_rows.append({**base, "model_name": "lightgbm_location_scale"})
+            ml_rows.append({**base, "model_name": paper_module.ML_TAIL_LOCATION_SCALE_MODEL})
     ml_metrics = pl.DataFrame(ml_rows)
     ml_metrics.filter(
         pl.col("model_name") == paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL
@@ -3116,6 +3329,11 @@ def test_build_panel_with_synthetic_vendor_rows(
     )
     _patch_paper_module(
         monkeypatch,
+        "_fetch_jquants_nikkei_option_rows",
+        lambda **kwargs: [],
+    )
+    _patch_paper_module(
+        monkeypatch,
         "_fetch_massive_predictors",
         lambda **kwargs: (massive_daily, []),
     )
@@ -3145,13 +3363,8 @@ def test_build_panel_with_synthetic_vendor_rows(
     assert "spy_return" in panel.columns
     assert (result.run_dir / "panel" / "feature_coverage.parquet").exists()
     assert (result.run_dir / "manifest.json").exists()
-    gold_panel = (
-        settings.gold_data_dir
-        / "tailrisk_panel"
-        / "schema_version=1"
-        / f"run_id={result.run_id}"
-        / "modeling_panel.parquet"
-    )
+    gold_panel_dir = artifact_utils._gold_panel_dir(settings.gold_data_dir, result.run_id)
+    gold_panel = gold_panel_dir / "modeling_panel.parquet"
     gold_calendar = gold_panel.with_name("calendar_map.parquet")
     assert gold_panel.exists()
     assert gold_calendar.exists()
@@ -3189,6 +3402,18 @@ def test_private_pipeline_helpers_cover_defensive_edges(
     )
     assert paper_core._window_range([None], [None]) is None
     assert paper_core._safe_name("C:USDJPY") == "c_usdjpy"
+    long_shard_id = paper_core._forecast_shard_id(
+        paper_module.ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
+        0.95,
+        target_family="full_gap_settle_to_open",
+        tail_side="right_tail",
+        information_set=(
+            "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy_plus_options_risk"
+        ),
+        refit_frequency="monthly",
+    )
+    assert long_shard_id == "lgbm_pot_plain__sto__R__E__q0950__m"
+    assert len(long_shard_id) < 48
     assert paper_core._feature_description("fx_usdjpy_level").startswith("canonical USDJPY")
     assert paper_core._feature_description("spy_late_30m_return").startswith("SPY late-session")
     assert paper_core._feature_description("fred_vixcls_diff").startswith("first difference")

@@ -9,15 +9,25 @@ from n225_open_gap_tail.config.runtime import (
     date,
     DEFAULT_MIN_TRAIN_EXCEEDANCES,
     DEFAULT_MIN_TRAIN_ROWS,
+    EVT_MIN_EXCEEDANCES_95,
+    EVT_MIN_STANDARDIZED_LOSSES_95,
+    EVT_SHAPE_CAP_BASELINE,
+    EVT_SHAPE_SHRINKAGE_K,
     EVT_THRESHOLD_QUANTILE,
     find_oos_start_diagnostics,
+    LOCATION_SCALE_MIN_ES_EXCEEDANCES_95,
     math,
     ML_TAIL_DIRECT_QUANTILE_MODEL,
     ML_TAIL_LOCATION_SCALE_MODEL,
     ML_TAIL_MIN_OOF_TRAIN_ROWS,
+    ML_TAIL_POT_GPD_CAPPED_MLE_MODEL,
+    ML_TAIL_POT_GPD_EI_WEIGHTED_MODEL,
+    ML_TAIL_POT_GPD_EVI_SHRINK_MODEL,
+    ML_TAIL_POT_GPD_MODEL_NAMES,
+    ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
+    ML_TAIL_POT_GPD_STABILIZED_MODEL,
     ML_TAIL_REFIT_FREQUENCY,
     ML_TAIL_SCALE_FLOOR,
-    ML_TAIL_STANDARDIZED_POT_GPD_MODEL,
     normalize_tail_side,
     np,
     Path,
@@ -591,13 +601,21 @@ def _fit_ml_tail_location_scale_bundle(
     if model_name == ML_TAIL_LOCATION_SCALE_MODEL:
         standardized_var = float(np.quantile(z_oof, tail_level))
         exceedances = z_oof[z_oof > standardized_var]
-        if exceedances.size < DEFAULT_MIN_TRAIN_EXCEEDANCES:
+        min_es_exceedances = min(
+            LOCATION_SCALE_MIN_ES_EXCEEDANCES_95,
+            DEFAULT_MIN_TRAIN_EXCEEDANCES,
+        )
+        if exceedances.size < min_es_exceedances:
             raise PipelineRunError(
                 f"unavailable_oof_standardized_es_insufficient_exceedances: {exceedances.size}"
             )
         standardized_es = float(max(standardized_var, np.mean(exceedances)))
         es_companion_type = "oof_filtered_historical_standardized_es"
-    elif model_name == ML_TAIL_STANDARDIZED_POT_GPD_MODEL:
+        evt_tail = _location_scale_empirical_evt_metadata(
+            exceedance_count=int(exceedances.size),
+            min_exceedances=min_es_exceedances,
+        )
+    elif model_name in ML_TAIL_POT_GPD_MODEL_NAMES:
         if tail_level <= EVT_THRESHOLD_QUANTILE:
             raise PipelineRunError("unavailable_evt_tail_not_above_threshold")
         try:
@@ -605,6 +623,11 @@ def _fit_ml_tail_location_scale_bundle(
                 standardized_losses=z_oof,
                 tail_level=tail_level,
                 require_finite_gpd_es=True,
+                min_standardized_losses=min(EVT_MIN_STANDARDIZED_LOSSES_95, DEFAULT_MIN_TRAIN_ROWS),
+                min_exceedances=min(EVT_MIN_EXCEEDANCES_95, DEFAULT_MIN_TRAIN_EXCEEDANCES),
+                evt_variant=_evt_variant_for_ml_tail_model(model_name),
+                shape_cap=EVT_SHAPE_CAP_BASELINE,
+                shape_shrinkage_k=EVT_SHAPE_SHRINKAGE_K,
             )
         except PipelineRunError as exc:
             message = str(exc)
@@ -679,4 +702,36 @@ def _fit_ml_tail_location_scale_bundle(
         "scale_dropped_features_json": scale_gate["dropped_features_json"],
         "training_missingness_json": gate["training_missingness_json"],
         "training_variance_json": gate["training_variance_json"],
+    }
+
+
+def _evt_variant_for_ml_tail_model(model_name: str) -> str:
+    if model_name == ML_TAIL_POT_GPD_PLAIN_MLE_MODEL:
+        return "plain_mle"
+    if model_name == ML_TAIL_POT_GPD_CAPPED_MLE_MODEL:
+        return "capped_mle"
+    if model_name == ML_TAIL_POT_GPD_EVI_SHRINK_MODEL:
+        return "evi_shrink"
+    if model_name == ML_TAIL_POT_GPD_EI_WEIGHTED_MODEL:
+        return "ei_weighted"
+    if model_name == ML_TAIL_POT_GPD_STABILIZED_MODEL:
+        return "stabilized"
+    raise PipelineRunError(f"Unknown ML tail POT-GPD model variant: {model_name}")
+
+
+def _location_scale_empirical_evt_metadata(
+    *,
+    exceedance_count: int,
+    min_exceedances: int,
+) -> dict[str, object]:
+    return {
+        "evt_variant": "empirical_standardized_tail",
+        "evt_shape_method": "not_applicable_empirical_standardized_tail",
+        "evt_cap_policy": "not_applicable",
+        "evt_cap_hit": False,
+        "evt_evi_status": "not_used",
+        "evt_ei_status": "not_used",
+        "evt_exceedance_count": exceedance_count,
+        "evt_min_exceedances": min_exceedances,
+        "tail_method": "oof_filtered_historical_standardized_es",
     }

@@ -7,6 +7,7 @@ from n225_open_gap_tail.config.runtime import (
     date,
     datetime,
     LeakageCheckResult as LeakageCheckResult,
+    Mapping,
     PANEL_SIGNATURE_COLUMNS,
     PANEL_SIGNATURE_HASH_SEED,
     Path,
@@ -17,6 +18,7 @@ from n225_open_gap_tail.config.runtime import (
 )
 from n225_open_gap_tail.data_lake.artifacts import (
     _gold_artifact_path,
+    _gold_leakage_dir,
     _read_manifest,
     _update_manifest,
     _write_json,
@@ -52,22 +54,27 @@ def write_leakage_check(*, run_dir: Path) -> LeakageCheckResult:
     _write_json(summary_path, summary)
     manifest = _read_manifest(run_dir)
     gold_root_raw = manifest.get("gold_root")
+    gold_summary_path = None
     if isinstance(gold_root_raw, str):
-        gold_summary_path = (
-            Path(gold_root_raw)
-            / "leakage_summary"
-            / "schema_version=1"
-            / f"run_id={run_dir.name}"
-            / "summary.json"
-        )
+        gold_summary_path = _gold_leakage_dir(Path(gold_root_raw), run_dir.name) / "summary.json"
         _write_json(gold_summary_path, summary)
+        gold_artifacts_raw = manifest.get("gold_artifacts")
+        gold_artifacts = dict(gold_artifacts_raw) if isinstance(gold_artifacts_raw, Mapping) else {}
+        gold_artifacts["leakage_summary"] = str(gold_summary_path)
+    else:
+        gold_artifacts = None
+    manifest_updates: dict[str, object] = {
+        "leakage_check_rows": len(rows),
+        "leakage_check_failures": failures,
+        "leakage_check_warnings": warnings,
+    }
+    if gold_summary_path is not None:
+        manifest_updates["gold_leakage_dir"] = str(gold_summary_path.parent)
+    if gold_artifacts is not None:
+        manifest_updates["gold_artifacts"] = gold_artifacts
     _update_manifest(
         run_dir,
-        {
-            "leakage_check_rows": len(rows),
-            "leakage_check_failures": failures,
-            "leakage_check_warnings": warnings,
-        },
+        manifest_updates,
     )
     return LeakageCheckResult(
         run_id=run_dir.name,

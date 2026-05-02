@@ -39,7 +39,7 @@ def evidence_map_mermaid() -> str:
             '  B --> C["Gold panel and timing map"]',
             '  C --> D["Leakage and sample gates"]',
             '  D --> E["Benchmark floor and advanced benchmarks"]',
-            '  D --> F["ML-tail information ladder"]',
+            '  D --> F["ML-tail nested information sets"]',
             '  E --> G["Metrics, DM/MCS, Murphy diagnostics"]',
             "  F --> G",
             '  F --> H["CPA conditional loss-difference diagnostics"]',
@@ -155,7 +155,7 @@ def _figure_key_readings(family: str) -> list[str]:
             "- The plot is a scoring-family diagnostic, not a pairwise ranking statement.",
         ],
         "ml_tail_murphy": [
-            "- Key readings: curves report the ML-tail headline information ladder on a common grid.",
+            "- Key readings: curves report the ML-tail nested information sets on a common grid.",
             "- Interpret curve separation together with the headline coverage warning and unconditional inference gates.",
         ],
         "dst": [

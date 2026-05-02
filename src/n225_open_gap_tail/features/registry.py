@@ -19,6 +19,7 @@ def _feature_dictionary_includes(field: str) -> bool:
         return False
     return (
         field.startswith("n225_")
+        or field.startswith("option_")
         or field.endswith("_return")
         or field.endswith("_range")
         or field.endswith("_diff")
@@ -39,8 +40,12 @@ def _feature_dictionary_includes(field: str) -> bool:
 
 
 def _feature_source_family(field: str) -> str:
+    if field.startswith("n225_option_"):
+        return "jquants_nikkei_options"
     if field.startswith("n225_"):
         return "japan_history"
+    if field.startswith("option_"):
+        return "options_risk"
     if field.startswith("fx_usdjpy_"):
         return "fx_core"
     if field.startswith("fred_"):
@@ -64,8 +69,12 @@ def _feature_source_family(field: str) -> str:
 
 
 def _feature_source_block(field: str) -> str:
+    if field.startswith("n225_option_"):
+        return "japan_only"
     if field.startswith("n225_"):
         return "japan_only"
+    if field.startswith("option_"):
+        return "options_risk"
     if field.startswith("fx_usdjpy_"):
         return "fx_core"
     if field.startswith("fred_"):

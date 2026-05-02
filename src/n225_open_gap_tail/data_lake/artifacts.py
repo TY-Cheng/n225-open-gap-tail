@@ -2,6 +2,8 @@
 # ruff: noqa: F401,I001,UP035
 from __future__ import annotations
 
+import hashlib
+
 from n225_open_gap_tail.config.runtime import (
     Any,
     atomic_write_parquet,
@@ -20,6 +22,75 @@ from n225_open_gap_tail.config.runtime import (
 def _artifact_safe_name(value: object) -> str:
     text = str(value).strip().lower()
     return "".join(ch if ch.isalnum() else "_" for ch in text).strip("_") or "value"
+
+
+_SHARD_ALIASES: dict[str, dict[str, str]] = {
+    "model": {
+        "historical_quantile": "hist_q",
+        "rolling_quantile": "roll_q",
+        "ewma": "ewma",
+        "garch_student_t": "garch_t",
+        "gjr_garch_student_t": "gjr_t",
+        "gjr_garch_evt": "gjr_evt",
+        "caviar_sav": "caviar_sav",
+        "caviar_as": "caviar_as",
+        "caviar_asymmetric_slope": "caviar_asym",
+        "care_sav": "care_sav",
+        "care_as": "care_as",
+        "care_expectile_sav": "care_sav",
+        "care_expectile_asymmetric_slope": "care_asym",
+        "gas_t_location_scale": "gas_t_ls",
+        "gas_t_pot_gpd": "gas_t_pot",
+        "ald_taylor_var_es": "ald_taylor",
+        "ald_taylor_var_es_asymmetric_slope": "ald_asym",
+        "ald_taylor_var_es_sav": "ald_sav",
+        "direct_fz_var_es": "direct_fz",
+        "direct_fz_loss_sav": "dfz_sav",
+        "direct_fz_loss_asymmetric_slope": "dfz_asym",
+        "lightgbm_direct_quantile": "lgbm_q",
+        "lightgbm_location_scale": "lgbm_ls",
+        "lightgbm_location_scale_empirical": "lgbm_ls_emp",
+        "lightgbm_standardized_loss_pot_gpd": "lgbm_pot",
+        "lightgbm_standardized_loss_pot_gpd_plain_mle": "lgbm_pot_plain",
+        "lightgbm_standardized_loss_pot_gpd_capped_mle": "lgbm_pot_cap",
+        "lightgbm_standardized_loss_pot_gpd_evi_shrink": "lgbm_pot_evi",
+        "lightgbm_standardized_loss_pot_gpd_ei_weighted": "lgbm_pot_ei",
+        "lightgbm_standardized_loss_pot_gpd_stabilized": "lgbm_pot_stab",
+    },
+    "target": {
+        "full_gap_settle_to_open": "sto",
+        "full_gap_close_to_open": "cto",
+        "residual_nightclose_to_day_open": "nco",
+        "residual_usclosemark_to_open": "uco",
+    },
+    "side": {
+        "left_tail": "L",
+        "right_tail": "R",
+    },
+    "info": {
+        "target_history_only": "hist",
+        "japan_only": "A",
+        "japan_only_plus_us_close_core": "B",
+        "japan_only_plus_us_close_core_plus_japan_proxy": "C",
+        "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy": "D",
+        "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy_plus_options_risk": "E",
+    },
+    "refit": {
+        "monthly": "m",
+        "monthly_parameter_refit_daily_filter": "m_state",
+    },
+}
+
+
+def _artifact_compact_name(kind: str, value: object) -> str:
+    safe = _artifact_safe_name(value)
+    alias = _SHARD_ALIASES.get(kind, {}).get(safe)
+    if alias:
+        return alias
+    if len(safe) <= 28:
+        return safe
+    digest = hashlib.blake2s(safe.encode("utf-8"), digest_size=5).hexdigest()
+    return f"{safe[:20]}_{digest}"
 
 
 def _read_manifest(run_dir: Path) -> dict[str, object]:
@@ -46,13 +117,29 @@ def _gold_artifact_path(run_dir: Path, key: str, fallback: Path) -> Path:
     return fallback
 
 
+def _gold_panel_dir(gold_root: Path, run_id: str) -> Path:
+    return gold_root / "tp" / "v1" / run_id
+
+
+def _gold_leakage_dir(gold_root: Path, run_id: str) -> Path:
+    return gold_root / "ls" / "v1" / run_id
+
+
+def _legacy_gold_panel_dir(gold_root: Path, run_id: str) -> Path:
+    return gold_root / "tailrisk_panel" / "schema_version=1" / f"run_id={run_id}"
+
+
+def _legacy_gold_leakage_dir(gold_root: Path, run_id: str) -> Path:
+    return gold_root / "leakage_summary" / "schema_version=1" / f"run_id={run_id}"
+
+
 def _write_forecast_shards(
     forecast_root: Path,
     forecasts: list[dict[str, object]],
     diagnostics: list[dict[str, object]],
     failures: list[dict[str, object]],
 ) -> None:
-    shard_root = forecast_root / "shards"
+    shard_root = forecast_root.parent / "s"
     keys = {
         (
             str(row["model_name"]),
@@ -82,7 +169,7 @@ def _write_forecast_shards(
             refit_frequency=refit_frequency or None,
         )
         _write_parquet(
-            shard_dir / "forecasts.parquet",
+            shard_dir / "f.pq",
             [
                 row
                 for row in forecasts
@@ -95,7 +182,7 @@ def _write_forecast_shards(
             ],
         )
         _write_parquet(
-            shard_dir / "fit_diagnostics.parquet",
+            shard_dir / "d.pq",
             [
                 row
                 for row in diagnostics
@@ -108,7 +195,7 @@ def _write_forecast_shards(
             ],
         )
         _write_parquet(
-            shard_dir / "failures.parquet",
+            shard_dir / "x.pq",
             [
                 row
                 for row in failures
@@ -133,6 +220,7 @@ def _write_forecast_shards(
                 "information_set": information_set,
                 "tail_level": tail_level,
                 "refit_frequency": refit_frequency or None,
+                "shard_path_schema": "compact_v1",
                 "shard_id": _forecast_shard_id(
                     model_name,
                     tail_level,
@@ -155,15 +243,15 @@ def _forecast_shard_id(
     refit_frequency: str | None = None,
 ) -> str:
     parts = [
-        f"model={_artifact_safe_name(model_name)}",
-        f"target={_artifact_safe_name(target_family)}",
-        f"side={_artifact_safe_name(tail_side)}",
-        f"info={_artifact_safe_name(information_set)}",
-        f"tail={tail_level:.3f}".replace(".", "_"),
+        _artifact_compact_name("model", model_name),
+        _artifact_compact_name("target", target_family),
+        _artifact_compact_name("side", tail_side),
+        _artifact_compact_name("info", information_set),
+        f"q{tail_level:.3f}".replace(".", ""),
     ]
     if refit_frequency:
-        parts.append(f"refit={_artifact_safe_name(refit_frequency)}")
-    return "/".join(parts)
+        parts.append(_artifact_compact_name("refit", refit_frequency))
+    return "__".join(parts)
 
 
 def _write_parquet(

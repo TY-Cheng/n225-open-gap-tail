@@ -214,10 +214,10 @@ def _murphy_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object
         (
             "ml_tail_murphy",
             run_dir / "metrics" / "ml_tail_murphy.parquet",
-            "ML-tail headline ladder Murphy diagnostics",
+            "ML-tail nested-information-set Murphy diagnostics",
             "information_set",
             "metrics/ml_tail_murphy.parquet",
-            "murphy_diagnostic_ml_tail_headline_ladder_common_grid",
+            "murphy_diagnostic_ml_tail_nested_information_sets_common_grid",
         ),
     ]
     for prefix, path, title, label_column, source, claim_scope in specs:
@@ -461,7 +461,7 @@ def _combined_severity_metrics(run_dir: Path) -> pl.DataFrame:
         frames.append(
             pl.read_parquet(ml_headline_path).with_columns(
                 pl.lit("ml_tail_headline").alias("suite"),
-                pl.lit("headline_information_ladder").alias("claim_scope"),
+                pl.lit("headline_nested_information_sets").alias("claim_scope"),
             )
         )
     ml_per_model_path = run_dir / "metrics" / "ml_tail_metrics_per_model.parquet"

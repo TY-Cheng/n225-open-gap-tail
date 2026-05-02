@@ -183,7 +183,7 @@ def _table_manifest_entry(table_file: str) -> dict[str, object]:
         "ml_tail_metrics_table.tex": (
             "ml_tail_metrics",
             ["metrics/ml_tail_metrics.parquet"],
-            "ml_tail_headline_ladder_table",
+            "ml_tail_nested_information_set_table",
             None,
         ),
         "ml_tail_left_tail_risk_table.tex": (
@@ -270,9 +270,9 @@ def _table_caption(name: str) -> str:
         ),
         "benchmark_left_tail_risk": "Benchmark downside-risk metric table.",
         "benchmark_right_tail_risk": "Benchmark upside-risk metric table.",
-        "ml_tail_metrics": "ML-tail headline information-set ladder table.",
-        "ml_tail_left_tail_risk": "ML-tail downside-risk headline ladder table.",
-        "ml_tail_right_tail_risk": "ML-tail upside-risk headline ladder table.",
+        "ml_tail_metrics": "ML-tail headline nested-information-set table.",
+        "ml_tail_left_tail_risk": "ML-tail downside-risk headline table.",
+        "ml_tail_right_tail_risk": "ML-tail upside-risk headline table.",
         "tailrisk_es_severity": "Conditional-on-exception severity diagnostic table.",
         "tailrisk_trigger_diagnostics": "Pre-open risk-trigger diagnostic table.",
         "tailrisk_claim_scope": "Claim-boundary reference table for manuscript review.",

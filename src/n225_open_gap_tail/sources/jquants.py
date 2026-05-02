@@ -139,6 +139,21 @@ class JQuantsV2Client:
             {"date": trading_date},
         )
 
+    def get_nikkei225_options_daily_bars(
+        self,
+        *,
+        trading_date: str,
+        category: str = "NK225E",
+        contract_flag: str = "1",
+    ) -> list[dict[str, Any]]:
+        """Fetch daily Nikkei 225 large-option bars for one exchange trading date."""
+        params = {"date": trading_date}
+        if category:
+            params["category"] = category
+        if contract_flag:
+            params["contract_flag"] = contract_flag
+        return self.get_paginated("/derivatives/bars/daily/options/225", params)
+
     def probe_endpoint(
         self,
         *,

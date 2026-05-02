@@ -446,8 +446,8 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
                         "format": "tex",
                         "source_artifacts": ["metrics/ml_tail_metrics.parquet"],
                         "tail_side": None,
-                        "caption": "ML-tail headline information-set ladder table.",
-                        "claim_scope": "ml_tail_headline_ladder_table",
+                        "caption": "ML-tail headline nested-information-set table.",
+                        "claim_scope": "ml_tail_nested_information_set_table",
                     }
                 ],
             }
@@ -520,6 +520,7 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     rendered = Path("docs/results_snapshot.md").read_text(encoding="utf-8")
     assert result.snapshot_id == run_id
     assert "Discussion Q&A" in rendered
+    _assert_discussion_qa_headings_in_order(rendered)
     assert "## Results And Discussion" in rendered
     assert "<!-- generated: results_discussion -->" in rendered
     _assert_results_discussion_subsections_in_order(rendered)
@@ -535,7 +536,7 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     assert "## Evidence Map" in rendered
     assert "## Paper-Facing Table And Figure Gallery" in rendered
     assert "### Table Manifest" in rendered
-    assert "ml_tail_headline_ladder_table" in rendered
+    assert "ml_tail_nested_information_set_table" in rendered
     assert "![dst_attenuation_left_tail]" in rendered
     assert "figures/tailrisk_test/dst_attenuation_left_tail.png" in rendered
     assert "older" in rendered
@@ -543,6 +544,27 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     assert "Coverage review:" in rendered
     assert "must not be read as forecast improvement" in rendered
     assert "on average across the unconditional evaluation sample" in rendered
+
+
+def _assert_discussion_qa_headings_in_order(rendered: str) -> None:
+    headings = [
+        "### What is the empirical question?",
+        "### Why is this an economically meaningful risk problem?",
+        "### What is forecast, and how is the target constructed?",
+        "### How are look-ahead bias controls handled?",
+        "### What information enters the forecasts?",
+        "### What models are compared?",
+        "### How do the LightGBM tail variants work?",
+        "### How are forecasts evaluated?",
+        "### How should the current benchmark-versus-ML pattern be read?",
+        "### What do left-tail and right-tail results imply?",
+        "### Which evidence can support manuscript claims?",
+        "### What are the main manuscript risks and feasible paper framing?",
+    ]
+    results_start = rendered.index("## Results And Discussion")
+    qa = rendered[:results_start]
+    positions = [qa.index(heading) for heading in headings]
+    assert positions == sorted(positions)
     assert "conditional loss-difference diagnostic" in rendered
     assert "The hedge-trigger diagnostic has not yet been performed for this run" in rendered
     assert "## Technical Infrastructure Note" in rendered
@@ -1049,7 +1071,7 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
                 {
                     "name": "ml_tail_metrics",
                     "source_artifacts": ["metrics/ml_tail_metrics.parquet"],
-                    "claim_scope": "ml_tail_headline_ladder_table",
+                    "claim_scope": "ml_tail_nested_information_set_table",
                     "tail_side": None,
                     "path": "latex/tables/ml_tail_metrics_table.tex",
                 }
@@ -1081,7 +1103,7 @@ def _assert_results_discussion_subsections_in_order(rendered: str) -> None:
     headings = [
         "### Data and timing audit",
         "### Benchmark floor and advanced benchmarks",
-        "### Left/right ML-tail headline ladder",
+        "### Left/right ML-tail nested information sets",
         "### Restricted model-family comparison",
         "### Coverage and inference gates",
         "### CPA as conditional loss-difference diagnostics",

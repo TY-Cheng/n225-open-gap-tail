@@ -21,6 +21,7 @@ class FeatureSetVersion(StrEnum):
     """Pre-registered paper feature-set versions."""
 
     CORE_FULL_HISTORY = "core_full_history"
+    OPTIONS_EVT_HEADLINE = "options_evt_headline"
     POST_2018_ENRICHED = "post_2018_enriched"
     ROBUSTNESS_CANDIDATE = "robustness_candidate"
 
@@ -75,6 +76,16 @@ MASSIVE_MINUTE_TICKERS: tuple[str, ...] = tuple(
         )
     )
 )
+MASSIVE_OPTIONS_CORE_UNDERLYINGS: tuple[str, ...] = ("SPY", "QQQ", "IWM")
+MASSIVE_OPTIONS_JAPAN_ETF_UNDERLYINGS: tuple[str, ...] = ("EWJ", "DXJ")
+MASSIVE_OPTIONS_ADR_PRIMARY_UNDERLYINGS: tuple[str, ...] = (
+    "TM",
+    "SONY",
+    "MUFG",
+    "SMFG",
+    "MFG",
+)
+MASSIVE_OPTIONS_ADR_DIAGNOSTIC_UNDERLYINGS: tuple[str, ...] = ("HMC", "NMR", "IX", "TAK")
 
 CORE_FRED_SERIES: tuple[str, ...] = (
     "VIXCLS",
@@ -90,7 +101,7 @@ ROBUSTNESS_FRED_SERIES: tuple[str, ...] = ("NFCI", "ANFCI", "STLFSI4")
 
 @dataclass(frozen=True)
 class FeatureSetConfig:
-    version: FeatureSetVersion = FeatureSetVersion.CORE_FULL_HISTORY
+    version: FeatureSetVersion = FeatureSetVersion.OPTIONS_EVT_HEADLINE
     massive_core: tuple[str, ...] = CORE_MASSIVE_TICKERS
     massive_optional: tuple[str, ...] = OPTIONAL_MASSIVE_TICKERS
     massive_japan_proxy: tuple[str, ...] = JAPAN_PROXY_MASSIVE_TICKERS
@@ -99,6 +110,14 @@ class FeatureSetConfig:
     massive_minute_us_core: tuple[str, ...] = MASSIVE_MINUTE_US_CORE_TICKERS
     massive_minute_japan_proxy: tuple[str, ...] = MASSIVE_MINUTE_JAPAN_PROXY_TICKERS
     massive_minute_asia_proxy: tuple[str, ...] = MASSIVE_MINUTE_ASIA_PROXY_TICKERS
+    massive_options_core_underlyings: tuple[str, ...] = MASSIVE_OPTIONS_CORE_UNDERLYINGS
+    massive_options_japan_etf_underlyings: tuple[str, ...] = MASSIVE_OPTIONS_JAPAN_ETF_UNDERLYINGS
+    massive_options_adr_primary_underlyings: tuple[str, ...] = (
+        MASSIVE_OPTIONS_ADR_PRIMARY_UNDERLYINGS
+    )
+    massive_options_adr_diagnostic_underlyings: tuple[str, ...] = (
+        MASSIVE_OPTIONS_ADR_DIAGNOSTIC_UNDERLYINGS
+    )
     fred_core: tuple[str, ...] = CORE_FRED_SERIES
     fred_fallback: tuple[str, ...] = FRED_FALLBACK_SERIES
     fred_credit_enriched: tuple[str, ...] = FRED_CREDIT_ENRICHED_SERIES
@@ -114,6 +133,7 @@ class FeatureSetConfig:
         "session_range_variance",
         "session_semivariance",
         "session_higher_moments",
+        "lagged_nikkei225_option_implied_state",
         "contract_calendar_controls",
         "roll_sq_flags",
         "holiday_early_close_dst_flags",
@@ -123,6 +143,9 @@ class FeatureSetConfig:
     ml_tail_model_c_information_set: str = "japan_only_plus_us_close_core_plus_japan_proxy"
     ml_tail_model_d_information_set: str = (
         "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy"
+    )
+    ml_tail_model_e_information_set: str = (
+        "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy_plus_options_risk"
     )
 
 
@@ -141,6 +164,14 @@ class FeatureEngineeringPolicy:
     massive_minute_late_window: int = 60
     massive_minute_moment_min_periods: int = 30
     massive_minute_volume_baseline_window: int = 20
+    options_dte_short_bucket: tuple[int, int] = (7, 30)
+    options_dte_medium_bucket: tuple[int, int] = (31, 90)
+    options_headline_feature_cap: int = 30
+    options_atm_policy: str = "delta_neutral_preferred_else_closest_to_spot_or_forward"
+    options_adr_aggregation_policy: str = "median_and_20pct_trimmed_mean_primary"
+    options_historical_source_policy: str = (
+        "disabled_until_historical_iv_greeks_oi_entitlement_verified"
+    )
     winsorization_policy: str = "none_raw_estimators_no_full_sample_winsorization"
 
 
@@ -158,7 +189,7 @@ class LeakagePolicy:
 
 @dataclass(frozen=True)
 class ModelPolicy:
-    tail_levels: tuple[float, ...] = (0.95, 0.975)
+    tail_levels: tuple[float, ...] = (0.95,)
     tail_sides: tuple[str, ...] = ("left_tail", "right_tail")
     primary_tail_side: str = "left_tail"
     tail_side_policy: str = "positive_loss_units_left_minus_gap_right_gap_shared_tail_levels"
@@ -174,6 +205,16 @@ class ModelPolicy:
     evt_threshold_grid: tuple[float, ...] = (0.90, 0.925, 0.95)
     evt_threshold_refresh: str = "monthly_locked"
     evt_threshold_smoothing: str = "rolling_median_optional"
+    evt_min_standardized_losses_95: int = 500
+    evt_min_exceedances_95: int = 35
+    location_scale_min_es_exceedances_95: int = 25
+    evt_shape_cap_baseline: tuple[float, float] = (-0.25, 0.75)
+    evt_shape_cap_conservative: tuple[float, float] = (-0.10, 0.50)
+    evt_shape_cap_loose: tuple[float, float] = (-0.50, 1.00)
+    evt_shape_shrinkage_k: float = 50.0
+    evt_evi_primary_estimator: str = "dedh_moment"
+    evt_ei_primary_estimator: str = "ferro_segers"
+    evt_ei_robustness_estimator: str = "k_gaps"
     joblib_backend: str = "loky"
     advanced_runtime_budget_single_threaded: str = "4_to_8_hours_full_suite_estimate"
     advanced_parallelism_unit: str = "model_name_x_tail_level_shards"

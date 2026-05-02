@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     massive_minute_tickers: str = ""
     massive_minute_ticker: str = "SPY"
     massive_probe_tickers: str = "I:VIX"
+    massive_options_historical_enabled: bool = False
+    massive_options_flat_files_enabled: bool = False
+    massive_options_contract_rest_enabled: bool = False
+    massive_options_underlyings: str = ""
     massive_regular_session_start_et: str = "09:30"
     massive_regular_session_end_et: str = "16:00"
 
@@ -77,6 +81,9 @@ class Settings(BaseSettings):
     jquants_equity_daily_enabled: bool = True
     jquants_derivatives_daily_enabled: bool = False
     jquants_derivatives_intraday_enabled: bool = False
+    jquants_nikkei225_options_enabled: bool = True
+    jquants_nikkei225_options_category: str = "NK225E"
+    jquants_nikkei225_options_contract_flag: str = "1"
     jquants_request_timeout_seconds: int = 30
 
     jpx_datacube_email: str = ""
@@ -113,6 +120,9 @@ class Settings(BaseSettings):
     def massive_minute_ticker_list(self) -> tuple[str, ...]:
         tickers = split_csv(self.massive_minute_tickers)
         return tickers if tickers else (self.massive_minute_ticker.strip() or "SPY",)
+
+    def massive_options_underlying_list(self) -> tuple[str, ...]:
+        return split_csv(self.massive_options_underlyings)
 
     def fred_series_list(self) -> tuple[str, ...]:
         return split_csv(self.fred_series)

@@ -36,6 +36,7 @@ from n225_open_gap_tail.config.runtime import (
     JAPAN_PROXY_MASSIVE_TICKERS_FOR_PIPELINE,
     JoinMissReason,
     JQUANTS_BRONZE_SCHEMA,
+    JQUANTS_OPTIONS_SILVER_SCHEMA,
     JQUANTS_SILVER_SCHEMA,
     MAIN_SAMPLE_START,
     MASSIVE_MINUTE_ASIA_PROXY_TICKERS_FOR_PIPELINE,
@@ -43,9 +44,13 @@ from n225_open_gap_tail.config.runtime import (
     MASSIVE_MINUTE_JAPAN_PROXY_TICKERS_FOR_PIPELINE,
     MASSIVE_MINUTE_TICKERS_FOR_PIPELINE,
     MASSIVE_MINUTE_US_CORE_TICKERS_FOR_PIPELINE,
+    MASSIVE_OPTIONS_ADR_DIAGNOSTIC_UNDERLYINGS_FOR_PIPELINE,
+    MASSIVE_OPTIONS_ADR_PRIMARY_UNDERLYINGS_FOR_PIPELINE,
+    MASSIVE_OPTIONS_CORE_UNDERLYINGS_FOR_PIPELINE,
+    MASSIVE_OPTIONS_JAPAN_ETF_UNDERLYINGS_FOR_PIPELINE,
+    MASSIVE_OPTIONS_UNDERLYINGS_FOR_PIPELINE,
     Mapping,
     MappingStatus,
-    ML_TAIL_HISTORY_FEATURES,
     OPTIONAL_MASSIVE_TICKERS_FOR_PIPELINE,
     PanelBuildResult as PanelBuildResult,
     PIPELINE_CONFIG,
@@ -66,7 +71,7 @@ from n225_open_gap_tail.data_lake.cache_ops import (
     _fetch_massive_predictors,
 )
 from n225_open_gap_tail.config.git import _git_commit, _git_dirty
-from n225_open_gap_tail.data_lake.artifacts import _write_json, _write_parquet
+from n225_open_gap_tail.data_lake.artifacts import _gold_panel_dir, _write_json, _write_parquet
 from n225_open_gap_tail.features.asof import (
     _canonical_fx_asof,
     _canonical_fx_context,
@@ -80,10 +85,21 @@ from n225_open_gap_tail.features.asof import (
 )
 from n225_open_gap_tail.features.descriptions import _feature_description, _safe_name
 from n225_open_gap_tail.features.n225_history import add_n225_history_features
+from n225_open_gap_tail.features.n225_options import add_n225_option_features
 from n225_open_gap_tail.features.registry import (
     _feature_dictionary_includes,
     _feature_source_block,
     _feature_source_family,
+)
+from n225_open_gap_tail.panel.information_sets import (
+    ml_tail_feature_columns_for_information_set,
+    registered_ml_tail_information_sets,
+)
+from n225_open_gap_tail.panel.jquants_options import prepare_n225_option_features
+from n225_open_gap_tail.panel.options_audit import (
+    build_options_feature_coverage_records,
+    build_options_liquidity_audit_records,
+    build_options_source_audit_records,
 )
 from n225_open_gap_tail.features.jquants_spy import (
     _write_jquants_silver_cache,
@@ -126,9 +142,7 @@ def build_panel(
     run_dir = settings.reports_dir / "runs" / run_id
     panel_dir = run_dir / "panel"
     config_dir = run_dir / "config"
-    gold_run_dir = (
-        settings.gold_data_dir / "tailrisk_panel" / "schema_version=1" / f"run_id={run_id}"
-    )
+    gold_run_dir = _gold_panel_dir(settings.gold_data_dir, run_id)
     panel_dir.mkdir(parents=True, exist_ok=True)
     config_dir.mkdir(parents=True, exist_ok=True)
     gold_run_dir.mkdir(parents=True, exist_ok=True)
@@ -162,6 +176,14 @@ def build_panel(
     )
     _pipeline_log(f"J-Quants normalized NK225F rows: {len(normalized)}")
     _write_jquants_silver_cache(settings=settings, rows=normalized)
+    n225_option_features = prepare_n225_option_features(
+        settings=settings,
+        start=start,
+        end=end_date,
+        calendar_records=calendar_records,
+        run_start_utc=run_ts,
+        downloaded_at_utc=jquants_pull_ts,
+    )
     fields_coverage = build_fields_coverage_audit_records(
         normalized,
         policy_start=MAIN_SAMPLE_START,
@@ -238,6 +260,7 @@ def build_panel(
         alignment_records=alignment,
         massive_daily_records=massive_daily,
         spy_minute_records=spy_minutes,
+        n225_option_records=n225_option_features,
         fred_records=fred_rows,
         cboe_records=cboe_rows,
         calendar_records=calendar_records,
@@ -265,6 +288,9 @@ def build_panel(
     fields_coverage_path = panel_dir / "fields_coverage_audit.parquet"
     calendar_map_path = panel_dir / "calendar_map.parquet"
     vix_consistency_path = panel_dir / "vix_consistency_audit.parquet"
+    options_source_audit_path = panel_dir / "options_source_audit.parquet"
+    options_feature_coverage_path = panel_dir / "options_feature_coverage.parquet"
+    options_liquidity_audit_path = panel_dir / "options_liquidity_audit.parquet"
     schema_path = panel_dir / "jquants_schema_probe.json"
     vintage_path = run_dir / "data_vintage.json"
     manifest_path = run_dir / "manifest.json"
@@ -274,6 +300,9 @@ def build_panel(
     gold_coverage_path = gold_run_dir / "feature_coverage.parquet"
     gold_fields_coverage_path = gold_run_dir / "fields_coverage_audit.parquet"
     gold_calendar_map_path = gold_run_dir / "calendar_map.parquet"
+    gold_options_source_audit_path = gold_run_dir / "options_source_audit.parquet"
+    gold_options_feature_coverage_path = gold_run_dir / "options_feature_coverage.parquet"
+    gold_options_liquidity_audit_path = gold_run_dir / "options_liquidity_audit.parquet"
     gold_feature_dictionary_path = gold_run_dir / "feature_dictionary.json"
     research_config_path = config_dir / "research_config.json"
     config_hash = PIPELINE_CONFIG.config_hash()
@@ -303,11 +332,25 @@ def build_panel(
     _pipeline_log(f"wrote calendar map: {calendar_map_path}")
     _write_parquet(vix_consistency_path, vix_consistency)
     _pipeline_log(f"wrote VIX consistency audit: {vix_consistency_path}")
+    options_source_audit = build_options_source_audit_records(settings=settings, run_ts=run_ts)
+    options_feature_coverage = build_options_feature_coverage_records(settings=settings)
+    options_liquidity_audit = build_options_liquidity_audit_records(settings=settings)
+    _write_parquet(options_source_audit_path, options_source_audit)
+    _write_parquet(options_feature_coverage_path, options_feature_coverage)
+    _write_parquet(options_liquidity_audit_path, options_liquidity_audit)
+    _pipeline_log(
+        "wrote options audit artifacts: "
+        f"source={len(options_source_audit)} coverage={len(options_feature_coverage)} "
+        f"liquidity={len(options_liquidity_audit)}"
+    )
     _write_parquet(gold_target_audit_path, targets)
     _write_parquet(gold_panel_path, panel)
     _write_parquet(gold_coverage_path, feature_coverage)
     _write_parquet(gold_fields_coverage_path, fields_coverage)
     _write_parquet(gold_calendar_map_path, calendar_map, schema=CALENDAR_MAP_SCHEMA)
+    _write_parquet(gold_options_source_audit_path, options_source_audit)
+    _write_parquet(gold_options_feature_coverage_path, options_feature_coverage)
+    _write_parquet(gold_options_liquidity_audit_path, options_liquidity_audit)
     _write_json(gold_feature_dictionary_path, build_feature_dictionary(panel))
     _pipeline_log(f"wrote durable gold panel artifacts: {gold_run_dir}")
     _write_json(schema_path, schema_probe)
@@ -333,6 +376,10 @@ def build_panel(
                 "min_train_rows": DEFAULT_MIN_TRAIN_ROWS,
                 "min_train_exceedances_5pct": DEFAULT_MIN_TRAIN_EXCEEDANCES,
             },
+            "evt_tail_calibration_policy": {
+                "tail_levels": TAIL_LEVELS,
+                "stabilized_pot_gpd": PIPELINE_CONFIG.to_jsonable().get("model_policy", {}),
+            },
         },
     )
     _write_json(
@@ -353,12 +400,17 @@ def build_panel(
             "claim_level": CLAIMS_LEVEL,
             "suite": "benchmark_panel",
             "gold_root": str(settings.gold_data_dir),
+            "gold_path_schema": "compact_v1",
+            "gold_panel_dir": str(gold_run_dir),
             "gold_artifacts": {
                 "target_audit": str(gold_target_audit_path),
                 "modeling_panel": str(gold_panel_path),
                 "feature_coverage": str(gold_coverage_path),
                 "fields_coverage_audit": str(gold_fields_coverage_path),
                 "calendar_map": str(gold_calendar_map_path),
+                "options_source_audit": str(gold_options_source_audit_path),
+                "options_feature_coverage": str(gold_options_feature_coverage_path),
+                "options_liquidity_audit": str(gold_options_liquidity_audit_path),
                 "feature_dictionary": str(gold_feature_dictionary_path),
             },
             "window": [start, end_date],
@@ -385,6 +437,7 @@ def build_panel(
                 "chunk_hash_algo": CHUNK_HASH_ALGO,
                 "jquants_bronze_schema_hash": JQUANTS_BRONZE_SCHEMA.hash,
                 "jquants_silver_schema_hash": JQUANTS_SILVER_SCHEMA.hash,
+                "jquants_options_silver_schema_hash": JQUANTS_OPTIONS_SILVER_SCHEMA.hash,
                 "calendar_map_schema_hash": CALENDAR_MAP_SCHEMA.hash,
                 "massive_minute_feature_schema_hash": MASSIVE_MINUTE_FEATURE_SCHEMA.hash,
                 "spy_minute_feature_schema_hash": SPY_MINUTE_FEATURE_SCHEMA.hash,
@@ -392,6 +445,8 @@ def build_panel(
             },
             "feature_set_version": PIPELINE_CONFIG.feature_sets.version.value,
             "feature_engineering_policy": PIPELINE_CONFIG.to_jsonable().get("feature_engineering"),
+            "model_policy": PIPELINE_CONFIG.to_jsonable().get("model_policy"),
+            "tail_levels": TAIL_LEVELS,
             "massive_core_symbols": CORE_MASSIVE_TICKERS_FOR_PIPELINE,
             "massive_optional_symbols": OPTIONAL_MASSIVE_TICKERS_FOR_PIPELINE,
             "massive_japan_proxy_symbols": JAPAN_PROXY_MASSIVE_TICKERS_FOR_PIPELINE,
@@ -401,6 +456,24 @@ def build_panel(
             "massive_minute_asia_proxy_symbols": MASSIVE_MINUTE_ASIA_PROXY_TICKERS_FOR_PIPELINE,
             "massive_minute_symbols": settings.massive_minute_ticker_list(),
             "massive_minute_registered_symbols": MASSIVE_MINUTE_TICKERS_FOR_PIPELINE,
+            "massive_options_underlyings": MASSIVE_OPTIONS_UNDERLYINGS_FOR_PIPELINE,
+            "massive_options_core_underlyings": MASSIVE_OPTIONS_CORE_UNDERLYINGS_FOR_PIPELINE,
+            "massive_options_japan_etf_underlyings": (
+                MASSIVE_OPTIONS_JAPAN_ETF_UNDERLYINGS_FOR_PIPELINE
+            ),
+            "massive_options_adr_primary_underlyings": (
+                MASSIVE_OPTIONS_ADR_PRIMARY_UNDERLYINGS_FOR_PIPELINE
+            ),
+            "massive_options_adr_diagnostic_underlyings": (
+                MASSIVE_OPTIONS_ADR_DIAGNOSTIC_UNDERLYINGS_FOR_PIPELINE
+            ),
+            "massive_options_policy": {
+                "historical_enabled": settings.massive_options_historical_enabled,
+                "flat_files_enabled": settings.massive_options_flat_files_enabled,
+                "contract_rest_enabled": settings.massive_options_contract_rest_enabled,
+                "snapshot_historical_backfill_allowed": False,
+                "headline_promotion_status": "disabled_until_historical_source_audit_passes",
+            },
             "massive_fetched_symbols": FETCH_MASSIVE_TICKERS_FOR_PIPELINE,
             "massive_symbols": FETCH_MASSIVE_TICKERS_FOR_PIPELINE,
             "fred_core_series": CORE_FRED_SERIES_FOR_PIPELINE,
@@ -453,6 +526,9 @@ def build_panel(
                 "fields_coverage_audit": str(fields_coverage_path),
                 "calendar_map": str(calendar_map_path),
                 "vix_consistency_audit": str(vix_consistency_path),
+                "options_source_audit": str(options_source_audit_path),
+                "options_feature_coverage": str(options_feature_coverage_path),
+                "options_liquidity_audit": str(options_liquidity_audit_path),
                 "feature_dictionary": str(feature_dictionary_path),
                 "schema_probe": str(schema_path),
                 "data_vintage": str(vintage_path),
@@ -481,6 +557,7 @@ def build_modeling_panel_records(
     cboe_records: list[dict[str, object]] | None = None,
     calendar_records: list[dict[str, object]] | None = None,
     calendar_map_records: list[dict[str, object]] | None = None,
+    n225_option_records: list[dict[str, object]] | None = None,
 ) -> list[dict[str, object]]:
     alignment_by_target = {str(row["trading_date"]): row for row in alignment_records}
     calendar_map_by_target = {
@@ -522,7 +599,7 @@ def build_modeling_panel_records(
             "forecast_date": trading_date,
             "target_family": "full_gap_settle_to_open",
             "forecast_origin_name": "US_CASH_CLOSE",
-            "information_set": "core_full_history",
+            "information_set": FeatureSetVersion.OPTIONS_EVT_HEADLINE.value,
             "contract_code": target.get("contract_code"),
             "contract_month": target.get("contract_month"),
             "clean_sample": forecast_sample,
@@ -598,7 +675,8 @@ def build_modeling_panel_records(
         record.update(_canonical_fx_asof(fx_context, us_date=us_date, cutoff=cutoff))
         panel.append(record)
     panel.sort(key=lambda row: str(row["forecast_date"]))
-    return add_n225_history_features(panel)
+    panel = add_n225_history_features(panel)
+    return add_n225_option_features(panel, n225_option_records or [])
 
 
 def apply_combined_clean_start(
@@ -746,47 +824,6 @@ def build_effective_predictor_start(
         if family in grouped:
             grouped[family].append(first_valid)
     return {family: max(values) if values else None for family, values in grouped.items()}
-
-
-def registered_ml_tail_information_sets() -> tuple[str, ...]:
-    return (
-        PIPELINE_CONFIG.feature_sets.ml_tail_model_a_information_set,
-        PIPELINE_CONFIG.feature_sets.ml_tail_model_b_information_set,
-        PIPELINE_CONFIG.feature_sets.ml_tail_model_c_information_set,
-        PIPELINE_CONFIG.feature_sets.ml_tail_model_d_information_set,
-    )
-
-
-def ml_tail_feature_columns_for_information_set(
-    coverage_rows: list[dict[str, object]],
-    *,
-    information_set: str,
-) -> list[str]:
-    """Return the pre-registered ML tail candidate features for an information set."""
-    blocks: set[str] = set()
-    if information_set == PIPELINE_CONFIG.feature_sets.ml_tail_model_a_information_set:
-        blocks = set()
-    elif information_set == PIPELINE_CONFIG.feature_sets.ml_tail_model_b_information_set:
-        blocks = {"us_core", "us_late_session", "fred_core", "fx_core"}
-    elif information_set == PIPELINE_CONFIG.feature_sets.ml_tail_model_c_information_set:
-        blocks = {"us_core", "us_late_session", "fred_core", "fx_core", "japan_proxy"}
-    elif information_set == PIPELINE_CONFIG.feature_sets.ml_tail_model_d_information_set:
-        blocks = {
-            "us_core",
-            "us_late_session",
-            "fred_core",
-            "fx_core",
-            "japan_proxy",
-            "asia_proxy",
-        }
-    else:
-        raise PipelineRunError(f"Unknown ML tail information set: {information_set}")
-    block_features = [
-        str(row["feature"])
-        for row in coverage_rows
-        if str(row.get("source_block") or "") in blocks and row.get("feature")
-    ]
-    return list(dict.fromkeys((*ML_TAIL_HISTORY_FEATURES, *sorted(block_features))))
 
 
 def _max_date_strings(*values: str | None) -> str | None:

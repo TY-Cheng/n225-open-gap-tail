@@ -52,6 +52,9 @@ MASSIVE_BASE_URL="https://api.massive.com"
 MASSIVE_MINUTE_TICKERS="SPY,QQQ,DIA,IWM,EWJ,DXJ,EEM,FXI,EWY,EWT,EWH,TLT,HYG,GLD"
 MASSIVE_MINUTE_TICKER="SPY"
 MASSIVE_PROBE_TICKERS="I:VIX"
+MASSIVE_OPTIONS_HISTORICAL_ENABLED="false"
+MASSIVE_OPTIONS_FLAT_FILES_ENABLED="false"
+MASSIVE_OPTIONS_CONTRACT_REST_ENABLED="false"
 
 massive_core = SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,XLY,XLP,XLB,XLU,XLC,TLT,GLD,USO,EEM,FXI,SMH,HYG,LQD
 massive_optional = UUP
@@ -70,7 +73,8 @@ information sets do not use every fetched field: optional `UUP` and credit-sprea
 series are cached and audited, but they remain outside the registered headline
 ML information sets unless a future specification explicitly promotes them.
 
-Short-history and robustness-only candidates stay out of `core_full_history`:
+Short-history and robustness-only candidates stay out of the current registered
+full-history headline feature set:
 
 ```bash
 POST_2018_FRED_SERIES="SOFR,EFFR"
@@ -133,7 +137,7 @@ and converted to U.S. Eastern Time before session alignment.
 
 ### Active Massive Intraday Input
 
-The headline v2 feature set uses a curated set of U.S.-listed minute-bar ETF
+The current feature set uses a curated set of U.S.-listed minute-bar ETF
 proxies rather than adding more daily ETF controls. `SPY` remains backward
 compatible through the canonical `spy_late_*` / `spy_final_*` names. Additional
 tickers use lower-case ticker prefixes. The derived minute features include:
@@ -152,6 +156,52 @@ same U.S. close cutoff as the daily Massive predictors. The deterministic block
 map keeps U.S. core minute proxies in `us_late_session`, `EWJ/DXJ` minute
 features in `japan_proxy`, and `EEM/FXI/EWY/EWT/EWH` minute features in
 `asia_proxy`.
+
+### Registered Options Source Audit
+
+The project now registers an `options_risk` information layer, but it is
+audit-gated rather than automatically promoted to historical headline features.
+Massive live option snapshots are not used for historical backfill. Historical
+options predictors require a source audit proving that the available historical
+flat-file or contract-level source can provide timestamp-safe IV, Greeks, open
+interest, quotes, or sufficient fields to reconstruct them.
+
+The options audit artifacts are:
+
+- `options_source_audit.parquet`;
+- `options_feature_coverage.parquet`;
+- `options_liquidity_audit.parquet`.
+
+J-Quants Nikkei 225 large-option data are handled separately from the U.S.
+`options_risk` layer. The pipeline now fetches Nikkei 225 Options (`NK225E`)
+daily option-chain rows from J-Quants, consistent with the
+[J-Quants index-option field specification](https://jpx.gitbook.io/j-quants-en/api-reference/index_option)
+and [option product code list](https://jpx.gitbook.io/j-quants-en/api-reference/options/derivativeproductcategory),
+normalizes the compact V2 fields
+(`Strike`, `IV`, `OI`, `BaseVol`, `UnderPx`, etc.), and converts volatility
+percent values to fractions. These features enter the `japan_only` block only as
+lagged domestic option-implied state. Same target-date option rows are not used.
+The default aggregate scope is the registered `7-30` and `31-90` DTE window, so
+the main predictors are prior available ATM IV, ATM put-call IV skew, base
+volatility, OI-weighted IV, put/call OI and volume ratios, total OI/volume, valid
+contract count, and days to SQ.
+
+The candidate options universe is intentionally capped before any data-driven
+selection:
+
+| Block | Candidate underlyings | Status |
+| --- | --- | --- |
+| J-Quants N225 large options | `NK225E` | Active as lagged `japan_only` option-implied state after source/schema smoke; not same-date target information. |
+| Core U.S. options | `SPY`, `QQQ`, `IWM` | Disabled until historical entitlement and fields pass audit. |
+| Japan ETF options | `EWJ`, `DXJ` | Disabled until historical entitlement, liquidity, and timestamp safety pass audit. |
+| ADR aggregate options | `TM`, `SONY`, `MUFG`, `SMFG`, `MFG` | Disabled until historical entitlement and rolling liquidity gates pass audit; ADR aggregation uses median and 20% trimmed mean as primary summaries when enabled. |
+
+The registered DTE buckets are short `7-30` calendar days and medium `31-90`
+calendar days. ATM selection is delta-neutral when delta is available or
+computed; otherwise the method falls back to closest-to-spot or closest-to-forward
+and records the method. Headline options features are capped at 30 curated
+aggregate features. Raw per-contract and per-ADR fields remain audit or appendix
+outputs.
 
 ### Active FRED and Cboe Inputs
 
@@ -175,14 +225,18 @@ predictor used in the point-in-time U.S. close information set.
 
 ### Active ML Nested Information Sets
 
-The headline ML comparison uses four nested information sets:
+The registered ML comparison uses five nested information sets. The fifth layer
+is active only when options-source, coverage, liquidity, and timestamp audits
+pass; otherwise it remains a documented disabled layer rather than weakening the
+main run.
 
 | Information set | Active blocks |
 | --- | --- |
-| `japan_only` | Lagged loss and gap history, rolling loss moments, rolling 95% loss quantile, calendar month terms, DST regime, and absorption-regime timing. |
-| `japan_only_plus_us_close_core` | `japan_only` plus Massive U.S. core daily features, SPY late-session features, FRED core rates/VIX features, Cboe VIX features, and FRED H.10 USD/JPY. |
+| `japan_only` | Lagged loss and gap history, rolling loss moments, rolling 95% loss quantile, lagged N225 futures session/volume/OI features, lagged J-Quants N225 large-option implied-state aggregates, calendar month terms, DST regime, and absorption-regime timing. |
+| `japan_only_plus_us_close_core` | `japan_only` plus Massive U.S. core daily features, U.S. core minute features with canonical SPY fields, FRED core rates/VIX features, Cboe VIX features, and FRED H.10 USD/JPY. |
 | `japan_only_plus_us_close_core_plus_japan_proxy` | Previous set plus `EWJ` and `DXJ` returns and ranges. |
 | `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy` | Previous set plus `EWY`, `EWT`, and `EWH` returns and ranges. |
+| `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy_plus_options_risk` | Previous set plus audited options-risk features, disabled by default until historical options entitlement and timestamp-safe feature reconstruction pass. |
 
 The headline ML nested sets do not include `UUP`, FRED credit-spread enriched
 series, SOFR/EFFR, NFCI/ANFCI/STLFSI4, SKEW, VIX term-structure proxies, or
@@ -194,7 +248,7 @@ macro-event flags in the current clean run.
   candidate controls. They are not active feature artifacts in the current clean
   run.
 - SOFR and EFFR are post-2018 enriched FRED candidates and are not part of the
-  current `core_full_history` feature set.
+  current full-history headline feature set.
 - NFCI, ANFCI, and STLFSI4 are FRED robustness candidates and are not active in
   the current clean run.
 - Cboe SKEW, VIX9D, VIX3M, VIX6M, option-implied skew, volatility-surface
@@ -313,7 +367,7 @@ Layer boundaries:
   timestamps, row counts, schema version, schema hash, and content hash.
 - Silver stores canonical research rows. J-Quants silver filters `NK225F`, stores UTC-aware
   timestamps, flags zero or negative prices and OHLC violations, and does not impute.
-- Gold joins targets, calendar map, Massive predictors, SPY late-session features, FRED
+- Gold joins targets, calendar map, Massive predictors, minute late-session features, FRED
   predictors, roll/SQ flags, and audit columns by `ose_trading_date`.
 
 Rebuild semantics are layer-aware. Rebuilding silver or gold uses existing local cache and
@@ -358,7 +412,7 @@ remaining only a diagnostic.
 ML tail writes feature-unavailability diagnostics under `metrics/` for each tail-risk run:
 `ml_tail_feature_unavailability.parquet` aggregates missing active features by information set,
 and `ml_tail_feature_unavailability_dates.parquet` keeps the date-level trace needed to separate
-structural gaps such as SPY late-session volume from FRED release-lag handling.
+structural gaps such as late-session minute volume from FRED release-lag handling.
 
 ML tail also writes a result-matrix layer under `metrics/` for model-family audit:
 `ml_tail_result_matrix.parquet`, `ml_tail_result_matrix_sample_audit.parquet`,
@@ -448,11 +502,17 @@ The data lake is intentionally tiered to prevent feature fishing.
 ### Tier 1: Core Controls and Predictors
 
 - Massive U.S. ETF, sector, equity-index, dollar ETF proxy, Japan proxy, and Asia proxy predictors. Canonical USD/JPY is the FRED H.10 `DEXJPUS` series.
-- SPY minute-bar late-session features: last-30-minute return, last-hour return, late-session range, late-60-minute volume surge, and final-window reversal or momentum, all frozen at U.S. close plus the configured vendor-availability lag. The volume-surge baseline is recomputed across loaded cache partitions so monthly Hive chunks do not create artificial first-session missing values.
+- U.S.-listed minute-bar late-session features: canonical `spy_late_*` and
+  `spy_final_*` fields plus ticker-prefixed features for the curated minute
+  universe. Features include late returns, realized variance, up/down
+  semivariance, noisy small-sample skewness/kurtosis, range, volume surge,
+  volume z-score, volume percentile, and final-window momentum, all frozen at
+  U.S. close plus the configured vendor-availability lag. Volume normalization
+  is within ticker and uses prior rolling history only.
 - Massive core block additions: XLY, XLP, XLB, XLU, XLC, TLT, GLD, USO, EEM, FXI, SMH, HYG, and LQD after source and coverage audit.
 - Massive ML tail proxy blocks: Japan proxy (`EWJ`, `DXJ`) and Asia proxy (`EWY`, `EWT`, `EWH`) are cached now but interpreted separately from the core U.S. close block.
 - Cboe or FRED VIX close; VIX high, low, and range only when the source supports them.
-- FRED 2-year and 10-year Treasury yields, T10Y2Y yield-curve slope, and ICE BofA credit-spread proxies. Credit spreads are fetched and audited as an enriched block in the clean run but remain outside the headline ML nested information sets. SOFR/EFFR funding proxies are `post_2018_enriched`, not `core_full_history`.
+- FRED 2-year and 10-year Treasury yields, T10Y2Y yield-curve slope, and ICE BofA credit-spread proxies. Credit spreads are fetched and audited as an enriched block in the clean run but remain outside the headline ML nested information sets. SOFR/EFFR funding proxies are `post_2018_enriched`, not part of the current full-history headline feature set.
 - Planned event flags: FOMC, CPI, payrolls, BOJ policy events, and major Japan macro releases. These are not active feature artifacts in the current clean run.
 - Lagged Japanese futures variables: prior gap, lagged OSE day return, lagged OSE night return when available, volume/open-interest changes, roll/SQ flags, and holiday-adjacent flags.
 
@@ -461,6 +521,10 @@ The data lake is intentionally tiered to prevent feature fishing.
 - Cboe SKEW or a licensed SKEW proxy.
 - VIX term-structure proxies such as VIX9D, VIX3M, and VIX6M.
 - Massive index probes such as `I:VIX` and `I:SKEW` only if the plan supports them.
+- U.S.-listed historical options-risk features from `SPY`, `QQQ`, `IWM`,
+  `EWJ`, `DXJ`, and primary Japanese ADR aggregates only after source
+  entitlement, timestamp safety, and liquidity audits pass. J-Quants `NK225E`
+  daily options are already active only as lagged domestic `japan_only` state.
 
 Tier 1.5 variables are natural for a tail-risk paper but must not shorten the main sample or introduce unclear availability timestamps. If they do, they move to Tier 2 robustness.
 
@@ -504,15 +568,25 @@ Core invariants:
 
 ## Tail-Risk Labels and EVT Data Requirements
 
-The main paper focuses on downside tail risk:
+The main paper evaluates both downside and upside opening-gap risk under a
+positive-loss convention:
 
-- define losses as `L_t = -gap_t`;
-- define downside exceedances using training-window thresholds only;
+- define `left_tail` losses as `L_t = -gap_t`;
+- define `right_tail` losses as `L_t = gap_t`;
+- define exceedances using training-window thresholds only;
 - store threshold, exceedance indicator, exceedance severity, VaR forecast, and ES forecast;
-- report training-window exceedance counts before reporting POT-GPD VaR/ES forecasts;
-- require minimum exceedance diagnostics, with 30 training-window exceedances as the default rolling-window gate for EVT-based ES reporting.
+- report training-window standardized-loss counts and exceedance counts before reporting POT-GPD VaR/ES forecasts.
 
-EVT diagnostics should include mean-excess behavior, Hill or tail-index estimates where appropriate, threshold sensitivity, and shape/scale stability.
+The headline tail level is `0.95`. Plain standardized-loss POT-GPD remains the
+standard filtered-EVT comparator. The stabilized POT-GPD variant is a
+finite-sample regularized filtered-EVT variant, not plain maximum-likelihood
+POT-GPD. Its diagnostics must record shape method, EVI status, EI status, cap
+policy, cap hits, conditional scale-refit status, and whether ES is finite.
+
+EVT diagnostics should include EVI paths, Ferro-Segers extremal-index
+diagnostics, K-gaps robustness diagnostics, cap sensitivity, threshold behavior,
+and shape/scale stability. EI weighting is used only as a stabilization
+heuristic for effective exceedance counts; it is not a new GPD likelihood.
 
 Upper-tail labels are part of the two-sided futures risk surface. They use the
 same positive-loss convention as lower-tail labels, with `right_tail` defined as
@@ -536,6 +610,14 @@ Processed model tables should carry the fields needed to audit the LightGBM-stan
 | `evt_threshold_u` | Training-window POT threshold used for the row's forecast. |
 | `exceedance_indicator_t` | Indicator that `standardized_loss_t` exceeds the threshold. |
 | `exceedance_severity_t` | Excess over threshold for EVT severity calibration. |
+| `evt_variant` | POT-GPD variant label: plain MLE, capped MLE, EVI shrink, EI weighted, or stabilized. |
+| `evt_shape_method` | Shape-estimation method recorded for the row's EVT calibration. |
+| `evt_evi_status` | EVI-anchor status, including unavailable or diagnostic-disagreement cases. |
+| `evt_ei_status` | Extremal-index status, including unavailable or no-discount fallbacks. |
+| `evt_cap_policy` | Shape-cap policy used for the variant. |
+| `evt_cap_hit` | Indicator that the fitted or stabilized shape hit a cap. |
+| `evt_scale_refit_status` | Status for conditional GPD scale refit after shape stabilization. |
+| `evt_es_finite` | Whether the row supplies a finite ES under the fitted or stabilized shape. |
 | `tail_probability_alpha` | VaR/ES tail probability for the forecast row. |
 | `var_forecast` | VaR forecast transformed back to target scale. |
 | `es_forecast` | ES forecast transformed back to target scale. |

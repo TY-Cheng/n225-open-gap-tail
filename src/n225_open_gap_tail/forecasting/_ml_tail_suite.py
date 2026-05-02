@@ -7,6 +7,7 @@ from n225_open_gap_tail.config.runtime import (
     CLAIMS_LEVEL,
     delayed,
     EvaluationResult as EvaluationResult,
+    json,
     ML_TAIL_ANCHOR_INFORMATION_SET,
     ML_TAIL_DIRECT_QUANTILE_MODEL,
     ML_TAIL_MODEL_NAMES,
@@ -148,6 +149,12 @@ def evaluate_ml_tail_suite(
     feature_unavailability = build_ml_tail_feature_unavailability_records(forecasts)
     feature_unavailability_dates = build_ml_tail_feature_unavailability_date_records(forecasts)
     result_matrix_artifacts = build_ml_tail_result_matrix_artifacts(forecasts)
+    evt_shape_stability = _evt_shape_stability_records(diagnostics)
+    extremal_index_diagnostics = _extremal_index_records(diagnostics)
+    evt_cap_sensitivity = _evt_cap_sensitivity_records(diagnostics)
+    evt_ablation_metrics = _evt_ablation_metric_records(
+        cast(list[dict[str, object]], artifacts["per_model_metrics"])
+    )
     cpa_inference = build_ml_tail_cpa_inference_records(forecasts)
     benchmark_forecast_path = forecast_root / "benchmark_forecasts.parquet"
     benchmark_forecasts = (
@@ -214,6 +221,13 @@ def evaluate_ml_tail_suite(
         metrics_root / "ml_tail_result_matrix_mcs.parquet",
         cast(list[dict[str, object]], result_matrix_artifacts["mcs"]),
     )
+    _write_parquet(metrics_root / "evt_shape_stability.parquet", evt_shape_stability)
+    _write_parquet(
+        metrics_root / "extremal_index_diagnostics.parquet",
+        extremal_index_diagnostics,
+    )
+    _write_parquet(metrics_root / "evt_cap_sensitivity.parquet", evt_cap_sensitivity)
+    _write_parquet(metrics_root / "evt_ablation_metrics.parquet", evt_ablation_metrics)
     _write_parquet(metrics_root / "ml_tail_cpa_inference.parquet", cpa_inference)
     _write_parquet(
         metrics_root / "cross_model_cpa_inference.parquet",
@@ -244,6 +258,10 @@ def evaluate_ml_tail_suite(
             "result_matrix_rows": len(
                 cast(list[dict[str, object]], result_matrix_artifacts["matrix"])
             ),
+            "evt_shape_stability_rows": len(evt_shape_stability),
+            "extremal_index_diagnostic_rows": len(extremal_index_diagnostics),
+            "evt_cap_sensitivity_rows": len(evt_cap_sensitivity),
+            "evt_ablation_metric_rows": len(evt_ablation_metrics),
             "cpa_inference_rows": len(cpa_inference),
             "cross_model_cpa_inference_rows": len(cross_model_cpa_inference),
             "cross_model_cpa_status": "completed"
@@ -269,6 +287,9 @@ def evaluate_ml_tail_suite(
             "ml_tail_tail_sides": list(active_tail_sides),
             "ml_tail_cpa_inference_rows": len(cpa_inference),
             "cross_model_cpa_inference_rows": len(cross_model_cpa_inference),
+            "evt_shape_stability_rows": len(evt_shape_stability),
+            "extremal_index_diagnostic_rows": len(extremal_index_diagnostics),
+            "evt_cap_sensitivity_rows": len(evt_cap_sensitivity),
         },
     )
     _evaluation_log(
@@ -290,5 +311,118 @@ def _registered_information_set_payload() -> dict[str, object]:
         "model_b": PIPELINE_CONFIG.feature_sets.ml_tail_model_b_information_set,
         "model_c": PIPELINE_CONFIG.feature_sets.ml_tail_model_c_information_set,
         "model_d": PIPELINE_CONFIG.feature_sets.ml_tail_model_d_information_set,
+        "model_e": PIPELINE_CONFIG.feature_sets.ml_tail_model_e_information_set,
         "japan_only_features": PIPELINE_CONFIG.feature_sets.japan_only_features,
     }
+
+
+def _evt_shape_stability_records(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for row in rows:
+        if row.get("evt_variant") in (None, "empirical_standardized_tail"):
+            continue
+        base = _evt_base_record(row)
+        records.append(
+            {
+                **base,
+                "evt_shape": row.get("evt_shape"),
+                "evt_scale": row.get("evt_scale"),
+                "evt_shape_mle": row.get("evt_shape_mle"),
+                "evt_scale_mle": row.get("evt_scale_mle"),
+                "evt_xi_evi_anchor": row.get("evt_xi_evi_anchor"),
+                "evt_cap_policy": row.get("evt_cap_policy"),
+                "evt_cap_hit": row.get("evt_cap_hit"),
+                "evt_shape_method": row.get("evt_shape_method"),
+                "evt_scale_refit_status": row.get("evt_scale_refit_status"),
+                "evt_es_finite": row.get("evt_es_finite"),
+                "evt_cap_sensitivity_json": row.get("evt_cap_sensitivity_json"),
+            }
+        )
+    return records
+
+
+def _extremal_index_records(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for row in rows:
+        if row.get("evt_variant") in (None, "empirical_standardized_tail"):
+            continue
+        diagnostics = _json_dict(row.get("evt_ei_diagnostics_json"))
+        records.append(
+            {
+                **_evt_base_record(row),
+                "evt_ei_status": row.get("evt_ei_status"),
+                "evt_theta_hat": row.get("evt_theta_hat"),
+                "evt_effective_exceedance_count": row.get("evt_effective_exceedance_count"),
+                "evt_exceedance_count": row.get("evt_exceedance_count"),
+                "ei_primary_estimator": diagnostics.get("primary_estimator"),
+                "k_gaps_theta_hat": diagnostics.get("k_gaps_theta_hat"),
+                "ei_diagnostics_json": row.get("evt_ei_diagnostics_json"),
+            }
+        )
+    return records
+
+
+def _evt_cap_sensitivity_records(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for row in rows:
+        if row.get("evt_variant") in (None, "empirical_standardized_tail"):
+            continue
+        sensitivity = _json_list(row.get("evt_cap_sensitivity_json"))
+        for item in sensitivity:
+            if not isinstance(item, dict):
+                continue
+            records.append(
+                {
+                    **_evt_base_record(row),
+                    "cap": json.dumps(item.get("cap"), separators=(",", ":")),
+                    "shape": item.get("shape"),
+                    "cap_hit": item.get("cap_hit"),
+                    "es_available": item.get("es_available"),
+                }
+            )
+    return records
+
+
+def _evt_ablation_metric_records(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [
+        {**row, "artifact_scope": "evt_ablation_metric"}
+        for row in rows
+        if str(row.get("model_name") or "").startswith("lightgbm_standardized_loss_pot_gpd")
+        or str(row.get("model_name") or "") == "lightgbm_location_scale_empirical"
+    ]
+
+
+def _evt_base_record(row: dict[str, object]) -> dict[str, object]:
+    return {
+        "forecast_date": row.get("forecast_date"),
+        "target_family": row.get("target_family"),
+        "tail_side": row.get("tail_side"),
+        "tail_level": row.get("tail_level"),
+        "model_name": row.get("model_name"),
+        "information_set": row.get("information_set"),
+        "refit_frequency": row.get("refit_frequency"),
+        "refit_month": row.get("refit_month"),
+        "train_n": row.get("train_n"),
+        "oof_standardized_loss_count": row.get("oof_standardized_loss_count"),
+        "evt_variant": row.get("evt_variant"),
+    }
+
+
+def _json_dict(value: object) -> dict[str, object]:
+    if not isinstance(value, str) or not value:
+        return {}
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _json_list(value: object) -> list[object]:
+    if not isinstance(value, str) or not value:
+        return []
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    return payload if isinstance(payload, list) else []

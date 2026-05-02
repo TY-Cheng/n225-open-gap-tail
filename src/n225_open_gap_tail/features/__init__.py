@@ -6,5 +6,6 @@ from .asof import *
 from .descriptions import *
 from .jquants_spy import *
 from .n225_history import *
+from .n225_options import *
 
 __all__ = [name for name in globals() if not name.startswith("_")]

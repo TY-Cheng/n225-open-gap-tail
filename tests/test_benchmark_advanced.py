@@ -518,18 +518,7 @@ def test_benchmark_advanced_wiring_is_nonblocking_and_sharded(
     assert set(advanced["refit_frequency"].to_list()) == {
         paper_module.BENCHMARK_ADVANCED_REFIT_FREQUENCY
     }
-    assert (
-        run_dir
-        / "forecasts"
-        / "shards"
-        / "model=caviar_sav"
-        / "target=full_gap_settle_to_open"
-        / "side=left_tail"
-        / "info=target_history_only"
-        / "tail=0_950"
-        / "refit=monthly_parameter_refit_daily_filter"
-        / "forecasts.parquet"
-    ).exists()
+    assert (run_dir / "s" / "caviar_sav__sto__L__hist__q0950__m_state" / "f.pq").exists()
     assert (run_dir / "metrics" / "benchmark_floor_metrics.parquet").exists()
     status = json.loads((run_dir / "metrics" / "benchmark_status.json").read_text())
     assert status["benchmark_floor_status"] == "completed"

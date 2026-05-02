@@ -35,6 +35,8 @@ from n225_open_gap_tail.data_lake.io import (
     FRED_CACHE_SCHEMA,
     FRED_CACHE_TTL_DAYS,
     JQUANTS_BRONZE_SCHEMA,
+    JQUANTS_OPTIONS_BRONZE_SCHEMA,
+    JQUANTS_OPTIONS_SILVER_SCHEMA,
     JQUANTS_SILVER_SCHEMA,
     MAIN_SAMPLE_START,
     MASSIVE_MINUTE_FEATURE_SCHEMA,
@@ -68,6 +70,7 @@ from n225_open_gap_tail.sources.jquants_futures import (
     build_jquants_schema_probe,
     normalize_jquants_futures_rows,
 )
+from n225_open_gap_tail.sources.jquants_options import normalize_jquants_nikkei225_option_rows
 
 PIPELINE_CONFIG = default_research_config()
 CLAIMS_LEVEL = ClaimLevel.RESEARCH_CANDIDATE.value
@@ -86,6 +89,28 @@ MASSIVE_MINUTE_JAPAN_PROXY_TICKERS_FOR_PIPELINE = (
 )
 MASSIVE_MINUTE_ASIA_PROXY_TICKERS_FOR_PIPELINE = (
     PIPELINE_CONFIG.feature_sets.massive_minute_asia_proxy
+)
+MASSIVE_OPTIONS_CORE_UNDERLYINGS_FOR_PIPELINE = (
+    PIPELINE_CONFIG.feature_sets.massive_options_core_underlyings
+)
+MASSIVE_OPTIONS_JAPAN_ETF_UNDERLYINGS_FOR_PIPELINE = (
+    PIPELINE_CONFIG.feature_sets.massive_options_japan_etf_underlyings
+)
+MASSIVE_OPTIONS_ADR_PRIMARY_UNDERLYINGS_FOR_PIPELINE = (
+    PIPELINE_CONFIG.feature_sets.massive_options_adr_primary_underlyings
+)
+MASSIVE_OPTIONS_ADR_DIAGNOSTIC_UNDERLYINGS_FOR_PIPELINE = (
+    PIPELINE_CONFIG.feature_sets.massive_options_adr_diagnostic_underlyings
+)
+MASSIVE_OPTIONS_UNDERLYINGS_FOR_PIPELINE = tuple(
+    dict.fromkeys(
+        (
+            *MASSIVE_OPTIONS_CORE_UNDERLYINGS_FOR_PIPELINE,
+            *MASSIVE_OPTIONS_JAPAN_ETF_UNDERLYINGS_FOR_PIPELINE,
+            *MASSIVE_OPTIONS_ADR_PRIMARY_UNDERLYINGS_FOR_PIPELINE,
+            *MASSIVE_OPTIONS_ADR_DIAGNOSTIC_UNDERLYINGS_FOR_PIPELINE,
+        )
+    )
 )
 MASSIVE_MINUTE_TICKERS_FOR_PIPELINE = tuple(
     dict.fromkeys(
@@ -134,6 +159,15 @@ NEAR_ZERO_VARIANCE_THRESHOLD = PIPELINE_CONFIG.model_policy.near_zero_variance_t
 SHARD_SIZE_FORECAST_DATES = PIPELINE_CONFIG.model_policy.shard_size_forecast_dates
 EVT_THRESHOLD_QUANTILE = PIPELINE_CONFIG.model_policy.evt_threshold_quantile
 EVT_THRESHOLD_GRID = PIPELINE_CONFIG.model_policy.evt_threshold_grid
+EVT_MIN_STANDARDIZED_LOSSES_95 = PIPELINE_CONFIG.model_policy.evt_min_standardized_losses_95
+EVT_MIN_EXCEEDANCES_95 = PIPELINE_CONFIG.model_policy.evt_min_exceedances_95
+LOCATION_SCALE_MIN_ES_EXCEEDANCES_95 = (
+    PIPELINE_CONFIG.model_policy.location_scale_min_es_exceedances_95
+)
+EVT_SHAPE_CAP_BASELINE = PIPELINE_CONFIG.model_policy.evt_shape_cap_baseline
+EVT_SHAPE_CAP_CONSERVATIVE = PIPELINE_CONFIG.model_policy.evt_shape_cap_conservative
+EVT_SHAPE_CAP_LOOSE = PIPELINE_CONFIG.model_policy.evt_shape_cap_loose
+EVT_SHAPE_SHRINKAGE_K = PIPELINE_CONFIG.model_policy.evt_shape_shrinkage_k
 TRANSIENT_VENDOR_ERRORS = {
     VendorErrorClass.RATE_LIMITED.value,
     VendorErrorClass.VENDOR_5XX.value,
@@ -148,12 +182,37 @@ FRED_H10_RELEASE_AGE_CAP_DAYS = (
     PIPELINE_CONFIG.leakage_policy.fred_h10_release_age_cap_calendar_days
 )
 ML_TAIL_DIRECT_QUANTILE_MODEL = "lightgbm_direct_quantile"
-ML_TAIL_LOCATION_SCALE_MODEL = "lightgbm_location_scale"
-ML_TAIL_STANDARDIZED_POT_GPD_MODEL = "lightgbm_standardized_loss_pot_gpd"
+ML_TAIL_LOCATION_SCALE_LEGACY_MODEL = "lightgbm_location_scale"
+ML_TAIL_LOCATION_SCALE_MODEL = "lightgbm_location_scale_empirical"
+ML_TAIL_STANDARDIZED_POT_GPD_FAMILY = "lightgbm_standardized_loss_pot_gpd"
+ML_TAIL_POT_GPD_PLAIN_MLE_MODEL = "lightgbm_standardized_loss_pot_gpd_plain_mle"
+ML_TAIL_POT_GPD_CAPPED_MLE_MODEL = "lightgbm_standardized_loss_pot_gpd_capped_mle"
+ML_TAIL_POT_GPD_EVI_SHRINK_MODEL = "lightgbm_standardized_loss_pot_gpd_evi_shrink"
+ML_TAIL_POT_GPD_EI_WEIGHTED_MODEL = "lightgbm_standardized_loss_pot_gpd_ei_weighted"
+ML_TAIL_POT_GPD_STABILIZED_MODEL = "lightgbm_standardized_loss_pot_gpd_stabilized"
+ML_TAIL_STANDARDIZED_POT_GPD_MODEL = ML_TAIL_POT_GPD_STABILIZED_MODEL
+ML_TAIL_POT_GPD_MODEL_NAMES = (
+    ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
+    ML_TAIL_POT_GPD_CAPPED_MLE_MODEL,
+    ML_TAIL_POT_GPD_EVI_SHRINK_MODEL,
+    ML_TAIL_POT_GPD_EI_WEIGHTED_MODEL,
+    ML_TAIL_POT_GPD_STABILIZED_MODEL,
+)
 ML_TAIL_MODEL_NAMES = (
     ML_TAIL_DIRECT_QUANTILE_MODEL,
     ML_TAIL_LOCATION_SCALE_MODEL,
-    ML_TAIL_STANDARDIZED_POT_GPD_MODEL,
+    *ML_TAIL_POT_GPD_MODEL_NAMES,
+)
+ML_TAIL_HEADLINE_MODEL_NAMES = (
+    ML_TAIL_DIRECT_QUANTILE_MODEL,
+    ML_TAIL_LOCATION_SCALE_MODEL,
+    ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
+    ML_TAIL_POT_GPD_STABILIZED_MODEL,
+)
+ML_TAIL_ABLATION_MODEL_NAMES = (
+    ML_TAIL_POT_GPD_CAPPED_MLE_MODEL,
+    ML_TAIL_POT_GPD_EVI_SHRINK_MODEL,
+    ML_TAIL_POT_GPD_EI_WEIGHTED_MODEL,
 )
 ML_TAIL_REFIT_FREQUENCY = "monthly"
 ML_TAIL_SCALE_FLOOR = 1e-6
@@ -297,6 +356,16 @@ ML_TAIL_HISTORY_FEATURES = (
     "n225_days_to_sq",
     "n225_contract_month_sin",
     "n225_contract_month_cos",
+    "n225_option_atm_iv_lag_1",
+    "n225_option_atm_put_call_iv_skew_lag_1",
+    "n225_option_base_volatility_lag_1",
+    "n225_option_iv_oi_weighted_lag_1",
+    "n225_option_put_call_oi_ratio_lag_1",
+    "n225_option_put_call_volume_ratio_lag_1",
+    "n225_option_total_open_interest_log1p_lag_1",
+    "n225_option_total_volume_log1p_lag_1",
+    "n225_option_valid_contract_count_lag_1",
+    "n225_option_days_to_sq_lag_1",
 )
 FRED_RATE_STALENESS_FEATURE = "fred_rates_staleness_days"
 FRED_RATE_STALENESS_SERIES = ("DGS2", "DGS10", "T10Y2Y")

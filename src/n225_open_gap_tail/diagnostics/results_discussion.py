@@ -76,7 +76,7 @@ def generate_results_discussion(
         )
     }
 
-### Left/right ML-tail headline ladder
+### Left/right ML-tail nested information sets
 
 {
         _results_ml_tail_headline_discussion(
@@ -161,7 +161,7 @@ def _results_cpa_discussion(cpa: pl.DataFrame, cross_model_cpa: pl.DataFrame) ->
     cross_loss_families = _unique_values(cross_model_cpa, "loss_family")
     return "\n".join(
         [
-            f"- The ML-tail information-ladder CPA artifact is a conditional loss-difference diagnostic across `{tail_side_count}` tail side(s), with `{cpa.height}` registered row(s), `{ok_rows}` HAC-Wald gate pass(es), and loss families {loss_families}.",
+            f"- The ML-tail nested-information-set CPA artifact is a conditional loss-difference diagnostic across `{tail_side_count}` tail side(s), with `{cpa.height}` registered row(s), `{ok_rows}` HAC-Wald gate pass(es), and loss families {loss_families}.",
             f"- The registered cross-model CPA artifact is a conditional loss-difference diagnostic with `{cross_rows}` row(s), `{cross_ok_rows}` HAC-Wald gate pass(es), and loss families {cross_loss_families}.",
             "- Quantile-loss CPA and FZ-loss CPA are downstream inference over existing loss differentials; CPA does not generate VaR/ES forecasts and does not replace DM/MCS.",
         ]
@@ -253,7 +253,7 @@ def _results_ml_tail_headline_discussion(
     ml_tail_metrics: pl.DataFrame,
 ) -> str:
     if ml_tail_metrics.is_empty():
-        return _analysis_not_available("The ML-tail headline ladder")
+        return _analysis_not_available("The ML-tail nested-information-set analysis")
     information_sets = _unique_count(ml_tail_metrics, "information_set")
     tail_levels = _unique_count(ml_tail_metrics, "tail_level")
     tail_side_count = _unique_count(ml_tail_metrics, "tail_side")
@@ -262,17 +262,17 @@ def _results_ml_tail_headline_discussion(
     coverage_warning = _ml_tail_coverage_warning(ml_tail_metrics)
     saturation_note = _information_set_saturation_note(ml_tail_metrics)
     lines = [
-        "- `ml_tail_metrics.parquet` defines the headline ML-tail information-set ladder for this run.",
+        "- `ml_tail_metrics.parquet` defines the headline ML-tail comparison across nested information sets for this run.",
         f"- The headline artifact contains `{information_sets}` information sets, `{tail_levels}` tail level(s), and `{tail_side_count}` tail side(s); the retained headline model rows are {models}.",
-        f"- The implemented ML-tail registry is {implemented}, but the headline ladder should be read only from `ml_tail_metrics.parquet`.",
-        "- The ladder reports downside-risk and upside-risk surfaces separately. The registered artifacts show different left/right patterns, and the generator does not assume that the two sides share the same economic mechanism.",
+        f"- The implemented ML-tail registry is {implemented}, but the headline nested-information-set comparison should be read only from `ml_tail_metrics.parquet`.",
+        "- The nested information sets report downside-risk and upside-risk surfaces separately. The registered artifacts show different left/right patterns, and the generator does not assume that the two sides share the same economic mechanism.",
     ]
     if coverage_warning:
         lines.append(f"- {coverage_warning}")
     if saturation_note:
         lines.append(f"- {saturation_note}")
     lines.append(
-        "- The ladder is used to assess candidate incremental U.S.-close information under strict common-sample rules; it does not by itself establish forecast improvement."
+        "- The nested information sets are used to assess candidate incremental U.S.-close information under strict common-sample rules; they do not by themselves establish forecast improvement."
     )
     return "\n".join(lines)
 
@@ -293,7 +293,7 @@ def _results_restricted_model_family_discussion(
     lines = [
         f"- `ml_tail_result_matrix.parquet` contains restricted common-sample comparisons for `{model_count}` LightGBM tail-model families.",
         f"- The restricted common-N range is `{common_n}` and the joint-exception range is `{joint_exceptions}`.",
-        f"- Recorded claim scopes are {claim_scope}; these rows are restricted evidence and cannot replace the headline information-set ladder.",
+        f"- Recorded claim scopes are {claim_scope}; these rows are restricted evidence and cannot replace the headline nested-information-set comparison.",
     ]
     if short_sample_sentence:
         lines.append(f"- {short_sample_sentence}")
@@ -767,7 +767,7 @@ def _benchmark_calibration_note(benchmark_metrics: pl.DataFrame) -> str | None:
         return (
             f"Benchmark-floor breach rates have a median of `{_fmt_float(median_breach)}`, "
             "within 2.5 percentage points of the nominal level, indicating reasonable coverage calibration "
-            "relative to the ML-tail models whose breach rates are reported in the headline ladder section."
+            "relative to the ML-tail models whose breach rates are reported in the nested-information-set section."
         )
     return None
 
@@ -795,14 +795,14 @@ def _ml_tail_coverage_warning(ml_tail_metrics: pl.DataFrame) -> str | None:
     return (
         f"Coverage warning: all `{total}` headline rows exhibit VaR breach rates "
         f"(`{min_breach}` to `{max_breach}`) that exceed the nominal level by more than 2.5 percentage points. "
-        "Quantile-loss and FZ-loss differences across the information ladder must be interpreted "
-        "in this context; lower loss scores may partly reflect more aggressive VaR levels rather than "
+        "Quantile-loss and FZ-loss differences across the nested information sets must be interpreted "
+        "in this context; lower loss scores may partly reflect less conservative VaR estimates rather than "
         "better conditional tail calibration."
     )
 
 
 def _information_set_saturation_note(ml_tail_metrics: pl.DataFrame) -> str | None:
-    """Detect whether the information-set ladder saturates after the first augmentation step."""
+    """Detect whether nested information sets saturate after the first augmentation step."""
     if ml_tail_metrics.is_empty() or "mean_quantile_loss" not in ml_tail_metrics.columns:
         return None
     if (

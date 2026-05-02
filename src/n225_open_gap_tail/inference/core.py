@@ -12,6 +12,7 @@ from n225_open_gap_tail.config.runtime import (
     Mapping,
     math,
     MCS_ALPHA,
+    ML_TAIL_HEADLINE_MODEL_NAMES,
     MODEL_EVICTION_COVERAGE_THRESHOLD,
     np,
     PIPELINE_CONFIG,
@@ -90,7 +91,17 @@ def build_common_sample_artifacts(
         for key in keys:
             overlap_rows = len(set(grouped[key]).intersection(anchor_dates))
             coverage_ratio = overlap_rows / len(anchor_dates)
-            retained = key == anchor_key or coverage_ratio >= MODEL_EVICTION_COVERAGE_THRESHOLD
+            headline_candidate = suite != "ml_tail" or key[1] in ML_TAIL_HEADLINE_MODEL_NAMES
+            retained = key == anchor_key or (
+                headline_candidate and coverage_ratio >= MODEL_EVICTION_COVERAGE_THRESHOLD
+            )
+            eviction_reason = None
+            if not retained:
+                eviction_reason = (
+                    "ablation_variant_not_headline_candidate"
+                    if not headline_candidate
+                    else "coverage_below_model_eviction_threshold"
+                )
             if retained:
                 retained_keys.append(key)
             pending_rows.append(
@@ -102,7 +113,7 @@ def build_common_sample_artifacts(
                     overlap_rows=overlap_rows,
                     coverage_ratio=coverage_ratio,
                     retained=retained,
-                    eviction_reason=None if retained else "coverage_below_model_eviction_threshold",
+                    eviction_reason=eviction_reason,
                     common_rows=0,
                     common_anchor_coverage=0.0,
                     common_sample_status_value="pending",

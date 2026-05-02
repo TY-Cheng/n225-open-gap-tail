@@ -32,7 +32,7 @@ def test_claim_level_enum_is_controlled_vocabulary() -> None:
 def test_core_feature_sets_exclude_short_history_and_robustness_tickers() -> None:
     config = default_research_config()
 
-    assert config.feature_sets.version == FeatureSetVersion.CORE_FULL_HISTORY
+    assert config.feature_sets.version == FeatureSetVersion.OPTIONS_EVT_HEADLINE
     assert "SOFR" not in config.feature_sets.fred_core
     assert "EFFR" not in config.feature_sets.fred_core
     assert "SOFR" in config.feature_sets.fred_post_2018
@@ -54,6 +54,10 @@ def test_core_feature_sets_exclude_short_history_and_robustness_tickers() -> Non
     assert "DEXJPUS" in config.feature_sets.fred_fallback
     assert "BAMLH0A0HYM2" in config.feature_sets.fred_credit_enriched
     assert config.feature_sets.ml_tail_model_d_information_set.endswith("plus_asia_proxy")
+    assert config.feature_sets.ml_tail_model_e_information_set.endswith("plus_options_risk")
+    assert config.model_policy.tail_levels == (0.95,)
+    assert config.model_policy.evt_min_standardized_losses_95 == 500
+    assert config.model_policy.evt_min_exceedances_95 == 35
     assert config.leakage_policy.fred_availability_lag_us_business_days == 1
     assert config.leakage_policy.max_forward_fill_us_close_days == 7
     assert config.leakage_policy.fred_h10_release_age_cap_calendar_days == 8

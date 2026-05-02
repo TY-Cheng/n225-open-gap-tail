@@ -46,7 +46,7 @@ from n225_open_gap_tail.config.runtime import (
     _set_nested_thread_limits,
 )
 from n225_open_gap_tail.panel.build import *
-from n225_open_gap_tail.panel.build import (
+from n225_open_gap_tail.panel.information_sets import (
     ml_tail_feature_columns_for_information_set as ml_tail_feature_columns_for_information_set,
 )
 from n225_open_gap_tail.panel.build import (
@@ -58,6 +58,8 @@ from n225_open_gap_tail.features.registry import (
     _feature_source_block as _feature_source_block,
     _feature_source_family as _feature_source_family,
 )
+from n225_open_gap_tail.features.n225_options import *
+from n225_open_gap_tail.sources.jquants_options import *
 from n225_open_gap_tail.panel.leakage import *
 from n225_open_gap_tail.panel.leakage import (
     _deterministic_frame_signature as _deterministic_frame_signature,

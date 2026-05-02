@@ -46,6 +46,7 @@ from n225_open_gap_tail.config.runtime import (
     _optional_float,
     _pipeline_log,
 )
+from n225_open_gap_tail.data_lake.jquants_options_cache import _fetch_jquants_nikkei_option_rows
 
 
 def _safe_name(value: str) -> str:  # pragma: no cover - vendor cache path

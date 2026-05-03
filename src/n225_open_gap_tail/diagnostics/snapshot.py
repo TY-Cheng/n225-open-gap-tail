@@ -18,22 +18,17 @@ from n225_open_gap_tail.data_lake.artifacts import (
     _legacy_gold_leakage_dir,
     _legacy_gold_panel_dir,
 )
+from n225_open_gap_tail.diagnostics import snapshot_gallery as _snapshot_gallery
 from n225_open_gap_tail.diagnostics.results_discussion import (
     generate_results_discussion as _generate_results_discussion,
 )
-from n225_open_gap_tail.diagnostics.snapshot_gallery import (
-    evidence_map_mermaid as _evidence_map_mermaid,
-)
-from n225_open_gap_tail.diagnostics.snapshot_gallery import (
-    figure_gallery_markdown as _figure_gallery_markdown,
-)
-from n225_open_gap_tail.diagnostics.snapshot_gallery import (
-    sync_snapshot_figure_assets as _sync_snapshot_figure_assets,
-)
-from n225_open_gap_tail.diagnostics.snapshot_gallery import (
-    table_manifest_markdown as _table_manifest_markdown,
-)
 from n225_open_gap_tail.diagnostics.snapshot_qa import discussion_qa_markdown as _discussion_qa
+from n225_open_gap_tail.diagnostics.target_distribution import (
+    opening_gap_scale_text as _opening_gap_scale_text,
+)
+from n225_open_gap_tail.diagnostics.target_distribution import (
+    target_tail_diagnostics_markdown as _target_tail_diagnostics_markdown,
+)
 
 
 @dataclass(frozen=True)
@@ -62,7 +57,7 @@ def write_results_snapshot_from_run(
     panel = _read_parquet_optional(paths["modeling_panel"])
     docs_path = Path("docs/results_snapshot.md")
     docs_path.parent.mkdir(parents=True, exist_ok=True)
-    _sync_snapshot_figure_assets(
+    _snapshot_gallery.sync_snapshot_figure_assets(
         run_dir=run_dir,
         figure_manifest=_read_json_dict(paths["figure_manifest"]),
         docs_dir=docs_path.parent,
@@ -391,15 +386,23 @@ def _full_run_results_markdown(
         ],
     )
     artifact_table = _artifact_table(paths)
-    evidence_map = _evidence_map_mermaid()
-    table_manifest_table = _table_manifest_markdown(table_manifest)
-    figure_gallery = _figure_gallery_markdown(figure_manifest=figure_manifest, run_id=run_id)
+    evidence_map = _snapshot_gallery.evidence_map_mermaid()
+    table_manifest_table = _snapshot_gallery.table_manifest_markdown(table_manifest)
+    figure_gallery = _snapshot_gallery.figure_gallery_markdown(
+        figure_manifest=figure_manifest,
+        run_id=run_id,
+    )
     discussion_qa = _discussion_qa(
         advanced_implementation_text=advanced_implementation_text,
         advanced_implementation_bullet=advanced_implementation_bullet,
         advanced_bottom_line_bullet=advanced_bottom_line_bullet,
         claim_scope_table=claim_scope_table,
         opening_gap_scale_text=opening_gap_scale_text,
+    )
+    target_tail_diagnostics = _target_tail_diagnostics_markdown(
+        panel=panel,
+        figure_manifest=figure_manifest,
+        run_id=run_id,
     )
 
     return f"""---
@@ -416,6 +419,8 @@ hide:
 > tables and notes.
 
 {discussion_qa}
+
+{target_tail_diagnostics}
 
 {results_discussion}
 
@@ -884,78 +889,6 @@ def _coverage_review_sentence(frame: pl.DataFrame) -> str:
         "snapshot review band, but final claims still require author review of inference "
         "and exception diagnostics."
     )
-
-
-def _opening_gap_scale_text(panel: pl.DataFrame) -> str:
-    if panel.is_empty() or "gap_t" not in panel.columns:
-        return "- Opening-gap scale is unavailable because the modeling panel is missing `gap_t`."
-    clean = panel.filter(pl.col("gap_t").is_not_null())
-    if "clean_sample" in clean.columns:
-        clean = clean.filter(pl.col("clean_sample"))
-    if clean.is_empty():
-        return (
-            "- Opening-gap scale is unavailable because no clean target rows have finite `gap_t`."
-        )
-    date_col = "forecast_date" if "forecast_date" in clean.columns else clean.columns[0]
-    min_row = clean.sort("gap_t").head(1).to_dicts()[0]
-    max_row = clean.sort("gap_t", descending=True).head(1).to_dicts()[0]
-    abs_row = (
-        clean.with_columns(pl.col("gap_t").abs().alias("_abs_gap_t"))
-        .sort("_abs_gap_t", descending=True)
-        .head(1)
-        .to_dicts()[0]
-    )
-    stats = clean.select(
-        pl.len().alias("rows"),
-        pl.col("gap_t").quantile(0.01).alias("q01"),
-        pl.col("gap_t").quantile(0.99).alias("q99"),
-    ).to_dicts()[0]
-    lines = [
-        (
-            f"- In the current clean headline sample (`n={stats['rows']}`), the settle-to-open "
-            f"gap ranges from `{_fmt_log_return(min_row['gap_t'])}` on "
-            f"`{min_row.get(date_col)}` to `{_fmt_log_return(max_row['gap_t'])}` on "
-            f"`{max_row.get(date_col)}`."
-        ),
-        (
-            f"- The largest absolute clean settle-to-open gap is "
-            f"`{_fmt_log_return(abs_row['gap_t'])}` on `{abs_row.get(date_col)}`; "
-            "this is large enough to make opening-gap tail risk a substantive risk-management "
-            "forecasting problem rather than a cosmetic return-prediction exercise."
-        ),
-        (
-            f"- The clean 1% to 99% settle-to-open range is "
-            f"`{_fmt_log_return(stats['q01'])}` to `{_fmt_log_return(stats['q99'])}`, "
-            "so the extremes are far outside the usual daily opening-gap range."
-        ),
-    ]
-    if "residual_nightclose_to_day_open" in clean.columns:
-        residual = clean.filter(pl.col("residual_nightclose_to_day_open").is_not_null())
-        if not residual.is_empty():
-            residual_stats = residual.select(
-                pl.col("residual_nightclose_to_day_open").min().alias("min"),
-                pl.col("residual_nightclose_to_day_open").max().alias("max"),
-                pl.col("residual_nightclose_to_day_open").abs().max().alias("max_abs"),
-            ).to_dicts()[0]
-            lines.append(
-                "- Even after the night-session close, the clean night-close-to-open residual "
-                f"ranges from `{_fmt_log_return(residual_stats['min'])}` to "
-                f"`{_fmt_log_return(residual_stats['max'])}`, with maximum absolute residual "
-                f"`{_fmt_log_return(residual_stats['max_abs'])}`."
-            )
-    lines.append(
-        "- These magnitudes make the empirical object an opening-tail risk problem, not only "
-        "an average next-open return-forecasting problem."
-    )
-    return "\n".join(lines)
-
-
-def _fmt_log_return(value: object) -> str:
-    parsed = _optional_float(value)
-    if parsed is None:
-        return "missing"
-    simple_pct = math.expm1(parsed) * 100.0
-    return f"{parsed:.6f} log ({simple_pct:+.2f}%)"
 
 
 def _unique_values(frame: pl.DataFrame, column: str) -> str:

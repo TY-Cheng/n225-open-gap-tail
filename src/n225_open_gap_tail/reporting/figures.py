@@ -9,6 +9,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from scipy.stats import genpareto
 
 from n225_open_gap_tail.config.runtime import (
     BENCHMARK_FLOOR_MODEL_NAMES,
@@ -35,6 +36,7 @@ def export_figures(*, run_dir: Path, manifest: Mapping[str, object]) -> FigureEx
     figure_dir.mkdir(parents=True, exist_ok=True)
     _remove_stale_figures(figure_dir)
     entries: list[dict[str, object]] = []
+    entries.extend(_target_distribution_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_coverage_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_murphy_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_dst_figures(run_dir=run_dir, figure_dir=figure_dir))
@@ -48,6 +50,288 @@ def _remove_stale_figures(figure_dir: Path) -> None:
     for pattern in ("*.png", "*.pdf"):
         for path in figure_dir.glob(pattern):
             path.unlink(missing_ok=True)
+
+
+def _target_distribution_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object]]:
+    frame = _target_gap_frame(run_dir)
+    if frame.is_empty():
+        return []
+    gap = _finite_array(frame, "gap_t")
+    if gap.size < 50:
+        return []
+    left_loss = -gap
+    right_loss = gap
+    abs_gap = np.abs(gap)
+    source_artifacts = ["panel/modeling_panel.parquet"]
+    claim_scope = "target_distribution_motivation_not_forecast_validation"
+    entries: list[dict[str, object]] = []
+
+    fig, ax = plt.subplots(figsize=(8.5, 5.2))
+    ax.hist(gap, bins=55, density=True, color="#475569", alpha=0.62, label="empirical density")
+    _plot_normal_density(ax, gap)
+    quantile_lines = (
+        (0.01, "#dc2626"),
+        (0.05, "#f97316"),
+        (0.95, "#2563eb"),
+        (0.99, "#7c3aed"),
+    )
+    for probability, color in quantile_lines:
+        ax.axvline(float(np.quantile(gap, probability)), color=color, linewidth=1.0, linestyle="--")
+    ax.axvline(0.0, color="#111827", linewidth=1.0)
+    ax.set_title("Settlement-to-open gap distribution")
+    ax.set_xlabel("gap_t, log return")
+    ax.set_ylabel("Density")
+    ax.legend(frameon=False, fontsize=8)
+    _style_axes(ax)
+    entries.extend(
+        _save_figure(
+            fig,
+            run_dir=run_dir,
+            figure_dir=figure_dir,
+            name="target_gap_histogram_density",
+            source_artifacts=source_artifacts,
+            tail_side="target_distribution",
+            caption=(
+                "Raw settlement-to-open gap distribution for the clean modeling sample. "
+                "This target-distribution diagnostic motivates tail-risk modeling; it "
+                "does not validate any LightGBM+EVT forecast."
+            ),
+            claim_scope=claim_scope,
+        )
+    )
+
+    for tail_side, values in ((TAIL_SIDE_LEFT, left_loss), (TAIL_SIDE_RIGHT, right_loss)):
+        qq = _gpd_qq_values(values, threshold_probability=0.90)
+        if qq is None:
+            continue
+        empirical, fitted, threshold = qq
+        fig, ax = plt.subplots(figsize=(6.2, 5.6))
+        ax.scatter(fitted, empirical, s=18, color="#2563eb", alpha=0.78)
+        max_value = max(float(np.max(empirical)), float(np.max(fitted)))
+        ax.plot([0.0, max_value], [0.0, max_value], color="#111827", linewidth=1.1, linestyle="--")
+        ax.set_title(f"GPD Q-Q diagnostic ({_label_tail_side(tail_side)})")
+        ax.set_xlabel("Fitted GPD excess quantile")
+        ax.set_ylabel("Empirical excess quantile")
+        ax.text(
+            0.02,
+            0.96,
+            f"threshold = {threshold:.4f}",
+            transform=ax.transAxes,
+            va="top",
+            fontsize=8,
+            color="#374151",
+        )
+        _style_axes(ax)
+        entries.extend(
+            _save_figure(
+                fig,
+                run_dir=run_dir,
+                figure_dir=figure_dir,
+                name=f"target_loss_qq_{tail_side}",
+                source_artifacts=source_artifacts,
+                tail_side=tail_side,
+                caption=(
+                    f"Raw {tail_side} loss Q-Q diagnostic for excesses above the 90th "
+                    "percentile threshold. This is evidence on the target loss tail, not "
+                    "forecast validation for LightGBM+EVT."
+                ),
+                claim_scope=claim_scope,
+            )
+        )
+
+    fig, ax = plt.subplots(figsize=(8.4, 5.4))
+    for label, values, color in (
+        ("left loss", left_loss, "#dc2626"),
+        ("right loss", right_loss, "#2563eb"),
+        ("absolute gap", abs_gap, "#4b5563"),
+    ):
+        x, survival = _survival_curve(values)
+        if x.size:
+            ax.semilogy(x, survival, label=label, color=color, linewidth=1.5)
+    ax.set_title("Log survival diagnostics")
+    ax.set_xlabel("Loss magnitude")
+    ax.set_ylabel("Empirical survival probability, log scale")
+    ax.legend(frameon=False, fontsize=8)
+    _style_axes(ax)
+    entries.extend(
+        _save_figure(
+            fig,
+            run_dir=run_dir,
+            figure_dir=figure_dir,
+            name="target_log_survival",
+            source_artifacts=source_artifacts,
+            tail_side="left_right_target_distribution",
+            caption=(
+                "Empirical log survival curves for raw left loss, right loss, and absolute "
+                "settlement-to-open gap. This motivates tail-risk evaluation and is not a "
+                "forecast-performance claim."
+            ),
+            claim_scope=claim_scope,
+        )
+    )
+
+    fig, ax = plt.subplots(figsize=(8.4, 5.4))
+    for label, values, color in (
+        ("left loss", left_loss, "#dc2626"),
+        ("right loss", right_loss, "#2563eb"),
+        ("absolute gap", abs_gap, "#4b5563"),
+    ):
+        thresholds, mean_excess = _mean_excess_curve(values)
+        if thresholds.size:
+            ax.plot(thresholds, mean_excess, label=label, color=color, linewidth=1.6)
+    ax.set_title("Mean excess diagnostics")
+    ax.set_xlabel("Threshold")
+    ax.set_ylabel("Mean excess over threshold")
+    ax.legend(frameon=False, fontsize=8)
+    _style_axes(ax)
+    entries.extend(
+        _save_figure(
+            fig,
+            run_dir=run_dir,
+            figure_dir=figure_dir,
+            name="target_mean_excess",
+            source_artifacts=source_artifacts,
+            tail_side="left_right_target_distribution",
+            caption=(
+                "Mean excess curves for raw target losses. Near-linear upper-tail patterns "
+                "are tail-shape motivation only; standardized residual-loss EVT diagnostics "
+                "remain required for LightGBM+EVT forecasts."
+            ),
+            claim_scope=claim_scope,
+        )
+    )
+
+    fig, ax = plt.subplots(figsize=(8.4, 5.4))
+    for label, values, color in (
+        ("left loss", left_loss, "#dc2626"),
+        ("right loss", right_loss, "#2563eb"),
+        ("absolute gap", abs_gap, "#4b5563"),
+    ):
+        ks, xi = _hill_curve(values)
+        if ks.size:
+            ax.plot(ks, xi, label=label, color=color, linewidth=1.5)
+    ax.set_title("Hill tail-index diagnostics")
+    ax.set_xlabel("Number of upper order statistics, k")
+    ax.set_ylabel("Hill estimate of GPD shape xi")
+    ax.legend(frameon=False, fontsize=8)
+    _style_axes(ax)
+    entries.extend(
+        _save_figure(
+            fig,
+            run_dir=run_dir,
+            figure_dir=figure_dir,
+            name="target_hill_plot",
+            source_artifacts=source_artifacts,
+            tail_side="left_right_target_distribution",
+            caption=(
+                "Hill estimates by k for raw left loss, right loss, and absolute gap. "
+                "The plot is a raw-target tail diagnostic, not a model-comparison result."
+            ),
+            claim_scope=claim_scope,
+        )
+    )
+    return entries
+
+
+def _target_gap_frame(run_dir: Path) -> pl.DataFrame:
+    frame = _read_optional_parquet(run_dir / "panel" / "modeling_panel.parquet")
+    if frame.is_empty() or "gap_t" not in frame.columns:
+        return pl.DataFrame()
+    clean = frame.filter(pl.col("gap_t").is_not_null())
+    if "clean_sample" in clean.columns:
+        clean = clean.filter(pl.col("clean_sample") == True)  # noqa: E712
+    if {"forecast_date", "combined_clean_start"}.issubset(clean.columns):
+        clean = clean.filter(pl.col("forecast_date") >= pl.col("combined_clean_start"))
+    return clean
+
+
+def _finite_array(frame: pl.DataFrame, column: str) -> object:
+    values = np.asarray(frame[column].to_list(), dtype=float)
+    return values[np.isfinite(values)]
+
+
+def _plot_normal_density(ax: object, values: object) -> None:
+    mean = float(np.mean(values))
+    std = float(np.std(values, ddof=1))
+    if not np.isfinite(std) or std <= 0.0:
+        return
+    x = np.linspace(float(np.min(values)), float(np.max(values)), 240)
+    density = np.exp(-0.5 * ((x - mean) / std) ** 2) / (std * np.sqrt(2.0 * np.pi))
+    ax.plot(x, density, color="#111827", linewidth=1.2, label="normal reference")
+
+
+def _gpd_qq_values(
+    values: object,
+    *,
+    threshold_probability: float,
+) -> tuple[object, object, float] | None:
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size < 50:
+        return None
+    threshold = float(np.quantile(finite, threshold_probability))
+    excess = np.sort(finite[finite > threshold] - threshold)
+    if excess.size < 15 or float(np.max(excess)) <= 0.0:
+        return None
+    try:
+        shape, _, scale = genpareto.fit(excess, floc=0.0)
+    except Exception:
+        return None
+    if not np.isfinite(shape) or not np.isfinite(scale) or scale <= 0.0:
+        return None
+    probabilities = (np.arange(1, excess.size + 1) - 0.5) / excess.size
+    fitted = genpareto.ppf(probabilities, c=shape, loc=0.0, scale=scale)
+    return excess, fitted, threshold
+
+
+def _survival_curve(values: object) -> tuple[object, object]:
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        return np.asarray([]), np.asarray([])
+    positive = np.sort(finite[finite > 0.0])
+    if positive.size == 0:
+        return np.asarray([]), np.asarray([])
+    survival = np.asarray([float(np.mean(finite > value)) for value in positive])
+    return positive, survival
+
+
+def _mean_excess_curve(values: object) -> tuple[object, object]:
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size < 50:
+        return np.asarray([]), np.asarray([])
+    thresholds = np.quantile(finite, np.linspace(0.80, 0.99, 24))
+    mean_excess = []
+    kept_thresholds = []
+    for threshold in thresholds:
+        excess = finite[finite > threshold] - threshold
+        if excess.size >= 8:
+            kept_thresholds.append(float(threshold))
+            mean_excess.append(float(np.mean(excess)))
+    return np.asarray(kept_thresholds), np.asarray(mean_excess)
+
+
+def _hill_curve(values: object) -> tuple[object, object]:
+    finite = np.asarray(values, dtype=float)
+    finite = np.sort(finite[np.isfinite(finite)])
+    n = finite.size
+    if n < 80:
+        return np.asarray([]), np.asarray([])
+    upper = finite[::-1]
+    max_k = min(220, n // 3)
+    ks = np.arange(20, max_k + 1, 5)
+    xi: list[float] = []
+    kept: list[int] = []
+    for k in ks:
+        boundary = upper[k]
+        if boundary <= 0.0:
+            continue
+        estimate = float(np.mean(np.log(upper[:k]) - np.log(boundary)))
+        if np.isfinite(estimate):
+            kept.append(int(k))
+            xi.append(estimate)
+    return np.asarray(kept), np.asarray(xi)
 
 
 def _coverage_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object]]:

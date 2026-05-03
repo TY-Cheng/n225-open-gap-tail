@@ -84,18 +84,19 @@ def figure_gallery_markdown(*, figure_manifest: dict[str, object], run_id: str) 
         by_family.setdefault(_figure_family(str(entry.get("name") or "")), []).append(entry)
     sections: list[str] = []
     order = [
-        ("coverage", "Figure 1. Coverage Breach-Rate Diagnostics"),
-        ("benchmark_murphy", "Figure 2. Benchmark Murphy Diagnostics"),
-        ("ml_tail_murphy", "Figure 3. ML-Tail Murphy Diagnostics"),
-        ("dst", "Figure 4. DST Attenuation Diagnostics"),
-        ("severity", "Figure 5. ES Severity Diagnostics"),
-        ("trigger", "Figure 6. Trigger Diagnostics"),
+        ("target_distribution", "Figure 1. Target Distribution And Tail Diagnostics"),
+        ("coverage", "Figure 2. Coverage Breach-Rate Diagnostics"),
+        ("benchmark_murphy", "Figure 3. Benchmark Murphy Diagnostics"),
+        ("ml_tail_murphy", "Figure 4. ML-Tail Murphy Diagnostics"),
+        ("dst", "Figure 5. DST Attenuation Diagnostics"),
+        ("severity", "Figure 6. ES Severity Diagnostics"),
+        ("trigger", "Figure 7. Trigger Diagnostics"),
     ]
     for family, title in order:
         family_entries = by_family.get(family, [])
         if not family_entries:
             continue
-        family_entries = sorted(family_entries, key=lambda item: str(item.get("tail_side") or ""))
+        family_entries = sorted(family_entries, key=lambda item: _figure_sort_key(family, item))
         parts = [f"### {title}", "", *_figure_key_readings(family)]
         for entry in family_entries:
             name = str(entry.get("name") or "figure")
@@ -129,6 +130,8 @@ def _png_figure_entries(figure_manifest: dict[str, object]) -> list[dict[str, ob
 
 
 def _figure_family(name: str) -> str:
+    if name.startswith("target_"):
+        return "target_distribution"
     if name.startswith("coverage_breach_rates"):
         return "coverage"
     if name.startswith("benchmark_murphy"):
@@ -144,8 +147,27 @@ def _figure_family(name: str) -> str:
     return "other"
 
 
+def _figure_sort_key(family: str, item: dict[str, object]) -> tuple[object, ...]:
+    name = str(item.get("name") or "")
+    if family == "target_distribution":
+        target_order = {
+            "target_gap_histogram_density": 0,
+            "target_loss_qq_left_tail": 1,
+            "target_loss_qq_right_tail": 2,
+            "target_log_survival": 3,
+            "target_mean_excess": 4,
+            "target_hill_plot": 5,
+        }
+        return (target_order.get(name, 99), name)
+    return (str(item.get("tail_side") or ""), name)
+
+
 def _figure_key_readings(family: str) -> list[str]:
     readings = {
+        "target_distribution": [
+            "- Key readings: these figures describe the raw settlement-to-open gap and the left/right loss tails.",
+            "- They motivate VaR/ES and POT-GPD modeling, but they do not validate LightGBM+EVT forecasts.",
+        ],
         "coverage": [
             "- Key readings: bars report realized VaR exception rates against the nominal line.",
             "- Read this first: exception-rate deviations set the boundary for any loss-based interpretation.",

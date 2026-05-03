@@ -31,6 +31,8 @@ Opening gaps matter because leveraged futures positions can face margin, liquidi
 - JPX's margin overview gives the general mechanism: adverse futures and options price movements can create significant losses, and margin is posted to ensure payments when losses occur ([JPX margin overview](https://www.jpx.co.jp/english/derivatives/rules/margin/)).
 - JSCC's futures/options margin rules make the channel operational: listed derivatives are margined through JSCC, customer positions require margin, and intraday/emergency margin calls can apply; the emergency margin-call list explicitly includes Nikkei 225 Futures ([JSCC Margin on Futures and Options](https://www.jpx.co.jp/jscc/en/cash/futures/marginsystem/margin.html)).
 - JSCC also has margin add-ons for liquidity and concentration risk, including the index-futures group containing Nikkei 225 Futures ([JSCC Margin Add-on Rules](https://www.jpx.co.jp/jscc/en/cash/futures/marginsystem/addonim.html)).
+- This does not mean every margin account is mechanically recalculated and called exactly at the 08:45 JST open. The opening price immediately changes mark-to-market PnL, account equity, risk limits, liquidity needs, and broker/internal margin pressure; formal JSCC margin calls follow scheduled or event-triggered procedures such as intraday and emergency margin calls.
+- Optiver's discussion of Japan's open-based settlement methodology for Large Nikkei 225 Index Options is related market-structure motivation: it documents why opening-price formation and SQ methodology can have large derivatives PnL consequences. That is related opening-settlement evidence, not direct evidence for the current futures settle-to-open forecast target ([Optiver, 2024](https://optiver.com/insights/how-japans-settlement-price-methodology-impacts-option-expiry/)).
 - Historical cases such as Barings motivate the channel, but they are not direct sample evidence ([GOV.UK Barings inquiry report](https://www.gov.uk/government/publications/report-into-the-collapse-of-barings-bank); [Steenbeek 1999, Bank of Japan edited volume metadata](https://pure.eur.nl/en/publications/price-discovery-during-periods-of-stress-barings-the-kobe-quake-a/)).
 
 ### What is forecast, and how is the target constructed?
@@ -45,6 +47,48 @@ The current headline target is the loss version of the settle-to-open gap: `gap_
 - `full_gap_close_to_open` is carried for audit and alternative diagnostics. It is not the current headline target.
 - `residual_nightclose_to_day_open` is used for residual and absorption diagnostics when the night close is available.
 - A pure U.S.-close-mark-to-open target would require a licensed timestamped Nikkei futures mark at the U.S. close cutoff. That target is disabled in this run.
+
+### Why use the OSE Nikkei 225 large contract rather than SGX or CME Nikkei contracts?
+
+The target is the home-market OSE large-contract opening risk surface.
+
+- The OSE large contract is the native JPX/OSE Nikkei 225 Futures contract with JPX/JSCC-published trading hours, contract size, SQ, margin, and clearing rules. JPX defines the large-contract unit as `Nikkei 225 x JPY 1,000` ([JPX contract specifications](https://www.jpx.co.jp/english/derivatives/products/domestic/225futures/01.html)).
+- Optiver describes OSE Nikkei 225 Index futures as the largest, most international, and most liquid APAC futures market. That is market-structure motivation for using OSE as the benchmark venue, not a formal volume-ranking result estimated in this project ([Optiver, 2024](https://optiver.com/insights/how-japans-settlement-price-methodology-impacts-option-expiry/)).
+- The settlement anchor is Japanese: JPX defines the final settlement price as Special Quotation, with SQ based on the opening prices of Nikkei 225 component stocks on the business day after the last trading day ([JPX contract specifications](https://www.jpx.co.jp/english/derivatives/products/domestic/225futures/01.html)).
+- SGX and CME Nikkei contracts are important offshore venues, and the cross-market Nikkei futures literature explicitly studies price discovery across OSE, SGX, and CME. The current paper does not claim those venues are irrelevant ([Spot-Futures Price Adjustments in the Nikkei 225](https://www.mdpi.com/1911-8074/16/2/117)).
+- They are not the headline target because the current audited target source is J-Quants OSE contract-level session data. The current run does not include licensed timestamped SGX/CME/OSE intraday marks at the U.S. close cutoff.
+- A cross-venue extension could forecast CME/SGX-to-OSE-open residual risk or hedge-slippage risk. That is a useful but different target from the current OSE home-market opening-risk design.
+
+### Why focus on the OSE open?
+
+The open is where next Japanese day-session price formation, settlement mechanics, and risk control meet.
+
+- The OSE day-session open is the first OSE day-session mark after the U.S.-close information cutoff and after the Japanese night-session interval.
+- JPX's contract specifications make the open directly relevant for expiry mechanics because Nikkei 225 Futures final settlement uses SQ based on Nikkei component opening prices after the last trading day ([JPX contract specifications](https://www.jpx.co.jp/english/derivatives/products/domestic/225futures/01.html)).
+- Optiver argues that Nikkei 225 index options are unusual in expiring at the cash-market open and that opening-price formation can be imbalance-sensitive. That is external market-structure support for studying open-based tail risk, even though the Optiver article is about index options rather than this futures forecast target ([Optiver, 2024](https://optiver.com/insights/how-japans-settlement-price-methodology-impacts-option-expiry/)).
+- The current target diagnostics show that settle-to-open and night-close-to-open residual moves can be large enough to matter for VaR/ES forecasting.
+- The margin link is indirect but operationally important: the open changes mark-to-market PnL, account equity, limits, and collateral pressure, while formal JSCC margin calls follow scheduled or event-triggered procedures ([JSCC Margin on Futures and Options](https://www.jpx.co.jp/jscc/en/cash/futures/marginsystem/margin.html)).
+- This does not mean the open is the only economically relevant price. Close-to-open and night-close-to-open variants are carried as audit or diagnostic targets; the headline target is chosen because it is the cleanest home-market opening-risk object under the current data contract.
+
+### Does the opening-gap target assume no CME or OSE night-session trading?
+
+No. The empirical object is OSE day-session opening risk, not a claim that institutions cannot trade or hedge Nikkei exposure through CME, SGX, or OSE night-session products.
+
+- The headline target is an OSE large-contract settle-to-open risk surface. CME and SGX Nikkei marks are not used in the current headline run.
+- JPX lists Nikkei 225 Futures trading hours as `08:45-15:45` and `17:00-06:00`, so the OSE night session is part of the market structure rather than an omitted concept ([JPX contract specifications](https://www.jpx.co.jp/english/derivatives/products/domestic/225futures/01.html)).
+- The OSE night session is not ignored in the audit layer: J-Quants night-session fields are carried, `residual_nightclose_to_day_open` is available as a diagnostic when the night close is present, and the timing map records the U.S.-close-to-OSE-night-close interval and absorption-regime indicators.
+- What is not yet modeled is a continuously hedged cross-venue residual such as `log(OSE day open) - log(Nikkei futures mark at the U.S. close cutoff)`. That requires a licensed timestamped OSE, CME, SGX, or equivalent Nikkei futures mark at the cutoff.
+- The correct manuscript claim is therefore opening-risk forecasting from information available by the U.S. close cutoff, not all Nikkei overnight risk and not realized hedging performance for a continuously managed global book.
+- This is still a meaningful risk-management object for local opening-auction exposure, limit utilization, collateral planning, liquidity needs, and accounts that cannot or do not fully rebalance across venues before the OSE day open.
+
+### Does settle-to-open include SQ final-settlement risk?
+
+Only as audit history, not as headline clean evidence.
+
+- `full_gap_settle_to_open` can be computed for rows that are later marked as roll/SQ-window rows, but the headline clean sample excludes those rows.
+- The current target-audit rule excludes the roll/SQ window starting five JPX sessions before the last trading day through SQ day; excluded rows carry `missing_reason = roll_sq_excluded`.
+- Therefore the headline target is mainly daily settlement-to-next-OSE-day-open risk. It is not an SQ expiry/final-settlement event study.
+- SQ is economically related because JPX defines Nikkei 225 Futures final settlement price as Special Quotation, with SQ based on the Nikkei 225 component opening prices on the business day after the last trading day ([JPX contract specifications](https://www.jpx.co.jp/english/derivatives/products/domestic/225futures/01.html)). Optiver's Nikkei options note gives a related open-based settlement example, but SQ should be studied through a separate event-study or robustness module rather than mixed into the headline clean sample.
 
 ### How are look-ahead bias controls handled?
 

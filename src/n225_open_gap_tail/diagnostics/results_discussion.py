@@ -394,6 +394,8 @@ def _figure_reference_discussion(figure_manifest: Mapping[str, object]) -> str:
         if str(item.get("format")) != "png":
             continue
         name = str(item.get("name") or "unknown_figure")
+        if name.startswith("target_"):
+            continue
         if name in seen:
             continue
         seen.add(name)

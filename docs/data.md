@@ -88,16 +88,16 @@ FRED uses current historical values with conservative availability semantics and
 The current paper-facing evidence map is generated from:
 
 ```text
-run_id = tailrisk_20160719_20260501_20260501T032942Z_commit_d4b10baf
-requested window = 2016-07-19 to 2026-05-01
-clean modeling sample = 2018-06-20 to 2026-04-30
-clean forecast observations = 1,660
+run_id = tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9
+requested window = 2016-07-19 to 2026-05-02
+clean forecast sample = 2018-06-20 to 2026-05-01
+clean forecast observations = 1,661
 ```
 
 The clean sample begins after all required target fields, Massive core fields,
 FRED core fields, and the canonical FRED H.10 USD/JPY control satisfy the
 registered coverage and timing requirements. The gold modeling panel contains
-2,394 target-date rows before the clean-sample filter.
+2,395 target-date rows before the clean-sample filter.
 
 ### Active Target and Calendar Inputs
 
@@ -306,7 +306,7 @@ The first-paper predictor universe is pre-registered by economic role rather tha
 | Event flags | FOMC, CPI, payrolls, BOJ, major Japan macro releases | Official calendars | Planned candidate controls; not active feature artifacts in the current clean run | Scheduled risk-event controls without macro feature fishing. |
 | Lagged Japanese futures state | Prior gap, lagged day return, lagged night return, volume/OI changes, roll/SQ flags | J-Quants futures after Premium access | Historical target-side variables, lagged before cutoff | Domestic state, liquidity proxy, and contract-state controls. |
 
-The Massive ticker selection covers U.S. market beta, technology and growth exposure, small-cap risk appetite, sector dispersion, a U.S. dollar ETF proxy, duration, safe-haven demand, commodities, Asia/EM risk, and semiconductors. Canonical USD/JPY comes from FRED `DEXJPUS`, not Massive. Japan and Asia proxy tickers are cached with the panel but enter the ML tail nested information-set ladder separately from the broad U.S. core block.
+The Massive ticker selection covers U.S. market beta, technology and growth exposure, small-cap risk appetite, sector dispersion, a U.S. dollar ETF proxy, duration, safe-haven demand, commodities, Asia/EM risk, and semiconductors. Canonical USD/JPY comes from FRED `DEXJPUS`, not Massive. Japan and Asia proxy tickers are cached with the panel but enter the ML tail nested information sets separately from the broad U.S. core block.
 
 ## Data Availability Timeline
 
@@ -350,10 +350,10 @@ Physical layout uses Hive-style Parquet partitions with schema version in the pa
 data/bronze/jquants_futures_daily/schema_version=1/year=2016/month=07/data.parquet
 data/silver/jquants_nk225f_daily/schema_version=2/year=2016/month=07/data.parquet
 data/silver/massive_minute_features/schema_version=1/ticker=spy/year=2016/month=07/data.parquet
-data/bronze/calendar_sessions/schema_version=1/start=2016-07-19/end=2026-04-28/metadata.json
-data/silver/calendar_sessions/schema_version=1/start=2016-07-19/end=2026-04-28/data.parquet
-data/bronze/nikkei_contracts_rule_based/schema_version=1/start=2016-07-19/end=2026-04-28/metadata.json
-data/silver/nikkei_contracts_rule_based/schema_version=1/start=2016-07-19/end=2026-04-28/contracts.parquet
+data/bronze/calendar_sessions/schema_version=1/start=2016-07-19/end=2026-05-02/metadata.json
+data/silver/calendar_sessions/schema_version=1/start=2016-07-19/end=2026-05-02/data.parquet
+data/bronze/nikkei_contracts_rule_based/schema_version=1/start=2016-07-19/end=2026-05-02/metadata.json
+data/silver/nikkei_contracts_rule_based/schema_version=1/start=2016-07-19/end=2026-05-02/contracts.parquet
 ```
 
 All Parquet writes are atomic: write to `.tmp.<pid>.<uuid>`, validate row count and schema,

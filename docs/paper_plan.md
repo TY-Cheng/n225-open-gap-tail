@@ -37,12 +37,12 @@ hide:
 
 ## Sample and Data
 
-- Current clean evaluation window: `2018-06-20` to `2026-04-28`.
-- Current forecast-sample size: `1660` trading-day observations.
+- Current clean evaluation window: `2018-06-20` to `2026-05-01`.
+- Current forecast-sample size: `1661` trading-day observations.
 - Current registered headline tail level: 95% VaR, corresponding to a nominal 5% exception rate.
 - 97.5% VaR/ES is not part of the current headline pipeline. It can be reconsidered only as a separate future specification with sufficient common-sample size, exception counts, and EVT diagnostics.
 - Main data sources:
-    - J-Quants Premium: Nikkei 225 Futures prices, settlement, volume, and open interest.
+    - J-Quants Premium: Nikkei 225 Futures prices, settlement, volume, and open interest; `NK225E` large-option chains enter only as lagged domestic option-implied state when enabled and audited.
     - Massive: U.S. ETFs, sector ETFs, dollar ETF proxy, Japan proxy ETFs, Asia proxy ETFs, and SPY intraday-derived predictors.
     - FRED: Treasury rates, VIX, H.10 USD/JPY, and audited credit-spread controls with publication-lag controls.
     - CBOE: volatility-index predictors, including VIX.

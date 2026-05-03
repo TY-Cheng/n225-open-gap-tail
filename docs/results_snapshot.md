@@ -36,6 +36,8 @@ Opening gaps matter because leveraged futures positions can face margin, liquidi
 - JPX's margin overview gives the general mechanism: adverse futures and options price movements can create significant losses, and margin is posted to ensure payments when losses occur ([JPX margin overview](https://www.jpx.co.jp/english/derivatives/rules/margin/)).
 - JSCC's futures/options margin rules make the channel operational: listed derivatives are margined through JSCC, customer positions require margin, and intraday/emergency margin calls can apply; the emergency margin-call list explicitly includes Nikkei 225 Futures ([JSCC Margin on Futures and Options](https://www.jpx.co.jp/jscc/en/cash/futures/marginsystem/margin.html)).
 - JSCC also has margin add-ons for liquidity and concentration risk, including the index-futures group containing Nikkei 225 Futures ([JSCC Margin Add-on Rules](https://www.jpx.co.jp/jscc/en/cash/futures/marginsystem/addonim.html)).
+- This does not mean every margin account is mechanically recalculated and called exactly at the 08:45 JST open. The opening price immediately changes mark-to-market PnL, account equity, risk limits, liquidity needs, and broker/internal margin pressure; formal JSCC margin calls follow scheduled or event-triggered procedures such as intraday and emergency margin calls.
+- Optiver's discussion of Japan's open-based settlement methodology for Large Nikkei 225 Index Options is related market-structure motivation: it documents why opening-price formation and SQ methodology can have large derivatives PnL consequences. That is related opening-settlement evidence, not direct evidence for the current futures settle-to-open forecast target ([Optiver, 2024](https://optiver.com/insights/how-japans-settlement-price-methodology-impacts-option-expiry/)).
 - Historical cases such as Barings motivate the channel, but they are not direct sample evidence ([GOV.UK Barings inquiry report](https://www.gov.uk/government/publications/report-into-the-collapse-of-barings-bank); [Steenbeek 1999, Bank of Japan edited volume metadata](https://pure.eur.nl/en/publications/price-discovery-during-periods-of-stress-barings-the-kobe-quake-a/)).
 
 ### What is forecast, and how is the target constructed?
@@ -50,6 +52,48 @@ The current headline target is the loss version of the settle-to-open gap: `gap_
 - `full_gap_close_to_open` is carried for audit and alternative diagnostics. It is not the current headline target.
 - `residual_nightclose_to_day_open` is used for residual and absorption diagnostics when the night close is available.
 - A pure U.S.-close-mark-to-open target would require a licensed timestamped Nikkei futures mark at the U.S. close cutoff. That target is disabled in this run.
+
+### Why use the OSE Nikkei 225 large contract rather than SGX or CME Nikkei contracts?
+
+The target is the home-market OSE large-contract opening risk surface.
+
+- The OSE large contract is the native JPX/OSE Nikkei 225 Futures contract with JPX/JSCC-published trading hours, contract size, SQ, margin, and clearing rules. JPX defines the large-contract unit as `Nikkei 225 x JPY 1,000` ([JPX contract specifications](https://www.jpx.co.jp/english/derivatives/products/domestic/225futures/01.html)).
+- Optiver describes OSE Nikkei 225 Index futures as the largest, most international, and most liquid APAC futures market. That is market-structure motivation for using OSE as the benchmark venue, not a formal volume-ranking result estimated in this project ([Optiver, 2024](https://optiver.com/insights/how-japans-settlement-price-methodology-impacts-option-expiry/)).
+- The settlement anchor is Japanese: JPX defines the final settlement price as Special Quotation, with SQ based on the opening prices of Nikkei 225 component stocks on the business day after the last trading day ([JPX contract specifications](https://www.jpx.co.jp/english/derivatives/products/domestic/225futures/01.html)).
+- SGX and CME Nikkei contracts are important offshore venues, and the cross-market Nikkei futures literature explicitly studies price discovery across OSE, SGX, and CME. The current paper does not claim those venues are irrelevant ([Spot-Futures Price Adjustments in the Nikkei 225](https://www.mdpi.com/1911-8074/16/2/117)).
+- They are not the headline target because the current audited target source is J-Quants OSE contract-level session data. The current run does not include licensed timestamped SGX/CME/OSE intraday marks at the U.S. close cutoff.
+- A cross-venue extension could forecast CME/SGX-to-OSE-open residual risk or hedge-slippage risk. That is a useful but different target from the current OSE home-market opening-risk design.
+
+### Why focus on the OSE open?
+
+The open is where next Japanese day-session price formation, settlement mechanics, and risk control meet.
+
+- The OSE day-session open is the first OSE day-session mark after the U.S.-close information cutoff and after the Japanese night-session interval.
+- JPX's contract specifications make the open directly relevant for expiry mechanics because Nikkei 225 Futures final settlement uses SQ based on Nikkei component opening prices after the last trading day ([JPX contract specifications](https://www.jpx.co.jp/english/derivatives/products/domestic/225futures/01.html)).
+- Optiver argues that Nikkei 225 index options are unusual in expiring at the cash-market open and that opening-price formation can be imbalance-sensitive. That is external market-structure support for studying open-based tail risk, even though the Optiver article is about index options rather than this futures forecast target ([Optiver, 2024](https://optiver.com/insights/how-japans-settlement-price-methodology-impacts-option-expiry/)).
+- The current target diagnostics show that settle-to-open and night-close-to-open residual moves can be large enough to matter for VaR/ES forecasting.
+- The margin link is indirect but operationally important: the open changes mark-to-market PnL, account equity, limits, and collateral pressure, while formal JSCC margin calls follow scheduled or event-triggered procedures ([JSCC Margin on Futures and Options](https://www.jpx.co.jp/jscc/en/cash/futures/marginsystem/margin.html)).
+- This does not mean the open is the only economically relevant price. Close-to-open and night-close-to-open variants are carried as audit or diagnostic targets; the headline target is chosen because it is the cleanest home-market opening-risk object under the current data contract.
+
+### Does the opening-gap target assume no CME or OSE night-session trading?
+
+No. The empirical object is OSE day-session opening risk, not a claim that institutions cannot trade or hedge Nikkei exposure through CME, SGX, or OSE night-session products.
+
+- The headline target is an OSE large-contract settle-to-open risk surface. CME and SGX Nikkei marks are not used in the current headline run.
+- JPX lists Nikkei 225 Futures trading hours as `08:45-15:45` and `17:00-06:00`, so the OSE night session is part of the market structure rather than an omitted concept ([JPX contract specifications](https://www.jpx.co.jp/english/derivatives/products/domestic/225futures/01.html)).
+- The OSE night session is not ignored in the audit layer: J-Quants night-session fields are carried, `residual_nightclose_to_day_open` is available as a diagnostic when the night close is present, and the timing map records the U.S.-close-to-OSE-night-close interval and absorption-regime indicators.
+- What is not yet modeled is a continuously hedged cross-venue residual such as `log(OSE day open) - log(Nikkei futures mark at the U.S. close cutoff)`. That requires a licensed timestamped OSE, CME, SGX, or equivalent Nikkei futures mark at the cutoff.
+- The correct manuscript claim is therefore opening-risk forecasting from information available by the U.S. close cutoff, not all Nikkei overnight risk and not realized hedging performance for a continuously managed global book.
+- This is still a meaningful risk-management object for local opening-auction exposure, limit utilization, collateral planning, liquidity needs, and accounts that cannot or do not fully rebalance across venues before the OSE day open.
+
+### Does settle-to-open include SQ final-settlement risk?
+
+Only as audit history, not as headline clean evidence.
+
+- `full_gap_settle_to_open` can be computed for rows that are later marked as roll/SQ-window rows, but the headline clean sample excludes those rows.
+- The current target-audit rule excludes the roll/SQ window starting five JPX sessions before the last trading day through SQ day; excluded rows carry `missing_reason = roll_sq_excluded`.
+- Therefore the headline target is mainly daily settlement-to-next-OSE-day-open risk. It is not an SQ expiry/final-settlement event study.
+- SQ is economically related because JPX defines Nikkei 225 Futures final settlement price as Special Quotation, with SQ based on the Nikkei 225 component opening prices on the business day after the last trading day ([JPX contract specifications](https://www.jpx.co.jp/english/derivatives/products/domestic/225futures/01.html)). Optiver's Nikkei options note gives a related open-based settlement example, but SQ should be studied through a separate event-study or robustness module rather than mixed into the headline clean sample.
 
 ### How are look-ahead bias controls handled?
 
@@ -156,6 +200,68 @@ The main risk is not whether the pipeline ran; it is whether the claims stay ins
 - A natural manuscript framing is point-in-time U.S. close information for OSE pre-open tail-risk forecasting, with futures opening-risk management and forecast-evaluation discipline as supporting angles.
 - Plausible outlets depend on emphasis: Journal of Futures Markets for futures-market risk, International Journal of Forecasting or Journal of Forecasting for forecast evaluation, Pacific-Basin Finance Journal for Japan and Asia-Pacific market information, and The Journal of Risk for VaR/ES validation.
 - The current bottom line is that the pipeline produces research-candidate evidence from the durable gold layer; Benchmark floor, advanced benchmark, and ML-tail suites completed with zero recorded forecast failures; advanced rows are implemented evidence but remain nonblocking until author-reviewed against the same sample/inference gates.
+
+
+## Target Distribution And Tail Diagnostics
+
+- These diagnostics are computed from the raw clean settlement-to-open target `gap_t`; left loss is `-gap_t`, and right loss is `gap_t`.
+- The purpose is to show why the dependent variable is a tail-risk object before comparing VaR/ES forecasts.
+- Positive tail-shape estimates, heavy empirical tails, and upward mean-excess patterns are empirical support for using heavy-tail approximations such as POT-GPD; they are not a finite-sample proof of Frechet max-domain attraction.
+- Raw target diagnostics motivate VaR/ES and EVT modeling. They do not validate LightGBM+EVT forecasts; forecast validity must be read from standardized residual-loss EVT diagnostics and out-of-sample VaR/ES backtests.
+
+### Target Summary
+
+| Measure | Value |
+| --- | --- |
+| Clean forecast observations | `1661` |
+| Date range | `2018-06-20 to 2026-05-01` |
+| Mean gap | 0.000522 log (+0.05%) |
+| Standard deviation | 0.010649 log (+1.07%) |
+| Skewness | -0.0336644 |
+| Excess kurtosis | 13.1331 |
+| 1% quantile | -0.028697 log (-2.83%) |
+| 5% quantile | -0.014868 log (-1.48%) |
+| Median | 0.000890 log (+0.09%) |
+| 95% quantile | 0.014344 log (+1.44%) |
+| 99% quantile | 0.027361 log (+2.77%) |
+| Max drawdown gap | -0.087513 log (-8.38%) on `2020-03-13` |
+| Max upside gap | 0.096937 log (+10.18%) on `2025-04-10` |
+| Jarque-Bera p-value | 0 |
+| Jarque-Bera statistic | 11972.7 |
+
+### Raw-Tail EVT Diagnostics
+
+| Tail | Threshold probability | Threshold | Exceedances | Mean excess | GPD xi | GPD scale | Hill xi |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| left_tail_loss | 0.900 | 0.0104713 | 166 | 0.00809322 | 0.204603 | 0.00641777 | 0.476705 |
+| left_tail_loss | 0.925 | 0.0124096 | 125 | 0.00847607 | 0.234934 | 0.00648125 | 0.433857 |
+| left_tail_loss | 0.950 | 0.0148675 | 83 | 0.00960529 | 0.212263 | 0.00755758 | 0.418714 |
+| left_tail_loss | 0.975 | 0.0210536 | 42 | 0.0102367 | 0.446797 | 0.00607498 | 0.331429 |
+| left_tail_loss | 0.990 | 0.0286967 | 17 | 0.0139643 | 0.284419 | 0.0101838 | 0.34578 |
+| right_tail_loss | 0.900 | 0.0108676 | 166 | 0.00720714 | 0.346438 | 0.0047221 | 0.408732 |
+| right_tail_loss | 0.925 | 0.0124484 | 125 | 0.00772818 | 0.426386 | 0.00457968 | 0.384777 |
+| right_tail_loss | 0.950 | 0.0143435 | 83 | 0.00924099 | 0.42009 | 0.00558805 | 0.398242 |
+| right_tail_loss | 0.975 | 0.0184656 | 42 | 0.0122865 | 0.407723 | 0.00773658 | 0.419593 |
+| right_tail_loss | 0.990 | 0.0273614 | 17 | 0.0165888 | 0.191275 | 0.0135495 | 0.404539 |
+| absolute_gap | 0.900 | 0.0146899 | 166 | 0.00934487 | 0.331036 | 0.0063527 | 0.402974 |
+| absolute_gap | 0.925 | 0.016469 | 125 | 0.01035 | 0.304284 | 0.00729168 | 0.402961 |
+| absolute_gap | 0.950 | 0.0196277 | 83 | 0.0116699 | 0.312179 | 0.00818106 | 0.387247 |
+| absolute_gap | 0.975 | 0.0259904 | 42 | 0.0141731 | 0.297623 | 0.0102021 | 0.36961 |
+| absolute_gap | 0.990 | 0.0363397 | 17 | 0.018341 | 0.213979 | 0.0147211 | 0.357836 |
+
+- The GPD threshold table is computed on raw left loss, raw right loss, and the absolute gap; it should not be read as a forecast-model diagnostic.
+- The Hill and GPD shape estimates are deliberately reported over multiple thresholds because tail-index estimates are sensitive in samples of this length.
+
+### Target Distribution Figures
+
+| Figure | Tail side | Source | Claim scope | Docs file |
+| --- | --- | --- | --- | --- |
+| `target_gap_histogram_density` | `target_distribution` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_gap_histogram_density.png` |
+| `target_loss_qq_left_tail` | `left_tail` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_loss_qq_left_tail.png` |
+| `target_loss_qq_right_tail` | `right_tail` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_loss_qq_right_tail.png` |
+| `target_log_survival` | `left_right_target_distribution` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_log_survival.png` |
+| `target_mean_excess` | `left_right_target_distribution` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_mean_excess.png` |
+| `target_hill_plot` | `left_right_target_distribution` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_hill_plot.png` |
 
 
 ## Results And Discussion
@@ -468,7 +574,36 @@ Status: `completed_lightgbm_ml_tail_models`; implemented models: `lightgbm_direc
 - The table manifest records the generated LaTeX table files, their source artifacts, and their claim scopes.
 - Tables are paper-facing exports; the Markdown tables above are snapshot summaries for browser review.
 
-### Figure 1. Coverage Breach-Rate Diagnostics
+### Figure 1. Target Distribution And Tail Diagnostics
+
+- Key readings: these figures describe the raw settlement-to-open gap and the left/right loss tails.
+- They motivate VaR/ES and POT-GPD modeling, but they do not validate LightGBM+EVT forecasts.
+
+![target_gap_histogram_density](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_gap_histogram_density.png)
+
+_Figure: `target_gap_histogram_density`. Source: `panel/modeling_panel.parquet`. Claim scope: `target_distribution_motivation_not_forecast_validation`. Tail side: `target_distribution`. Run file: `latex/figures/target_gap_histogram_density.png`._
+
+![target_loss_qq_left_tail](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_loss_qq_left_tail.png)
+
+_Figure: `target_loss_qq_left_tail`. Source: `panel/modeling_panel.parquet`. Claim scope: `target_distribution_motivation_not_forecast_validation`. Tail side: `left_tail`. Run file: `latex/figures/target_loss_qq_left_tail.png`._
+
+![target_loss_qq_right_tail](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_loss_qq_right_tail.png)
+
+_Figure: `target_loss_qq_right_tail`. Source: `panel/modeling_panel.parquet`. Claim scope: `target_distribution_motivation_not_forecast_validation`. Tail side: `right_tail`. Run file: `latex/figures/target_loss_qq_right_tail.png`._
+
+![target_log_survival](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_log_survival.png)
+
+_Figure: `target_log_survival`. Source: `panel/modeling_panel.parquet`. Claim scope: `target_distribution_motivation_not_forecast_validation`. Tail side: `left_right_target_distribution`. Run file: `latex/figures/target_log_survival.png`._
+
+![target_mean_excess](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_mean_excess.png)
+
+_Figure: `target_mean_excess`. Source: `panel/modeling_panel.parquet`. Claim scope: `target_distribution_motivation_not_forecast_validation`. Tail side: `left_right_target_distribution`. Run file: `latex/figures/target_mean_excess.png`._
+
+![target_hill_plot](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_hill_plot.png)
+
+_Figure: `target_hill_plot`. Source: `panel/modeling_panel.parquet`. Claim scope: `target_distribution_motivation_not_forecast_validation`. Tail side: `left_right_target_distribution`. Run file: `latex/figures/target_hill_plot.png`._
+
+### Figure 2. Coverage Breach-Rate Diagnostics
 
 - Key readings: bars report realized VaR exception rates against the nominal line.
 - Read this first: exception-rate deviations set the boundary for any loss-based interpretation.
@@ -481,7 +616,7 @@ _Figure: `coverage_breach_rates_left_tail`. Source: `metrics/benchmark_metrics.p
 
 _Figure: `coverage_breach_rates_right_tail`. Source: `metrics/benchmark_metrics.parquet`, `metrics/benchmark_metrics_per_model.parquet`, `metrics/ml_tail_metrics.parquet`, `metrics/ml_tail_metrics_per_model.parquet`. Claim scope: `coverage_diagnostic_not_headline_claim`. Tail side: `right_tail`. Run file: `latex/figures/coverage_breach_rates_right_tail.png`._
 
-### Figure 2. Benchmark Murphy Diagnostics
+### Figure 3. Benchmark Murphy Diagnostics
 
 - Key readings: curves report benchmark elementary-score diagnostics on a common grid.
 - The plot is a scoring-family diagnostic, not a pairwise ranking statement.
@@ -494,7 +629,7 @@ _Figure: `benchmark_murphy_left_tail`. Source: `metrics/benchmark_murphy.parquet
 
 _Figure: `benchmark_murphy_right_tail`. Source: `metrics/benchmark_murphy.parquet`. Claim scope: `murphy_diagnostic_benchmark_floor_common_grid`. Tail side: `right_tail`. Run file: `latex/figures/benchmark_murphy_right_tail.png`._
 
-### Figure 3. ML-Tail Murphy Diagnostics
+### Figure 4. ML-Tail Murphy Diagnostics
 
 - Key readings: curves report the ML-tail nested information sets on a common grid.
 - Interpret curve separation together with the headline coverage warning and unconditional inference gates.
@@ -507,7 +642,7 @@ _Figure: `ml_tail_murphy_left_tail`. Source: `metrics/ml_tail_murphy.parquet`. C
 
 _Figure: `ml_tail_murphy_right_tail`. Source: `metrics/ml_tail_murphy.parquet`. Claim scope: `murphy_diagnostic_ml_tail_nested_information_sets_common_grid`. Tail side: `right_tail`. Run file: `latex/figures/ml_tail_murphy_right_tail.png`._
 
-### Figure 4. DST Attenuation Diagnostics
+### Figure 5. DST Attenuation Diagnostics
 
 - Key readings: bars summarize timing-regime forecast diagnostics.
 - Treat this as descriptive timing evidence; left/right patterns should not be assigned a shared structural mechanism.
@@ -520,7 +655,7 @@ _Figure: `dst_attenuation_left_tail`. Source: `metrics/ml_tail_dst_attenuation.p
 
 _Figure: `dst_attenuation_right_tail`. Source: `metrics/ml_tail_dst_attenuation.parquet`. Claim scope: `descriptive_dst_attenuation_not_structural_causal_identification`. Tail side: `right_tail`. Run file: `latex/figures/dst_attenuation_right_tail.png`._
 
-### Figure 5. ES Severity Diagnostics
+### Figure 6. ES Severity Diagnostics
 
 - Key readings: bars report conditional-on-exception severity diagnostics.
 - Severity is reported for risk interpretation but is not a standalone model-selection claim.
@@ -533,7 +668,7 @@ _Figure: `es_severity_left_tail`. Source: `metrics/benchmark_metrics.parquet`, `
 
 _Figure: `es_severity_right_tail`. Source: `metrics/benchmark_metrics.parquet`, `metrics/ml_tail_metrics.parquet`, `metrics/ml_tail_metrics_per_model.parquet`. Claim scope: `es_severity_diagnostic_not_model_selection_claim`. Tail side: `right_tail`. Run file: `latex/figures/es_severity_right_tail.png`._
 
-### Figure 6. Trigger Diagnostics
+### Figure 7. Trigger Diagnostics
 
 - Key readings: bars report pre-open risk-trigger diagnostics by model family.
 - The trigger output is a monitoring diagnostic, not an execution-performance result.

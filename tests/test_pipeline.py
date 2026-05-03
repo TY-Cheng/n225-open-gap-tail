@@ -2957,6 +2957,52 @@ def test_export_figures_skips_missing_optional_artifacts(tmp_path: Path) -> None
     )
 
 
+def test_export_figures_renders_target_distribution_diagnostics(tmp_path: Path) -> None:
+    run_dir = tmp_path / "reports" / "runs" / "target_figures"
+    panel_dir = run_dir / "panel"
+    panel_dir.mkdir(parents=True)
+    rows = []
+    for idx in range(240):
+        gap = 0.006 * math.sin(idx / 8)
+        if idx % 59 == 0:
+            gap -= 0.04
+        if idx % 71 == 0:
+            gap += 0.05
+        rows.append(
+            {
+                "forecast_date": f"2025-02-{(idx % 28) + 1:02d}",
+                "forecast_sample": True,
+                "gap_t": gap,
+            }
+        )
+    pl.DataFrame(rows).write_parquet(panel_dir / "modeling_panel.parquet")
+
+    result = reporting_figures.export_figures(
+        run_dir=run_dir,
+        manifest={"run_id": "target_figures"},
+    )
+    target_names = {
+        "target_gap_histogram_density",
+        "target_loss_qq_left_tail",
+        "target_loss_qq_right_tail",
+        "target_log_survival",
+        "target_mean_excess",
+        "target_hill_plot",
+    }
+    entries = [
+        entry for entry in result.figure_entries if str(entry.get("name", "")).startswith("target_")
+    ]
+
+    assert {entry["name"] for entry in entries if entry["format"] == "png"} == target_names
+    assert {entry["name"] for entry in entries if entry["format"] == "pdf"} == target_names
+    assert all(entry["source_artifacts"] == ["panel/modeling_panel.parquet"] for entry in entries)
+    assert all(
+        entry["claim_scope"] == "target_distribution_motivation_not_forecast_validation"
+        for entry in entries
+    )
+    assert all((run_dir / entry["path"]).exists() for entry in entries)
+
+
 def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) -> None:
     metrics = pl.DataFrame(
         [

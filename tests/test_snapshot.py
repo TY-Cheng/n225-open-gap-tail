@@ -14,6 +14,7 @@ import pytest
 import n225_open_gap_tail.diagnostics.results_discussion as results_discussion_module
 import n225_open_gap_tail.diagnostics.snapshot as snapshot_module
 import n225_open_gap_tail.diagnostics.snapshot_gallery as snapshot_gallery
+import n225_open_gap_tail.diagnostics.target_distribution as target_distribution_module
 from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.diagnostics.snapshot import (
     build_snapshot_id,
@@ -521,6 +522,8 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     assert result.snapshot_id == run_id
     assert "Discussion Q&A" in rendered
     _assert_discussion_qa_headings_in_order(rendered)
+    assert "## Target Distribution And Tail Diagnostics" in rendered
+    assert "Target-distribution diagnostics are unavailable" in rendered
     assert "## Results And Discussion" in rendered
     assert "<!-- generated: results_discussion -->" in rendered
     _assert_results_discussion_subsections_in_order(rendered)
@@ -544,6 +547,60 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     assert "Coverage review:" in rendered
     assert "must not be read as forecast improvement" in rendered
     assert "on average across the unconditional evaluation sample" in rendered
+
+
+def test_target_tail_diagnostics_markdown_reports_raw_target_boundary() -> None:
+    rows = []
+    for idx in range(220):
+        base = 0.006 * math.sin(idx / 7)
+        if idx % 53 == 0:
+            base -= 0.035
+        if idx % 67 == 0:
+            base += 0.042
+        rows.append(
+            {
+                "forecast_date": f"2025-01-{(idx % 28) + 1:02d}",
+                "clean_sample": True,
+                "forecast_sample": True,
+                "gap_t": base,
+                "residual_nightclose_to_day_open": base / 2,
+            }
+        )
+    panel = pl.DataFrame(rows)
+    manifest: dict[str, object] = {
+        "figures": [
+            {
+                "name": "target_gap_histogram_density",
+                "path": "latex/figures/target_gap_histogram_density.png",
+                "format": "png",
+                "source_artifacts": ["panel/modeling_panel.parquet"],
+                "tail_side": "target_distribution",
+                "claim_scope": "target_distribution_motivation_not_forecast_validation",
+            }
+        ]
+    }
+
+    rendered = target_distribution_module.target_tail_diagnostics_markdown(
+        panel=panel,
+        figure_manifest=manifest,
+        run_id="tailrisk_test",
+    )
+
+    assert "## Target Distribution And Tail Diagnostics" in rendered
+    assert "Clean forecast observations" in rendered
+    assert "Excess kurtosis" in rendered
+    assert "GPD xi" in rendered
+    assert "Hill xi" in rendered
+    assert "target_gap_histogram_density" in rendered
+    assert "panel/modeling_panel.parquet" in rendered
+    assert "not validate LightGBM+EVT forecasts" in rendered
+    assert "not a finite-sample proof of Frechet" in rendered
+    scale_text = target_distribution_module.opening_gap_scale_text(panel)
+    assert "largest absolute clean settle-to-open gap" in scale_text
+    assert "night-close-to-open residual" in scale_text
+    assert "modeling panel is missing `gap_t`" in target_distribution_module.opening_gap_scale_text(
+        pl.DataFrame()
+    )
 
 
 def _assert_discussion_qa_headings_in_order(rendered: str) -> None:
@@ -1010,6 +1067,8 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
     run_dir = tmp_path / "reports" / "runs" / "tailrisk_gallery"
     figure_dir = run_dir / "latex" / "figures"
     figure_dir.mkdir(parents=True)
+    target_source = figure_dir / "target_gap_histogram_density.png"
+    target_source.write_bytes(b"png")
     source = figure_dir / "coverage_breach_rates_left_tail.png"
     source.write_bytes(b"png")
     stale_docs = tmp_path / "docs" / "figures" / run_dir.name / "stale.png"
@@ -1019,6 +1078,14 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
         "figures": [
             "bad",
             {"name": "no_path", "format": "png"},
+            {
+                "name": "target_gap_histogram_density",
+                "path": "latex/figures/target_gap_histogram_density.png",
+                "format": "png",
+                "source_artifacts": ["panel/modeling_panel.parquet"],
+                "tail_side": "target_distribution",
+                "claim_scope": "target_distribution_motivation_not_forecast_validation",
+            },
             {
                 "name": "coverage_breach_rates_left_tail",
                 "path": "latex/figures/coverage_breach_rates_left_tail.png",
@@ -1082,12 +1149,15 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
         figure_manifest=manifest,
         run_id=run_dir.name,
     )
-    assert "Figure 1. Coverage Breach-Rate Diagnostics" in gallery
+    assert "Figure 1. Target Distribution And Tail Diagnostics" in gallery
+    assert "Figure 2. Coverage Breach-Rate Diagnostics" in gallery
+    assert "target_gap_histogram_density.png" in gallery
     assert "coverage_breach_rates_left_tail.png" in gallery
     assert "Figure artifacts are not available" in snapshot_gallery.figure_gallery_markdown(
         figure_manifest={},
         run_id=run_dir.name,
     )
+    assert snapshot_gallery._figure_family("target_gap_histogram_density") == "target_distribution"
     assert snapshot_gallery._figure_family("benchmark_murphy_left_tail") == "benchmark_murphy"
     assert snapshot_gallery._figure_family("ml_tail_murphy_left_tail") == "ml_tail_murphy"
     assert snapshot_gallery._figure_family("dst_attenuation_left_tail") == "dst"
@@ -1095,6 +1165,9 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
     assert snapshot_gallery._figure_family("trigger_diagnostics_left_tail") == "trigger"
     assert snapshot_gallery._figure_family("unknown") == "other"
     assert "generated diagnostic figure" in " ".join(snapshot_gallery._figure_key_readings("x"))
+    assert "LightGBM+EVT forecasts" in " ".join(
+        snapshot_gallery._figure_key_readings("target_distribution")
+    )
     assert snapshot_gallery._source_artifacts_text([]) == "`missing`"
     assert snapshot_gallery._markdown_cell("a|b\nc") == "a\\|b c"
 

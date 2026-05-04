@@ -26,6 +26,10 @@ N225_OPTION_FEATURES = (
     "n225_option_total_volume_log1p_lag_1",
     "n225_option_valid_contract_count_lag_1",
     "n225_option_days_to_sq_lag_1",
+    "n225_option_night_atm_close_lag_1",
+    "n225_option_night_atm_return_lag_1",
+    "n225_option_night_atm_range_lag_1",
+    "n225_option_night_valid_contract_count_lag_1",
 )
 
 
@@ -159,6 +163,22 @@ def _daily_option_summary(
     call_volume = sum(
         _optional_float(row.get("volume")) or 0.0 for row in scoped if row.get("put_call") == "call"
     )
+    night_atm_rows = [row for row in atm_rows if _has_valid_night_ohlc(row)]
+    night_atm_close = _safe_median(
+        [_optional_float(row.get("night_session_close")) for row in night_atm_rows]
+    )
+    night_atm_return = _safe_median(
+        [
+            _safe_log_return(row.get("night_session_open"), row.get("night_session_close"))
+            for row in night_atm_rows
+        ]
+    )
+    night_atm_range = _safe_median(
+        [
+            _safe_log_range(row.get("night_session_high"), row.get("night_session_low"))
+            for row in night_atm_rows
+        ]
+    )
     return {
         "trading_date": trading_date,
         "vendor_available_ts_utc": _max_datetime(
@@ -179,6 +199,10 @@ def _daily_option_summary(
         "total_volume_log1p": math.log1p(total_volume) if total_volume >= 0 else None,
         "valid_contract_count": float(len(scoped)),
         "days_to_sq": _safe_median(_days_to_sq(trading_date, row) for row in scoped),
+        "night_atm_close": night_atm_close,
+        "night_atm_return": night_atm_return,
+        "night_atm_range": night_atm_range,
+        "night_valid_contract_count": float(len(night_atm_rows)),
     }
 
 
@@ -218,6 +242,42 @@ def _configured_dte_scope(
         if days_to_sq is not None and min_dte <= days_to_sq <= max_dte:
             scoped.append(row)
     return scoped
+
+
+def _has_valid_night_ohlc(row: dict[str, object]) -> bool:
+    night_open = _optional_float(row.get("night_session_open"))
+    night_high = _optional_float(row.get("night_session_high"))
+    night_low = _optional_float(row.get("night_session_low"))
+    night_close = _optional_float(row.get("night_session_close"))
+    return (
+        night_open is not None
+        and night_high is not None
+        and night_low is not None
+        and night_close is not None
+        and night_open > 0
+        and night_high > 0
+        and night_low > 0
+        and night_close > 0
+        and night_high >= night_low
+    )
+
+
+def _safe_log_return(open_value: object, close_value: object) -> float | None:
+    open_price = _optional_float(open_value)
+    close_price = _optional_float(close_value)
+    if open_price is None or close_price is None or open_price <= 0 or close_price <= 0:
+        return None
+    return math.log(close_price / open_price)
+
+
+def _safe_log_range(high_value: object, low_value: object) -> float | None:
+    high_price = _optional_float(high_value)
+    low_price = _optional_float(low_value)
+    if high_price is None or low_price is None or high_price <= 0 or low_price <= 0:
+        return None
+    if high_price < low_price:
+        return None
+    return math.log(high_price / low_price)
 
 
 def _available_by_cutoff(row: dict[str, object], cutoff: datetime | None) -> bool:

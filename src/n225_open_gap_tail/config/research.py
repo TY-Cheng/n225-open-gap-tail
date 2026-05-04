@@ -44,15 +44,13 @@ CORE_MASSIVE_TICKERS: tuple[str, ...] = (
     "TLT",
     "GLD",
     "USO",
-    "EEM",
-    "FXI",
     "SMH",
     "HYG",
     "LQD",
 )
 OPTIONAL_MASSIVE_TICKERS: tuple[str, ...] = ("UUP",)
 JAPAN_PROXY_MASSIVE_TICKERS: tuple[str, ...] = ("EWJ", "DXJ")
-ASIA_PROXY_MASSIVE_TICKERS: tuple[str, ...] = ("EWY", "EWT", "EWH")
+ASIA_PROXY_MASSIVE_TICKERS: tuple[str, ...] = ("EEM", "FXI", "EWY", "EWT", "EWH")
 ROBUSTNESS_MASSIVE_TICKERS: tuple[str, ...] = (
     JAPAN_PROXY_MASSIVE_TICKERS + ASIA_PROXY_MASSIVE_TICKERS
 )
@@ -76,8 +74,28 @@ MASSIVE_MINUTE_TICKERS: tuple[str, ...] = tuple(
         )
     )
 )
-MASSIVE_OPTIONS_CORE_UNDERLYINGS: tuple[str, ...] = ("SPY", "QQQ", "IWM")
+MASSIVE_OPTIONS_CORE_UNDERLYINGS: tuple[str, ...] = ("SPY", "QQQ", "DIA", "IWM")
+MASSIVE_OPTIONS_SECTOR_UNDERLYINGS: tuple[str, ...] = (
+    "XLK",
+    "XLF",
+    "XLE",
+    "XLV",
+    "XLI",
+    "XLY",
+    "XLP",
+    "XLB",
+    "XLU",
+    "XLC",
+    "SMH",
+)
 MASSIVE_OPTIONS_JAPAN_ETF_UNDERLYINGS: tuple[str, ...] = ("EWJ", "DXJ")
+MASSIVE_OPTIONS_ASIA_PROXY_UNDERLYINGS: tuple[str, ...] = (
+    "EEM",
+    "FXI",
+    "EWY",
+    "EWT",
+    "EWH",
+)
 MASSIVE_OPTIONS_ADR_PRIMARY_UNDERLYINGS: tuple[str, ...] = (
     "TM",
     "SONY",
@@ -111,7 +129,9 @@ class FeatureSetConfig:
     massive_minute_japan_proxy: tuple[str, ...] = MASSIVE_MINUTE_JAPAN_PROXY_TICKERS
     massive_minute_asia_proxy: tuple[str, ...] = MASSIVE_MINUTE_ASIA_PROXY_TICKERS
     massive_options_core_underlyings: tuple[str, ...] = MASSIVE_OPTIONS_CORE_UNDERLYINGS
+    massive_options_sector_underlyings: tuple[str, ...] = MASSIVE_OPTIONS_SECTOR_UNDERLYINGS
     massive_options_japan_etf_underlyings: tuple[str, ...] = MASSIVE_OPTIONS_JAPAN_ETF_UNDERLYINGS
+    massive_options_asia_proxy_underlyings: tuple[str, ...] = MASSIVE_OPTIONS_ASIA_PROXY_UNDERLYINGS
     massive_options_adr_primary_underlyings: tuple[str, ...] = (
         MASSIVE_OPTIONS_ADR_PRIMARY_UNDERLYINGS
     )
@@ -144,9 +164,6 @@ class FeatureSetConfig:
     ml_tail_model_d_information_set: str = (
         "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy"
     )
-    ml_tail_model_e_information_set: str = (
-        "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy_plus_options_risk"
-    )
 
 
 @dataclass(frozen=True)
@@ -166,9 +183,10 @@ class FeatureEngineeringPolicy:
     massive_minute_volume_baseline_window: int = 20
     ml_feature_max_training_missingness: float = 0.20
     ml_minute_feature_max_training_missingness: float = 0.05
+    ml_options_feature_max_training_missingness: float = 0.30
     options_dte_short_bucket: tuple[int, int] = (7, 30)
     options_dte_medium_bucket: tuple[int, int] = (31, 90)
-    options_headline_feature_cap: int = 30
+    options_headline_feature_cap: int = 45
     options_atm_policy: str = "delta_neutral_preferred_else_closest_to_spot_or_forward"
     options_adr_aggregation_policy: str = "median_and_20pct_trimmed_mean_primary"
     options_historical_source_policy: str = (

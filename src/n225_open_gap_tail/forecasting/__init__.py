@@ -59,6 +59,7 @@ from n225_open_gap_tail.features.registry import (
     _feature_source_family as _feature_source_family,
 )
 from n225_open_gap_tail.features.n225_options import *
+from n225_open_gap_tail.features.us_options import *
 from n225_open_gap_tail.sources.jquants_options import *
 from n225_open_gap_tail.panel.leakage import *
 from n225_open_gap_tail.panel.leakage import (
@@ -115,6 +116,7 @@ from n225_open_gap_tail.features.asof import (
     _fred_features_asof as _fred_features_asof,
     _massive_daily_feature_map as _massive_daily_feature_map,
     _minute_feature_map as _minute_feature_map,
+    _options_feature_map as _options_feature_map,
 )
 from n225_open_gap_tail.features.descriptions import *
 from n225_open_gap_tail.features.descriptions import (

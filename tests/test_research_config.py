@@ -17,6 +17,7 @@ from n225_open_gap_tail.config.research import (
     FeatureSetVersion,
     default_research_config,
 )
+from n225_open_gap_tail.panel.information_sets import registered_ml_tail_information_sets
 
 
 def test_claim_level_enum_is_controlled_vocabulary() -> None:
@@ -54,7 +55,7 @@ def test_core_feature_sets_exclude_short_history_and_robustness_tickers() -> Non
     assert "DEXJPUS" in config.feature_sets.fred_fallback
     assert "BAMLH0A0HYM2" in config.feature_sets.fred_credit_enriched
     assert config.feature_sets.ml_tail_model_d_information_set.endswith("plus_asia_proxy")
-    assert config.feature_sets.ml_tail_model_e_information_set.endswith("plus_options_risk")
+    assert len(registered_ml_tail_information_sets()) == 4
     assert config.model_policy.tail_levels == (0.95,)
     assert config.model_policy.evt_min_standardized_losses_95 == 500
     assert config.model_policy.evt_min_exceedances_95 == 35

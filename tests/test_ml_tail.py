@@ -603,7 +603,7 @@ def test_evaluate_ml_tail_suite_writes_lightgbm_ladder_artifacts(
     assert result.status == "completed_lightgbm_ml_tail_models"
     assert (run_dir / "forecasts" / "ml_tail_forecasts.parquet").exists()
     forecasts = pl.read_parquet(run_dir / "forecasts" / "ml_tail_forecasts.parquet")
-    assert forecasts["information_set"].n_unique() == 5
+    assert forecasts["information_set"].n_unique() == 4
     assert set(forecasts["tail_side"].to_list()) == {"left_tail", "right_tail"}
     assert (run_dir / "metrics" / "ml_tail_incremental_information.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_dst_attenuation.parquet").exists()
@@ -643,8 +643,11 @@ def test_evaluate_ml_tail_suite_writes_lightgbm_ladder_artifacts(
     status = json.loads((run_dir / "metrics" / "ml_tail_status.json").read_text(encoding="utf-8"))
     assert set(status["implemented_components"]) == set(paper_module.ML_TAIL_MODEL_NAMES)
     assert status["unavailable_components"] == {}
+    registered_models = {
+        key for key in status["registered_information_sets"] if str(key).startswith("model_")
+    }
+    assert registered_models == {"model_a", "model_b", "model_c", "model_d"}
     assert status["registered_information_sets"]["model_d"].endswith("plus_asia_proxy")
-    assert status["registered_information_sets"]["model_e"].endswith("plus_options_risk")
     assert status["cpa_inference_rows"] == cpa.height
     assert status["cross_model_cpa_inference_rows"] == cross_cpa.height
     assert status["cross_model_cpa_status"] == "skipped_missing_benchmark_forecasts"

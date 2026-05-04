@@ -21,9 +21,10 @@ check: _require-external-uv-env
     just lint-legacy-names
     just lint-architecture
 
-full start="2016-07-19" end="" workers="4" force="false":
+full start="2016-07-19" end="" workers="4" force="false" options="true":
+    @[[ "{{ options }}" == "true" || "{{ options }}" == "false" ]] || (echo 'error: options must be "true" or "false"' >&2; exit 1)
     just check
-    just _run "{{ start }}" "{{ end }}" "{{ workers }}" all "{{ force }}"
+    MASSIVE_OPTIONS_HISTORICAL_ENABLED="{{ options }}" MASSIVE_OPTIONS_FLAT_FILES_ENABLED="{{ options }}" MASSIVE_OPTIONS_UNDERLYINGS="${MASSIVE_OPTIONS_UNDERLYINGS:-SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,XLY,XLP,XLB,XLU,XLC,SMH,EWJ,DXJ,EEM,FXI,EWY,EWT,EWH,TM,SONY,MUFG,SMFG,MFG}" just _run "{{ start }}" "{{ end }}" "{{ workers }}" all "{{ force }}"
 
 source-probe: _require-external-uv-env
     {{cli}} source-probe

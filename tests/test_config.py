@@ -50,8 +50,6 @@ def test_default_settings_have_project_name() -> None:
         "TLT",
         "GLD",
         "USO",
-        "EEM",
-        "FXI",
         "SMH",
         "HYG",
         "LQD",

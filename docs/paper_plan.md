@@ -42,7 +42,7 @@ hide:
 - Current registered headline tail level: 95% VaR, corresponding to a nominal 5% exception rate.
 - 97.5% VaR/ES is not part of the current headline pipeline. It can be reconsidered only as a separate future specification with sufficient common-sample size, exception counts, and EVT diagnostics.
 - Main data sources:
-    - J-Quants Premium: Nikkei 225 Futures prices, settlement, volume, and open interest; `NK225E` large-option chains enter only as lagged domestic option-implied state when enabled and audited.
+    - J-Quants Premium: Nikkei 225 Futures prices, settlement, volume, and open interest; `NK225E` large-option chains enter only as lagged domestic option-implied and night-session option state when enabled and audited.
     - Massive: U.S. ETFs, sector ETFs, dollar ETF proxy, Japan proxy ETFs, Asia proxy ETFs, and SPY intraday-derived predictors.
     - FRED: Treasury rates, VIX, H.10 USD/JPY, and audited credit-spread controls with publication-lag controls.
     - CBOE: volatility-index predictors, including VIX.
@@ -61,20 +61,19 @@ flowchart TD
     Cutoff["Model cutoff<br/>U.S. cash close + vendor lag<br/>must precede OSE open"]
 
     JQ["J-Quants futures history<br/>prior settlement, prior day close, night close<br/>volume, open interest, roll/SQ flags"]
-    JQOpt["J-Quants NK225E option chain<br/>prior trading-date option-implied state<br/>implied volatility, open interest, volume, days-to-SQ"]
+    JQOpt["J-Quants NK225E option chain<br/>prior trading-date option-implied state<br/>implied volatility, night-session OHLC, open interest, volume, days-to-SQ"]
     JP["Japan-only state<br/>lagged gaps and losses<br/>rolling volatility and rolling 95% loss quantile<br/>calendar, DST, absorption timing<br/>lagged domestic option state when available"]
 
-    MCore["Massive U.S. close core<br/>SPY, QQQ, DIA, IWM<br/>sector ETFs XLK...XLC<br/>TLT, GLD, USO, EEM, FXI, SMH, HYG, LQD"]
+    MCore["Massive U.S. close core<br/>SPY, QQQ, DIA, IWM<br/>sector ETFs XLK...XLC<br/>TLT, GLD, USO, SMH, HYG, LQD<br/>core ETF options and aggregate sector ATM IV"]
     MSpy["U.S.-listed minute late-session features<br/>canonical SPY names plus curated ETF prefixes<br/>returns, realized variance, semivariance, range, volume pressure"]
     Fred["FRED and Cboe controls<br/>DGS2, DGS10, T10Y2Y, VIXCLS<br/>DEXJPUS H.10 USD/JPY<br/>Cboe VIX close and range"]
-    Proxy["Proxy ETF blocks<br/>Japan: EWJ, DXJ<br/>Asia: EWY, EWT, EWH<br/>UUP and credit spreads audited but not headline"]
-    Options["U.S.-listed options candidate layer<br/>SPY/QQQ/IWM, EWJ/DXJ, ADR aggregate candidates<br/>disabled until historical IV/Greeks/OI or reconstructable source passes audit"]
+    JPProxy["Japan-linked U.S. proxies<br/>EWJ/DXJ daily and minute features<br/>EWJ/DXJ options<br/>Japanese ADR spot and options aggregates"]
+    AsiaProxy["Asia and regional proxies<br/>EEM, FXI, EWY, EWT, EWH<br/>daily, minute, and aggregate options features"]
 
     InfoA["Nested information set A<br/>japan_only"]
     InfoB["Nested information set B<br/>japan_only + U.S. close core"]
     InfoC["Nested information set C<br/>+ Japan proxy ETFs"]
     InfoD["Nested information set D<br/>+ Asia proxy ETFs"]
-    InfoE["Nested information set E<br/>+ options_risk if audit passes"]
 
     Target["Primary target<br/>settlement-to-open gap<br/>log(open_t) - log(settlement_{t-1})"]
     LossL["left_tail loss<br/>-gap_t<br/>downside open risk"]
@@ -95,27 +94,24 @@ flowchart TD
     Cutoff --> MCore
     Cutoff --> MSpy
     Cutoff --> Fred
-    Cutoff --> Proxy
+    Cutoff --> JPProxy
+    Cutoff --> AsiaProxy
     Cutoff --> JQOpt
-    Cutoff --> Options
     JP --> InfoA
     JP --> InfoB
     MCore --> InfoB
     MSpy --> InfoB
     Fred --> InfoB
     InfoB --> InfoC
-    Proxy --> InfoC
+    JPProxy --> InfoC
     InfoC --> InfoD
-    Proxy --> InfoD
-    InfoD --> InfoE
-    Options --> InfoE
+    AsiaProxy --> InfoD
     Target --> LossL
     Target --> LossR
     InfoA --> ML
     InfoB --> ML
     InfoC --> ML
     InfoD --> ML
-    InfoE --> ML
     JP --> Bench
     JP --> Adv
     LossL --> Bench
@@ -178,18 +174,15 @@ Operationally, the calculation proceeds as follows:
 - `japan_only`
     - Target history, lagged Japanese futures variables, rolling volatility, volume/open-interest information, and Japanese calendar variables.
 - `japan_only_plus_us_close_core`
-    - Adds U.S. close equity, volatility, FX, and rates predictors available before the OSE open.
+    - Adds U.S. broad/core close equity, minute, volatility, FX, rates, credit-spread, dollar-risk ETF, and U.S. core options predictors available before the OSE open.
 - `japan_only_plus_us_close_core_plus_japan_proxy`
-    - Adds U.S.-traded Japan proxy ETFs such as `EWJ` and `DXJ`.
+    - Adds U.S.-traded Japan proxy ETFs such as `EWJ` and `DXJ`, Japan ETF minute features, Japan ETF options, and Japanese ADR spot/options aggregates.
 - `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy`
-    - Adds Asia proxy ETFs such as `EWY`, `EWT`, and `EWH`.
-- `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy_plus_options_risk`
-    - Adds audited options-risk features only if historical entitlement, field coverage, liquidity, and timestamp-safety checks pass.
-    - The layer is registered but disabled by default when historical options features cannot be reconstructed safely.
+    - Adds Asia and regional proxy ETFs such as `EEM`, `FXI`, `EWY`, `EWT`, and `EWH`, with daily, minute, and aggregate options features routed by economic exposure.
 - Interpretation:
     - The nested information sets test marginal predictive content.
     - Proxy ETF blocks are pre-specified robustness and mechanism checks, not an exhaustive variable search.
-    - The options layer is a conditional information layer for the same N225 futures target, not a shift to a Japanese-stock cross-section paper.
+    - Computed ATM-IV proxies are routed by underlying exposure: U.S. core and sector aggregate options into B, Japan ETF and ADR aggregate options into C, and Asia proxy aggregate options into D.
 
 ## Forecasting Models
 
@@ -232,19 +225,21 @@ Operationally, the calculation proceeds as follows:
 - The primary extremal-index estimator is Ferro-Segers. K-gaps is a robustness diagnostic. Extremal-index (`EI`) weighting is used only as a finite-sample effective-exceedance heuristic, not as a new GPD likelihood.
 - Shape cap sensitivity reports conservative `(-0.1, 0.5)`, baseline `(-0.25, 0.75)`, and loose `(-0.5, 1.0)` caps. If any sensitivity run has `xi_final >= 1`, ES is marked unavailable for that run.
 
-## Options-Risk Layer Protocol
+## Options Feature Protocol
 
-- The options-risk layer uses options only as an additional information set for the same N225 futures settle-to-open VaR/ES target.
-- J-Quants Nikkei 225 large options (`NK225E`) are not part of the U.S. `options_risk` layer. They enter the domestic `japan_only` block as lagged option-implied state only, using prior available option-chain aggregates and excluding same target-date option rows.
+- Options are used only as additional predictors for the same N225 futures settle-to-open VaR/ES target.
+- J-Quants Nikkei 225 large options (`NK225E`) enter the domestic `japan_only` block as lagged option-implied and night-session option state only, using prior available option-chain aggregates, including `EO/EH/EL/EC` night-session OHLC summaries, and excluding same target-date option rows.
 - Massive live option snapshots are not used for historical backfill.
-- Historical options features enter only after an audit verifies entitlement, field availability, timestamp safety, liquidity, and sufficient rolling valid-contract coverage.
+- Historical U.S. options features use Massive OPRA `day_aggs_v1`, computed ATM-IV proxies from option daily close prices, underlying daily closes, FRED `DGS2`, and zero-dividend Black-Scholes. Vendor historical IV/Greeks/OI are not assumed.
 - Candidate underlyings are capped before modeling:
-    - core U.S. options: `SPY`, `QQQ`, `IWM`;
-    - Japan ETF options: `EWJ`, `DXJ`;
-    - primary ADR aggregate options: `TM`, `SONY`, `MUFG`, `SMFG`, `MFG`.
-- DTE buckets are short `7-30` and medium `31-90`. ATM uses delta-neutral selection when delta is available or computed; otherwise closest-to-spot or closest-to-forward is recorded as the fallback method.
+    - core U.S. options (`SPY`, `QQQ`, `DIA`, `IWM`) enter B with the U.S. core block;
+    - sector and semiconductor option aggregates (`XLK`, `XLF`, `XLE`, `XLV`, `XLI`, `XLY`, `XLP`, `XLB`, `XLU`, `XLC`, `SMH`) enter B as aggregate state only;
+    - Japan ETF options (`EWJ`, `DXJ`) enter C with the Japan proxy block;
+    - primary ADR aggregate options (`TM`, `SONY`, `MUFG`, `SMFG`, `MFG`) enter C as a Japan-linked U.S. corporate-risk proxy.
+    - Asia proxy option aggregates (`EEM`, `FXI`, `EWY`, `EWT`, `EWH`) enter D as aggregate state only.
+- DTE buckets are short `7-30` and medium `31-90`. ATM uses closest-to-spot by absolute log-moneyness in v1 because day aggregates do not contain delta; delta-neutral selection remains a future quote/Greeks-enabled upgrade.
 - ADR aggregate features use median and 20% trimmed mean as primary summaries; max, breadth, and count are diagnostics.
-- Curated headline options features are capped at 30. Raw per-contract and per-ADR outputs remain audit or appendix material.
+- Curated options features are capped at 45 and routed by economic exposure. Raw per-contract, per-sector, per-Asia-ETF, and per-ADR outputs remain audit or appendix material.
 
 ## Evaluation and Inference
 
@@ -287,10 +282,11 @@ Operationally, the calculation proceeds as follows:
     - Location-scale empirical, plain POT-GPD, and stabilized POT-GPD specifications are implemented.
     - Their common out-of-sample comparison is shorter than the direct-quantile headline sample.
     - These results are useful for model-family evidence, but they should not replace the headline nested-information-set analysis unless they pass the registered headline coverage and common-sample gates.
-- Options-risk layer:
-    - The layer is registered and audited.
-    - U.S.-listed options should remain disabled in headline claims when historical options entitlement or timestamp-safe feature reconstruction is not proven.
-    - J-Quants `NK225E` option-implied features are domestic, lagged, and source-audited separately inside `japan_only`.
+- Options features:
+    - U.S.-listed OPRA day aggregates can now supply computed ATM-IV proxy features when enabled.
+    - The headline ladder routes options by economic exposure: U.S. core and sector aggregate options enter B, Japan ETF and Japanese ADR aggregate options enter C, and Asia proxy aggregate options enter D.
+    - U.S.-listed options should remain out of headline claims when coverage, liquidity, or timestamp-safe feature reconstruction is not proven.
+    - J-Quants `NK225E` option-implied and night-session option features are domestic, lagged, and source-audited separately inside `japan_only`.
 - CPA:
     - CPA is an inference layer over loss differentials.
     - It does not generate VaR or ES forecasts.

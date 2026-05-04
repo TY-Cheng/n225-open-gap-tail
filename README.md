@@ -148,7 +148,14 @@ just full
 It runs checks, builds the point-in-time panel, evaluates benchmark and ML-tail suites,
 exports LaTeX tables and figures, and writes run outputs under ignored `reports/runs/`.
 The default is cache-first (`force=false`); use force only for intentional schema/cache
-invalidation.
+invalidation. By default, `just full` also enables bounded U.S. options features
+(`options=true`): it uses Massive OPRA `day_aggs_v1` flat files to compute ATM-IV
+proxies and routes them by economic exposure into the B/C information sets. To run
+without U.S. options features, use:
+
+```bash
+just full 2016-07-19 "" 4 false false
+```
 
 For a completed run, regenerate the snapshot without fetching vendor data:
 

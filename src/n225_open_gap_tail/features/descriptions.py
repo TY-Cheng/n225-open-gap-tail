@@ -43,6 +43,13 @@ def _safe_name(value: str) -> str:
 def _feature_description(field: str) -> str:
     if field.startswith("n225_"):
         return "lagged Nikkei 225 futures history feature built only from prior clean rows"
+    if field.startswith("option_"):
+        return (
+            "computed U.S. OPRA options ATM-IV proxy from Massive day aggregates, "
+            "Black-Scholes, DGS2, and zero dividend"
+        )
+    if field.startswith("japan_adr_"):
+        return "Japanese ADR spot aggregate from U.S.-listed ADR daily bars"
     if field.startswith("fx_usdjpy_"):
         return "canonical USDJPY FX control using timestamp-safe FRED H.10 availability"
     if "_late_60m_realized_var" in field:

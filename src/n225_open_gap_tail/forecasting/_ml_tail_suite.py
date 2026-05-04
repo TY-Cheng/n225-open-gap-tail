@@ -315,7 +315,6 @@ def _registered_information_set_payload() -> dict[str, object]:
         "model_b": PIPELINE_CONFIG.feature_sets.ml_tail_model_b_information_set,
         "model_c": PIPELINE_CONFIG.feature_sets.ml_tail_model_c_information_set,
         "model_d": PIPELINE_CONFIG.feature_sets.ml_tail_model_d_information_set,
-        "model_e": PIPELINE_CONFIG.feature_sets.ml_tail_model_e_information_set,
         "japan_only_features": PIPELINE_CONFIG.feature_sets.japan_only_features,
     }
 

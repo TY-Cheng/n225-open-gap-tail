@@ -7,5 +7,6 @@ from .descriptions import *
 from .session_features import *
 from .n225_history import *
 from .n225_options import *
+from .us_options import *
 
 __all__ = [name for name in globals() if not name.startswith("_")]

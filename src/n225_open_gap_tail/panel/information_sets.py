@@ -13,7 +13,6 @@ def registered_ml_tail_information_sets() -> tuple[str, ...]:
         PIPELINE_CONFIG.feature_sets.ml_tail_model_b_information_set,
         PIPELINE_CONFIG.feature_sets.ml_tail_model_c_information_set,
         PIPELINE_CONFIG.feature_sets.ml_tail_model_d_information_set,
-        PIPELINE_CONFIG.feature_sets.ml_tail_model_e_information_set,
     )
 
 
@@ -27,27 +26,34 @@ def ml_tail_feature_columns_for_information_set(
     if information_set == PIPELINE_CONFIG.feature_sets.ml_tail_model_a_information_set:
         blocks = set()
     elif information_set == PIPELINE_CONFIG.feature_sets.ml_tail_model_b_information_set:
-        blocks = {"us_core", "us_late_session", "fred_core", "fx_core"}
+        blocks = {
+            "us_core",
+            "us_late_session",
+            "fred_core",
+            "fred_credit_enriched",
+            "fx_core",
+            "massive_optional",
+        }
     elif information_set == PIPELINE_CONFIG.feature_sets.ml_tail_model_c_information_set:
-        blocks = {"us_core", "us_late_session", "fred_core", "fx_core", "japan_proxy"}
+        blocks = {
+            "us_core",
+            "us_late_session",
+            "fred_core",
+            "fred_credit_enriched",
+            "fx_core",
+            "massive_optional",
+            "japan_proxy",
+        }
     elif information_set == PIPELINE_CONFIG.feature_sets.ml_tail_model_d_information_set:
         blocks = {
             "us_core",
             "us_late_session",
             "fred_core",
+            "fred_credit_enriched",
             "fx_core",
+            "massive_optional",
             "japan_proxy",
             "asia_proxy",
-        }
-    elif information_set == PIPELINE_CONFIG.feature_sets.ml_tail_model_e_information_set:
-        blocks = {
-            "us_core",
-            "us_late_session",
-            "fred_core",
-            "fx_core",
-            "japan_proxy",
-            "asia_proxy",
-            "options_risk",
         }
     else:
         raise PipelineRunError(f"Unknown ML tail information set: {information_set}")

@@ -30,6 +30,7 @@ def _feature_dictionary_includes(field: str) -> bool:
         or field.endswith("_kurtosis")
         or field.endswith("_volume_surge")
         or field.endswith("_window_momentum")
+        or field.endswith("_count")
         or "_zscore_" in field
         or "_percentile_" in field
         or field.startswith("fred_")
@@ -42,8 +43,14 @@ def _feature_source_family(field: str) -> str:
         return "jquants_nikkei_options"
     if field.startswith("n225_"):
         return "japan_history"
-    if field.startswith("option_"):
-        return "options_risk"
+    if field.startswith("option_us_core_") or field.startswith("option_us_sector_"):
+        return "us_core_options"
+    if field.startswith("option_japan_etf_") or field.startswith("option_japan_adr_"):
+        return "japan_proxy_options"
+    if field.startswith("option_asia_proxy_"):
+        return "asia_proxy_options"
+    if field.startswith("japan_adr_"):
+        return "japan_proxy"
     if field.startswith("fx_usdjpy_"):
         return "fx_core"
     if field.startswith("fred_"):
@@ -71,8 +78,14 @@ def _feature_source_block(field: str) -> str:
         return "japan_only"
     if field.startswith("n225_"):
         return "japan_only"
-    if field.startswith("option_"):
-        return "options_risk"
+    if field.startswith("option_us_core_") or field.startswith("option_us_sector_"):
+        return "us_core"
+    if field.startswith("option_japan_etf_") or field.startswith("option_japan_adr_"):
+        return "japan_proxy"
+    if field.startswith("option_asia_proxy_"):
+        return "asia_proxy"
+    if field.startswith("japan_adr_"):
+        return "japan_proxy"
     if field.startswith("fx_usdjpy_"):
         return "fx_core"
     if field.startswith("fred_"):

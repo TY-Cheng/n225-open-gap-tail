@@ -5,7 +5,7 @@ hide:
 
 # Results Snapshot
 
-> **Research-candidate full-run artifact.** This page is generated from `tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9`.
+> **Research-candidate full-run artifact.** This page is generated from `tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375`.
 > It summarizes the durable gold modeling sample and run outputs, not the older
 > bounded access-check snapshot. It is still a research-candidate artifact:
 > final manuscript claims require a clean committed run and author review of the
@@ -258,12 +258,12 @@ The main risk is not whether the pipeline ran; it is whether the claims stay ins
 
 | Figure | Tail side | Source | Claim scope | Docs file |
 | --- | --- | --- | --- | --- |
-| `target_gap_histogram_density` | `target_distribution` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_gap_histogram_density.png` |
-| `target_loss_qq_left_tail` | `left_tail` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_loss_qq_left_tail.png` |
-| `target_loss_qq_right_tail` | `right_tail` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_loss_qq_right_tail.png` |
-| `target_log_survival` | `left_right_target_distribution` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_log_survival.png` |
-| `target_mean_excess` | `left_right_target_distribution` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_mean_excess.png` |
-| `target_hill_plot` | `left_right_target_distribution` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_hill_plot.png` |
+| `target_gap_histogram_density` | `target_distribution` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/target_gap_histogram_density.png` |
+| `target_loss_qq_left_tail` | `left_tail` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/target_loss_qq_left_tail.png` |
+| `target_loss_qq_right_tail` | `right_tail` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/target_loss_qq_right_tail.png` |
+| `target_log_survival` | `left_right_target_distribution` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/target_log_survival.png` |
+| `target_mean_excess` | `left_right_target_distribution` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/target_mean_excess.png` |
+| `target_hill_plot` | `left_right_target_distribution` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/target_hill_plot.png` |
 
 
 ## Results And Discussion
@@ -296,7 +296,7 @@ The main risk is not whether the pipeline ran; it is whether the claims stay ins
 ### Restricted model-family comparison
 
 - `ml_tail_result_matrix.parquet` contains restricted common-sample comparisons for `7` LightGBM tail-model families.
-- The restricted common-N range is `537 to 626` and the joint-exception range is `48 to 99`.
+- The restricted common-N range is `537 to 626` and the joint-exception range is `50 to 99`.
 - Recorded claim scopes are `restricted_model_comparison_not_headline`; these rows are restricted evidence and cannot replace the headline nested-information-set comparison.
 - Result-matrix inference is recorded separately from the headline suite-level DM/MCS: restricted DM records include `232` gate-pass rows and `116` unavailable rows; restricted MCS records include `140` gate-pass rows and `70` unavailable rows. These entries are restricted common-sample diagnostics, not headline model-family rankings.
 - The result matrix is a matched-date diagnostic layer. It should not be worded as one family being better than another.
@@ -320,7 +320,7 @@ The main risk is not whether the pipeline ran; it is whether the claims stay ins
 - Supporting LaTeX diagnostic table files are present for `4/4` registered diagnostic families.
 - `ml_tail_dst_attenuation.parquet` contains `6` DST attenuation rows; these are descriptive timing-regime forecast diagnostics. They do not establish a structural timing mechanism.
 - ES severity diagnostics contain `86` finite rows with mean exceedance severity ranging from `0.00578459` to `0.0127453`; this is conditional-on-exception evidence.
-- The diagnostic 75th-percentile VaR trigger rule marks `15299` model-date rows; `1036` of those rows coincide with VaR exceptions out of `3621` total exceptions, and mean triggered exception severity is `0.0128359`. This is a pre-open risk-monitoring diagnostic, not hedge PnL, transaction-cost, or trading-alpha evidence.
+- The diagnostic 75th-percentile VaR trigger rule marks `15299` model-date rows; `1061` of those rows coincide with VaR exceptions out of `3638` total exceptions, and mean triggered exception severity is `0.0123581`. This is a pre-open risk-monitoring diagnostic, not hedge PnL, transaction-cost, or trading-alpha evidence.
 - Stress-window diagnostics contain `402` rows, and Murphy diagnostics contain `800` ML-tail rows.
 - Feature-unavailability diagnostics contain `84` rows.
 - Figure manifest references:
@@ -349,14 +349,14 @@ The main risk is not whether the pipeline ran; it is whether the claims stay ins
 
 | Field | Value |
 | --- | --- |
-| Run ID | `tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9` |
-| Artifact root | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9` |
+| Run ID | `tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375` |
+| Artifact root | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375` |
 | Claim level | `research_candidate` |
-| Requested window | `['2016-07-19', '2026-05-02']` |
+| Requested window | `['2016-07-19', '2026-05-04']` |
 | Combined clean start | `2018-06-20` |
 | Gold panel dates | `2016-07-19 to 2026-05-01` |
 | Forecast sample dates | `2018-06-20 to 2026-05-01 (1661 rows)` |
-| Git commit | `2e1366b9847dc1581c05f989e4d83abefd1f1525` |
+| Git commit | `ecd3c375b003b53179c8a9fa4610d9b3c4177877` |
 | Git dirty | `False` |
 | FRED vintage safe | `False` |
 
@@ -542,12 +542,12 @@ Status: `completed_lightgbm_ml_tail_models`; implemented models: `lightgbm_direc
 
 | Family | Axis | Loss | Rows | Common N | Date range | Joint exceptions |
 | --- | --- | --- | --- | --- | --- | --- |
-| nested information sets | information_set_increment | var_coverage | 70 | 537 to 626 | 2023-03-24 to 2026-05-01 | 48 to 99 |
-| nested information sets | information_set_increment | var_es_fz_loss | 70 | 537 to 626 | 2023-03-24 to 2026-05-01 | 48 to 99 |
-| nested information sets | information_set_increment | var_quantile_loss | 70 | 537 to 626 | 2023-03-24 to 2026-05-01 | 48 to 99 |
-| tail_model_family | model_family | var_coverage | 70 | 537 to 559 | 2023-09-08 to 2026-05-01 | 56 to 78 |
-| tail_model_family | model_family | var_es_fz_loss | 70 | 537 to 559 | 2023-09-08 to 2026-05-01 | 56 to 78 |
-| tail_model_family | model_family | var_quantile_loss | 70 | 537 to 559 | 2023-09-08 to 2026-05-01 | 56 to 78 |
+| nested information sets | information_set_increment | var_coverage | 70 | 537 to 626 | 2023-03-24 to 2026-05-01 | 50 to 99 |
+| nested information sets | information_set_increment | var_es_fz_loss | 70 | 537 to 626 | 2023-03-24 to 2026-05-01 | 50 to 99 |
+| nested information sets | information_set_increment | var_quantile_loss | 70 | 537 to 626 | 2023-03-24 to 2026-05-01 | 50 to 99 |
+| tail_model_family | model_family | var_coverage | 70 | 537 to 559 | 2023-09-08 to 2026-05-01 | 55 to 69 |
+| tail_model_family | model_family | var_es_fz_loss | 70 | 537 to 559 | 2023-09-08 to 2026-05-01 | 55 to 69 |
+| tail_model_family | model_family | var_quantile_loss | 70 | 537 to 559 | 2023-09-08 to 2026-05-01 | 55 to 69 |
 
 - The result matrix is the right place to compare direct quantile, location-scale empirical, plain POT-GPD, stabilized POT-GPD, and ablation variants on their restricted common dates.
 - It separates VaR-only losses from VaR-ES joint scoring, so VaR-only claims are not confused with ES claims.
@@ -581,27 +581,27 @@ Status: `completed_lightgbm_ml_tail_models`; implemented models: `lightgbm_direc
 - Key readings: these figures describe the raw settlement-to-open gap and the left/right loss tails.
 - They motivate VaR/ES and POT-GPD modeling, but they do not validate LightGBM+EVT forecasts.
 
-![target_gap_histogram_density](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_gap_histogram_density.png)
+![target_gap_histogram_density](figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/target_gap_histogram_density.png)
 
 _Figure: `target_gap_histogram_density`. Source: `panel/modeling_panel.parquet`. Claim scope: `target_distribution_motivation_not_forecast_validation`. Tail side: `target_distribution`. Run file: `latex/figures/target_gap_histogram_density.png`._
 
-![target_loss_qq_left_tail](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_loss_qq_left_tail.png)
+![target_loss_qq_left_tail](figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/target_loss_qq_left_tail.png)
 
 _Figure: `target_loss_qq_left_tail`. Source: `panel/modeling_panel.parquet`. Claim scope: `target_distribution_motivation_not_forecast_validation`. Tail side: `left_tail`. Run file: `latex/figures/target_loss_qq_left_tail.png`._
 
-![target_loss_qq_right_tail](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_loss_qq_right_tail.png)
+![target_loss_qq_right_tail](figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/target_loss_qq_right_tail.png)
 
 _Figure: `target_loss_qq_right_tail`. Source: `panel/modeling_panel.parquet`. Claim scope: `target_distribution_motivation_not_forecast_validation`. Tail side: `right_tail`. Run file: `latex/figures/target_loss_qq_right_tail.png`._
 
-![target_log_survival](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_log_survival.png)
+![target_log_survival](figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/target_log_survival.png)
 
 _Figure: `target_log_survival`. Source: `panel/modeling_panel.parquet`. Claim scope: `target_distribution_motivation_not_forecast_validation`. Tail side: `left_right_target_distribution`. Run file: `latex/figures/target_log_survival.png`._
 
-![target_mean_excess](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_mean_excess.png)
+![target_mean_excess](figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/target_mean_excess.png)
 
 _Figure: `target_mean_excess`. Source: `panel/modeling_panel.parquet`. Claim scope: `target_distribution_motivation_not_forecast_validation`. Tail side: `left_right_target_distribution`. Run file: `latex/figures/target_mean_excess.png`._
 
-![target_hill_plot](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_hill_plot.png)
+![target_hill_plot](figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/target_hill_plot.png)
 
 _Figure: `target_hill_plot`. Source: `panel/modeling_panel.parquet`. Claim scope: `target_distribution_motivation_not_forecast_validation`. Tail side: `left_right_target_distribution`. Run file: `latex/figures/target_hill_plot.png`._
 
@@ -610,11 +610,11 @@ _Figure: `target_hill_plot`. Source: `panel/modeling_panel.parquet`. Claim scope
 - Key readings: bars report realized VaR exception rates against the nominal line.
 - Read this first: exception-rate deviations set the boundary for any loss-based interpretation.
 
-![coverage_breach_rates_left_tail](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/coverage_breach_rates_left_tail.png)
+![coverage_breach_rates_left_tail](figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/coverage_breach_rates_left_tail.png)
 
 _Figure: `coverage_breach_rates_left_tail`. Source: `metrics/benchmark_metrics.parquet`, `metrics/benchmark_metrics_per_model.parquet`, `metrics/ml_tail_metrics.parquet`, `metrics/ml_tail_metrics_per_model.parquet`. Claim scope: `coverage_diagnostic_not_headline_claim`. Tail side: `left_tail`. Run file: `latex/figures/coverage_breach_rates_left_tail.png`._
 
-![coverage_breach_rates_right_tail](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/coverage_breach_rates_right_tail.png)
+![coverage_breach_rates_right_tail](figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/coverage_breach_rates_right_tail.png)
 
 _Figure: `coverage_breach_rates_right_tail`. Source: `metrics/benchmark_metrics.parquet`, `metrics/benchmark_metrics_per_model.parquet`, `metrics/ml_tail_metrics.parquet`, `metrics/ml_tail_metrics_per_model.parquet`. Claim scope: `coverage_diagnostic_not_headline_claim`. Tail side: `right_tail`. Run file: `latex/figures/coverage_breach_rates_right_tail.png`._
 
@@ -623,11 +623,11 @@ _Figure: `coverage_breach_rates_right_tail`. Source: `metrics/benchmark_metrics.
 - Key readings: curves report benchmark elementary-score diagnostics on a common grid.
 - The plot is a scoring-family diagnostic, not a pairwise ranking statement.
 
-![benchmark_murphy_left_tail](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/benchmark_murphy_left_tail.png)
+![benchmark_murphy_left_tail](figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/benchmark_murphy_left_tail.png)
 
 _Figure: `benchmark_murphy_left_tail`. Source: `metrics/benchmark_murphy.parquet`. Claim scope: `murphy_diagnostic_benchmark_floor_common_grid`. Tail side: `left_tail`. Run file: `latex/figures/benchmark_murphy_left_tail.png`._
 
-![benchmark_murphy_right_tail](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/benchmark_murphy_right_tail.png)
+![benchmark_murphy_right_tail](figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/benchmark_murphy_right_tail.png)
 
 _Figure: `benchmark_murphy_right_tail`. Source: `metrics/benchmark_murphy.parquet`. Claim scope: `murphy_diagnostic_benchmark_floor_common_grid`. Tail side: `right_tail`. Run file: `latex/figures/benchmark_murphy_right_tail.png`._
 
@@ -636,11 +636,11 @@ _Figure: `benchmark_murphy_right_tail`. Source: `metrics/benchmark_murphy.parque
 - Key readings: curves report the ML-tail nested information sets on a common grid.
 - Interpret curve separation together with the headline coverage warning and unconditional inference gates.
 
-![ml_tail_murphy_left_tail](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/ml_tail_murphy_left_tail.png)
+![ml_tail_murphy_left_tail](figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/ml_tail_murphy_left_tail.png)
 
 _Figure: `ml_tail_murphy_left_tail`. Source: `metrics/ml_tail_murphy.parquet`. Claim scope: `murphy_diagnostic_ml_tail_nested_information_sets_common_grid`. Tail side: `left_tail`. Run file: `latex/figures/ml_tail_murphy_left_tail.png`._
 
-![ml_tail_murphy_right_tail](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/ml_tail_murphy_right_tail.png)
+![ml_tail_murphy_right_tail](figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/ml_tail_murphy_right_tail.png)
 
 _Figure: `ml_tail_murphy_right_tail`. Source: `metrics/ml_tail_murphy.parquet`. Claim scope: `murphy_diagnostic_ml_tail_nested_information_sets_common_grid`. Tail side: `right_tail`. Run file: `latex/figures/ml_tail_murphy_right_tail.png`._
 
@@ -649,11 +649,11 @@ _Figure: `ml_tail_murphy_right_tail`. Source: `metrics/ml_tail_murphy.parquet`. 
 - Key readings: bars summarize timing-regime forecast diagnostics.
 - Treat this as descriptive timing evidence; left/right patterns should not be assigned a shared structural mechanism.
 
-![dst_attenuation_left_tail](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/dst_attenuation_left_tail.png)
+![dst_attenuation_left_tail](figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/dst_attenuation_left_tail.png)
 
 _Figure: `dst_attenuation_left_tail`. Source: `metrics/ml_tail_dst_attenuation.parquet`. Claim scope: `descriptive_dst_attenuation_not_structural_causal_identification`. Tail side: `left_tail`. Run file: `latex/figures/dst_attenuation_left_tail.png`._
 
-![dst_attenuation_right_tail](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/dst_attenuation_right_tail.png)
+![dst_attenuation_right_tail](figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/dst_attenuation_right_tail.png)
 
 _Figure: `dst_attenuation_right_tail`. Source: `metrics/ml_tail_dst_attenuation.parquet`. Claim scope: `descriptive_dst_attenuation_not_structural_causal_identification`. Tail side: `right_tail`. Run file: `latex/figures/dst_attenuation_right_tail.png`._
 
@@ -662,11 +662,11 @@ _Figure: `dst_attenuation_right_tail`. Source: `metrics/ml_tail_dst_attenuation.
 - Key readings: bars report conditional-on-exception severity diagnostics.
 - Severity is reported for risk interpretation but is not a standalone model-selection claim.
 
-![es_severity_left_tail](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/es_severity_left_tail.png)
+![es_severity_left_tail](figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/es_severity_left_tail.png)
 
 _Figure: `es_severity_left_tail`. Source: `metrics/benchmark_metrics.parquet`, `metrics/ml_tail_metrics.parquet`, `metrics/ml_tail_metrics_per_model.parquet`. Claim scope: `es_severity_diagnostic_not_model_selection_claim`. Tail side: `left_tail`. Run file: `latex/figures/es_severity_left_tail.png`._
 
-![es_severity_right_tail](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/es_severity_right_tail.png)
+![es_severity_right_tail](figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/es_severity_right_tail.png)
 
 _Figure: `es_severity_right_tail`. Source: `metrics/benchmark_metrics.parquet`, `metrics/ml_tail_metrics.parquet`, `metrics/ml_tail_metrics_per_model.parquet`. Claim scope: `es_severity_diagnostic_not_model_selection_claim`. Tail side: `right_tail`. Run file: `latex/figures/es_severity_right_tail.png`._
 
@@ -675,11 +675,11 @@ _Figure: `es_severity_right_tail`. Source: `metrics/benchmark_metrics.parquet`, 
 - Key readings: bars report pre-open risk-trigger diagnostics by model family.
 - The trigger output is a monitoring diagnostic, not an execution-performance result.
 
-![trigger_diagnostics_left_tail](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/trigger_diagnostics_left_tail.png)
+![trigger_diagnostics_left_tail](figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/trigger_diagnostics_left_tail.png)
 
 _Figure: `trigger_diagnostics_left_tail`. Source: `forecasts/benchmark_forecasts.parquet`, `forecasts/ml_tail_forecasts.parquet`. Claim scope: `trigger_diagnostic_not_pnl_cost_or_alpha`. Tail side: `left_tail`. Run file: `latex/figures/trigger_diagnostics_left_tail.png`._
 
-![trigger_diagnostics_right_tail](figures/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/trigger_diagnostics_right_tail.png)
+![trigger_diagnostics_right_tail](figures/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/trigger_diagnostics_right_tail.png)
 
 _Figure: `trigger_diagnostics_right_tail`. Source: `forecasts/benchmark_forecasts.parquet`, `forecasts/ml_tail_forecasts.parquet`. Claim scope: `trigger_diagnostic_not_pnl_cost_or_alpha`. Tail side: `right_tail`. Run file: `latex/figures/trigger_diagnostics_right_tail.png`._
 
@@ -698,43 +698,43 @@ _Figure: `trigger_diagnostics_right_tail`. Source: `forecasts/benchmark_forecast
 
 | Artifact | Path | Exists |
 | --- | --- | --- |
-| manifest | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/manifest.json` | yes |
-| data_vintage | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/data_vintage.json` | yes |
-| modeling_panel | `data/gold/tp/v1/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/modeling_panel.parquet` | yes |
-| target_audit | `data/gold/tp/v1/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/target_audit.parquet` | yes |
-| calendar_map | `data/gold/tp/v1/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/calendar_map.parquet` | yes |
-| feature_coverage | `data/gold/tp/v1/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/feature_coverage.parquet` | yes |
-| leakage_summary | `data/gold/ls/v1/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/summary.json` | yes |
-| benchmark_status | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/benchmark_status.json` | yes |
-| benchmark_metrics | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/benchmark_metrics.parquet` | yes |
-| benchmark_forecasts | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/forecasts/benchmark_forecasts.parquet` | yes |
-| benchmark_dm_inference | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/benchmark_dm_inference.parquet` | yes |
-| benchmark_mcs | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/benchmark_mcs.parquet` | yes |
-| ml_tail_status | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/ml_tail_status.json` | yes |
-| ml_tail_metrics | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/ml_tail_metrics.parquet` | yes |
-| ml_tail_metrics_per_model | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/ml_tail_metrics_per_model.parquet` | yes |
-| ml_tail_forecasts | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/forecasts/ml_tail_forecasts.parquet` | yes |
-| ml_tail_result_matrix | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/ml_tail_result_matrix.parquet` | yes |
-| ml_tail_result_matrix_dm | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/ml_tail_result_matrix_dm.parquet` | yes |
-| ml_tail_result_matrix_mcs | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/ml_tail_result_matrix_mcs.parquet` | yes |
-| ml_tail_dm_inference | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/ml_tail_dm_inference.parquet` | yes |
-| ml_tail_mcs | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/ml_tail_mcs.parquet` | yes |
-| ml_tail_cpa_inference | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/ml_tail_cpa_inference.parquet` | yes |
-| cross_model_cpa_inference | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/cross_model_cpa_inference.parquet` | yes |
-| ml_tail_model_eviction | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/ml_tail_model_eviction.parquet` | yes |
-| ml_tail_dst_attenuation | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/ml_tail_dst_attenuation.parquet` | yes |
-| ml_tail_murphy | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/ml_tail_murphy.parquet` | yes |
-| ml_tail_feature_unavailability | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/ml_tail_feature_unavailability.parquet` | yes |
-| benchmark_stress_windows | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/benchmark_stress_windows.parquet` | yes |
-| ml_tail_stress_windows | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/metrics/ml_tail_stress_windows.parquet` | yes |
-| figure_manifest | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/latex/figure_manifest.json` | yes |
-| table_manifest | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/latex/table_manifest.json` | yes |
-| latex_dir | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/latex/tables` | yes |
-| claim_scope_table | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/latex/tables/tailrisk_claim_scope_table.tex` | yes |
-| es_severity_table | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/latex/tables/tailrisk_es_severity_table.tex` | yes |
-| hedge_trigger_table | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/latex/tables/tailrisk_hedge_trigger_diagnostics_table.tex` | yes |
-| dst_attenuation_table | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/latex/tables/ml_tail_dst_attenuation_table.tex` | yes |
-| result_matrix_summary_table | `reports/runs/tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9/latex/tables/ml_tail_result_matrix_summary_table.tex` | yes |
+| manifest | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/manifest.json` | yes |
+| data_vintage | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/data_vintage.json` | yes |
+| modeling_panel | `data/gold/tp/v1/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/modeling_panel.parquet` | yes |
+| target_audit | `data/gold/tp/v1/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/target_audit.parquet` | yes |
+| calendar_map | `data/gold/tp/v1/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/calendar_map.parquet` | yes |
+| feature_coverage | `data/gold/tp/v1/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/feature_coverage.parquet` | yes |
+| leakage_summary | `data/gold/ls/v1/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/summary.json` | yes |
+| benchmark_status | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/benchmark_status.json` | yes |
+| benchmark_metrics | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/benchmark_metrics.parquet` | yes |
+| benchmark_forecasts | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/forecasts/benchmark_forecasts.parquet` | yes |
+| benchmark_dm_inference | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/benchmark_dm_inference.parquet` | yes |
+| benchmark_mcs | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/benchmark_mcs.parquet` | yes |
+| ml_tail_status | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/ml_tail_status.json` | yes |
+| ml_tail_metrics | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/ml_tail_metrics.parquet` | yes |
+| ml_tail_metrics_per_model | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/ml_tail_metrics_per_model.parquet` | yes |
+| ml_tail_forecasts | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/forecasts/ml_tail_forecasts.parquet` | yes |
+| ml_tail_result_matrix | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/ml_tail_result_matrix.parquet` | yes |
+| ml_tail_result_matrix_dm | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/ml_tail_result_matrix_dm.parquet` | yes |
+| ml_tail_result_matrix_mcs | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/ml_tail_result_matrix_mcs.parquet` | yes |
+| ml_tail_dm_inference | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/ml_tail_dm_inference.parquet` | yes |
+| ml_tail_mcs | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/ml_tail_mcs.parquet` | yes |
+| ml_tail_cpa_inference | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/ml_tail_cpa_inference.parquet` | yes |
+| cross_model_cpa_inference | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/cross_model_cpa_inference.parquet` | yes |
+| ml_tail_model_eviction | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/ml_tail_model_eviction.parquet` | yes |
+| ml_tail_dst_attenuation | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/ml_tail_dst_attenuation.parquet` | yes |
+| ml_tail_murphy | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/ml_tail_murphy.parquet` | yes |
+| ml_tail_feature_unavailability | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/ml_tail_feature_unavailability.parquet` | yes |
+| benchmark_stress_windows | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/benchmark_stress_windows.parquet` | yes |
+| ml_tail_stress_windows | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/ml_tail_stress_windows.parquet` | yes |
+| figure_manifest | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/latex/figure_manifest.json` | yes |
+| table_manifest | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/latex/table_manifest.json` | yes |
+| latex_dir | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/latex/tables` | yes |
+| claim_scope_table | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/latex/tables/tailrisk_claim_scope_table.tex` | yes |
+| es_severity_table | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/latex/tables/tailrisk_es_severity_table.tex` | yes |
+| hedge_trigger_table | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/latex/tables/tailrisk_hedge_trigger_diagnostics_table.tex` | yes |
+| dst_attenuation_table | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/latex/tables/ml_tail_dst_attenuation_table.tex` | yes |
+| result_matrix_summary_table | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/latex/tables/ml_tail_result_matrix_summary_table.tex` | yes |
 
 - All paths above are local ignored artifacts; they are reproducible outputs, not tracked source files.
 - Forecast/reporting rebuilds should read these artifacts and must not call vendor APIs.

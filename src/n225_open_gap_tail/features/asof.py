@@ -852,12 +852,14 @@ def _minute_feature_map(records: list[dict[str, object]]) -> dict[str, dict[str,
                     source_date=date_key,
                 )
         return derived_features
+    # Compat path for pre-projected SPY minute records. Generic minute records
+    # above carry ticker/safe_ticker and produce ticker-prefixed fields directly.
     if any("spy_late_30m_return" in row for row in records):
         from n225_open_gap_tail.features.session_features import (
-            _records_with_recomputed_legacy_spy_late_volume_surge,
+            _records_with_recomputed_spy_compat_late_volume_surge,
         )
 
-        records = _records_with_recomputed_legacy_spy_late_volume_surge(records)
+        records = _records_with_recomputed_spy_compat_late_volume_surge(records)
         derived_features: dict[str, dict[str, object]] = {}
         for row in records:
             date_key = str(row.get("bar_date_et") or "")

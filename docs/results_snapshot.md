@@ -700,11 +700,11 @@ _Figure: `trigger_diagnostics_right_tail`. Source: `forecasts/benchmark_forecast
 | --- | --- | --- |
 | manifest | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/manifest.json` | yes |
 | data_vintage | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/data_vintage.json` | yes |
-| modeling_panel | `data/gold/tp/v1/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/modeling_panel.parquet` | yes |
-| target_audit | `data/gold/tp/v1/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/target_audit.parquet` | yes |
-| calendar_map | `data/gold/tp/v1/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/calendar_map.parquet` | yes |
-| feature_coverage | `data/gold/tp/v1/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/feature_coverage.parquet` | yes |
-| leakage_summary | `data/gold/ls/v1/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/summary.json` | yes |
+| modeling_panel | `regenerate with the next completed full run` | n/a |
+| target_audit | `regenerate with the next completed full run` | n/a |
+| calendar_map | `regenerate with the next completed full run` | n/a |
+| feature_coverage | `regenerate with the next completed full run` | n/a |
+| leakage_summary | `regenerate with the next completed full run` | n/a |
 | benchmark_status | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/benchmark_status.json` | yes |
 | benchmark_metrics | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/metrics/benchmark_metrics.parquet` | yes |
 | benchmark_forecasts | `reports/runs/tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375/forecasts/benchmark_forecasts.parquet` | yes |

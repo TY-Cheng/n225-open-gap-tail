@@ -283,7 +283,7 @@ MASSIVE_MINUTE_FEATURE_SCHEMA = ParquetSchema(
     ),
 )
 
-LEGACY_SPY_DERIVED_FEATURE_SCHEMA = ParquetSchema(
+SPY_MINUTE_COMPAT_FEATURE_SCHEMA = ParquetSchema(
     name="spy_minute_derived_features",
     version=2,
     columns=(

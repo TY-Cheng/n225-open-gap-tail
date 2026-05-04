@@ -15,8 +15,6 @@ from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.data_lake.artifacts import (
     _gold_leakage_dir,
     _gold_panel_dir,
-    _legacy_gold_leakage_dir,
-    _legacy_gold_panel_dir,
 )
 from n225_open_gap_tail.diagnostics import snapshot_gallery as _snapshot_gallery
 from n225_open_gap_tail.diagnostics.results_discussion import (
@@ -100,15 +98,26 @@ def _resolve_snapshot_run_dir(*, settings: Settings, run_id: str | None) -> Path
         run_dir = runs_dir / run_id
         if not (run_dir / "manifest.json").exists():
             raise SnapshotError(f"Run manifest not found: {run_dir / 'manifest.json'}")
+        if not _is_completed_full_run(run_dir):
+            raise SnapshotError(f"Run is not a completed full tail-risk run: {run_dir}")
         return run_dir
     candidates = sorted(
-        (path for path in runs_dir.glob("tailrisk_*") if (path / "manifest.json").exists()),
+        (
+            path
+            for path in runs_dir.glob("tailrisk_*")
+            if (path / "manifest.json").exists() and _is_completed_full_run(path)
+        ),
         key=lambda path: (path / "manifest.json").stat().st_mtime,
         reverse=True,
     )
     if not candidates:
         raise SnapshotError("No completed tail-risk run found under reports/runs")
     return candidates[0]
+
+
+def _is_completed_full_run(run_dir: Path) -> bool:
+    manifest = _read_json_dict(run_dir / "manifest.json")
+    return bool(manifest.get("benchmark_eval_status") and manifest.get("ml_tail_eval_status"))
 
 
 def _read_json_dict(path: Path) -> dict[str, object]:
@@ -126,16 +135,7 @@ def _full_run_snapshot_paths(
     run_id = str(manifest.get("run_id") or run_dir.name)
     gold_artifacts = _dict_value(manifest.get("gold_artifacts"))
     gold_panel_root = _gold_panel_dir(settings.gold_data_dir, run_id)
-    legacy_gold_panel_root = _legacy_gold_panel_dir(settings.gold_data_dir, run_id)
-    if not gold_panel_root.exists() and legacy_gold_panel_root.exists():
-        gold_panel_root = legacy_gold_panel_root
     leakage_root = _gold_leakage_dir(settings.gold_data_dir, run_id)
-    legacy_leakage_root = _legacy_gold_leakage_dir(settings.gold_data_dir, run_id)
-    if (
-        not (leakage_root / "summary.json").exists()
-        and (legacy_leakage_root / "summary.json").exists()
-    ):
-        leakage_root = legacy_leakage_root
     leakage_summary = Path(
         str(gold_artifacts.get("leakage_summary", leakage_root / "summary.json"))
     )

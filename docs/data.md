@@ -147,9 +147,11 @@ and converted to U.S. Eastern Time before session alignment.
 ### Active Massive Intraday Input
 
 The current feature set uses a curated set of U.S.-listed minute-bar ETF
-proxies rather than adding more daily ETF controls. `SPY` remains backward
-compatible through the canonical `spy_late_*` / `spy_final_*` names. Additional
-tickers use lower-case ticker prefixes. The derived minute features include:
+proxies rather than adding more daily ETF controls. `SPY` is retained through a
+small compatibility adapter that projects generic SPY minute records into the
+canonical `spy_late_*` / `spy_final_*` feature names; the minute pipeline itself
+remains multi-ticker. Additional tickers use lower-case ticker prefixes.
+The derived minute features include:
 
 - late 30- and 60-minute log returns;
 - late 60-minute realized variance and up/down semivariance;
@@ -537,9 +539,10 @@ The data lake is intentionally tiered to prevent feature fishing.
 ### Tier 1: Core Controls and Predictors
 
 - Massive U.S. ETF, sector, equity-index, dollar ETF proxy, Japan proxy, and Asia proxy predictors. Canonical USD/JPY is the FRED H.10 `DEXJPUS` series.
-- U.S.-listed minute-bar late-session features: canonical `spy_late_*` and
-  `spy_final_*` fields plus ticker-prefixed features for the curated minute
-  universe. Features include late returns, realized variance, up/down
+- U.S.-listed minute-bar late-session features: generic ticker-prefixed fields
+  for the curated minute universe, with canonical `spy_late_*` and
+  `spy_final_*` fields kept by the SPY compatibility adapter. Features include
+  late returns, realized variance, up/down
   semivariance, noisy small-sample skewness/kurtosis, range, volume surge,
   volume z-score, volume percentile, and final-window momentum, all frozen at
   U.S. close plus the configured vendor-availability lag. Volume normalization

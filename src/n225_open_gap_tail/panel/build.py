@@ -58,7 +58,7 @@ from n225_open_gap_tail.config.runtime import (
     PIPELINE_CONFIG,
     PipelineRunError,
     Settings,
-    LEGACY_SPY_DERIVED_FEATURE_SCHEMA,
+    SPY_MINUTE_COMPAT_FEATURE_SCHEMA,
     TAIL_LEVELS,
     timedelta,
     UTC,
@@ -109,7 +109,6 @@ from n225_open_gap_tail.panel.options_audit import (
 from n225_open_gap_tail.features.session_features import (
     _write_jquants_silver_cache,
     add_jquants_silver_flags,
-    build_legacy_spy_late_session_feature_records,
 )
 from n225_open_gap_tail.panel.target_audit import build_target_audit_records
 from n225_open_gap_tail.panel.time_alignment import build_time_alignment_records
@@ -433,7 +432,7 @@ def build_panel(
             "claim_level": CLAIMS_LEVEL,
             "suite": "benchmark_panel",
             "gold_root": str(settings.gold_data_dir),
-            "gold_path_schema": "compact_v1",
+            "gold_path_schema": "compact",
             "gold_panel_dir": str(gold_run_dir),
             "gold_artifacts": {
                 "target_audit": str(gold_target_audit_path),
@@ -479,7 +478,7 @@ def build_panel(
                 ),
                 "calendar_map_schema_hash": CALENDAR_MAP_SCHEMA.hash,
                 "massive_minute_feature_schema_hash": MASSIVE_MINUTE_FEATURE_SCHEMA.hash,
-                "legacy_spy_derived_feature_schema_hash": LEGACY_SPY_DERIVED_FEATURE_SCHEMA.hash,
+                "spy_minute_compat_feature_schema_hash": SPY_MINUTE_COMPAT_FEATURE_SCHEMA.hash,
                 "fred_cache_schema_hash": FRED_CACHE_SCHEMA.hash,
             },
             "feature_set_version": PIPELINE_CONFIG.feature_sets.version.value,

@@ -68,15 +68,9 @@ def normalize_jquants_nikkei225_option_rows(
                 "research_download_ts_utc": downloaded_at_utc,
             }
         )
-    normalized.sort(
-        key=lambda item: (
-            str(item["trading_date"]),
-            str(item.get("contract_month") or ""),
-            float(item.get("strike_price") or 0.0),
-            str(item.get("put_call") or ""),
-            str(item.get("option_code") or ""),
-        )
-    )
+    # Do not globally sort here. Full-history NK225E pulls contain millions of
+    # option-chain rows, and downstream aggregation groups by trading date
+    # explicitly. Per-artifact writers can impose narrower ordering if needed.
     return normalized
 
 

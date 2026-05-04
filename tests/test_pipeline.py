@@ -80,11 +80,11 @@ from n225_open_gap_tail.forecasting import (
     build_feature_matrix_gate_records,
     build_fields_coverage_audit_records,
     build_leakage_check_records,
-    build_legacy_spy_late_session_feature_records,
     build_ml_tail_modeling_rows,
     build_modeling_panel_records,
     build_panel,
     build_run_id,
+    build_spy_compat_late_session_feature_records,
     drop_low_variance_features,
     empirical_excess_es_companion,
     evaluate_benchmark_floor_suite,
@@ -1408,7 +1408,7 @@ def test_spy_minute_features_use_official_early_close_and_exclude_after_hours() 
         }
     )
 
-    features = build_legacy_spy_late_session_feature_records(
+    features = build_spy_compat_late_session_feature_records(
         records,
         calendar_records=[
             {

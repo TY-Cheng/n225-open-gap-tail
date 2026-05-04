@@ -11,14 +11,15 @@ def build_time_alignment_records(
     *,
     target_rows: list[dict[str, object]],
     calendar_records: list[dict[str, object]],
-    spy_minute_records: list[dict[str, object]],
+    minute_feature_records: list[dict[str, object]],
     vendor_lag_minutes: int = 5,
 ) -> list[dict[str, object]]:
+    reference_ticker = "SPY"
     us_closes = [row for row in calendar_records if row.get("us_close_ts_utc") is not None]
     us_closes.sort(key=lambda row: _as_datetime(row["us_close_ts_utc"]))
     minute_by_date: dict[str, list[dict[str, object]]] = {}
-    for record in spy_minute_records:
-        if str(record.get("ticker") or "SPY").upper() != "SPY":
+    for record in minute_feature_records:
+        if str(record.get("ticker") or reference_ticker).upper() != reference_ticker:
             continue
         minute_by_date.setdefault(str(record["bar_date_et"]), []).append(record)
     for records in minute_by_date.values():
@@ -33,6 +34,7 @@ def build_time_alignment_records(
                 {
                     "trading_date": target["trading_date"],
                     "target_open_ts_utc": target_open,
+                    "minute_reference_ticker": reference_ticker,
                     "alignment_status": "missing_us_close",
                     "alignment_pass": False,
                 }
@@ -40,7 +42,7 @@ def build_time_alignment_records(
             continue
         us_close = _as_datetime(close_row["us_close_ts_utc"])
         model_cutoff = us_close + timedelta(minutes=vendor_lag_minutes)
-        bar, bar_reason = _select_spy_close_bar(
+        bar, bar_reason = _select_reference_close_bar(
             minute_by_date.get(str(close_row["calendar_date"]), []),
             official_close_ts_utc=us_close,
         )
@@ -63,11 +65,12 @@ def build_time_alignment_records(
                 "us_official_close_ts_utc": us_close,
                 "us_official_close_ts_et": close_row.get("us_close_ts_et"),
                 "model_cutoff_ts_utc": model_cutoff,
-                "selected_spy_bar_end_ts_utc": bar_end,
-                "selected_spy_bar_end_ts_et": bar.get("bar_end_ts_et") if bar else None,
-                "spy_close": bar.get("close") if bar else None,
+                "minute_reference_ticker": reference_ticker,
+                "selected_reference_bar_end_ts_utc": bar_end,
+                "selected_reference_bar_end_ts_et": bar.get("bar_end_ts_et") if bar else None,
+                "reference_minute_close": bar.get("close") if bar else None,
                 "vendor_lag_seconds": vendor_lag_minutes * 60 if bar else None,
-                "spy_bar_selection_reason": bar_reason,
+                "reference_bar_selection_reason": bar_reason,
                 "ose_night_close_ts_utc": close_row.get("ose_night_close_ts_utc"),
                 "ose_night_close_ts_jst": close_row.get("ose_night_close_ts_jst"),
                 "target_open_ts_utc": target_open,
@@ -82,7 +85,7 @@ def build_time_alignment_records(
     return alignment
 
 
-def _select_spy_close_bar(
+def _select_reference_close_bar(
     records: list[dict[str, object]],
     *,
     official_close_ts_utc: datetime,

@@ -644,6 +644,9 @@ def _fit_ml_tail_location_scale_bundle(
     else:
         raise PipelineRunError(f"Unknown ML tail model: {model_name}")
 
+    backbone_key = f"lightgbm_location_scale_backbone:{information_set}:{tail_level:.6f}"
+    location_seed = _ml_tail_seed(backbone_key, "location_final")
+    scale_seed = _ml_tail_seed(backbone_key, "scale_final")
     y_train = np.array([_required_float(row["realized_loss"]) for row in train_rows], dtype=float)
     location_model, gate, active_features = _fit_lgb_regression_model(
         lgb=lgb,
@@ -651,7 +654,7 @@ def _fit_ml_tail_location_scale_bundle(
         target=y_train,
         candidate_features=candidate_features,
         objective="regression_l2",
-        random_state=_ml_tail_seed(model_name, information_set, tail_level, "location_final"),
+        random_state=location_seed,
     )
     log_abs_resid_oof = cast(np.ndarray, oof["log_abs_resid_oof"])
     scale_indices = [index for index, value in enumerate(log_abs_resid_oof) if math.isfinite(value)]
@@ -667,7 +670,7 @@ def _fit_ml_tail_location_scale_bundle(
         target=scale_target,
         candidate_features=candidate_features,
         objective="regression_l2",
-        random_state=_ml_tail_seed(model_name, information_set, tail_level, "scale_final"),
+        random_state=scale_seed,
     )
     return {
         "fit_status": "ok",
@@ -690,6 +693,9 @@ def _fit_ml_tail_location_scale_bundle(
         "oof_location_count": oof["location_oof_count"],
         "oof_scale_count": oof["scale_oof_count"],
         "standardization_method": "blocked_expanding_oof_location_scale_duan_smearing",
+        "location_scale_backbone_key": backbone_key,
+        "location_scale_location_seed": location_seed,
+        "location_scale_scale_seed": scale_seed,
         "evt_tail": evt_tail,
         "candidate_feature_hash": gate["candidate_feature_hash"],
         "active_feature_hash": stable_hash(

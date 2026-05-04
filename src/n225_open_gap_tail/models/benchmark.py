@@ -516,6 +516,15 @@ def _pot_gpd_standardized_tail(
             PIPELINE_CONFIG.model_policy.evt_shape_cap_loose,
         ),
     )
+    threshold_sensitivity = _evt_threshold_sensitivity(
+        values=values,
+        tail_level=tail_level,
+        threshold_grid=PIPELINE_CONFIG.model_policy.evt_threshold_grid,
+        min_exceedances=min_exceedances,
+        evt_variant=evt_variant,
+        shape_cap=shape_cap,
+        shape_shrinkage_k=shape_shrinkage_k,
+    )
     return {
         "standardized_var": float(var_z),
         "standardized_es": float(max(var_z, es_z)),
@@ -540,6 +549,9 @@ def _pot_gpd_standardized_tail(
         "evt_evi_diagnostics_json": json.dumps(evi, sort_keys=True, default=str),
         "evt_ei_diagnostics_json": json.dumps(ei, sort_keys=True, default=str),
         "evt_cap_sensitivity_json": json.dumps(cap_sensitivity, sort_keys=True),
+        "evt_threshold_sensitivity_json": json.dumps(
+            threshold_sensitivity, sort_keys=True, default=str
+        ),
         "threshold_diagnostics_json": json.dumps(diagnostics, sort_keys=True),
         "threshold_policy": PIPELINE_CONFIG.model_policy.evt_threshold_refresh,
         "threshold_smoothing": PIPELINE_CONFIG.model_policy.evt_threshold_smoothing,
@@ -860,4 +872,112 @@ def _evt_cap_sensitivity(
                 "es_available": shape < 1.0,
             }
         )
+    return rows
+
+
+def _evt_threshold_sensitivity(
+    *,
+    values: np.ndarray,
+    tail_level: float,
+    threshold_grid: tuple[float, ...],
+    min_exceedances: int,
+    evt_variant: str,
+    shape_cap: tuple[float, float] | None,
+    shape_shrinkage_k: float | None,
+) -> list[dict[str, object]]:
+    finite = values[np.isfinite(values)]
+    rows: list[dict[str, object]] = []
+    for threshold_quantile in threshold_grid:
+        q = float(threshold_quantile)
+        base: dict[str, object] = {
+            "threshold_quantile": q,
+            "tail_level": float(tail_level),
+            "evt_variant": evt_variant,
+        }
+        if finite.size == 0:
+            rows.append({**base, "status": "unavailable_no_finite_standardized_losses"})
+            continue
+        threshold = float(np.quantile(finite, q))
+        if tail_level <= q:
+            rows.append(
+                {
+                    **base,
+                    "status": "not_applicable_threshold_not_below_tail_level",
+                    "threshold_value": threshold,
+                    "evt_exceedance_count": int(np.sum(finite > threshold)),
+                }
+            )
+            continue
+        try:
+            excesses = finite[finite > threshold] - threshold
+            exceedance_indices = np.flatnonzero(finite > threshold)
+            if excesses.size < min_exceedances:
+                rows.append(
+                    {
+                        **base,
+                        "status": "unavailable_insufficient_exceedances",
+                        "threshold_value": threshold,
+                        "evt_exceedance_count": int(excesses.size),
+                        "evt_min_exceedances": int(min_exceedances),
+                    }
+                )
+                continue
+            shape_mle, _, scale_mle = stats.genpareto.fit(excesses, floc=0.0)
+            shape_mle = float(shape_mle)
+            scale_mle = float(max(scale_mle, 1e-12))
+            selected_shape, selected_scale = _select_evt_shape_and_scale(
+                excesses=excesses,
+                exceedance_indices=exceedance_indices,
+                shape_mle=shape_mle,
+                scale_mle=scale_mle,
+                evt_variant=evt_variant,
+                shape_cap=shape_cap,
+                shape_shrinkage_k=shape_shrinkage_k,
+            )
+            shape = _required_float(selected_shape["shape_final"])
+            scale = _required_float(selected_scale["scale_final"])
+            exceedance_probability = excesses.size / finite.size
+            target_tail_probability = max(1.0 - tail_level, 1e-12)
+            ratio = max(exceedance_probability / target_tail_probability, 1.0)
+            if abs(shape) < 1e-8:
+                var_z = threshold + scale * math.log(ratio)
+            else:
+                var_z = threshold + scale * (ratio**shape - 1.0) / shape
+            es_z: float | None = None
+            status = "ok"
+            if shape < 1.0:
+                es_z = var_z + (scale + shape * (var_z - threshold)) / (1.0 - shape)
+            else:
+                status = "unavailable_infinite_es"
+            evi = cast(dict[str, object], selected_shape.get("evi") or {})
+            ei = cast(dict[str, object], selected_shape.get("ei") or {})
+            rows.append(
+                {
+                    **base,
+                    "status": status,
+                    "threshold_value": threshold,
+                    "evt_exceedance_count": int(excesses.size),
+                    "evt_shape": shape,
+                    "evt_scale": scale,
+                    "evt_shape_mle": shape_mle,
+                    "evt_scale_mle": scale_mle,
+                    "evt_shape_method": selected_shape.get("shape_method"),
+                    "evt_cap_policy": selected_shape.get("cap_policy"),
+                    "evt_cap_hit": selected_shape.get("cap_hit"),
+                    "evt_xi_evi_anchor": evi.get("xi_evi_anchor"),
+                    "evt_theta_hat": ei.get("theta_hat"),
+                    "evt_effective_exceedance_count": ei.get("effective_exceedance_count"),
+                    "standardized_var": float(var_z),
+                    "standardized_es": None if es_z is None else float(max(var_z, es_z)),
+                    "evt_es_finite": es_z is not None and math.isfinite(es_z),
+                }
+            )
+        except Exception as exc:  # pragma: no cover - defensive diagnostic path
+            rows.append(
+                {
+                    **base,
+                    "status": f"unavailable_exception:{type(exc).__name__}",
+                    "threshold_value": threshold,
+                }
+            )
     return rows

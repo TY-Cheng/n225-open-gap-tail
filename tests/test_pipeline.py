@@ -42,21 +42,6 @@ from n225_open_gap_tail.features.descriptions import (
 from n225_open_gap_tail.features.descriptions import (
     _required_float as _description_required_float,
 )
-from n225_open_gap_tail.features.jquants_spy import (
-    _realized_var as _minute_realized_var,
-)
-from n225_open_gap_tail.features.jquants_spy import (
-    _sample_excess_kurtosis as _minute_sample_excess_kurtosis,
-)
-from n225_open_gap_tail.features.jquants_spy import (
-    _sample_skew as _minute_sample_skew,
-)
-from n225_open_gap_tail.features.jquants_spy import (
-    _semivar as _minute_semivar,
-)
-from n225_open_gap_tail.features.jquants_spy import (
-    build_massive_late_session_feature_records as build_feature_minute_records,
-)
 from n225_open_gap_tail.features.n225_history import (
     _contract_month_number,
     _is_finite_or_none,
@@ -75,16 +60,31 @@ from n225_open_gap_tail.features.n225_history import (
 from n225_open_gap_tail.features.n225_history import (
     _semivar_if_enough as _n225_semivar_if_enough,
 )
+from n225_open_gap_tail.features.session_features import (
+    _realized_var as _minute_realized_var,
+)
+from n225_open_gap_tail.features.session_features import (
+    _sample_excess_kurtosis as _minute_sample_excess_kurtosis,
+)
+from n225_open_gap_tail.features.session_features import (
+    _sample_skew as _minute_sample_skew,
+)
+from n225_open_gap_tail.features.session_features import (
+    _semivar as _minute_semivar,
+)
+from n225_open_gap_tail.features.session_features import (
+    build_massive_late_session_feature_records as build_feature_minute_records,
+)
 from n225_open_gap_tail.forecasting import (
     build_feature_coverage_records,
     build_feature_matrix_gate_records,
     build_fields_coverage_audit_records,
     build_leakage_check_records,
+    build_legacy_spy_late_session_feature_records,
     build_ml_tail_modeling_rows,
     build_modeling_panel_records,
     build_panel,
     build_run_id,
-    build_spy_late_session_feature_records,
     drop_low_variance_features,
     empirical_excess_es_companion,
     evaluate_benchmark_floor_suite,
@@ -125,7 +125,7 @@ def _patch_paper_module(
         "n225_open_gap_tail.metrics.result_matrix",
         "n225_open_gap_tail.inference.core",
         "n225_open_gap_tail.features.asof",
-        "n225_open_gap_tail.features.jquants_spy",
+        "n225_open_gap_tail.features.session_features",
         "n225_open_gap_tail.data_lake.cache_ops",
         "n225_open_gap_tail.reporting.tables",
         "n225_open_gap_tail.reporting.latex",
@@ -516,6 +516,52 @@ def test_filled_fred_zero_diffs_are_low_variance_dropped_not_model_breaking() ->
 
     assert gate["active_features"] == ["fred_rates_staleness_days"]
     assert "fred_dgs10_diff" in cast(list[str], gate["dropped_features"])
+
+
+def test_feature_matrix_gate_drops_sparse_minute_features_before_prediction() -> None:
+    frame = pl.DataFrame(
+        {
+            "dense": [float(index) for index in range(10)],
+            "sparse_minute_late_60m_return": [
+                1.0,
+                2.0,
+                3.0,
+                4.0,
+                5.0,
+                6.0,
+                None,
+                None,
+                None,
+                None,
+            ],
+            "tolerated_history_feature": [
+                1.0,
+                2.0,
+                3.0,
+                4.0,
+                5.0,
+                6.0,
+                7.0,
+                8.0,
+                None,
+                None,
+            ],
+        }
+    )
+
+    gate = build_feature_matrix_gate_records(
+        frame,
+        ["dense", "sparse_minute_late_60m_return", "tolerated_history_feature"],
+    )
+
+    assert gate["active_features"] == ["dense", "tolerated_history_feature"]
+    assert "sparse_minute_late_60m_return" in cast(list[str], gate["dropped_features"])
+    dropped = json.loads(str(gate["dropped_features_json"]))
+    sparse_drop = next(
+        item for item in dropped if item["feature"] == "sparse_minute_late_60m_return"
+    )
+    assert sparse_drop["drop_reason"] == "high_training_missingness"
+    assert sparse_drop["max_missingness"] == pytest.approx(0.05)
 
 
 def test_ml_tail_information_sets_select_nested_feature_blocks() -> None:
@@ -1090,7 +1136,7 @@ def test_build_modeling_panel_records_and_feature_coverage() -> None:
                 "low": 19.9,
             },
         ],
-        spy_minute_records=[],
+        minute_feature_records=[],
         fred_records=[
             {
                 "series_id": "VIXCLS",
@@ -1149,7 +1195,7 @@ def test_fred_asof_fill_skips_null_ghost_row_and_records_metadata() -> None:
             }
         ],
         massive_daily_records=[],
-        spy_minute_records=[],
+        minute_feature_records=[],
         fred_records=[
             {
                 "series_id": "DGS10",
@@ -1292,7 +1338,7 @@ def test_spy_minute_features_use_official_early_close_and_exclude_after_hours() 
         }
     )
 
-    features = build_spy_late_session_feature_records(
+    features = build_legacy_spy_late_session_feature_records(
         records,
         calendar_records=[
             {
@@ -1419,7 +1465,7 @@ def test_massive_daily_features_use_official_early_close_availability() -> None:
                 "low": 100.0,
             },
         ],
-        spy_minute_records=[],
+        minute_feature_records=[],
         fred_records=[],
         calendar_records=[
             {
@@ -1484,7 +1530,7 @@ def test_modeling_panel_forward_fills_us_holiday_features_and_leakage_gate() -> 
                 "low": 100.0,
             },
         ],
-        spy_minute_records=[],
+        minute_feature_records=[],
         fred_records=[],
     )
 
@@ -1529,7 +1575,7 @@ def test_modeling_panel_records_calendar_join_miss_reason() -> None:
         ],
         alignment_records=[],
         massive_daily_records=[],
-        spy_minute_records=[],
+        minute_feature_records=[],
         fred_records=[],
     )
 
@@ -1621,7 +1667,7 @@ def test_forecast_sample_reason_priority_and_calendar_map_propagation() -> None:
             }
         ],
         massive_daily_records=[],
-        spy_minute_records=[],
+        minute_feature_records=[],
         fred_records=[],
     )
 
@@ -1857,7 +1903,7 @@ def test_jquants_silver_flags_and_cache_writer(tmp_path: Path) -> None:
 
 def test_derived_spy_records_flow_into_feature_map_and_alignment() -> None:
     available = datetime(2026, 1, 2, 21, 5, tzinfo=UTC)
-    features = paper_core._spy_minute_feature_map(
+    features = paper_core._minute_feature_map(
         [
             {
                 "bar_date_et": "2026-01-02",
@@ -1876,7 +1922,7 @@ def test_derived_spy_records_flow_into_feature_map_and_alignment() -> None:
 
 
 def test_derived_spy_volume_surge_recomputes_across_cache_partitions() -> None:
-    features = paper_core._spy_minute_feature_map(
+    features = paper_core._minute_feature_map(
         [
             {
                 "bar_date_et": "2026-01-30",
@@ -1932,7 +1978,7 @@ def test_generic_minute_features_are_prefixed_and_volume_normalized_by_ticker() 
         for day, volume in zip(("2026-01-02", "2026-01-05"), values, strict=True)
     ]
 
-    features = paper_core._spy_minute_feature_map(rows)
+    features = paper_core._minute_feature_map(rows)
 
     assert features["2026-01-05"]["qqq_late_volume_surge"] == pytest.approx(2.0)
     assert features["2026-01-05"]["ewj_late_volume_surge"] == pytest.approx(0.5)
@@ -2022,7 +2068,7 @@ def test_low_level_feature_and_bronze_helpers_cover_edge_cases() -> None:
     assert "realized variance" in paper_core._feature_description("qqq_late_60m_realized_var")
     assert "realized semivariance" in paper_core._feature_description("qqq_late_60m_up_semivar")
     assert "small-sample realized moment" in paper_core._feature_description("qqq_late_60m_skew")
-    assert "SPY late-session volume" in paper_core._feature_description("spy_late_volume_surge")
+    assert "late-session volume" in paper_core._feature_description("spy_late_volume_surge")
     assert "normalized within ticker" in paper_core._feature_description(
         "qqq_late_volume_zscore_20"
     )
@@ -2031,7 +2077,7 @@ def test_low_level_feature_and_bronze_helpers_cover_edge_cases() -> None:
     assert "high-low" in paper_core._feature_description("spy_range")
     assert "first difference" in paper_core._feature_description("fred_rate_diff")
     assert "daily source level" in paper_core._feature_description("fred_rate_level")
-    assert "SPY late-session minute-bar" in paper_core._feature_description("spy_late_30m_return")
+    assert "U.S.-listed instrument" in paper_core._feature_description("spy_late_30m_return")
     assert "U.S.-listed instrument" in paper_core._feature_description("qqq_final_window_momentum")
     assert _optional_text(None) is None
     assert _optional_text(" ") is None
@@ -2561,7 +2607,7 @@ def test_spy_minute_features_cover_late_window_and_volume_surge() -> None:
                 }
             )
 
-    features = paper_core._spy_minute_feature_map(rows)
+    features = paper_core._minute_feature_map(rows)
 
     assert features["2026-01-02"]["spy_late_30m_return"] is not None
     assert features["2026-01-05"]["spy_late_60m_return"] is not None
@@ -3461,10 +3507,14 @@ def test_private_pipeline_helpers_cover_defensive_edges(
     assert long_shard_id == "lgbm_pot_plain__sto__R__E__q0950__m"
     assert len(long_shard_id) < 48
     assert paper_core._feature_description("fx_usdjpy_level").startswith("canonical USDJPY")
-    assert paper_core._feature_description("spy_late_30m_return").startswith("SPY late-session")
+    assert paper_core._feature_description("spy_late_30m_return").startswith(
+        "U.S.-listed instrument"
+    )
     assert paper_core._feature_description("fred_vixcls_diff").startswith("first difference")
     assert paper_core._feature_description("fred_vixcls_level").startswith("daily source level")
-    assert paper_core._feature_description("spy_late_volume_surge").startswith("SPY late-session")
+    assert paper_core._feature_description("spy_late_volume_surge").startswith(
+        "late-session volume"
+    )
     assert paper_core._feature_description("custom_feature") == "run predictor candidate"
     assert paper_core._safe_mean(np.array([math.nan])) is None
     with pytest.raises(paper_module.PipelineRunError, match="Expected finite numeric"):

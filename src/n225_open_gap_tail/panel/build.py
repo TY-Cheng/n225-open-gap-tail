@@ -56,7 +56,7 @@ from n225_open_gap_tail.config.runtime import (
     PIPELINE_CONFIG,
     PipelineRunError,
     Settings,
-    SPY_MINUTE_FEATURE_SCHEMA,
+    LEGACY_SPY_DERIVED_FEATURE_SCHEMA,
     TAIL_LEVELS,
     timedelta,
     UTC,
@@ -81,7 +81,7 @@ from n225_open_gap_tail.features.asof import (
     _fred_feature_map,
     _fred_features_asof,
     _massive_daily_feature_map,
-    _spy_minute_feature_map,
+    _minute_feature_map,
 )
 from n225_open_gap_tail.features.descriptions import _feature_description, _safe_name
 from n225_open_gap_tail.features.n225_history import add_n225_history_features
@@ -101,10 +101,10 @@ from n225_open_gap_tail.panel.options_audit import (
     build_options_liquidity_audit_records,
     build_options_source_audit_records,
 )
-from n225_open_gap_tail.features.jquants_spy import (
+from n225_open_gap_tail.features.session_features import (
     _write_jquants_silver_cache,
     add_jquants_silver_flags,
-    build_spy_late_session_feature_records,
+    build_legacy_spy_late_session_feature_records,
 )
 from n225_open_gap_tail.panel.target_audit import build_target_audit_records
 from n225_open_gap_tail.panel.time_alignment import build_time_alignment_records
@@ -203,7 +203,7 @@ def build_panel(
     predictor_start = (date.fromisoformat(start) - timedelta(days=14)).isoformat()
     massive_pull_ts = datetime.now(UTC)
     _pipeline_log(f"Massive predictors fetch/cache start window={predictor_start}..{end_date}")
-    massive_daily, spy_minutes = _fetch_massive_predictors(
+    massive_daily, minute_features = _fetch_massive_predictors(
         settings=settings,
         start=predictor_start,
         end=end_date,
@@ -212,7 +212,7 @@ def build_panel(
     )
     _pipeline_log(
         f"Massive predictors available: daily_rows={len(massive_daily)}, "
-        f"minute_feature_rows={len(spy_minutes)}"
+        f"minute_feature_rows={len(minute_features)}"
     )
     fred_pull_ts = datetime.now(UTC)
     _pipeline_log(f"FRED predictors fetch/cache start window={predictor_start}..{end_date}")
@@ -245,7 +245,7 @@ def build_panel(
     alignment = build_time_alignment_records(
         target_rows=targets,
         calendar_records=calendar_records,
-        spy_minute_records=spy_minutes,
+        minute_feature_records=minute_features,
         vendor_lag_minutes=PIPELINE_CONFIG.leakage_policy.massive_vendor_lag_minutes,
     )
     _pipeline_log(f"time alignment rows built: {len(alignment)}")
@@ -259,7 +259,7 @@ def build_panel(
         target_rows=targets,
         alignment_records=alignment,
         massive_daily_records=massive_daily,
-        spy_minute_records=spy_minutes,
+        minute_feature_records=minute_features,
         n225_option_records=n225_option_features,
         fred_records=fred_rows,
         cboe_records=cboe_rows,
@@ -440,7 +440,7 @@ def build_panel(
                 "jquants_options_silver_schema_hash": JQUANTS_OPTIONS_SILVER_SCHEMA.hash,
                 "calendar_map_schema_hash": CALENDAR_MAP_SCHEMA.hash,
                 "massive_minute_feature_schema_hash": MASSIVE_MINUTE_FEATURE_SCHEMA.hash,
-                "spy_minute_feature_schema_hash": SPY_MINUTE_FEATURE_SCHEMA.hash,
+                "legacy_spy_derived_feature_schema_hash": LEGACY_SPY_DERIVED_FEATURE_SCHEMA.hash,
                 "fred_cache_schema_hash": FRED_CACHE_SCHEMA.hash,
             },
             "feature_set_version": PIPELINE_CONFIG.feature_sets.version.value,
@@ -552,7 +552,7 @@ def build_modeling_panel_records(
     target_rows: list[dict[str, object]],
     alignment_records: list[dict[str, object]],
     massive_daily_records: list[dict[str, object]],
-    spy_minute_records: list[dict[str, object]],
+    minute_feature_records: list[dict[str, object]],
     fred_records: list[dict[str, object]],
     cboe_records: list[dict[str, object]] | None = None,
     calendar_records: list[dict[str, object]] | None = None,
@@ -569,7 +569,7 @@ def build_modeling_panel_records(
     )
     fred_features = _fred_feature_map(fred_records)
     cboe_features = _cboe_feature_map(cboe_records or [])
-    spy_features = _spy_minute_feature_map(spy_minute_records)
+    minute_features_by_date = _minute_feature_map(minute_feature_records)
     fx_context = _canonical_fx_context(
         massive_daily_records=massive_daily_records,
         fred_records=fred_records,
@@ -666,7 +666,7 @@ def build_modeling_panel_records(
         )
         record.update(
             _features_asof(
-                spy_features,
+                minute_features_by_date,
                 us_date,
                 cutoff=cutoff,
                 fill_method="forward_fill_us_holiday",

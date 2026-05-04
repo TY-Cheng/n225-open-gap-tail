@@ -152,6 +152,7 @@ def evaluate_ml_tail_suite(
     evt_shape_stability = _evt_shape_stability_records(diagnostics)
     extremal_index_diagnostics = _extremal_index_records(diagnostics)
     evt_cap_sensitivity = _evt_cap_sensitivity_records(diagnostics)
+    evt_threshold_sensitivity = _evt_threshold_sensitivity_records(diagnostics)
     evt_ablation_metrics = _evt_ablation_metric_records(
         cast(list[dict[str, object]], artifacts["per_model_metrics"])
     )
@@ -227,6 +228,7 @@ def evaluate_ml_tail_suite(
         extremal_index_diagnostics,
     )
     _write_parquet(metrics_root / "evt_cap_sensitivity.parquet", evt_cap_sensitivity)
+    _write_parquet(metrics_root / "evt_threshold_sensitivity.parquet", evt_threshold_sensitivity)
     _write_parquet(metrics_root / "evt_ablation_metrics.parquet", evt_ablation_metrics)
     _write_parquet(metrics_root / "ml_tail_cpa_inference.parquet", cpa_inference)
     _write_parquet(
@@ -261,6 +263,7 @@ def evaluate_ml_tail_suite(
             "evt_shape_stability_rows": len(evt_shape_stability),
             "extremal_index_diagnostic_rows": len(extremal_index_diagnostics),
             "evt_cap_sensitivity_rows": len(evt_cap_sensitivity),
+            "evt_threshold_sensitivity_rows": len(evt_threshold_sensitivity),
             "evt_ablation_metric_rows": len(evt_ablation_metrics),
             "cpa_inference_rows": len(cpa_inference),
             "cross_model_cpa_inference_rows": len(cross_model_cpa_inference),
@@ -290,6 +293,7 @@ def evaluate_ml_tail_suite(
             "evt_shape_stability_rows": len(evt_shape_stability),
             "extremal_index_diagnostic_rows": len(extremal_index_diagnostics),
             "evt_cap_sensitivity_rows": len(evt_cap_sensitivity),
+            "evt_threshold_sensitivity_rows": len(evt_threshold_sensitivity),
         },
     )
     _evaluation_log(
@@ -378,6 +382,40 @@ def _evt_cap_sensitivity_records(rows: list[dict[str, object]]) -> list[dict[str
                     "shape": item.get("shape"),
                     "cap_hit": item.get("cap_hit"),
                     "es_available": item.get("es_available"),
+                }
+            )
+    return records
+
+
+def _evt_threshold_sensitivity_records(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for row in rows:
+        if row.get("evt_variant") in (None, "empirical_standardized_tail"):
+            continue
+        sensitivity = _json_list(row.get("evt_threshold_sensitivity_json"))
+        for item in sensitivity:
+            if not isinstance(item, dict):
+                continue
+            records.append(
+                {
+                    **_evt_base_record(row),
+                    "sensitivity_threshold_quantile": item.get("threshold_quantile"),
+                    "sensitivity_status": item.get("status"),
+                    "threshold_value": item.get("threshold_value"),
+                    "evt_exceedance_count": item.get("evt_exceedance_count"),
+                    "evt_shape": item.get("evt_shape"),
+                    "evt_scale": item.get("evt_scale"),
+                    "evt_shape_mle": item.get("evt_shape_mle"),
+                    "evt_scale_mle": item.get("evt_scale_mle"),
+                    "evt_shape_method": item.get("evt_shape_method"),
+                    "evt_cap_policy": item.get("evt_cap_policy"),
+                    "evt_cap_hit": item.get("evt_cap_hit"),
+                    "evt_xi_evi_anchor": item.get("evt_xi_evi_anchor"),
+                    "evt_theta_hat": item.get("evt_theta_hat"),
+                    "evt_effective_exceedance_count": item.get("evt_effective_exceedance_count"),
+                    "standardized_var": item.get("standardized_var"),
+                    "standardized_es": item.get("standardized_es"),
+                    "evt_es_finite": item.get("evt_es_finite"),
                 }
             )
     return records

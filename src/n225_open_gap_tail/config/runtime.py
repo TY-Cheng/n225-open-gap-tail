@@ -40,7 +40,7 @@ from n225_open_gap_tail.data_lake.io import (
     JQUANTS_SILVER_SCHEMA,
     MAIN_SAMPLE_START,
     MASSIVE_MINUTE_FEATURE_SCHEMA,
-    SPY_MINUTE_FEATURE_SCHEMA,
+    LEGACY_SPY_DERIVED_FEATURE_SCHEMA,
     VendorErrorClass,
     atomic_write_parquet,
     cache_path,
@@ -701,9 +701,20 @@ def build_feature_matrix_gate_records(
         raw_values = frame.get_column(column).to_list()
         finite_values = [_optional_float(value) for value in raw_values]
         valid_values = [value for value in finite_values if value is not None]
-        training_missingness[column] = (
-            None if row_count == 0 else 1.0 - len(valid_values) / row_count
-        )
+        missingness = None if row_count == 0 else 1.0 - len(valid_values) / row_count
+        training_missingness[column] = missingness
+        missingness_limit = _training_missingness_limit(column)
+        if missingness is not None and missingness > missingness_limit:
+            dropped.append(
+                {
+                    "feature": column,
+                    "drop_reason": "high_training_missingness",
+                    "missingness": missingness,
+                    "max_missingness": missingness_limit,
+                }
+            )
+            training_variance[column] = None
+            continue
         if len(valid_values) < 2:
             reason = "all_null_or_nonfinite" if row_count else "empty_training_window"
             dropped.append({"feature": column, "drop_reason": reason})
@@ -744,6 +755,22 @@ def build_feature_matrix_gate_records(
         "training_missingness_json": json.dumps(training_missingness, sort_keys=True, default=str),
         "training_variance_json": json.dumps(training_variance, sort_keys=True, default=str),
     }
+
+
+def _training_missingness_limit(feature: str) -> float:
+    policy = PIPELINE_CONFIG.feature_engineering
+    if _looks_like_minute_feature_name(feature):
+        return policy.ml_minute_feature_max_training_missingness
+    return policy.ml_feature_max_training_missingness
+
+
+def _looks_like_minute_feature_name(feature: str) -> bool:
+    return (
+        "_late_" in feature
+        or feature.endswith("_late_session_range")
+        or feature.endswith("_late_volume_surge")
+        or feature.endswith("_final_window_momentum")
+    )
 
 
 def global_oos_intersection(

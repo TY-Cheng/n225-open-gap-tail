@@ -253,8 +253,6 @@ def _feature_value_names(record: Mapping[str, object]) -> list[str]:
             or key.endswith("_window_momentum")
             or "_zscore_" in key
             or "_percentile_" in key
-            or key.startswith("spy_late_")
-            or key.startswith("spy_final_")
         )
     )
 
@@ -696,9 +694,9 @@ def _fred_fx_unavailable_reason(
     return JoinMissReason.FRED_H10_RELEASE_DELAY.value
 
 
-def _spy_minute_feature_map(records: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+def _minute_feature_map(records: list[dict[str, object]]) -> dict[str, dict[str, object]]:
     if any("late_30m_return" in row for row in records):
-        from n225_open_gap_tail.features.jquants_spy import (
+        from n225_open_gap_tail.features.session_features import (
             _records_with_recomputed_minute_volume_features,
         )
 
@@ -748,11 +746,11 @@ def _spy_minute_feature_map(records: list[dict[str, object]]) -> dict[str, dict[
                 )
         return derived_features
     if any("spy_late_30m_return" in row for row in records):
-        from n225_open_gap_tail.features.jquants_spy import (
-            _records_with_recomputed_spy_late_volume_surge,
+        from n225_open_gap_tail.features.session_features import (
+            _records_with_recomputed_legacy_spy_late_volume_surge,
         )
 
-        records = _records_with_recomputed_spy_late_volume_surge(records)
+        records = _records_with_recomputed_legacy_spy_late_volume_surge(records)
         derived_features: dict[str, dict[str, object]] = {}
         for row in records:
             date_key = str(row.get("bar_date_et") or "")
@@ -774,20 +772,24 @@ def _spy_minute_feature_map(records: list[dict[str, object]]) -> dict[str, dict[
                     source_date=date_key,
                 )
         return derived_features
-    by_date: dict[str, list[dict[str, object]]] = {}
+    by_ticker_date: dict[tuple[str, str], list[dict[str, object]]] = {}
     for row in records:
         if row.get("is_us_regular_session") is True:
-            by_date.setdefault(str(row["bar_date_et"]), []).append(row)
+            safe_ticker = _safe_name(str(row.get("ticker") or "SPY"))
+            by_ticker_date.setdefault((safe_ticker, str(row["bar_date_et"])), []).append(row)
     features: dict[str, dict[str, object]] = {}
-    rolling_late_volume: list[float] = []
-    for date_key in sorted(by_date):
-        rows = sorted(by_date[date_key], key=lambda row: str(row["bar_end_ts_utc"]))
+    rolling_late_volume_by_ticker: dict[str, list[float]] = {}
+    for safe_ticker, date_key in sorted(by_ticker_date):
+        rows = sorted(
+            by_ticker_date[(safe_ticker, date_key)], key=lambda row: str(row["bar_end_ts_utc"])
+        )
         closes = [_optional_float(row.get("close")) for row in rows]
         highs = [_optional_float(row.get("high")) for row in rows]
         lows = [_optional_float(row.get("low")) for row in rows]
         volumes = [_optional_float(row.get("volume")) or 0.0 for row in rows]
         valid_closes = [value for value in closes if value is not None and value > 0]
         late_volume = float(sum(volumes[-60:]))
+        rolling_late_volume = rolling_late_volume_by_ticker.setdefault(safe_ticker, [])
         rolling_mean_volume = (
             float(np.mean(rolling_late_volume[-20:])) if rolling_late_volume else None
         )
@@ -800,16 +802,19 @@ def _spy_minute_feature_map(records: list[dict[str, object]]) -> dict[str, dict[
             rows[-1],
             lag_minutes=PIPELINE_CONFIG.leakage_policy.massive_vendor_lag_minutes,
         )
-        features[date_key] = {
-            "spy_late_30m_return": _window_return(valid_closes, 30),
-            "spy_late_60m_return": _window_return(valid_closes, 60),
-            "spy_late_session_range": _window_range(highs[-60:], lows[-60:]),
-            "spy_late_volume_surge": volume_surge,
-            "spy_final_window_momentum": _window_return(valid_closes, 15),
+        prefix = "spy" if safe_ticker == "spy" else safe_ticker
+        row_features = {
+            f"{prefix}_late_30m_return": _window_return(valid_closes, 30),
+            f"{prefix}_late_60m_return": _window_return(valid_closes, 60),
+            f"{prefix}_late_session_range": _window_range(highs[-60:], lows[-60:]),
+            f"{prefix}_late_volume_surge": volume_surge,
+            f"{prefix}_final_window_momentum": _window_return(valid_closes, 15),
         }
-        for feature_name in _feature_value_names(features[date_key]):
+        target = features.setdefault(date_key, {})
+        target.update(row_features)
+        for feature_name in _feature_value_names(row_features):
             _stamp_feature_metadata(
-                features[date_key],
+                target,
                 feature_name=feature_name,
                 available_ts_utc=last_available_ts,
                 source_date=date_key,

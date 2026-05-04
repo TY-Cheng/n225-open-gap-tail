@@ -164,6 +164,8 @@ class FeatureEngineeringPolicy:
     massive_minute_late_window: int = 60
     massive_minute_moment_min_periods: int = 30
     massive_minute_volume_baseline_window: int = 20
+    ml_feature_max_training_missingness: float = 0.20
+    ml_minute_feature_max_training_missingness: float = 0.05
     options_dte_short_bucket: tuple[int, int] = (7, 30)
     options_dte_medium_bucket: tuple[int, int] = (31, 90)
     options_headline_feature_cap: int = 30

@@ -304,7 +304,7 @@ The first-paper predictor universe is pre-registered by economic role rather tha
 | Treasury rates | DGS2, DGS10, T10Y2Y | FRED | Current historical values with +1 U.S. business-day availability lag; not ALFRED/vintage-safe by default | Rate level and curve slope. SOFR/EFFR are post-2018 enriched candidates only. |
 | Credit spreads | BAMLH0A0HYM2, BAMLC0A0CM | FRED/ICE BofA | Enriched/robustness block unless coverage supports inclusion | Credit-stress proxy for global downside tail risk without shortening the required core sample by default. |
 | Event flags | FOMC, CPI, payrolls, BOJ, major Japan macro releases | Official calendars | Planned candidate controls; not active feature artifacts in the current clean run | Scheduled risk-event controls without macro feature fishing. |
-| Lagged Japanese futures state | Prior gap, lagged day return, lagged night return, volume/OI changes, roll/SQ flags | J-Quants futures after Premium access | Historical target-side variables, lagged before cutoff | Domestic state, liquidity proxy, and contract-state controls. |
+| Lagged Japanese futures state | Prior gap, lagged day return, lagged night return, volume/OI changes, roll/SQ flags | J-Quants futures after Premium access | Historical target-side variables, lagged before cutoff | Domestic state, lagged turnover/activity proxies, and contract-state controls; not direct market-depth measures. |
 
 The Massive ticker selection covers U.S. market beta, technology and growth exposure, small-cap risk appetite, sector dispersion, a U.S. dollar ETF proxy, duration, safe-haven demand, commodities, Asia/EM risk, and semiconductors. Canonical USD/JPY comes from FRED `DEXJPUS`, not Massive. Japan and Asia proxy tickers are cached with the panel but enter the ML tail nested information sets separately from the broad U.S. core block.
 
@@ -324,9 +324,13 @@ The target audit and predictor timeline jointly determine the final sample perio
 
 ## Cache-First Data Lake Contract
 
-`just full` builds a local cache-first data lake before model evaluation. The default start
-is `2016-07-19`, treated as a clean-sample candidate rather than a hard empirical claim.
-The final modeling start is written to the run manifest as:
+`just full` builds a local cache-first data lake before model evaluation. The command
+defaults to `force=false`; use `force=true` only for an intentional, documented
+schema/cache invalidation. This matters because the multi-ticker Massive minute layer can
+require substantial first-run vendor traffic, while normal reruns should reuse validated
+bronze/silver/gold caches. The default start is `2016-07-19`, treated as a clean-sample
+candidate rather than a hard empirical claim. The final modeling start is written to the
+run manifest as:
 
 ```text
 combined_clean_start = max(
@@ -452,8 +456,8 @@ Licensed-data extension:
 | `DaySessionClose` | Reference for `full_gap_close_to_open` and lagged Japanese controls | Must refer to the same contract convention used in target construction. |
 | `NightSessionClose` | Reference for `residual_nightclose_to_day_open` and night-session absorption controls | Historical residual source only unless a live licensed feed exists. |
 | `SettlementPrice` | Main reference for `full_gap_settle_to_open` | Must be matched to the prior eligible contract/session. |
-| `Volume` | Liquidity proxy and data-sanity field | Session-specific volume is used only if available and verified. |
-| `OpenInterest` | Liquidity, contract-state, and roll diagnostics | Used as a proxy, not as direct depth. |
+| `Volume` | Lagged turnover/activity proxy and data-sanity field | Session-specific volume is used only if available and verified; it is not interpreted as order-book depth. |
+| `OpenInterest` | Contract-state, participation, and roll diagnostics | Used with roll/SQ controls; it is not a direct liquidity-depth measure. |
 | `LastTradingDay` | Roll-window flag and expiry exclusion logic | Must be reconciled with JPX contract rules. |
 | `SpecialQuotationDay` | SQ-window flag and robustness/exclusion rule | Used to prevent SQ-driven artifacts from dominating the tail. |
 | `CentralContractMonthFlag` | Main contract selection and roll diagnostics | Must be reconciled against observed liquidity and metadata. |
@@ -580,13 +584,16 @@ positive-loss convention:
 The headline tail level is `0.95`. Plain standardized-loss POT-GPD remains the
 standard filtered-EVT comparator. The stabilized POT-GPD variant is a
 finite-sample regularized filtered-EVT variant, not plain maximum-likelihood
-POT-GPD. Its diagnostics must record shape method, EVI status, EI status, cap
-policy, cap hits, conditional scale-refit status, and whether ES is finite.
+POT-GPD. Its diagnostics must record shape method, EVI status, extremal-index
+(`EI`) status, cap policy, cap hits, conditional scale-refit status, and whether
+ES is finite.
 
 EVT diagnostics should include EVI paths, Ferro-Segers extremal-index
-diagnostics, K-gaps robustness diagnostics, cap sensitivity, threshold behavior,
-and shape/scale stability. EI weighting is used only as a stabilization
-heuristic for effective exceedance counts; it is not a new GPD likelihood.
+diagnostics, K-gaps robustness diagnostics, cap sensitivity, threshold
+sensitivity, and shape/scale stability. In this project `EI` means
+extremal-index weighting, not expected improvement. The weighting is used only
+as a stabilization heuristic for effective exceedance counts; it is not a new
+GPD likelihood.
 
 Upper-tail labels are part of the two-sided futures risk surface. They use the
 same positive-loss convention as lower-tail labels, with `right_tail` defined as
@@ -610,7 +617,7 @@ Processed model tables should carry the fields needed to audit the LightGBM-stan
 | `evt_threshold_u` | Training-window POT threshold used for the row's forecast. |
 | `exceedance_indicator_t` | Indicator that `standardized_loss_t` exceeds the threshold. |
 | `exceedance_severity_t` | Excess over threshold for EVT severity calibration. |
-| `evt_variant` | POT-GPD variant label: plain MLE, capped MLE, EVI shrink, EI weighted, or stabilized. |
+| `evt_variant` | POT-GPD variant label: plain MLE, capped MLE, EVI shrink, extremal-index weighted (`ei_weighted`), or stabilized. |
 | `evt_shape_method` | Shape-estimation method recorded for the row's EVT calibration. |
 | `evt_evi_status` | EVI-anchor status, including unavailable or diagnostic-disagreement cases. |
 | `evt_ei_status` | Extremal-index status, including unavailable or no-discount fallbacks. |
@@ -621,6 +628,13 @@ Processed model tables should carry the fields needed to audit the LightGBM-stan
 | `tail_probability_alpha` | VaR/ES tail probability for the forecast row. |
 | `var_forecast` | VaR forecast transformed back to target scale. |
 | `es_forecast` | ES forecast transformed back to target scale. |
+
+The registered headline POT threshold remains fixed at `0.90`. Threshold
+sensitivity is written as a diagnostic artifact before any dynamic-threshold
+rule is promoted to the registered headline design. The location-scale
+empirical and POT-GPD variants use a common final LightGBM location-scale
+backbone by construction; EVT ablations differ in tail calibration rather than
+in a variant-specific final location/scale seed.
 
 ## Source Notes
 

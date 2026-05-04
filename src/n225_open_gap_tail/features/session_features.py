@@ -122,7 +122,7 @@ def _write_jquants_silver_cache(*, settings: Settings, rows: list[dict[str, obje
         _log_year_stats("J-Quants silver", year, stats)
 
 
-def build_spy_late_session_feature_records(
+def build_legacy_spy_late_session_feature_records(
     minute_records: list[dict[str, object]],
     *,
     calendar_records: list[dict[str, object]],
@@ -232,7 +232,7 @@ def build_massive_late_session_feature_records(
     return _records_with_recomputed_minute_volume_features(records)
 
 
-def _records_with_recomputed_spy_late_volume_surge(
+def _records_with_recomputed_legacy_spy_late_volume_surge(
     records: list[dict[str, object]],
 ) -> list[dict[str, object]]:
     """Recompute SPY volume surge over the full supplied date sequence.

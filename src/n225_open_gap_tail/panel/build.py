@@ -39,6 +39,8 @@ from n225_open_gap_tail.config.runtime import (
     JQUANTS_OPTIONS_SILVER_SCHEMA,
     JQUANTS_SILVER_SCHEMA,
     MAIN_SAMPLE_START,
+    MASSIVE_OPTIONS_ATM_IV_FEATURE_SCHEMA,
+    MASSIVE_OPTIONS_DAY_AGGS_FILTERED_SCHEMA,
     MASSIVE_MINUTE_ASIA_PROXY_TICKERS_FOR_PIPELINE,
     MASSIVE_MINUTE_FEATURE_SCHEMA,
     MASSIVE_MINUTE_JAPAN_PROXY_TICKERS_FOR_PIPELINE,
@@ -82,6 +84,7 @@ from n225_open_gap_tail.features.asof import (
     _fred_features_asof,
     _massive_daily_feature_map,
     _minute_feature_map,
+    _options_feature_map,
 )
 from n225_open_gap_tail.features.descriptions import _feature_description, _safe_name
 from n225_open_gap_tail.features.n225_history import add_n225_history_features
@@ -95,7 +98,9 @@ from n225_open_gap_tail.panel.information_sets import (
     ml_tail_feature_columns_for_information_set,
     registered_ml_tail_information_sets,
 )
+from n225_open_gap_tail.panel.calendar_map import build_calendar_map_records
 from n225_open_gap_tail.panel.jquants_options import prepare_n225_option_features
+from n225_open_gap_tail.panel.us_options import prepare_us_options_atm_iv_features
 from n225_open_gap_tail.panel.options_audit import (
     build_options_feature_coverage_records,
     build_options_liquidity_audit_records,
@@ -224,6 +229,22 @@ def build_panel(
         run_start_utc=run_ts,
     )
     _pipeline_log(f"FRED predictor rows available: {len(fred_rows)}")
+    _pipeline_log("Massive options computed ATM-IV feature build start")
+    us_options_build = prepare_us_options_atm_iv_features(
+        settings=settings,
+        start=predictor_start,
+        end=end_date,
+        calendar_records=calendar_records,
+        massive_daily_records=massive_daily,
+        fred_records=fred_rows,
+        downloaded_at_utc=massive_pull_ts,
+    )
+    us_options_features = us_options_build.feature_records
+    us_options_liquidity = us_options_build.liquidity_records
+    _pipeline_log(
+        f"Massive options ATM-IV features available: "
+        f"feature_rows={len(us_options_features)}, liquidity_rows={len(us_options_liquidity)}"
+    )
     cboe_pull_ts = datetime.now(UTC)
     _pipeline_log(
         f"Cboe volatility predictors fetch/cache start window={predictor_start}..{end_date}"
@@ -260,6 +281,7 @@ def build_panel(
         alignment_records=alignment,
         massive_daily_records=massive_daily,
         minute_feature_records=minute_features,
+        massive_options_feature_records=us_options_features,
         n225_option_records=n225_option_features,
         fred_records=fred_rows,
         cboe_records=cboe_rows,
@@ -310,6 +332,7 @@ def build_panel(
         "jquants_pull_ts_utc": jquants_pull_ts.isoformat(),
         "massive_pull_ts_utc": massive_pull_ts.isoformat(),
         "fred_pull_ts_utc": fred_pull_ts.isoformat(),
+        "massive_options_pull_ts_utc": massive_pull_ts.isoformat(),
         "cboe_pull_ts_utc": cboe_pull_ts.isoformat(),
         "window": [start, end_date],
         "predictor_window": [predictor_start, end_date],
@@ -332,9 +355,19 @@ def build_panel(
     _pipeline_log(f"wrote calendar map: {calendar_map_path}")
     _write_parquet(vix_consistency_path, vix_consistency)
     _pipeline_log(f"wrote VIX consistency audit: {vix_consistency_path}")
-    options_source_audit = build_options_source_audit_records(settings=settings, run_ts=run_ts)
-    options_feature_coverage = build_options_feature_coverage_records(settings=settings)
-    options_liquidity_audit = build_options_liquidity_audit_records(settings=settings)
+    options_source_audit = build_options_source_audit_records(
+        settings=settings,
+        run_ts=run_ts,
+        option_feature_records=us_options_features,
+    )
+    options_feature_coverage = build_options_feature_coverage_records(
+        settings=settings,
+        option_feature_records=us_options_features,
+    )
+    options_liquidity_audit = build_options_liquidity_audit_records(
+        settings=settings,
+        liquidity_records=us_options_liquidity,
+    )
     _write_parquet(options_source_audit_path, options_source_audit)
     _write_parquet(options_feature_coverage_path, options_feature_coverage)
     _write_parquet(options_liquidity_audit_path, options_liquidity_audit)
@@ -438,6 +471,12 @@ def build_panel(
                 "jquants_bronze_schema_hash": JQUANTS_BRONZE_SCHEMA.hash,
                 "jquants_silver_schema_hash": JQUANTS_SILVER_SCHEMA.hash,
                 "jquants_options_silver_schema_hash": JQUANTS_OPTIONS_SILVER_SCHEMA.hash,
+                "massive_options_day_aggs_filtered_schema_hash": (
+                    MASSIVE_OPTIONS_DAY_AGGS_FILTERED_SCHEMA.hash
+                ),
+                "massive_options_atm_iv_feature_schema_hash": (
+                    MASSIVE_OPTIONS_ATM_IV_FEATURE_SCHEMA.hash
+                ),
                 "calendar_map_schema_hash": CALENDAR_MAP_SCHEMA.hash,
                 "massive_minute_feature_schema_hash": MASSIVE_MINUTE_FEATURE_SCHEMA.hash,
                 "legacy_spy_derived_feature_schema_hash": LEGACY_SPY_DERIVED_FEATURE_SCHEMA.hash,
@@ -472,7 +511,17 @@ def build_panel(
                 "flat_files_enabled": settings.massive_options_flat_files_enabled,
                 "contract_rest_enabled": settings.massive_options_contract_rest_enabled,
                 "snapshot_historical_backfill_allowed": False,
-                "headline_promotion_status": "disabled_until_historical_source_audit_passes",
+                "historical_day_aggs_source": "us_options_opra/day_aggs_v1",
+                "computed_iv_method": (
+                    "black_scholes_european_dgs2_zero_dividend_from_day_aggs_close"
+                ),
+                "feature_rows": len(us_options_features),
+                "liquidity_audit_rows": len(us_options_liquidity),
+                "headline_promotion_status": (
+                    "candidate_e_layer_gated_by_coverage_and_liquidity"
+                    if us_options_features
+                    else "disabled_until_historical_source_audit_passes"
+                ),
             },
             "massive_fetched_symbols": FETCH_MASSIVE_TICKERS_FOR_PIPELINE,
             "massive_symbols": FETCH_MASSIVE_TICKERS_FOR_PIPELINE,
@@ -553,6 +602,7 @@ def build_modeling_panel_records(
     alignment_records: list[dict[str, object]],
     massive_daily_records: list[dict[str, object]],
     minute_feature_records: list[dict[str, object]],
+    massive_options_feature_records: list[dict[str, object]] | None = None,
     fred_records: list[dict[str, object]],
     cboe_records: list[dict[str, object]] | None = None,
     calendar_records: list[dict[str, object]] | None = None,
@@ -570,6 +620,7 @@ def build_modeling_panel_records(
     fred_features = _fred_feature_map(fred_records)
     cboe_features = _cboe_feature_map(cboe_records or [])
     minute_features_by_date = _minute_feature_map(minute_feature_records)
+    options_features_by_date = _options_feature_map(massive_options_feature_records or [])
     fx_context = _canonical_fx_context(
         massive_daily_records=massive_daily_records,
         fred_records=fred_records,
@@ -667,6 +718,14 @@ def build_modeling_panel_records(
         record.update(
             _features_asof(
                 minute_features_by_date,
+                us_date,
+                cutoff=cutoff,
+                fill_method="forward_fill_us_holiday",
+            )
+        )
+        record.update(
+            _features_asof(
+                options_features_by_date,
                 us_date,
                 cutoff=cutoff,
                 fill_method="forward_fill_us_holiday",
@@ -877,58 +936,6 @@ def infer_jquants_required_field_coverage_start(
     return fallback
 
 
-def build_calendar_map_records(
-    *,
-    target_rows: list[dict[str, object]],
-    calendar_records: list[dict[str, object]],
-    alignment_records: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    calendar_by_date = {str(row["calendar_date"]): row for row in calendar_records}
-    alignment_by_target = {str(row["trading_date"]): row for row in alignment_records}
-    records: list[dict[str, object]] = []
-    for target in target_rows:
-        ose_date = str(target["trading_date"])
-        alignment = alignment_by_target.get(ose_date, {})
-        us_session_date = str(alignment.get("us_calendar_date") or "")
-        calendar_row = calendar_by_date.get(us_session_date) or calendar_by_date.get(ose_date) or {}
-        mapping_status, mapping_reason = _calendar_mapping_status(
-            target=target,
-            alignment=alignment,
-            calendar_row=calendar_row,
-        )
-        records.append(
-            {
-                "ose_trading_date": ose_date,
-                "us_session_date": us_session_date or None,
-                "us_official_close_ts_utc": _coerce_datetime(
-                    alignment.get("us_official_close_ts_utc")
-                    or alignment.get("model_cutoff_ts_utc")
-                    or calendar_row.get("us_close_ts_utc")
-                ),
-                "us_early_close_flag": bool(calendar_row.get("is_us_early_close", False)),
-                "dst_regime": alignment.get("dst_regime") or calendar_row.get("dst_regime"),
-                "ose_day_open_ts_utc": _coerce_datetime(
-                    alignment.get("target_open_ts_utc") or target.get("target_open_ts_utc")
-                ),
-                "ose_night_close_ts_utc": _coerce_datetime(
-                    alignment.get("ose_night_close_ts_utc")
-                    or calendar_row.get("ose_night_close_ts_utc")
-                ),
-                "us_close_to_ose_night_close_minutes": _optional_float(
-                    alignment.get("us_close_to_ose_night_close_minutes")
-                    or calendar_row.get("us_close_to_ose_night_close_minutes")
-                ),
-                "model_cutoff_ts_utc": _coerce_datetime(alignment.get("model_cutoff_ts_utc")),
-                "target_open_ts_utc": _coerce_datetime(
-                    alignment.get("target_open_ts_utc") or target.get("target_open_ts_utc")
-                ),
-                "mapping_status": mapping_status,
-                "mapping_reason": mapping_reason,
-            }
-        )
-    return records
-
-
 def build_feature_dictionary(panel: list[dict[str, object]]) -> dict[str, str]:
     return {
         field: _feature_description(field)
@@ -968,30 +975,3 @@ def _forecast_sample_exclusion_reason(
     if cutoff >= target_open:
         return ForecastExclusionReason.CUTOFF_AFTER_TARGET_OPEN.value
     return None
-
-
-def _calendar_mapping_status(
-    *,
-    target: Mapping[str, object],
-    alignment: Mapping[str, object],
-    calendar_row: Mapping[str, object],
-) -> tuple[str, str | None]:
-    if not alignment:
-        return MappingStatus.UNMAPPED.value, "missing_time_alignment"
-    if alignment.get("alignment_status") == "missing_us_close":
-        return MappingStatus.US_HOLIDAY.value, "no_us_close_before_target_open"
-    if target.get("missing_reason") == "holiday_trading_no_day_open":
-        return MappingStatus.OSE_HOLIDAY_TRADING.value, "ose_holiday_trading_no_day_open"
-    if (
-        calendar_row.get("is_us_trading_day") is False
-        and calendar_row.get("is_jpx_trading_day") is True
-    ):
-        return MappingStatus.US_HOLIDAY.value, "us_closed_jpx_open"
-    if (
-        calendar_row.get("is_jpx_trading_day") is False
-        and calendar_row.get("is_us_trading_day") is True
-    ):
-        return MappingStatus.US_JP_DESYNC.value, "us_open_jpx_closed"
-    if alignment.get("alignment_pass") is False:
-        return MappingStatus.US_JP_DESYNC.value, str(alignment.get("alignment_reason"))
-    return MappingStatus.NORMAL_TRADING.value, None

@@ -39,6 +39,8 @@ from n225_open_gap_tail.data_lake.io import (
     JQUANTS_OPTIONS_SILVER_SCHEMA,
     JQUANTS_SILVER_SCHEMA,
     MAIN_SAMPLE_START,
+    MASSIVE_OPTIONS_ATM_IV_FEATURE_SCHEMA,
+    MASSIVE_OPTIONS_DAY_AGGS_FILTERED_SCHEMA,
     MASSIVE_MINUTE_FEATURE_SCHEMA,
     LEGACY_SPY_DERIVED_FEATURE_SCHEMA,
     VendorErrorClass,
@@ -93,8 +95,14 @@ MASSIVE_MINUTE_ASIA_PROXY_TICKERS_FOR_PIPELINE = (
 MASSIVE_OPTIONS_CORE_UNDERLYINGS_FOR_PIPELINE = (
     PIPELINE_CONFIG.feature_sets.massive_options_core_underlyings
 )
+MASSIVE_OPTIONS_SECTOR_UNDERLYINGS_FOR_PIPELINE = (
+    PIPELINE_CONFIG.feature_sets.massive_options_sector_underlyings
+)
 MASSIVE_OPTIONS_JAPAN_ETF_UNDERLYINGS_FOR_PIPELINE = (
     PIPELINE_CONFIG.feature_sets.massive_options_japan_etf_underlyings
+)
+MASSIVE_OPTIONS_ASIA_PROXY_UNDERLYINGS_FOR_PIPELINE = (
+    PIPELINE_CONFIG.feature_sets.massive_options_asia_proxy_underlyings
 )
 MASSIVE_OPTIONS_ADR_PRIMARY_UNDERLYINGS_FOR_PIPELINE = (
     PIPELINE_CONFIG.feature_sets.massive_options_adr_primary_underlyings
@@ -106,7 +114,9 @@ MASSIVE_OPTIONS_UNDERLYINGS_FOR_PIPELINE = tuple(
     dict.fromkeys(
         (
             *MASSIVE_OPTIONS_CORE_UNDERLYINGS_FOR_PIPELINE,
+            *MASSIVE_OPTIONS_SECTOR_UNDERLYINGS_FOR_PIPELINE,
             *MASSIVE_OPTIONS_JAPAN_ETF_UNDERLYINGS_FOR_PIPELINE,
+            *MASSIVE_OPTIONS_ASIA_PROXY_UNDERLYINGS_FOR_PIPELINE,
             *MASSIVE_OPTIONS_ADR_PRIMARY_UNDERLYINGS_FOR_PIPELINE,
             *MASSIVE_OPTIONS_ADR_DIAGNOSTIC_UNDERLYINGS_FOR_PIPELINE,
         )
@@ -127,6 +137,7 @@ FETCH_MASSIVE_TICKERS_FOR_PIPELINE = tuple(
             *CORE_MASSIVE_TICKERS_FOR_PIPELINE,
             *OPTIONAL_MASSIVE_TICKERS_FOR_PIPELINE,
             *JAPAN_PROXY_MASSIVE_TICKERS_FOR_PIPELINE,
+            *MASSIVE_OPTIONS_ADR_PRIMARY_UNDERLYINGS_FOR_PIPELINE,
             *ASIA_PROXY_MASSIVE_TICKERS_FOR_PIPELINE,
         )
     )
@@ -366,6 +377,10 @@ ML_TAIL_HISTORY_FEATURES = (
     "n225_option_total_volume_log1p_lag_1",
     "n225_option_valid_contract_count_lag_1",
     "n225_option_days_to_sq_lag_1",
+    "n225_option_night_atm_close_lag_1",
+    "n225_option_night_atm_return_lag_1",
+    "n225_option_night_atm_range_lag_1",
+    "n225_option_night_valid_contract_count_lag_1",
 )
 FRED_RATE_STALENESS_FEATURE = "fred_rates_staleness_days"
 FRED_RATE_STALENESS_SERIES = ("DGS2", "DGS10", "T10Y2Y")
@@ -759,6 +774,8 @@ def build_feature_matrix_gate_records(
 
 def _training_missingness_limit(feature: str) -> float:
     policy = PIPELINE_CONFIG.feature_engineering
+    if feature.startswith("option_"):
+        return policy.ml_options_feature_max_training_missingness
     if _looks_like_minute_feature_name(feature):
         return policy.ml_minute_feature_max_training_missingness
     return policy.ml_feature_max_training_missingness

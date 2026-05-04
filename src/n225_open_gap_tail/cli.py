@@ -83,7 +83,9 @@ def source_probe() -> None:
     for result in results:
         http_status = f" http={result.http_status}" if result.http_status is not None else ""
         typer.echo(f"{result.source}: {result.status}{http_status} {result.detail}")
-    if any(result.status != "ok" for result in results):
+    if any(
+        result.status != "ok" and not result.status.startswith("optional_") for result in results
+    ):
         raise typer.Exit(code=1)
 
 

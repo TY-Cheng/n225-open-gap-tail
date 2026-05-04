@@ -43,7 +43,8 @@ and base URLs, not raw API-key values; `MASSIVE_API_KEY` and `JQUANTS_API_KEY`
 are not runtime configuration paths. The run manifest and
 `config/research_config.json` record the exact
 feature-set universe. For the current clean run, the fetched Massive daily
-universe is the union of the core, optional, Japan proxy, and Asia proxy blocks:
+universe is the union of the core, optional, Japan proxy, Japanese ADR aggregate,
+and Asia proxy blocks:
 
 ```text
 MASSIVE_API_KEY_FILE="/path/to/massive.keyfile"
@@ -55,11 +56,13 @@ MASSIVE_PROBE_TICKERS="I:VIX"
 MASSIVE_OPTIONS_HISTORICAL_ENABLED="false"
 MASSIVE_OPTIONS_FLAT_FILES_ENABLED="false"
 MASSIVE_OPTIONS_CONTRACT_REST_ENABLED="false"
+MASSIVE_OPTIONS_UNDERLYINGS="SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,XLY,XLP,XLB,XLU,XLC,SMH,EWJ,DXJ,EEM,FXI,EWY,EWT,EWH,TM,SONY,MUFG,SMFG,MFG"
 
-massive_core = SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,XLY,XLP,XLB,XLU,XLC,TLT,GLD,USO,EEM,FXI,SMH,HYG,LQD
+massive_core = SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,XLY,XLP,XLB,XLU,XLC,TLT,GLD,USO,SMH,HYG,LQD
 massive_optional = UUP
 massive_japan_proxy = EWJ,DXJ
-massive_asia_proxy = EWY,EWT,EWH
+massive_japan_adr_primary = TM,SONY,MUFG,SMFG,MFG
+massive_asia_proxy = EEM,FXI,EWY,EWT,EWH
 
 FRED_BASE_URL="https://fred.stlouisfed.org"
 fred_core = VIXCLS,DGS2,DGS10,T10Y2Y
@@ -69,9 +72,14 @@ fred_credit_enriched = BAMLH0A0HYM2,BAMLC0A0CM
 
 These snippets describe the full clean-run fetch universe. Smoke commands can
 override them with smaller ticker or series lists. The headline ML nested
-information sets do not use every fetched field: optional `UUP` and credit-spread
-series are cached and audited, but they remain outside the registered headline
-ML information sets unless a future specification explicitly promotes them.
+information sets do not use every fetched field: `UUP` and the credit-spread
+series are now B-layer U.S. close candidates, while short-history funding
+series, robustness stress indexes, and unaudited event/skew variables remain
+outside the registered headline ladder.
+The options flags remain disabled in raw settings as a fail-safe for direct CLI
+calls. The standard `just full` recipe overrides them to `true` by default and
+therefore builds U.S. options features unless called with `options=false`. Those
+features are routed by underlying exposure into the nested information sets.
 
 Short-history and robustness-only candidates stay out of the current registered
 full-history headline feature set:
@@ -88,8 +96,8 @@ FRED uses current historical values with conservative availability semantics and
 The current paper-facing evidence map is generated from:
 
 ```text
-run_id = tailrisk_20160719_20260502_20260502T150957Z_commit_2e1366b9
-requested window = 2016-07-19 to 2026-05-02
+run_id = tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375
+requested window = 2016-07-19 to 2026-05-04
 clean forecast sample = 2018-06-20 to 2026-05-01
 clean forecast observations = 1,661
 ```
@@ -126,10 +134,11 @@ The clean run fetches these Massive daily symbols:
 | --- | --- | --- |
 | Broad U.S. beta | `SPY`, `QQQ`, `DIA`, `IWM` | Close-to-close log returns and high-low log ranges. |
 | U.S. sectors | `XLK`, `XLF`, `XLE`, `XLV`, `XLI`, `XLY`, `XLP`, `XLB`, `XLU`, `XLC` | Sector returns and ranges. |
-| Duration, safe-haven, commodity, EM, semiconductor, and credit-risk proxies | `TLT`, `GLD`, `USO`, `EEM`, `FXI`, `SMH`, `HYG`, `LQD` | Returns and ranges. |
-| Dollar ETF proxy | `UUP` | Cached and audited as `massive_optional`; not part of the headline ML nested information sets. |
+| Duration, safe-haven, commodity, semiconductor, and credit-risk proxies | `TLT`, `GLD`, `USO`, `SMH`, `HYG`, `LQD` | Returns and ranges. |
+| Dollar ETF proxy | `UUP` | Cached and audited as `massive_optional`; enters the U.S. close core information set as a dollar-risk proxy, not as USD/JPY. |
 | Japan proxy block | `EWJ`, `DXJ` | Returns and ranges; enters the third ML information set. |
-| Asia proxy block | `EWY`, `EWT`, `EWH` | Returns and ranges; enters the fourth ML information set. |
+| Japanese ADR aggregate block | `TM`, `SONY`, `MUFG`, `SMFG`, `MFG` | Aggregate-only ADR spot returns/ranges; enters the third ML information set without single-name ADR spot features. |
+| Asia proxy block | `EEM`, `FXI`, `EWY`, `EWT`, `EWH` | Returns and ranges; enters the fourth ML information set. |
 
 All Massive daily fields are frozen at the `US_CASH_CLOSE` forecast origin after
 the configured vendor-availability lag. Massive timestamps are stored in UTC
@@ -159,12 +168,25 @@ features in `japan_proxy`, and `EEM/FXI/EWY/EWT/EWH` minute features in
 
 ### Registered Options Source Audit
 
-The project now registers an `options_risk` information layer, but it is
-audit-gated rather than automatically promoted to historical headline features.
-Massive live option snapshots are not used for historical backfill. Historical
-options predictors require a source audit proving that the available historical
-flat-file or contract-level source can provide timestamp-safe IV, Greeks, open
-interest, quotes, or sufficient fields to reconstruct them.
+The project can build bounded U.S. options features from Massive OPRA
+`day_aggs_v1` flat files when
+`MASSIVE_OPTIONS_HISTORICAL_ENABLED=true` and
+`MASSIVE_OPTIONS_FLAT_FILES_ENABLED=true`. Massive live option snapshots are not
+used for historical backfill. The active U.S. options implementation computes
+ATM-IV proxies from option daily aggregate close prices, underlying Massive daily
+closes, FRED `DGS2`, and a zero-dividend Black-Scholes approximation. It does
+not use vendor historical IV, Greeks, quotes, or open interest.
+
+`just source-probe` now performs a nonblocking Massive flat-file check when
+`MASSIVE_FLAT_FILE_KEY_FILE` is configured. The live local probe can list and
+range-read `us_options_opra/day_aggs_v1`, `minute_aggs_v1`, and `trades_v1`
+headers from the S3-compatible flat-file endpoint; those headers contain option
+price/volume/timestamp fields but no direct IV, Greeks, or open interest.
+`quotes_v1` is listed by the bucket but currently returns `403 Forbidden` on the
+sample header read, so quote-based spread/liquidity filters remain disabled
+until entitlement is confirmed. The active v1 liquidity audit is therefore based
+on day-agg volume, transaction count, valid-contract count, DTE bucket, and
+whether an ATM-IV solve succeeds.
 
 The options audit artifacts are:
 
@@ -172,36 +194,43 @@ The options audit artifacts are:
 - `options_feature_coverage.parquet`;
 - `options_liquidity_audit.parquet`.
 
-J-Quants Nikkei 225 large-option data are handled separately from the U.S.
-`options_risk` layer. The pipeline now fetches Nikkei 225 Options (`NK225E`)
+J-Quants Nikkei 225 large-option data are handled separately from U.S.-listed
+options. The pipeline now fetches Nikkei 225 Options (`NK225E`)
 daily option-chain rows from J-Quants, consistent with the
 [J-Quants index-option field specification](https://jpx.gitbook.io/j-quants-en/api-reference/index_option)
 and [option product code list](https://jpx.gitbook.io/j-quants-en/api-reference/options/derivativeproductcategory),
 normalizes the compact V2 fields
-(`Strike`, `IV`, `OI`, `BaseVol`, `UnderPx`, etc.), and converts volatility
-percent values to fractions. These features enter the `japan_only` block only as
-lagged domestic option-implied state. Same target-date option rows are not used.
+(`Strike`, `IV`, `OI`, `BaseVol`, `UnderPx`, etc.), promotes the night-session
+option OHLC fields (`EO`, `EH`, `EL`, `EC`) into silver as
+`night_session_open/high/low/close`, and converts volatility percent values to
+fractions. These features enter the `japan_only` block only as lagged domestic
+option-implied state. Same target-date option rows are not used.
 The default aggregate scope is the registered `7-30` and `31-90` DTE window, so
 the main predictors are prior available ATM IV, ATM put-call IV skew, base
 volatility, OI-weighted IV, put/call OI and volume ratios, total OI/volume, valid
-contract count, and days to SQ.
+contract count, days to SQ, and lagged night-session ATM option close/return/range
+summaries. These night-session option features are deliberately lagged; without
+timestamped intraday or quote-chain evidence they are not interpreted as
+same-night U.S.-close-cutoff N225 option information.
 
 The candidate options universe is intentionally capped before any data-driven
 selection:
 
 | Block | Candidate underlyings | Status |
 | --- | --- | --- |
-| J-Quants N225 large options | `NK225E` | Active as lagged `japan_only` option-implied state after source/schema smoke; not same-date target information. |
-| Core U.S. options | `SPY`, `QQQ`, `IWM` | Disabled until historical entitlement and fields pass audit. |
-| Japan ETF options | `EWJ`, `DXJ` | Disabled until historical entitlement, liquidity, and timestamp safety pass audit. |
-| ADR aggregate options | `TM`, `SONY`, `MUFG`, `SMFG`, `MFG` | Disabled until historical entitlement and rolling liquidity gates pass audit; ADR aggregation uses median and 20% trimmed mean as primary summaries when enabled. |
+| J-Quants N225 large options | `NK225E` | Active as lagged `japan_only` option-implied and night-session option-state controls after source/schema smoke; not same-date target information. |
+| Core U.S. options | `SPY`, `QQQ`, `DIA`, `IWM` | Active as computed ATM-IV proxies in `japan_only_plus_us_close_core` only when Massive options flat files are enabled; gated by coverage and liquidity. |
+| Sector/semiconductor option aggregate | `XLK`, `XLF`, `XLE`, `XLV`, `XLI`, `XLY`, `XLP`, `XLB`, `XLU`, `XLC`, `SMH` | Active in `japan_only_plus_us_close_core` only as aggregate median, dispersion, max, and valid-count ATM-IV state; raw sector option fields stay audit/appendix. |
+| Japan ETF options | `EWJ`, `DXJ` | Active as computed ATM-IV proxies in `japan_only_plus_us_close_core_plus_japan_proxy` only when Massive options flat files are enabled; gated by coverage and liquidity. |
+| ADR aggregate options | `TM`, `SONY`, `MUFG`, `SMFG`, `MFG` | Active in `japan_only_plus_us_close_core_plus_japan_proxy` only as median/20% trimmed-mean aggregate; individual ADRs stay audit/appendix unless separately promoted. |
+| Asia proxy option aggregate | `EEM`, `FXI`, `EWY`, `EWT`, `EWH` | Active in `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy` only as aggregate ATM-IV state; individual Asia option fields stay audit/appendix. |
 
 The registered DTE buckets are short `7-30` calendar days and medium `31-90`
 calendar days. ATM selection is delta-neutral when delta is available or
 computed; otherwise the method falls back to closest-to-spot or closest-to-forward
-and records the method. Headline options features are capped at 30 curated
-aggregate features. Raw per-contract and per-ADR fields remain audit or appendix
-outputs.
+and records the method. Headline options features are capped at 45 curated
+aggregate features. Raw per-contract, per-sector, per-Asia-ETF, and per-ADR
+fields remain audit or appendix outputs.
 
 ### Active FRED and Cboe Inputs
 
@@ -211,7 +240,7 @@ The clean run fetches these FRED series:
 | --- | --- | --- |
 | Core rates and volatility | `VIXCLS`, `DGS2`, `DGS10`, `T10Y2Y` | Levels and first differences, plus `fred_rates_staleness_days`. |
 | Canonical USD/JPY FX control | `DEXJPUS` | `fx_usdjpy_level`, `fx_usdjpy_return`, `fx_observation_age_days`, `fx_release_age_days`. |
-| Credit-spread enriched block | `BAMLH0A0HYM2`, `BAMLC0A0CM` | Levels and first differences; cached and audited, but outside the headline ML nested information sets in the current run. |
+| Credit-spread enriched block | `BAMLH0A0HYM2`, `BAMLC0A0CM` | Levels and first differences; enters the U.S. close core information set as credit-stress/risk-appetite proxies subject to coverage gates. |
 
 The clean run also uses Cboe VIX historical data:
 
@@ -225,22 +254,20 @@ predictor used in the point-in-time U.S. close information set.
 
 ### Active ML Nested Information Sets
 
-The registered ML comparison uses five nested information sets. The fifth layer
-is active only when options-source, coverage, liquidity, and timestamp audits
-pass; otherwise it remains a documented disabled layer rather than weakening the
-main run.
+The registered ML comparison uses four nested information sets. Options are
+routed by economic exposure instead of being grouped into a separate headline
+layer: domestic N225 options enter A, U.S. core and sector-aggregate options enter
+B, Japan-linked ETF/ADR options enter C, and Asia proxy aggregate options enter D.
 
 | Information set | Active blocks |
 | --- | --- |
-| `japan_only` | Lagged loss and gap history, rolling loss moments, rolling 95% loss quantile, lagged N225 futures session/volume/OI features, lagged J-Quants N225 large-option implied-state aggregates, calendar month terms, DST regime, and absorption-regime timing. |
-| `japan_only_plus_us_close_core` | `japan_only` plus Massive U.S. core daily features, U.S. core minute features with canonical SPY fields, FRED core rates/VIX features, Cboe VIX features, and FRED H.10 USD/JPY. |
-| `japan_only_plus_us_close_core_plus_japan_proxy` | Previous set plus `EWJ` and `DXJ` returns and ranges. |
-| `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy` | Previous set plus `EWY`, `EWT`, and `EWH` returns and ranges. |
-| `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy_plus_options_risk` | Previous set plus audited options-risk features, disabled by default until historical options entitlement and timestamp-safe feature reconstruction pass. |
+| `japan_only` | Lagged loss and gap history, rolling loss moments, rolling 95% loss quantile, lagged N225 futures session/volume/OI features, lagged J-Quants N225 large-option implied-state and night-session option aggregates, calendar month terms, DST regime, and absorption-regime timing. |
+| `japan_only_plus_us_close_core` | `japan_only` plus Massive U.S. core daily features, U.S. core minute features with canonical SPY fields, FRED core rates/VIX features, FRED credit-spread proxies, Cboe VIX features, FRED H.10 USD/JPY, `UUP` as a dollar-risk ETF proxy, computed ATM-IV proxies for `SPY`, `QQQ`, `DIA`, and `IWM` options, and aggregate sector/semiconductor ATM-IV state when enabled and audit-gated. |
+| `japan_only_plus_us_close_core_plus_japan_proxy` | Previous set plus `EWJ` and `DXJ` daily/minute features, computed ATM-IV proxies for `EWJ` and `DXJ` options, Japanese ADR spot aggregate features, and Japanese ADR aggregate options features when enabled and audit-gated. |
+| `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy` | Previous set plus Asia/regional proxy features for `EEM`, `FXI`, `EWY`, `EWT`, and `EWH`, including daily, minute, and aggregate options features routed by underlying exposure. |
 
-The headline ML nested sets do not include `UUP`, FRED credit-spread enriched
-series, SOFR/EFFR, NFCI/ANFCI/STLFSI4, SKEW, VIX term-structure proxies, or
-macro-event flags in the current clean run.
+The headline ML nested sets do not include SOFR/EFFR, NFCI/ANFCI/STLFSI4, SKEW,
+VIX term-structure proxies, or macro-event flags in the current clean run.
 
 ### Planned or Candidate Inputs Not Active in the Clean Run
 
@@ -292,17 +319,17 @@ The first-paper predictor universe is pre-registered by economic role rather tha
 | Block | Candidate variables | Source | Timing status | Economic justification |
 | --- | --- | --- | --- | --- |
 | Broad U.S. beta | SPY, DIA, QQQ, IWM returns and ranges | Massive.com | `US_CASH_CLOSE` after official close plus vendor lag | U.S. equity-market direction and risk appetite. |
-| U.S. late-session dynamics | SPY last-30-minute return, last-hour return, late-session range, late-60-minute volume surge, final-window reversal or momentum | Massive.com minute bars | `US_CASH_CLOSE` after official close plus vendor lag | Late U.S. trading pressure and closing imbalance proxies that may be more informative than daily close-to-close moves. |
+| U.S. late-session dynamics | SPY/QQQ/DIA/IWM/TLT/HYG/GLD last-30-minute return, last-hour return, late-session range, late-60-minute volume surge, final-window reversal or momentum | Massive.com minute bars | `US_CASH_CLOSE` after official close plus vendor lag | Late U.S. trading pressure and closing imbalance proxies that may be more informative than daily close-to-close moves. |
 | U.S. sectors | XLK, XLF, XLE, XLV, XLI, XLY, XLP, XLB, XLU, XLC returns and dispersion | Massive.com | `US_CASH_CLOSE` | Sector composition, growth/cyclical rotation, defensives, utilities, and communications exposure. |
-| Asia and global risk | EEM, FXI, SMH, HYG, LQD | Massive.com core candidates | `US_CASH_CLOSE` after source audit | Emerging-market, China, semiconductor, and credit-risk channels relevant to Japan. |
-| Japan proxy block | EWJ, DXJ | Massive.com ML tail proxy block | `US_CASH_CLOSE` after source audit | U.S.-traded Japan equity proxies used to test whether Japan-exposure trading absorbs incremental signal beyond broad U.S. core. |
-| Asia proxy block | EWY, EWT, EWH | Massive.com ML tail proxy block | `US_CASH_CLOSE` after source audit | Korea, Taiwan, and Hong Kong proxies used to test regional and supply-chain information beyond Japan proxies. |
+| U.S. global-risk proxies | SMH, HYG, LQD | Massive.com core candidates | `US_CASH_CLOSE` after source audit | Semiconductor and credit-risk channels relevant to Japan but treated as U.S. core risk proxies. |
+| Japan proxy block | EWJ, DXJ plus aggregate TM/SONY/MUFG/SMFG/MFG ADR spot summaries | Massive.com ML tail proxy block | `US_CASH_CLOSE` after source audit | U.S.-traded Japan equity proxies used to test whether Japan-exposure trading absorbs incremental signal beyond broad U.S. core without exposing headline models to individual ADR names. |
+| Asia proxy block | EEM, FXI, EWY, EWT, EWH | Massive.com ML tail proxy block | `US_CASH_CLOSE` after source audit | Emerging-market, China, Korea, Taiwan, and Hong Kong proxies used to test regional and supply-chain information beyond Japan proxies. |
 | FX | Canonical USD/JPY from FRED `DEXJPUS` only | FRED H.10 | H.10 weekly-batch as-of release | Conservative lagged currency control without letting optional Massive FX entitlement determine the main sample. |
 | Safe-haven and commodity proxies | TLT, GLD, USO | Massive.com planned candidates | `US_CASH_CLOSE` after source audit | Flight-to-quality, dollar-rate duration, and commodity-risk channels. |
 | U.S. volatility | VIX close; VIX high/low/range when available | Cboe, FRED, Massive index probe | Historical daily close or audited index timestamp | U.S. implied volatility and volatility-of-risk regime. |
 | U.S. tail/skew proxies | Cboe SKEW, VIX9D, VIX3M, VIX6M | Cboe or licensed source | Tier 1.5/Tier 2 depending access and coverage | Option-implied left-tail and volatility-term-structure information. |
 | Treasury rates | DGS2, DGS10, T10Y2Y | FRED | Current historical values with +1 U.S. business-day availability lag; not ALFRED/vintage-safe by default | Rate level and curve slope. SOFR/EFFR are post-2018 enriched candidates only. |
-| Credit spreads | BAMLH0A0HYM2, BAMLC0A0CM | FRED/ICE BofA | Enriched/robustness block unless coverage supports inclusion | Credit-stress proxy for global downside tail risk without shortening the required core sample by default. |
+| Credit spreads | BAMLH0A0HYM2, BAMLC0A0CM | FRED/ICE BofA | B-layer U.S. close candidate with conservative FRED lag; not ALFRED/vintage-safe | Credit-stress proxy for global downside tail risk without shortening the required core sample by default. |
 | Event flags | FOMC, CPI, payrolls, BOJ, major Japan macro releases | Official calendars | Planned candidate controls; not active feature artifacts in the current clean run | Scheduled risk-event controls without macro feature fishing. |
 | Lagged Japanese futures state | Prior gap, lagged day return, lagged night return, volume/OI changes, roll/SQ flags | J-Quants futures after Premium access | Historical target-side variables, lagged before cutoff | Domestic state, lagged turnover/activity proxies, and contract-state controls; not direct market-depth measures. |
 
@@ -326,11 +353,15 @@ The target audit and predictor timeline jointly determine the final sample perio
 
 `just full` builds a local cache-first data lake before model evaluation. The command
 defaults to `force=false`; use `force=true` only for an intentional, documented
-schema/cache invalidation. This matters because the multi-ticker Massive minute layer can
-require substantial first-run vendor traffic, while normal reruns should reuse validated
-bronze/silver/gold caches. The default start is `2016-07-19`, treated as a clean-sample
-candidate rather than a hard empirical claim. The final modeling start is written to the
-run manifest as:
+schema/cache invalidation. The recipe also defaults to `options=true`, which enables
+Massive OPRA `day_aggs_v1` flat-file ingestion and computed ATM-IV options features
+routed by underlying exposure into the B/C/D information sets. This matters because
+the multi-ticker Massive minute layer and the OPRA options layer can require
+substantial first-run vendor traffic, while normal reruns should reuse validated
+bronze/silver/gold caches. Use `just full 2016-07-19 "" 4 false false` for a run
+without U.S. options features. The default start is `2016-07-19`, treated as a
+clean-sample candidate rather than a hard empirical claim. The final modeling
+start is written to the run manifest as:
 
 ```text
 combined_clean_start = max(
@@ -513,10 +544,10 @@ The data lake is intentionally tiered to prevent feature fishing.
   volume z-score, volume percentile, and final-window momentum, all frozen at
   U.S. close plus the configured vendor-availability lag. Volume normalization
   is within ticker and uses prior rolling history only.
-- Massive core block additions: XLY, XLP, XLB, XLU, XLC, TLT, GLD, USO, EEM, FXI, SMH, HYG, and LQD after source and coverage audit.
-- Massive ML tail proxy blocks: Japan proxy (`EWJ`, `DXJ`) and Asia proxy (`EWY`, `EWT`, `EWH`) are cached now but interpreted separately from the core U.S. close block.
+- Massive core block additions: XLY, XLP, XLB, XLU, XLC, TLT, GLD, USO, SMH, HYG, and LQD after source and coverage audit.
+- Massive ML tail proxy blocks: Japan proxy (`EWJ`, `DXJ`) and Asia proxy (`EEM`, `FXI`, `EWY`, `EWT`, `EWH`) are cached now but interpreted separately from the core U.S. close block.
 - Cboe or FRED VIX close; VIX high, low, and range only when the source supports them.
-- FRED 2-year and 10-year Treasury yields, T10Y2Y yield-curve slope, and ICE BofA credit-spread proxies. Credit spreads are fetched and audited as an enriched block in the clean run but remain outside the headline ML nested information sets. SOFR/EFFR funding proxies are `post_2018_enriched`, not part of the current full-history headline feature set.
+- FRED 2-year and 10-year Treasury yields, T10Y2Y yield-curve slope, and ICE BofA credit-spread proxies. Credit spreads enter the B-layer U.S. close core as current-historical FRED series with conservative lag controls, not ALFRED/vintage-safe series. SOFR/EFFR funding proxies are `post_2018_enriched`, not part of the current full-history headline feature set.
 - Planned event flags: FOMC, CPI, payrolls, BOJ policy events, and major Japan macro releases. These are not active feature artifacts in the current clean run.
 - Lagged Japanese futures variables: prior gap, lagged OSE day return, lagged OSE night return when available, volume/open-interest changes, roll/SQ flags, and holiday-adjacent flags.
 
@@ -525,10 +556,16 @@ The data lake is intentionally tiered to prevent feature fishing.
 - Cboe SKEW or a licensed SKEW proxy.
 - VIX term-structure proxies such as VIX9D, VIX3M, and VIX6M.
 - Massive index probes such as `I:VIX` and `I:SKEW` only if the plan supports them.
-- U.S.-listed historical options-risk features from `SPY`, `QQQ`, `IWM`,
-  `EWJ`, `DXJ`, and primary Japanese ADR aggregates only after source
-  entitlement, timestamp safety, and liquidity audits pass. J-Quants `NK225E`
-  daily options are already active only as lagged domestic `japan_only` state.
+- U.S.-listed options-risk features from `SPY`, `QQQ`, `DIA`, `IWM`, sector
+  ETFs plus `SMH`, `EWJ`, `DXJ`, Asia proxy ETFs, and primary Japanese ADR
+  aggregates can now be computed from Massive OPRA day aggregates as ATM-IV
+  proxies. They are routed by economic exposure: U.S. core and sector aggregate
+  options into B, Japan ETF and ADR aggregate options into C, and Asia proxy
+  aggregate options into D. They must pass coverage/liquidity gates before
+  supporting headline claims.
+  J-Quants `NK225E` daily options are already active only as lagged domestic
+  `japan_only` state, including lagged night-session option OHLC summaries from
+  `EO/EH/EL/EC`.
 
 Tier 1.5 variables are natural for a tail-risk paper but must not shorten the main sample or introduce unclear availability timestamps. If they do, they move to Tier 2 robustness.
 

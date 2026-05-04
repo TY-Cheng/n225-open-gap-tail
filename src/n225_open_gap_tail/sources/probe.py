@@ -8,6 +8,7 @@ from n225_open_gap_tail.sources.cboe import CboeClient
 from n225_open_gap_tail.sources.fred import FredClient
 from n225_open_gap_tail.sources.jquants import JQuantsApiError, JQuantsV2Client
 from n225_open_gap_tail.sources.massive import MassiveApiError, MassiveClient
+from n225_open_gap_tail.sources.massive_flatfiles import probe_massive_options_flat_files
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,7 @@ def probe_sources(settings: Settings) -> list[SourceProbeResult]:
     return [
         _probe_jquants(settings),
         _probe_massive(settings),
+        *_probe_massive_options_flatfiles(settings),
         _probe_fred(settings),
         _probe_cboe(settings),
     ]
@@ -111,6 +113,29 @@ def _probe_massive(settings: Settings) -> SourceProbeResult:
         return _exception_result("massive", exc)
     except Exception as exc:  # pragma: no cover - network/environment dependent
         return _exception_result("massive", exc)
+
+
+def _probe_massive_options_flatfiles(settings: Settings) -> list[SourceProbeResult]:
+    try:
+        return [
+            SourceProbeResult(
+                source=f"massive_flatfiles:{result.dataset}",
+                status=_flatfile_probe_status(settings=settings, status=result.status),
+                detail=result.detail,
+                http_status=result.http_status,
+            )
+            for result in probe_massive_options_flat_files(settings=settings)
+        ]
+    except Exception as exc:  # pragma: no cover - network/environment dependent
+        return [_exception_result("massive_flatfiles", exc)]
+
+
+def _flatfile_probe_status(*, settings: Settings, status: str) -> str:
+    if status == "ok":
+        return status
+    if settings.massive_options_historical_enabled and settings.massive_options_flat_files_enabled:
+        return status
+    return f"optional_{status}"
 
 
 def _csv_probe(

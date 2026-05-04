@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from .build import *
+from .calendar_map import *
 from .information_sets import *
 from .leakage import *
 from .options_audit import *
+from .us_options import *
 from .target_audit import *
 from .time_alignment import *
 

@@ -575,9 +575,15 @@ def test_ml_tail_information_sets_select_nested_feature_blocks() -> None:
         {"feature": "fred_vixcls_level", "source_block": "fred_core"},
         {"feature": "fred_rates_staleness_days", "source_block": "fred_core"},
         {"feature": "fx_usdjpy_level", "source_block": "fx_core"},
+        {"feature": "uup_return", "source_block": "massive_optional"},
         {"feature": "ewj_return", "source_block": "japan_proxy"},
         {"feature": "ewh_return", "source_block": "asia_proxy"},
-        {"feature": "option_japan_adr_median_atm_iv", "source_block": "options_risk"},
+        {"feature": "option_us_core_spy_atm_iv_short", "source_block": "us_core"},
+        {"feature": "option_us_sector_median_atm_iv_short", "source_block": "us_core"},
+        {"feature": "option_japan_etf_ewj_atm_iv_short", "source_block": "japan_proxy"},
+        {"feature": "option_japan_adr_median_atm_iv_short", "source_block": "japan_proxy"},
+        {"feature": "japan_adr_median_return", "source_block": "japan_proxy"},
+        {"feature": "option_asia_proxy_median_atm_iv_short", "source_block": "asia_proxy"},
         {"feature": "fred_bamlh0a0hym2_level", "source_block": "fred_credit_enriched"},
     ]
 
@@ -597,33 +603,49 @@ def test_ml_tail_information_sets_select_nested_feature_blocks() -> None:
         coverage_rows,
         information_set="japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy",
     )
-    options_risk = ml_tail_feature_columns_for_information_set(
-        coverage_rows,
-        information_set=(
-            "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy_plus_options_risk"
-        ),
-    )
-
     assert "loss_lag_1" in japan_only
     assert "n225_day_range_lag_1" in japan_only
     assert "spy_return" not in japan_only
     assert "spy_late_30m_return" in us_core
     assert "qqq_late_30m_return" in us_core
+    assert "option_us_core_spy_atm_iv_short" in us_core
+    assert "option_us_sector_median_atm_iv_short" in us_core
+    assert "option_japan_etf_ewj_atm_iv_short" not in us_core
+    assert "option_asia_proxy_median_atm_iv_short" not in us_core
     assert "ewj_late_30m_return" not in us_core
     assert "ewh_late_30m_return" not in us_core
     assert "fx_usdjpy_level" in us_core
     assert "fred_rates_staleness_days" in us_core
-    assert "fred_bamlh0a0hym2_level" not in us_core
+    assert "fred_bamlh0a0hym2_level" in us_core
+    assert "uup_return" in us_core
     assert "ewj_return" in japan_proxy
     assert "ewj_late_30m_return" in japan_proxy
+    assert "option_japan_etf_ewj_atm_iv_short" in japan_proxy
+    assert "option_japan_adr_median_atm_iv_short" in japan_proxy
+    assert "japan_adr_median_return" in japan_proxy
+    assert "option_asia_proxy_median_atm_iv_short" not in japan_proxy
     assert "ewh_return" in asia_proxy
     assert "ewh_late_30m_return" in asia_proxy
-    assert "option_japan_adr_median_atm_iv" not in asia_proxy
-    assert "option_japan_adr_median_atm_iv" in options_risk
+    assert "option_us_core_spy_atm_iv_short" in asia_proxy
+    assert "option_japan_adr_median_atm_iv_short" in asia_proxy
+    assert "option_asia_proxy_median_atm_iv_short" in asia_proxy
     assert paper_core._feature_source_block("ewj_late_30m_return") == "japan_proxy"
     assert paper_core._feature_source_block("ewh_late_30m_return") == "asia_proxy"
     assert paper_core._feature_source_block("spy_late_30m_return") == "us_late_session"
-    assert paper_core._feature_source_block("option_japan_adr_median_atm_iv") == "options_risk"
+    assert paper_core._feature_source_block("option_us_core_spy_atm_iv_short") == "us_core"
+    assert paper_core._feature_source_block("option_japan_etf_ewj_atm_iv_short") == "japan_proxy"
+    assert paper_core._feature_source_block("option_japan_adr_median_atm_iv_short") == (
+        "japan_proxy"
+    )
+    assert paper_core._feature_source_block("japan_adr_median_return") == "japan_proxy"
+    assert paper_core._feature_source_block("option_asia_proxy_median_atm_iv_short") == (
+        "asia_proxy"
+    )
+    with pytest.raises(paper_module.PipelineRunError):
+        ml_tail_feature_columns_for_information_set(
+            coverage_rows,
+            information_set="unknown_information_set",
+        )
 
 
 def test_options_audit_artifacts_are_disabled_until_historical_source_is_verified(
@@ -654,7 +676,11 @@ def test_options_audit_artifacts_are_disabled_until_historical_source_is_verifie
         row["source_name"] == "jquants_nikkei_options" and row["headline_promotion_allowed"] is True
         for row in source_audit
     )
-    assert {row["source_block"] for row in feature_coverage} == {"options_risk"}
+    assert {row["source_block"] for row in feature_coverage} == {
+        "us_core",
+        "japan_proxy",
+        "asia_proxy",
+    }
     assert all(str(row["feature_status"]).startswith("disabled") for row in feature_coverage)
     assert any(row["underlying"] == "SPY" for row in liquidity)
 
@@ -670,6 +696,10 @@ def test_n225_option_features_use_prior_available_option_state() -> None:
                 "PutCallDivision": "1",
                 "OpenInterest": 100.0,
                 "Volume": 10.0,
+                "NightSessionOpen": 100.0,
+                "NightSessionHigh": 112.0,
+                "NightSessionLow": 98.0,
+                "NightSessionClose": 110.0,
                 "SettlementPrice": 250.0,
                 "TheoreticalPrice": 255.0,
                 "BaseVolatility": 0.22,
@@ -686,6 +716,10 @@ def test_n225_option_features_use_prior_available_option_state() -> None:
                 "PutCallDivision": "2",
                 "OpenInterest": 200.0,
                 "Volume": 20.0,
+                "NightSessionOpen": 200.0,
+                "NightSessionHigh": 225.0,
+                "NightSessionLow": 195.0,
+                "NightSessionClose": 220.0,
                 "SettlementPrice": 260.0,
                 "TheoreticalPrice": 265.0,
                 "BaseVolatility": 0.20,
@@ -712,6 +746,12 @@ def test_n225_option_features_use_prior_available_option_state() -> None:
     assert panel[0]["n225_option_atm_put_call_iv_skew_lag_1"] == pytest.approx(0.03)
     assert panel[0]["n225_option_put_call_oi_ratio_lag_1"] == pytest.approx(0.5)
     assert panel[0]["n225_option_valid_contract_count_lag_1"] == pytest.approx(2.0)
+    assert panel[0]["n225_option_night_atm_close_lag_1"] == pytest.approx(165.0)
+    assert panel[0]["n225_option_night_atm_return_lag_1"] == pytest.approx(math.log(1.1))
+    assert panel[0]["n225_option_night_atm_range_lag_1"] == pytest.approx(
+        np.median([math.log(112.0 / 98.0), math.log(225.0 / 195.0)])
+    )
+    assert panel[0]["n225_option_night_valid_contract_count_lag_1"] == pytest.approx(2.0)
 
 
 def test_n225_option_features_normalize_compact_v2_fields_and_write_silver(
@@ -729,6 +769,10 @@ def test_n225_option_features_normalize_compact_v2_fields_and_write_silver(
                 "PCDiv": "1",
                 "OI": 300.0,
                 "Vo": 30.0,
+                "EO": 100.0,
+                "EH": 115.0,
+                "EL": 95.0,
+                "EC": 105.0,
                 "Settle": 210.0,
                 "Theo": 215.0,
                 "BaseVol": 20.0,
@@ -746,6 +790,10 @@ def test_n225_option_features_normalize_compact_v2_fields_and_write_silver(
                 "PCDiv": "2",
                 "OI": 100.0,
                 "Vo": 10.0,
+                "EO": 200.0,
+                "EH": 220.0,
+                "EL": 190.0,
+                "EC": 210.0,
                 "Settle": 220.0,
                 "Theo": 225.0,
                 "BaseVol": 18.0,
@@ -796,15 +844,37 @@ def test_n225_option_features_normalize_compact_v2_fields_and_write_silver(
         ],
         features,
     )
+    same_date_panel = paper_core.add_n225_option_features(
+        [
+            {
+                "forecast_date": "2026-01-05",
+                "model_cutoff_ts_utc": datetime(2026, 1, 6, 20, tzinfo=UTC),
+            }
+        ],
+        features,
+    )
 
     assert silver_path.exists()
     assert option_by_code["P-ATM"]["implied_volatility"] == pytest.approx(0.24)
     assert option_by_code["P-ATM"]["interest_rate"] == pytest.approx(0.005)
+    assert option_by_code["P-ATM"]["night_session_open"] == pytest.approx(100.0)
+    assert option_by_code["P-ATM"]["night_session_close"] == pytest.approx(105.0)
     assert features[0]["atm_iv"] == pytest.approx(0.225)
     assert features[0]["atm_put_call_iv_skew"] == pytest.approx(0.03)
     assert features[0]["put_call_oi_ratio"] == pytest.approx(3.0)
     assert features[0]["days_to_sq"] == pytest.approx(39.0)
+    assert features[0]["night_atm_close"] == pytest.approx(157.5)
+    assert features[0]["night_atm_return"] == pytest.approx(
+        np.median([math.log(105.0 / 100.0), math.log(210.0 / 200.0)])
+    )
+    assert features[0]["night_atm_range"] == pytest.approx(
+        np.median([math.log(115.0 / 95.0), math.log(220.0 / 190.0)])
+    )
+    assert features[0]["night_valid_contract_count"] == pytest.approx(2.0)
     assert too_early_panel[0]["n225_option_atm_iv_lag_1"] is None
+    assert too_early_panel[0]["n225_option_night_atm_return_lag_1"] is None
+    assert same_date_panel[0]["n225_option_atm_iv_lag_1"] is None
+    assert same_date_panel[0]["n225_option_night_atm_return_lag_1"] is None
 
 
 def test_n225_option_normalization_handles_invalid_optional_fields() -> None:
@@ -2102,6 +2172,12 @@ def test_low_level_feature_and_bronze_helpers_cover_edge_cases() -> None:
     assert paper_core._feature_source_family("unknown") == "unknown"
     assert "EWH" in paper_module.FETCH_MASSIVE_TICKERS_FOR_PIPELINE
     assert "EWH" not in paper_module.CORE_MASSIVE_TICKERS_FOR_PIPELINE
+    assert "EEM" in paper_module.ASIA_PROXY_MASSIVE_TICKERS_FOR_PIPELINE
+    assert "FXI" in paper_module.ASIA_PROXY_MASSIVE_TICKERS_FOR_PIPELINE
+    assert "EEM" not in paper_module.CORE_MASSIVE_TICKERS_FOR_PIPELINE
+    assert "FXI" not in paper_module.CORE_MASSIVE_TICKERS_FOR_PIPELINE
+    assert "TM" in paper_module.FETCH_MASSIVE_TICKERS_FOR_PIPELINE
+    assert "SONY" in paper_module.FETCH_MASSIVE_TICKERS_FOR_PIPELINE
     assert "C:USDJPY" not in paper_module.FETCH_MASSIVE_TICKERS_FOR_PIPELINE
     assert "C:USDJPY" not in paper_module.CORE_MASSIVE_TICKERS_FOR_PIPELINE
     assert "DEXJPUS" in paper_module.FETCH_FRED_SERIES_FOR_PIPELINE
@@ -2114,6 +2190,22 @@ def test_low_level_feature_and_bronze_helpers_cover_edge_cases() -> None:
     assert paper_core._feature_source_family("c_usdjpy_return") == "massive_daily"
     assert paper_core._feature_source_family("n225_session_skew_120") == "japan_history"
     assert paper_core._feature_source_family("qqq_late_60m_realized_var") == "massive_minute"
+    assert paper_core._feature_source_family("option_us_core_spy_atm_iv_short") == (
+        "us_core_options"
+    )
+    assert paper_core._feature_source_family("option_japan_etf_ewj_atm_iv_short") == (
+        "japan_proxy_options"
+    )
+    assert paper_core._feature_source_family("option_japan_adr_median_atm_iv_short") == (
+        "japan_proxy_options"
+    )
+    assert paper_core._feature_source_family("option_us_sector_median_atm_iv_short") == (
+        "us_core_options"
+    )
+    assert paper_core._feature_source_family("option_asia_proxy_median_atm_iv_short") == (
+        "asia_proxy_options"
+    )
+    assert paper_core._feature_source_family("japan_adr_median_return") == "japan_proxy"
     assert paper_core._feature_source_block("fred_bamlh0a0hym2_level") == ("fred_credit_enriched")
     assert paper_core._feature_source_block("cboe_vix_close") == "fred_core"
     assert paper_core._feature_source_block("uup_return") == "massive_optional"
@@ -2121,6 +2213,17 @@ def test_low_level_feature_and_bronze_helpers_cover_edge_cases() -> None:
     assert paper_core._feature_source_block("qqq_late_60m_realized_var") == "us_late_session"
     assert paper_core._feature_source_block("dxj_late_30m_return") == "japan_proxy"
     assert paper_core._feature_source_block("ewy_late_30m_return") == "asia_proxy"
+    assert paper_core._feature_source_block("eem_return") == "asia_proxy"
+    assert paper_core._feature_source_block("fxi_return") == "asia_proxy"
+    assert paper_core._feature_source_block("option_us_core_spy_atm_iv_short") == "us_core"
+    assert paper_core._feature_source_block("option_japan_etf_ewj_atm_iv_short") == "japan_proxy"
+    assert paper_core._feature_source_block("option_japan_adr_median_atm_iv_short") == (
+        "japan_proxy"
+    )
+    assert paper_core._feature_source_block("option_us_sector_median_atm_iv_short") == "us_core"
+    assert paper_core._feature_source_block("option_asia_proxy_median_atm_iv_short") == (
+        "asia_proxy"
+    )
     assert paper_core._feature_source_block("n225_session_skew_120") == "japan_only"
     assert paper_core._panel_join_miss_reason({}, "") == "calendar_desync"
     assert (
@@ -3499,12 +3602,10 @@ def test_private_pipeline_helpers_cover_defensive_edges(
         0.95,
         target_family="full_gap_settle_to_open",
         tail_side="right_tail",
-        information_set=(
-            "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy_plus_options_risk"
-        ),
+        information_set=("japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy"),
         refit_frequency="monthly",
     )
-    assert long_shard_id == "lgbm_pot_plain__sto__R__E__q0950__m"
+    assert long_shard_id == "lgbm_pot_plain__sto__R__D__q0950__m"
     assert len(long_shard_id) < 48
     assert paper_core._feature_description("fx_usdjpy_level").startswith("canonical USDJPY")
     assert paper_core._feature_description("spy_late_30m_return").startswith(

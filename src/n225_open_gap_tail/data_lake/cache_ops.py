@@ -22,6 +22,11 @@ from n225_open_gap_tail.config.runtime import (
     JQuantsV2Client,
     Mapping,
     MASSIVE_MINUTE_FEATURE_SCHEMA,
+    MASSIVE_OPTIONS_ADR_PRIMARY_UNDERLYINGS_FOR_PIPELINE,
+    MASSIVE_OPTIONS_ASIA_PROXY_UNDERLYINGS_FOR_PIPELINE,
+    MASSIVE_OPTIONS_CORE_UNDERLYINGS_FOR_PIPELINE,
+    MASSIVE_OPTIONS_JAPAN_ETF_UNDERLYINGS_FOR_PIPELINE,
+    MASSIVE_OPTIONS_SECTOR_UNDERLYINGS_FOR_PIPELINE,
     MassiveClient,
     math,
     normalize_aggregate_bars,
@@ -608,7 +613,7 @@ def _fetch_massive_predictors(
 
         for year, year_chunks in sorted(chunks_by_year.items()):
             year_stats = _new_progress_stats()
-            for ticker in FETCH_MASSIVE_TICKERS_FOR_PIPELINE:
+            for ticker in _massive_daily_tickers_for_fetch(settings):
                 safe_ticker = _safe_name(ticker)
                 for chunk_start, chunk_end in year_chunks:
                     chunk_date = date.fromisoformat(chunk_start)
@@ -781,6 +786,35 @@ def _fetch_massive_predictors(
                     minute_feature_records.extend(features)
             _log_year_stats("Massive minute-derived", year, year_stats)
     return daily_records, minute_feature_records
+
+
+def _massive_daily_tickers_for_fetch(settings: Settings) -> tuple[str, ...]:
+    extra = (
+        _massive_options_headline_underlyings(settings)
+        if (
+            settings.massive_options_historical_enabled
+            and settings.massive_options_flat_files_enabled
+        )
+        else ()
+    )
+    return tuple(dict.fromkeys((*FETCH_MASSIVE_TICKERS_FOR_PIPELINE, *extra)))
+
+
+def _massive_options_headline_underlyings(settings: Settings) -> tuple[str, ...]:
+    configured = settings.massive_options_underlying_list()
+    if configured:
+        return tuple(dict.fromkeys(underlying.upper() for underlying in configured))
+    return tuple(
+        dict.fromkeys(
+            (
+                *MASSIVE_OPTIONS_CORE_UNDERLYINGS_FOR_PIPELINE,
+                *MASSIVE_OPTIONS_SECTOR_UNDERLYINGS_FOR_PIPELINE,
+                *MASSIVE_OPTIONS_JAPAN_ETF_UNDERLYINGS_FOR_PIPELINE,
+                *MASSIVE_OPTIONS_ASIA_PROXY_UNDERLYINGS_FOR_PIPELINE,
+                *MASSIVE_OPTIONS_ADR_PRIMARY_UNDERLYINGS_FOR_PIPELINE,
+            )
+        )
+    )
 
 
 def _fetch_cboe_predictors(

@@ -37,6 +37,12 @@ def normalize_jquants_nikkei225_option_rows(
                 "central_contract_month_flag": _optional_bool(row.get("CentralContractMonthFlag")),
                 "strike_price": _positive_float(row.get("Strike") or row.get("StrikePrice")),
                 "put_call": _put_call(row.get("PCDiv") or row.get("PutCallDivision")),
+                "night_session_open": _price_or_none(row.get("EO") or row.get("NightSessionOpen")),
+                "night_session_high": _price_or_none(row.get("EH") or row.get("NightSessionHigh")),
+                "night_session_low": _price_or_none(row.get("EL") or row.get("NightSessionLow")),
+                "night_session_close": _price_or_none(
+                    row.get("EC") or row.get("NightSessionClose")
+                ),
                 "volume": _optional_float(row.get("Vo") or row.get("Volume")),
                 "open_interest": _optional_float(row.get("OI") or row.get("OpenInterest")),
                 "settlement_price": _price_or_none(row.get("Settle") or row.get("SettlementPrice")),

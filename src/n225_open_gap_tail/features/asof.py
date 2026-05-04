@@ -10,6 +10,7 @@ from n225_open_gap_tail.config.runtime import (
     datetime,
     EVT_THRESHOLD_GRID,
     EVT_THRESHOLD_QUANTILE,
+    FETCH_MASSIVE_TICKERS_FOR_PIPELINE,
     FRED_H10_RELEASE_AGE_CAP_DAYS,
     FRED_RATE_STALENESS_FEATURE,
     FRED_RATE_STALENESS_LEVEL_FEATURES,
@@ -240,6 +241,7 @@ def _feature_value_names(record: Mapping[str, object]) -> list[str]:
         if "__" not in key
         and (
             key.startswith("n225_")
+            or key.startswith("option_")
             or key.endswith("_return")
             or key.endswith("_range")
             or key.endswith("_diff")
@@ -351,8 +353,14 @@ def _massive_daily_feature_map(
 ) -> dict[str, dict[str, object]]:
     official_close_by_date = _official_us_close_by_date(calendar_records or [])
     by_ticker: dict[str, list[dict[str, object]]] = {}
+    adr_underlyings = PIPELINE_CONFIG.feature_sets.massive_options_adr_primary_underlyings
     for row in records:
-        by_ticker.setdefault(str(row["ticker"]), []).append(row)
+        ticker = str(row["ticker"])
+        if ticker not in FETCH_MASSIVE_TICKERS_FOR_PIPELINE:
+            continue
+        if ticker in adr_underlyings:
+            continue
+        by_ticker.setdefault(ticker, []).append(row)
     features_by_date: dict[str, dict[str, object]] = {}
     for ticker, rows in by_ticker.items():
         rows.sort(key=lambda row: str(row["bar_date_et"]))
@@ -398,6 +406,105 @@ def _massive_daily_feature_map(
             )
             if close is not None:
                 previous_close = close
+    _stamp_japan_adr_spot_aggregate_features(
+        features_by_date,
+        records=records,
+        official_close_by_date=official_close_by_date,
+    )
+    return features_by_date
+
+
+def _stamp_japan_adr_spot_aggregate_features(
+    features_by_date: dict[str, dict[str, object]],
+    *,
+    records: list[dict[str, object]],
+    official_close_by_date: Mapping[str, datetime],
+) -> None:
+    adr_underlyings = PIPELINE_CONFIG.feature_sets.massive_options_adr_primary_underlyings
+    by_ticker: dict[str, list[dict[str, object]]] = {}
+    for row in records:
+        ticker = str(row.get("ticker") or "").upper()
+        if ticker in adr_underlyings:
+            by_ticker.setdefault(ticker, []).append(row)
+    returns_by_date: dict[str, list[float]] = {}
+    ranges_by_date: dict[str, list[float]] = {}
+    for rows in by_ticker.values():
+        rows.sort(key=lambda row: str(row.get("bar_date_et") or ""))
+        previous_close: float | None = None
+        for row in rows:
+            date_key = str(row.get("bar_date_et") or "")
+            close = _optional_float(row.get("close"))
+            high = _optional_float(row.get("high"))
+            low = _optional_float(row.get("low"))
+            if close is not None and previous_close is not None and previous_close > 0:
+                returns_by_date.setdefault(date_key, []).append(
+                    math.log(close) - math.log(previous_close)
+                )
+            if high is not None and low is not None and high > 0 and low > 0:
+                ranges_by_date.setdefault(date_key, []).append(math.log(high) - math.log(low))
+            if close is not None:
+                previous_close = close
+    for date_key in sorted(set(returns_by_date) | set(ranges_by_date)):
+        returns = returns_by_date.get(date_key, [])
+        ranges = ranges_by_date.get(date_key, [])
+        output = features_by_date.setdefault(date_key, {})
+        output["japan_adr_median_return"] = _median(returns)
+        output["japan_adr_trimmed_mean_return"] = _trimmed_mean(returns)
+        output["japan_adr_median_range"] = _median(ranges)
+        output["japan_adr_valid_underlying_count"] = float(max(len(returns), len(ranges)))
+        official_close = official_close_by_date.get(date_key)
+        available_ts = (
+            official_close
+            + timedelta(minutes=PIPELINE_CONFIG.leakage_policy.massive_vendor_lag_minutes)
+            if official_close is not None
+            else None
+        )
+        for feature_name in (
+            "japan_adr_median_return",
+            "japan_adr_trimmed_mean_return",
+            "japan_adr_median_range",
+            "japan_adr_valid_underlying_count",
+        ):
+            _stamp_feature_metadata(
+                output,
+                feature_name=feature_name,
+                available_ts_utc=available_ts,
+                source_date=date_key,
+            )
+
+
+def _median(values: list[float]) -> float | None:
+    finite = [float(value) for value in values if math.isfinite(float(value))]
+    return None if not finite else float(np.median(finite))
+
+
+def _trimmed_mean(values: list[float]) -> float | None:
+    finite = sorted(float(value) for value in values if math.isfinite(float(value)))
+    if not finite:
+        return None
+    trim = int(len(finite) * 0.2)
+    trimmed = finite[trim : len(finite) - trim] if len(finite) - 2 * trim > 0 else finite
+    return float(np.mean(trimmed))
+
+
+def _options_feature_map(records: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+    features_by_date: dict[str, dict[str, object]] = {}
+    for row in records:
+        date_key = str(row.get("bar_date_et") or "")
+        if not date_key:
+            continue
+        output = features_by_date.setdefault(date_key, {})
+        available_ts = _coerce_datetime(row.get("feature_available_ts_utc"))
+        for feature_name in _feature_value_names(row):
+            if not feature_name.startswith("option_"):
+                continue
+            output[feature_name] = _optional_float(row.get(feature_name))
+            _stamp_feature_metadata(
+                output,
+                feature_name=feature_name,
+                available_ts_utc=available_ts,
+                source_date=date_key,
+            )
     return features_by_date
 
 

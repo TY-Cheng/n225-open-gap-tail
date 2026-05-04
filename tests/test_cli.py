@@ -59,6 +59,29 @@ def test_source_probe_command_reports_provider_status(
     assert "massive: rate_limited http=429 too many requests" in result.output
 
 
+def test_source_probe_command_treats_optional_flatfile_probe_as_nonblocking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "probe_sources",
+        lambda settings: [
+            SourceProbeResult("jquants", "ok", "futures_daily_probe rows=1", 200),
+            SourceProbeResult(
+                "massive_flatfiles:quotes_v1",
+                "optional_entitlement_unavailable",
+                "quotes unavailable",
+                403,
+            ),
+        ],
+    )
+
+    result = CliRunner().invoke(app, ["source-probe"])
+
+    assert result.exit_code == 0
+    assert "massive_flatfiles:quotes_v1: optional_entitlement_unavailable" in result.output
+
+
 def test_status_reports_environment_without_secret_values(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -110,7 +133,7 @@ def test_status_reports_environment_without_secret_values(
     assert "massive api key file configured: True" in result.output
     assert "massive flat-file key file configured: True" in result.output
     assert "massive api base url: https://api.massive.com" in result.output
-    assert "massive daily ticker count: 22" in result.output
+    assert "massive daily ticker count: 20" in result.output
     assert "massive minute ticker: SPY" in result.output
     assert "massive probe ticker count: 1" in result.output
     assert "fred base url: https://fred.stlouisfed.org" in result.output

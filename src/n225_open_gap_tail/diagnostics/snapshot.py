@@ -12,11 +12,18 @@ from typing import Any, cast
 import polars as pl
 
 from n225_open_gap_tail.config import Settings
+from n225_open_gap_tail.config.model_labels import (
+    display_information_set_label,
+    display_model_label,
+    display_source_block_label,
+    display_status_label,
+)
 from n225_open_gap_tail.data_lake.artifacts import (
     _gold_leakage_dir,
     _gold_panel_dir,
 )
 from n225_open_gap_tail.diagnostics import snapshot_gallery as _snapshot_gallery
+from n225_open_gap_tail.diagnostics.model_comparison import _all_model_comparison_table
 from n225_open_gap_tail.diagnostics.results_discussion import (
     generate_results_discussion as _generate_results_discussion,
 )
@@ -159,6 +166,7 @@ def _full_run_snapshot_paths(
         "leakage_summary": leakage_summary,
         "benchmark_status": run_dir / "metrics" / "benchmark_status.json",
         "benchmark_metrics": run_dir / "metrics" / "benchmark_metrics.parquet",
+        "benchmark_metrics_per_model": run_dir / "metrics" / "benchmark_metrics_per_model.parquet",
         "benchmark_forecasts": run_dir / "forecasts" / "benchmark_forecasts.parquet",
         "benchmark_dm_inference": run_dir / "metrics" / "benchmark_dm_inference.parquet",
         "benchmark_mcs": run_dir / "metrics" / "benchmark_mcs.parquet",
@@ -225,6 +233,7 @@ def _full_run_results_markdown(
     calendar = _read_parquet_optional(paths["calendar_map"])
     feature_coverage = _read_parquet_optional(paths["feature_coverage"])
     benchmark_metrics = _read_parquet_optional(paths["benchmark_metrics"])
+    benchmark_metrics_per_model = _read_parquet_optional(paths["benchmark_metrics_per_model"])
     ml_tail_metrics = _read_parquet_optional(paths["ml_tail_metrics"])
     ml_tail_metrics_per_model = _read_parquet_optional(paths["ml_tail_metrics_per_model"])
     result_matrix = _read_parquet_optional(paths["ml_tail_result_matrix"])
@@ -333,6 +342,11 @@ def _full_run_results_markdown(
         ml_tail_metrics_per_model=ml_tail_metrics_per_model,
         result_matrix=result_matrix,
     )
+    all_model_comparison_table = _all_model_comparison_table(
+        benchmark_metrics=benchmark_metrics,
+        benchmark_metrics_per_model=benchmark_metrics_per_model,
+        ml_tail_metrics_per_model=ml_tail_metrics_per_model,
+    )
     benchmark_status_label = (
         manifest.get("benchmark_eval_status")
         or benchmark_status.get("status")
@@ -373,7 +387,8 @@ def _full_run_results_markdown(
             "Benchmark floor and ML-tail suites both completed with zero recorded forecast "
             "failures; advanced benchmark rows are nonblocking diagnostics in this run."
         )
-    ml_tail_components = _join_list(ml_tail_status.get("implemented_components"))
+    ml_tail_components = _join_model_list(ml_tail_status.get("implemented_components"))
+    ml_tail_status_label = display_status_label(ml_tail_status.get("status"))
     stress_table = _markdown_table(
         ("Suite", "Rows", "Window labels"),
         [
@@ -511,7 +526,7 @@ Status: `{benchmark_status_label}`; forecast rows: `{benchmark_status.get("forec
 
 ## ML-Tail Headline Ladder
 
-Status: `{ml_tail_status.get("status")}`; implemented models: {ml_tail_components}; forecast rows: `{ml_tail_status.get("forecast_rows")}`; failures: `{ml_tail_status.get("failures")}`.
+Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; forecast rows: `{ml_tail_status.get("forecast_rows")}`; failures: `{ml_tail_status.get("failures")}`.
 
 {ml_headline_table}
 
@@ -527,6 +542,14 @@ Status: `{ml_tail_status.get("status")}`; implemented models: {ml_tail_component
 - `ml_tail_metrics.parquet` is the headline nested-information-set artifact. It contains the ML-tail rows that survived the strict common-sample gate in this run.
 - `ml_tail_metrics_per_model.parquet` reports each implemented ML-tail model on its own valid OOS rows; it is useful for debugging coverage but is not a cross-model comparison table.
 - `ml_tail_result_matrix.parquet` creates restricted common samples for VaR-only and VaR-ES comparisons across model families and within-model information-set increments.
+
+### All-model diagnostic comparison
+
+{all_model_comparison_table}
+
+- This table joins `benchmark_metrics_per_model.parquet` and `ml_tail_metrics_per_model.parquet` so all benchmark and LGBM tail-model variants are visible in one place.
+- Mean and standard deviation are computed across registered metric rows for the same suite/model/information-set configuration; for most rows this summarizes left- and right-tail metrics.
+- It is a diagnostic scan, not the formal cross-model comparison table. Cross-model claims still require common-sample result-matrix, DM, and MCS evidence because valid dates and model gates can differ.
 
 ## Result Matrix Layer
 
@@ -574,6 +597,12 @@ def _join_list(value: object) -> str:
     if isinstance(value, list):
         return ", ".join(f"`{item}`" for item in value)
     return _code(value)
+
+
+def _join_model_list(value: object) -> str:
+    if isinstance(value, list):
+        return ", ".join(f"`{display_model_label(item)}`" for item in value)
+    return _code(display_model_label(value))
 
 
 def _markdown_table(headers: tuple[str, ...], rows: Sequence[tuple[object, ...]]) -> str:
@@ -652,8 +681,8 @@ def _feature_coverage_table(frame: pl.DataFrame) -> str:
     )
     rows = [
         (
-            row["source_family"],
-            row["source_block"],
+            display_source_block_label(row["source_family"]),
+            display_source_block_label(row["source_block"]),
             row["features"],
             _fmt_rate(row["mean_missing"]),
             _fmt_rate(row["max_missing"]),
@@ -685,8 +714,8 @@ def _metrics_table(frame: pl.DataFrame) -> str:
         return _markdown_table(tuple(columns), [tuple(["missing", *[""] * (len(columns) - 1)])])
     rows = [
         (
-            row["model_name"],
-            row["information_set"],
+            display_model_label(row["model_name"]),
+            display_information_set_label(row["information_set"]),
             *([row["tail_side"]] if "tail_side" in columns else []),
             row["rows"],
             _fmt_rate(row["var_breach_rate"]),

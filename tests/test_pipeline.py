@@ -3209,7 +3209,16 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
     )
     severity_text = reporting_latex._es_severity_to_latex(metrics)
     assert "headline" in severity_text
+    assert "LGBM direct quantile" in severity_text
+    assert "JP only" in severity_text
+    assert "japan\\_only" not in severity_text
+    assert paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL not in severity_text
     assert "0.010000" in severity_text
+    metric_text = reporting_latex._metrics_to_latex(
+        metrics.filter(pl.col("model_name") == paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL)
+    )
+    assert "LGBM direct quantile" in metric_text
+    assert paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL not in metric_text
     assert reporting_latex._severity_rows(pl.DataFrame()) == []
     assert reporting_latex._hedge_trigger_rows(pl.DataFrame({"suite": ["ml_tail"]})) == []
     assert reporting_latex._group_mean(pl.DataFrame(), "missing") is None

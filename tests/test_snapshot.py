@@ -39,6 +39,35 @@ def test_build_snapshot_id_binds_window_timestamp_and_commit() -> None:
     assert snapshot_id == "20220101_20260428_20260428T063000Z_commit_abcdef12"
 
 
+def test_latest_snapshot_ignores_panel_only_runs(tmp_path: Path) -> None:
+    reports_dir = tmp_path / "reports"
+    incomplete = reports_dir / "runs" / "tailrisk_incomplete"
+    complete = reports_dir / "runs" / "tailrisk_complete"
+    incomplete.mkdir(parents=True)
+    complete.mkdir(parents=True)
+    (incomplete / "manifest.json").write_text(
+        json.dumps({"run_id": "tailrisk_incomplete", "suite": "benchmark_panel"}),
+        encoding="utf-8",
+    )
+    (complete / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "tailrisk_complete",
+                "benchmark_eval_status": "completed",
+                "ml_tail_eval_status": "completed_lightgbm_ml_tail_models",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    resolved = snapshot_module._resolve_snapshot_run_dir(
+        settings=Settings(reports_dir=reports_dir),
+        run_id="latest",
+    )
+
+    assert resolved == complete
+
+
 def test_schema_probe_maps_jquants_short_fields_and_counts_zero_prices() -> None:
     rows = [
         _raw_row("2026-01-05", "2026-03", "161030018"),
@@ -288,8 +317,8 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     reports_dir = tmp_path / "reports"
     gold_dir = tmp_path / "data" / "gold"
     run_dir = reports_dir / "runs" / run_id
-    panel_dir = gold_dir / "tailrisk_panel" / "schema_version=1" / f"run_id={run_id}"
-    leakage_dir = gold_dir / "leakage_summary" / "schema_version=1" / f"run_id={run_id}"
+    panel_dir = gold_dir / "tp" / run_id
+    leakage_dir = gold_dir / "ls" / run_id
     metrics_dir = run_dir / "metrics"
     panel_dir.mkdir(parents=True)
     leakage_dir.mkdir(parents=True)

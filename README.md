@@ -105,8 +105,8 @@ ALFRED vintages. This is a data limitation and should be disclosed in empirical 
 ## Data Sources
 
 - J-Quants Premium: Nikkei 225 Futures daily prices, settlement, volume, and open interest.
-- Massive: U.S. ETFs, Japan proxy ETFs, Asia proxy ETFs, and SPY intraday-derived
-  predictors.
+- Massive: U.S. ETFs, Japan proxy ETFs, Asia proxy ETFs, and curated
+  U.S.-listed ETF late-session minute predictors.
 - FRED: rates, FX, and macro-financial predictors with publication-lag controls.
 - CBOE: volatility-index predictors, including VIX.
 

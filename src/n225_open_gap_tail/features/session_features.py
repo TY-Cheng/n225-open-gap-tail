@@ -122,12 +122,13 @@ def _write_jquants_silver_cache(*, settings: Settings, rows: list[dict[str, obje
         _log_year_stats("J-Quants silver", year, stats)
 
 
-def build_legacy_spy_late_session_feature_records(
+def build_spy_compat_late_session_feature_records(
     minute_records: list[dict[str, object]],
     *,
     calendar_records: list[dict[str, object]],
     vendor_lag_minutes: int,
 ) -> list[dict[str, object]]:  # pragma: no cover - vendor-derived silver cache path
+    """Project generic SPY minute records into the stable canonical spy_* columns."""
     generic = build_massive_late_session_feature_records(
         minute_records,
         calendar_records=calendar_records,
@@ -232,10 +233,10 @@ def build_massive_late_session_feature_records(
     return _records_with_recomputed_minute_volume_features(records)
 
 
-def _records_with_recomputed_legacy_spy_late_volume_surge(
+def _records_with_recomputed_spy_compat_late_volume_surge(
     records: list[dict[str, object]],
 ) -> list[dict[str, object]]:
-    """Recompute SPY volume surge over the full supplied date sequence.
+    """Recompute canonical SPY compat volume surge over the full date sequence.
 
     The silver cache is partitioned monthly, but the 20-session baseline is a
     time-series feature. Recomputing after all cache chunks are loaded prevents

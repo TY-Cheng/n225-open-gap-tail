@@ -118,19 +118,11 @@ def _gold_artifact_path(run_dir: Path, key: str, fallback: Path) -> Path:
 
 
 def _gold_panel_dir(gold_root: Path, run_id: str) -> Path:
-    return gold_root / "tp" / "v1" / run_id
+    return gold_root / "tp" / run_id
 
 
 def _gold_leakage_dir(gold_root: Path, run_id: str) -> Path:
-    return gold_root / "ls" / "v1" / run_id
-
-
-def _legacy_gold_panel_dir(gold_root: Path, run_id: str) -> Path:
-    return gold_root / "tailrisk_panel" / "schema_version=1" / f"run_id={run_id}"
-
-
-def _legacy_gold_leakage_dir(gold_root: Path, run_id: str) -> Path:
-    return gold_root / "leakage_summary" / "schema_version=1" / f"run_id={run_id}"
+    return gold_root / "ls" / run_id
 
 
 def _write_forecast_shards(
@@ -220,7 +212,7 @@ def _write_forecast_shards(
                 "information_set": information_set,
                 "tail_level": tail_level,
                 "refit_frequency": refit_frequency or None,
-                "shard_path_schema": "compact_v1",
+                "shard_path_schema": "compact",
                 "shard_id": _forecast_shard_id(
                     model_name,
                     tail_level,

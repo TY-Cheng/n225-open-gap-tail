@@ -42,7 +42,7 @@ from n225_open_gap_tail.data_lake.io import (
     MASSIVE_OPTIONS_ATM_IV_FEATURE_SCHEMA,
     MASSIVE_OPTIONS_DAY_AGGS_FILTERED_SCHEMA,
     MASSIVE_MINUTE_FEATURE_SCHEMA,
-    LEGACY_SPY_DERIVED_FEATURE_SCHEMA,
+    SPY_MINUTE_COMPAT_FEATURE_SCHEMA,
     VendorErrorClass,
     atomic_write_parquet,
     cache_path,

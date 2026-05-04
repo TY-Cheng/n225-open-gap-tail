@@ -51,16 +51,10 @@ def _feature_description(field: str) -> str:
         return "late-session realized semivariance from one-minute U.S.-listed instrument bars"
     if "_late_60m_skew" in field or "_late_60m_excess_kurtosis" in field:
         return "noisy late-session small-sample realized moment from one-minute bars"
-    if field.startswith("spy_late_") and (
-        "_late_volume_" in field or field.endswith("_volume_surge")
-    ):
-        return "SPY late-session volume feature normalized within ticker using prior history"
     if "_late_volume_" in field or field.endswith("_volume_surge"):
         return "late-session volume feature normalized within ticker using prior history"
     if field.endswith("_days"):
         return "timestamp-safe source staleness or release-lag diagnostic used as a predictor"
-    if field.startswith("spy_late_"):
-        return "SPY late-session minute-bar feature frozen at the U.S. close cutoff"
     if "_late_" in field or field.endswith("_final_window_momentum"):
         return (
             "U.S.-listed instrument late-session minute-bar feature frozen at the U.S. close cutoff"

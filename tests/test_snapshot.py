@@ -125,7 +125,7 @@ def test_target_audit_keeps_full_gap_when_night_close_missing_and_excludes_roll(
     assert "cross_contract_excluded" in str(by_date["2026-03-10"]["missing_reason"])
 
 
-def test_time_alignment_selects_spy_bar_and_checks_dst_regime() -> None:
+def test_time_alignment_selects_reference_minute_bar_and_checks_dst_regime() -> None:
     target_rows = [
         {
             "trading_date": "2026-01-05",
@@ -144,7 +144,7 @@ def test_time_alignment_selects_spy_bar_and_checks_dst_regime() -> None:
         us_exchange="XNYS",
         jpx_exchange="JPX",
     )
-    spy_minutes = [
+    minute_features = [
         _spy_minute("2026-01-02", datetime(2026, 1, 2, 20, 59, tzinfo=UTC), 100.0),
         _spy_minute("2026-01-02", datetime(2026, 1, 2, 21, 0, tzinfo=UTC), 101.0),
         _spy_minute("2026-06-30", datetime(2026, 6, 30, 19, 59, tzinfo=UTC), 200.0),
@@ -154,7 +154,7 @@ def test_time_alignment_selects_spy_bar_and_checks_dst_regime() -> None:
     alignment = build_time_alignment_records(
         target_rows=target_rows,
         calendar_records=calendars,
-        spy_minute_records=spy_minutes,
+        minute_feature_records=minute_features,
     )
     by_target = {str(row["trading_date"]): row for row in alignment}
 
@@ -164,11 +164,12 @@ def test_time_alignment_selects_spy_bar_and_checks_dst_regime() -> None:
     assert by_target["2026-07-01"]["dst_regime"] == "EDT"
     assert by_target["2026-07-01"]["us_close_to_ose_night_close_minutes"] == 60
     assert by_target["2026-07-01"]["alignment_pass"] is True
-    assert by_target["2026-07-01"]["spy_close"] == 201.0
+    assert by_target["2026-07-01"]["minute_reference_ticker"] == "SPY"
+    assert by_target["2026-07-01"]["reference_minute_close"] == 201.0
     assert by_target["2026-07-01"]["cutoff_invariant_pass"] is True
 
 
-def test_time_alignment_reports_missing_us_close_and_spy_bar() -> None:
+def test_time_alignment_reports_missing_us_close_and_reference_bar() -> None:
     target_rows = [
         {
             "trading_date": "2026-01-01",
@@ -191,12 +192,13 @@ def test_time_alignment_reports_missing_us_close_and_spy_bar() -> None:
     alignment = build_time_alignment_records(
         target_rows=target_rows,
         calendar_records=calendars,
-        spy_minute_records=[],
+        minute_feature_records=[],
     )
 
     assert alignment[0]["alignment_status"] == "missing_us_close"
-    assert alignment[1]["spy_bar_selection_reason"] == "missing_regular_session_close_bar"
-    assert alignment[1]["selected_spy_bar_end_ts_utc"] is None
+    assert alignment[1]["minute_reference_ticker"] == "SPY"
+    assert alignment[1]["reference_bar_selection_reason"] == "missing_regular_session_close_bar"
+    assert alignment[1]["selected_reference_bar_end_ts_utc"] is None
 
 
 def test_time_alignment_treats_us_early_close_as_expected_regime() -> None:
@@ -217,7 +219,7 @@ def test_time_alignment_treats_us_early_close_as_expected_regime() -> None:
     alignment = build_time_alignment_records(
         target_rows=target_rows,
         calendar_records=calendars,
-        spy_minute_records=[],
+        minute_feature_records=[],
     )
 
     assert alignment[0]["is_us_early_close"] is True

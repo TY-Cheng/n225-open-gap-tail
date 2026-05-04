@@ -111,6 +111,7 @@ Benchmark models and ML models answer related but different questions.
 
 - Benchmark models are target-history-only reference models. Historical and rolling quantiles use empirical target distributions; EWMA, GARCH, GJR-GARCH, and EVT-style benchmarks estimate volatility or tail scaling; CAViaR, CARE, GAS, and Taylor/FZ-style variants add stateful tail-risk dynamics.
 - ML Model A, `japan_only`, uses lagged clean losses and gaps, rolling moments, rolling tail summaries, lagged N225 futures session/volume/OI features, lagged J-Quants N225 large-option implied-state aggregates, calendar month terms, DST, and absorption-regime indicators. It does not use U.S. close predictor blocks.
+- N225 futures volume/OI features are lagged turnover, participation, and contract-state predictors interpreted with roll/SQ controls. They are not direct order-book depth or same-row liquidity measures.
 - The later ML information sets add U.S. ETF, sector, rates, volatility, FX, credit-risk, and minute-based U.S. close features, followed by Japan proxy ETFs and Asia proxy ETFs.
 - Daily ETF and asset-market blocks use close-to-close log returns and log high-low ranges, frozen at the audited U.S. close cutoff.
 - FRED, Cboe, rates, volatility, and USD/JPY blocks use levels, first differences, staleness and release-lag diagnostics, and Cboe VIX range where available.
@@ -136,9 +137,10 @@ The direct-quantile model estimates the VaR level directly. The location-scale a
 - For each monthly refit, training uses clean history strictly before the forecast date.
 - Blocked expanding out-of-sample predictions are used to construct prior standardized losses, so tail calibration is not based on full-sample residuals.
 - The empirical location-scale model maps standardized VaR and ES back to loss units as `location + scale times standardized tail level`.
-- The POT-GPD variants fit a Generalized Pareto tail to out-of-fold standardized losses above the registered 0.90 threshold.
+- The POT-GPD variants fit a Generalized Pareto tail to out-of-fold standardized losses above the registered 0.90 threshold. Threshold sensitivity is written as a diagnostic artifact before any dynamic-threshold rule is promoted to the registered headline design.
 - Plain MLE remains the standard filtered-EVT comparator.
-- The stabilized POT-GPD variant is a finite-sample regularized filtered-EVT variant. It uses diagnostic EVI anchoring, extremal-index weighting, shape caps, and a conditional scale refit where available. Intermediate capped-MLE, EVI-shrink, and EI-weighted variants are ablation evidence.
+- The stabilized POT-GPD variant is a finite-sample regularized filtered-EVT variant. It uses diagnostic EVI anchoring, extremal-index weighting, shape caps, and a conditional scale refit where available. Intermediate capped-MLE, EVI-shrink, and extremal-index-weighted (`ei_weighted`) variants are ablation evidence; `EI` means extremal index, not expected improvement.
+- The location-scale empirical and POT-GPD variants use a common final LightGBM location-scale backbone by construction, so the EVT ablations differ in tail calibration rather than in a variant-specific final location/scale seed.
 - Location-scale and POT-GPD rows enter headline tables only if their OOS coverage, standardized-loss counts, exceedance counts, ES validity, and common-sample gates pass.
 
 ### How are forecasts evaluated?

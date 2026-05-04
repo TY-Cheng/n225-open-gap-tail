@@ -62,6 +62,8 @@ def test_core_feature_sets_exclude_short_history_and_robustness_tickers() -> Non
     assert config.leakage_policy.max_forward_fill_us_close_days == 7
     assert config.leakage_policy.fred_h10_release_age_cap_calendar_days == 8
     assert config.feature_engineering.n225_higher_moment_window == 120
+    assert config.feature_engineering.ml_feature_max_training_missingness == 0.20
+    assert config.feature_engineering.ml_minute_feature_max_training_missingness == 0.05
     assert config.feature_engineering.winsorization_policy.startswith("none_raw")
 
 

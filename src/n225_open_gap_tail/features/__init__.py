@@ -4,7 +4,7 @@ from __future__ import annotations
 from n225_open_gap_tail.config.runtime import drop_low_variance_features
 from .asof import *
 from .descriptions import *
-from .jquants_spy import *
+from .session_features import *
 from .n225_history import *
 from .n225_options import *
 

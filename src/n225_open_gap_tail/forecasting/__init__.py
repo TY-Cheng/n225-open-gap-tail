@@ -114,7 +114,7 @@ from n225_open_gap_tail.features.asof import (
     _fred_feature_map as _fred_feature_map,
     _fred_features_asof as _fred_features_asof,
     _massive_daily_feature_map as _massive_daily_feature_map,
-    _spy_minute_feature_map as _spy_minute_feature_map,
+    _minute_feature_map as _minute_feature_map,
 )
 from n225_open_gap_tail.features.descriptions import *
 from n225_open_gap_tail.features.descriptions import (
@@ -124,8 +124,8 @@ from n225_open_gap_tail.features.descriptions import (
     _window_range as _window_range,
     _window_return as _window_return,
 )
-from n225_open_gap_tail.features.jquants_spy import *
-from n225_open_gap_tail.features.jquants_spy import (
+from n225_open_gap_tail.features.session_features import *
+from n225_open_gap_tail.features.session_features import (
     _jquants_bronze_row as _jquants_bronze_row,
     _rows_return as _rows_return,
     _write_jquants_silver_cache as _write_jquants_silver_cache,

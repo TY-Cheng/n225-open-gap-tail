@@ -147,6 +147,8 @@ just full
 
 It runs checks, builds the point-in-time panel, evaluates benchmark and ML-tail suites,
 exports LaTeX tables and figures, and writes run outputs under ignored `reports/runs/`.
+The default is cache-first (`force=false`); use force only for intentional schema/cache
+invalidation.
 
 For a completed run, regenerate the snapshot without fetching vendor data:
 

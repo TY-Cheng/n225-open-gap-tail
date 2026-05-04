@@ -35,7 +35,7 @@ from n225_open_gap_tail.config.runtime import (
     read_json,
     read_verified_parquet_metadata,
     Settings,
-    SPY_MINUTE_FEATURE_SCHEMA,
+    LEGACY_SPY_DERIVED_FEATURE_SCHEMA,
     timedelta,
     UTC,
     VendorErrorClass,
@@ -133,7 +133,7 @@ def _jquants_bronze_row(
     return output
 
 
-def build_spy_late_session_feature_records(
+def build_legacy_spy_late_session_feature_records(
     minute_records: list[dict[str, object]],
     *,
     calendar_records: list[dict[str, object]],
@@ -283,7 +283,7 @@ def _records_with_recomputed_minute_volume_features(
     )
 
 
-def _records_with_recomputed_spy_late_volume_surge(
+def _records_with_recomputed_legacy_spy_late_volume_surge(
     records: list[dict[str, object]],
 ) -> list[dict[str, object]]:  # pragma: no cover - vendor cache path
     rolling_late_volume: list[float] = []

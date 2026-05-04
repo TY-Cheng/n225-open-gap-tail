@@ -34,8 +34,6 @@ def _feature_dictionary_includes(field: str) -> bool:
         or "_percentile_" in field
         or field.startswith("fred_")
         or field.startswith("cboe_")
-        or field.startswith("spy_late_")
-        or field.startswith("spy_final_")
     )
 
 

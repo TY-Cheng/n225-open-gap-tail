@@ -47,7 +47,7 @@ from n225_open_gap_tail.forecasting import (
     build_modeling_panel_records,
     build_panel,
     build_run_id,
-    build_spy_late_session_feature_records,
+    build_legacy_spy_late_session_feature_records,
     drop_low_variance_features,
     empirical_excess_es_companion,
     evaluate_benchmark_floor_suite,
@@ -88,7 +88,7 @@ def _patch_paper_module(
         "n225_open_gap_tail.metrics.result_matrix",
         "n225_open_gap_tail.inference.core",
         "n225_open_gap_tail.features.asof",
-        "n225_open_gap_tail.features.jquants_spy",
+        "n225_open_gap_tail.features.session_features",
         "n225_open_gap_tail.data_lake.cache_ops",
         "n225_open_gap_tail.reporting.tables",
         "n225_open_gap_tail.reporting.latex",
@@ -413,6 +413,55 @@ def test_pot_gpd_evt_variants_and_diagnostics_are_deterministic() -> None:
     )
     assert sensitivity[-1]["shape"] == pytest.approx(1.0)
     assert sensitivity[-1]["es_available"] is False
+    threshold_sensitivity = benchmark_models._evt_threshold_sensitivity(
+        values=losses,
+        tail_level=0.95,
+        threshold_grid=(0.90, 0.925, 0.95),
+        min_exceedances=10,
+        evt_variant="stabilized",
+        shape_cap=(-0.25, 0.75),
+        shape_shrinkage_k=50.0,
+    )
+    assert {row["threshold_quantile"] for row in threshold_sensitivity} == {0.90, 0.925, 0.95}
+    assert any(row["status"] == "ok" for row in threshold_sensitivity)
+    assert threshold_sensitivity[-1]["status"] == "not_applicable_threshold_not_below_tail_level"
+
+
+def test_location_scale_evt_variants_share_final_backbone_seed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lightgbm as lgb
+
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 25)
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 1)
+    _patch_paper_module(monkeypatch, "ML_TAIL_MIN_OOF_TRAIN_ROWS", 8)
+    monkeypatch.setattr(
+        "n225_open_gap_tail.forecasting.stats.genpareto.fit",
+        lambda *args, **kwargs: (0.1, 0.0, 1.0),
+    )
+
+    rows = _synthetic_ml_tail_location_scale_rows(90)
+    empirical = paper_core._fit_ml_tail_location_scale_bundle(
+        train_rows=rows,
+        candidate_features=["feature_x", "feature_cycle"],
+        model_name=paper_module.ML_TAIL_LOCATION_SCALE_MODEL,
+        information_set="japan_only_plus_us_close_core",
+        tail_level=0.95,
+        lgb=lgb,
+    )
+    stabilized = paper_core._fit_ml_tail_location_scale_bundle(
+        train_rows=rows,
+        candidate_features=["feature_x", "feature_cycle"],
+        model_name=paper_module.ML_TAIL_POT_GPD_STABILIZED_MODEL,
+        information_set="japan_only_plus_us_close_core",
+        tail_level=0.95,
+        lgb=lgb,
+    )
+
+    assert empirical["location_scale_backbone_key"] == stabilized["location_scale_backbone_key"]
+    assert empirical["location_scale_location_seed"] == stabilized["location_scale_location_seed"]
+    assert empirical["location_scale_scale_seed"] == stabilized["location_scale_scale_seed"]
+    assert empirical["active_feature_hash"] == stabilized["active_feature_hash"]
 
 
 def test_evt_diagnostic_artifact_helpers_parse_json_rows() -> None:
@@ -451,11 +500,33 @@ def test_evt_diagnostic_artifact_helpers_parse_json_rows() -> None:
                 {"cap": [-0.5, 1.0], "shape": 1.0, "cap_hit": True, "es_available": False},
             ]
         ),
+        "evt_threshold_sensitivity_json": json.dumps(
+            [
+                {
+                    "threshold_quantile": 0.9,
+                    "status": "ok",
+                    "threshold_value": 1.2,
+                    "evt_exceedance_count": 50,
+                    "evt_shape": 0.2,
+                    "evt_scale": 1.1,
+                    "standardized_var": 2.0,
+                    "standardized_es": 2.5,
+                    "evt_es_finite": True,
+                },
+                {
+                    "threshold_quantile": 0.95,
+                    "status": "not_applicable_threshold_not_below_tail_level",
+                    "threshold_value": 2.0,
+                    "evt_exceedance_count": 25,
+                },
+            ]
+        ),
     }
 
     shape_rows = ml_tail_suite._evt_shape_stability_records([row])
     ei_rows = ml_tail_suite._extremal_index_records([row])
     cap_rows = ml_tail_suite._evt_cap_sensitivity_records([row])
+    threshold_rows = ml_tail_suite._evt_threshold_sensitivity_records([row])
     ablation_rows = ml_tail_suite._evt_ablation_metric_records(
         [
             row,
@@ -467,6 +538,10 @@ def test_evt_diagnostic_artifact_helpers_parse_json_rows() -> None:
     assert shape_rows[0]["evt_shape_method"] == "stabilized_mle_evi_anchor_ei_weighted"
     assert ei_rows[0]["ei_primary_estimator"] == "ferro_segers"
     assert cap_rows[1]["es_available"] is False
+    assert threshold_rows[0]["sensitivity_threshold_quantile"] == 0.9
+    assert threshold_rows[1]["sensitivity_status"] == (
+        "not_applicable_threshold_not_below_tail_level"
+    )
     assert len(ablation_rows) == 2
     assert ml_tail_suite._json_dict("{") == {}
     assert ml_tail_suite._json_dict("[]") == {}
@@ -543,6 +618,7 @@ def test_evaluate_ml_tail_suite_writes_lightgbm_ladder_artifacts(
     assert (run_dir / "metrics" / "evt_shape_stability.parquet").exists()
     assert (run_dir / "metrics" / "extremal_index_diagnostics.parquet").exists()
     assert (run_dir / "metrics" / "evt_cap_sensitivity.parquet").exists()
+    assert (run_dir / "metrics" / "evt_threshold_sensitivity.parquet").exists()
     assert (run_dir / "metrics" / "evt_ablation_metrics.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_result_matrix_notes.md").exists()
     result_matrix = pl.read_parquet(run_dir / "metrics" / "ml_tail_result_matrix.parquet")

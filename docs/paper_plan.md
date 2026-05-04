@@ -210,7 +210,7 @@ Operationally, the calculation proceeds as follows:
     - LightGBM location-scale empirical tail calibration.
     - LightGBM standardized-loss Peaks-Over-Threshold Generalized Pareto Distribution (POT-GPD) with a plain MLE comparator.
     - LightGBM standardized-loss POT-GPD stabilized variant, reported transparently as a finite-sample regularized filtered-EVT variant.
-    - Intermediate capped-MLE, EVI-shrink, and EI-weighted POT-GPD variants for ablation evidence, not as headline model-family claims.
+    - Intermediate capped-MLE, EVI-shrink, and extremal-index-weighted (`ei_weighted`) POT-GPD variants for ablation evidence, not as headline model-family claims.
 - Estimation protocol:
     - All specifications follow the same point-in-time out-of-sample forecasting protocol and the same minimum training-history requirement.
     - Most specifications use expanding pre-forecast training histories.
@@ -229,7 +229,7 @@ Operationally, the calculation proceeds as follows:
 - Tail calibration gates are decoupled from the LightGBM final model training gate so the location-scale and POT-GPD variants can be evaluated without shortening the direct-quantile sample unnecessarily.
 - The stabilized variant records `evt_variant`, `evt_shape_method`, `evt_cap_policy`, `evt_evi_status`, `evt_ei_status`, `cap_hit`, `xi_mle`, `xi_evi_anchor`, `theta_hat`, `n_eff`, scale-refit status, and ES finite/unavailable status.
 - The primary EVI anchor is the de Haan-Ferreira moment estimator. Hill is diagnostic only and interpreted only when diagnostics support positive heavy-tail shape; Pickands is a cross-check.
-- The primary extremal-index estimator is Ferro-Segers. K-gaps is a robustness diagnostic. EI weighting is used only as a finite-sample effective-exceedance heuristic, not as a new GPD likelihood.
+- The primary extremal-index estimator is Ferro-Segers. K-gaps is a robustness diagnostic. Extremal-index (`EI`) weighting is used only as a finite-sample effective-exceedance heuristic, not as a new GPD likelihood.
 - Shape cap sensitivity reports conservative `(-0.1, 0.5)`, baseline `(-0.25, 0.75)`, and loose `(-0.5, 1.0)` caps. If any sensitivity run has `xi_final >= 1`, ES is marked unavailable for that run.
 
 ## Options-Risk Layer Protocol

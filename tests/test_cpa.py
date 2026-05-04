@@ -46,7 +46,7 @@ from n225_open_gap_tail.forecasting import (
     build_modeling_panel_records,
     build_panel,
     build_run_id,
-    build_spy_late_session_feature_records,
+    build_legacy_spy_late_session_feature_records,
     drop_low_variance_features,
     empirical_excess_es_companion,
     evaluate_benchmark_floor_suite,

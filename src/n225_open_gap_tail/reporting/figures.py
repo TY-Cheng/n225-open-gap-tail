@@ -22,6 +22,10 @@ from n225_open_gap_tail.config.runtime import (
     TAIL_SIDE_RIGHT,
 )
 from n225_open_gap_tail.reporting.latex import _hedge_trigger_rows, _severity_rows
+from n225_open_gap_tail.config.model_labels import (
+    display_information_set_label,
+    display_model_label,
+)
 
 
 @dataclass(frozen=True)
@@ -434,11 +438,9 @@ def _coverage_frame(run_dir: Path) -> pl.DataFrame:
                 selected.with_columns(
                     pl.lit("ml_tail_headline").alias("suite_group"),
                     pl.lit(2).alias("suite_order"),
-                    (
-                        pl.col("model_name")
-                        + pl.lit(" / ")
-                        + pl.col("information_set").cast(pl.Utf8)
-                    ).alias("model_label"),
+                    (_model_label_expr() + pl.lit(" / ") + _information_set_label_expr()).alias(
+                        "model_label"
+                    ),
                 )
             )
     ml_tail_per_model = _read_optional_parquet(
@@ -453,11 +455,9 @@ def _coverage_frame(run_dir: Path) -> pl.DataFrame:
                     selected.with_columns(
                         pl.lit("ml_tail_restricted_family").alias("suite_group"),
                         pl.lit(3).alias("suite_order"),
-                        (
-                            pl.col("model_name")
-                            + pl.lit(" / ")
-                            + pl.col("information_set").cast(pl.Utf8)
-                        ).alias("model_label"),
+                        (_model_label_expr() + pl.lit(" / ") + _information_set_label_expr()).alias(
+                            "model_label"
+                        ),
                     )
                 )
     if not frames:
@@ -482,6 +482,17 @@ def _coverage_select(frame: pl.DataFrame) -> pl.DataFrame:
         if column in frame.columns
     ]
     return frame.select(columns).filter(pl.col("var_breach_rate").is_not_null())
+
+
+def _model_label_expr() -> pl.Expr:
+    return pl.col("model_name").map_elements(display_model_label, return_dtype=pl.Utf8)
+
+
+def _information_set_label_expr() -> pl.Expr:
+    return pl.col("information_set").map_elements(
+        display_information_set_label,
+        return_dtype=pl.Utf8,
+    )
 
 
 def _murphy_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object]]:
@@ -516,6 +527,8 @@ def _murphy_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object
             fig, ax = plt.subplots(figsize=(8.5, 5.5))
             for key, group in side.group_by(label_column, maintain_order=True):
                 label = str(key[0] if isinstance(key, tuple) else key)
+                if label_column == "information_set":
+                    label = display_information_set_label(label)
                 curve = group.sort("threshold_value")
                 ax.plot(
                     curve["threshold_value"].to_list(),
@@ -624,7 +637,9 @@ def _severity_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, obje
             max_rows=28,
         )
         labels = [
-            f"{row.get('suite')} | {row.get('model_name')} | {row.get('information_set')}"
+            f"{row.get('suite')} | "
+            f"{display_model_label(row.get('model_name'))} | "
+            f"{display_information_set_label(row.get('information_set'))}"
             for row in side.iter_rows(named=True)
         ]
         values = [
@@ -679,7 +694,9 @@ def _trigger_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, objec
         if selected.is_empty():
             continue
         labels = [
-            f"{row.get('suite')} | {row.get('model_name')} | {row.get('information_set')}"
+            f"{row.get('suite')} | "
+            f"{display_model_label(row.get('model_name'))} | "
+            f"{display_information_set_label(row.get('information_set'))}"
             for row in selected.iter_rows(named=True)
         ]
         x = np.arange(len(labels))

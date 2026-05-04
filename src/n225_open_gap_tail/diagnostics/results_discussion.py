@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
 
 import polars as pl
+
+from n225_open_gap_tail.config.model_labels import display_model_label
 
 
 def generate_results_discussion(
@@ -257,8 +259,8 @@ def _results_ml_tail_headline_discussion(
     information_sets = _unique_count(ml_tail_metrics, "information_set")
     tail_levels = _unique_count(ml_tail_metrics, "tail_level")
     tail_side_count = _unique_count(ml_tail_metrics, "tail_side")
-    models = _unique_values(ml_tail_metrics, "model_name")
-    implemented = _join_list(ml_tail_status.get("implemented_components"))
+    models = _unique_values(ml_tail_metrics, "model_name", formatter=display_model_label)
+    implemented = _join_model_list(ml_tail_status.get("implemented_components"))
     coverage_warning = _ml_tail_coverage_warning(ml_tail_metrics)
     saturation_note = _information_set_saturation_note(ml_tail_metrics)
     lines = [
@@ -716,6 +718,12 @@ def _join_list(value: object) -> str:
     return f"`{value}`"
 
 
+def _join_model_list(value: object) -> str:
+    if isinstance(value, list):
+        return ", ".join(f"`{display_model_label(item)}`" for item in value)
+    return f"`{display_model_label(value)}`"
+
+
 def _panel_bounds(frame: pl.DataFrame) -> str:
     if frame.is_empty() or "forecast_date" not in frame.columns:
         return "`missing`"
@@ -726,10 +734,20 @@ def _panel_bounds(frame: pl.DataFrame) -> str:
     return f"`{values['start']} to {values['end']}`"
 
 
-def _unique_values(frame: pl.DataFrame, column: str) -> str:
+def _unique_values(
+    frame: pl.DataFrame,
+    column: str,
+    *,
+    formatter: Callable[[object], str] | None = None,
+) -> str:
     if frame.is_empty() or column not in frame.columns:
         return "`missing`"
-    values = sorted(str(value) for value in frame[column].drop_nulls().unique().to_list())
+    if formatter is not None:
+        values = sorted(
+            str(formatter(value)) for value in frame[column].drop_nulls().unique().to_list()
+        )
+    else:
+        values = sorted(str(value) for value in frame[column].drop_nulls().unique().to_list())
     return ", ".join(f"`{value}`" for value in values)
 
 

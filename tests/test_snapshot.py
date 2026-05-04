@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 import polars as pl
 import pytest
 
+import n225_open_gap_tail.diagnostics.model_comparison as model_comparison_module
 import n225_open_gap_tail.diagnostics.results_discussion as results_discussion_module
 import n225_open_gap_tail.diagnostics.snapshot as snapshot_module
 import n225_open_gap_tail.diagnostics.snapshot_gallery as snapshot_gallery
@@ -566,6 +567,7 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     )
     assert "File: latex/figures/dst_attenuation_left_tail.png" in rendered
     assert "Gold modeling rows" in rendered
+    assert "JP only" in rendered
     assert "## Run Metadata" in rendered
     assert "## Evidence Map" in rendered
     assert "## Paper-Facing Table And Figure Gallery" in rendered
@@ -887,6 +889,44 @@ def test_snapshot_private_helpers_cover_defensive_edges() -> None:
     assert snapshot_module._optional_float(True) is None
     assert snapshot_module._optional_float("1.5") == 1.5
     assert snapshot_module._markdown_cell("a|b\nc") == "a\\|b c"
+    all_model_table = model_comparison_module._all_model_comparison_table(
+        benchmark_metrics=pl.DataFrame(
+            [
+                {
+                    "model_name": "historical_quantile",
+                    "information_set": "target_history_only",
+                    "rows": 100,
+                    "var_breach_rate": 0.05,
+                    "expected_breach_rate": 0.05,
+                    "mean_quantile_loss": 0.001,
+                    "mean_fz_loss": -3.0,
+                    "mean_exceedance_severity": 0.01,
+                    "tail_side": "left_tail",
+                }
+            ]
+        ),
+        benchmark_metrics_per_model=pl.DataFrame(),
+        ml_tail_metrics_per_model=pl.DataFrame(
+            [
+                {
+                    "model_name": "lightgbm_standardized_loss_pot_gpd_stabilized",
+                    "information_set": "japan_only",
+                    "rows": 80,
+                    "var_breach_rate": 0.075,
+                    "expected_breach_rate": 0.05,
+                    "mean_quantile_loss": 0.0009,
+                    "mean_fz_loss": -3.2,
+                    "mean_exceedance_severity": 0.02,
+                    "tail_side": "right_tail",
+                }
+            ]
+        ),
+    )
+    assert "benchmark_floor" in all_model_table
+    assert "LGBM POT-GPD stabilized" in all_model_table
+    assert "JP only" in all_model_table
+    assert "japan_only" not in all_model_table
+    assert "Breach mean+-sd" in all_model_table
     assert results_discussion_module._optional_float("bad") is None
     assert results_discussion_module._fmt_float(float("inf")) == "inf"
 

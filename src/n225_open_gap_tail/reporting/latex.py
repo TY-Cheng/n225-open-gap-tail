@@ -10,6 +10,10 @@ from n225_open_gap_tail.config.runtime import (
     _optional_float,
 )
 from n225_open_gap_tail.metrics.stat_utils import _fmt
+from n225_open_gap_tail.config.model_labels import (
+    display_information_set_label,
+    display_model_label,
+)
 
 
 def _metrics_to_latex(
@@ -33,7 +37,8 @@ def _metrics_to_latex(
     ]
     for row in metrics.iter_rows(named=True):
         lines.append(
-            f"{row['model_name']} & {_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
+            f"{_latex_escape(display_model_label(row['model_name']))} & "
+            f"{_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
             f"{float(row['tail_level']):.3f} & "
             f"{int(row['rows'])} & {_fmt(row['var_breach_rate'])} & "
             f"{_fmt(row['mean_quantile_loss'])} & {_fmt(row['mean_fz_loss'])} \\\\"
@@ -79,7 +84,12 @@ def _result_matrix_to_latex(
     for row in frame.iter_rows(named=True):
         if row.get("metric_status") != "ok":
             continue
-        label = row.get("information_set") or row.get("model_name") or ""
+        raw_label = row.get("information_set") or row.get("model_name") or ""
+        label = (
+            display_information_set_label(raw_label)
+            if row.get("information_set")
+            else display_model_label(raw_label)
+        )
         lines.append(
             f"{_latex_escape(row.get('comparison_family'))} & "
             f"{_latex_escape(row.get('comparison_axis'))} & "
@@ -121,9 +131,9 @@ def _es_severity_to_latex(
         lines.append(
             f"{_latex_escape(row.get('suite'))} & "
             f"{_latex_escape(row.get('claim_scope'))} & "
-            f"{_latex_escape(row.get('model_name'))} & "
+            f"{_latex_escape(display_model_label(row.get('model_name')))} & "
             f"{_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
-            f"{_latex_escape(row.get('information_set'))} & "
+            f"{_latex_escape(display_information_set_label(row.get('information_set')))} & "
             f"{int(_optional_float(row.get('rows')) or 0)} & "
             f"{int(_optional_float(row.get('exceedance_count')) or 0)} & "
             f"{_fmt(row.get('mean_exceedance_severity'))} & "
@@ -157,8 +167,8 @@ def _hedge_trigger_to_latex(
     for row in _hedge_trigger_rows(forecasts):
         lines.append(
             f"{_latex_escape(row.get('suite'))} & "
-            f"{_latex_escape(row.get('model_name'))} & "
-            f"{_latex_escape(row.get('information_set'))} & "
+            f"{_latex_escape(display_model_label(row.get('model_name')))} & "
+            f"{_latex_escape(display_information_set_label(row.get('information_set')))} & "
             f"{_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
             f"{_fmt(row.get('tail_level'))} & "
             f"{int(_optional_float(row.get('rows')) or 0)} & "
@@ -198,7 +208,7 @@ def _dst_attenuation_to_latex(
         frame = frame.sort(["model_name", "tail_level", "dst_regime"])
     for row in frame.iter_rows(named=True):
         lines.append(
-            f"{_latex_escape(row.get('model_name'))} & "
+            f"{_latex_escape(display_model_label(row.get('model_name')))} & "
             f"{_fmt(row.get('tail_level'))} & "
             f"{_latex_escape(row.get('dst_regime'))} & "
             f"{int(_optional_float(row.get('paired_rows')) or 0)} & "

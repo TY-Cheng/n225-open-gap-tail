@@ -10,7 +10,13 @@ PKG = ROOT / "src" / "n225_open_gap_tail"
 
 ALLOWED_ROOT_FILES = {"__init__.py", "cli.py"}
 LINE_LIMIT = 1000
-LINE_LIMIT_ALLOWLIST: dict[str, str] = {}
+LINE_LIMIT_ALLOWLIST: dict[str, str] = {
+    # Temporary paper-facing modules with dense figure/model dispatch logic. Keep this
+    # explicit so future refactors can remove entries as the modules are split.
+    "models/benchmark.py": "EVT benchmark utilities awaiting extraction",
+    "models/ml_tail.py": "LightGBM ML-tail route dispatcher awaiting extraction",
+    "reporting/figures.py": "paper figure families awaiting extraction",
+}
 
 LAYER_ORDER = {
     "config": 0,

@@ -11,6 +11,7 @@ from n225_open_gap_tail.config.runtime import (
     ML_TAIL_ANCHOR_INFORMATION_SET,
     ML_TAIL_DIRECT_QUANTILE_MODEL,
     ML_TAIL_MODEL_NAMES,
+    ML_TAIL_ROBUST_POT_GPD_MODEL_NAMES,
     ML_TAIL_REFIT_FREQUENCY,
     Parallel,
     Path,
@@ -153,6 +154,8 @@ def evaluate_ml_tail_suite(
     extremal_index_diagnostics = _extremal_index_records(diagnostics)
     evt_cap_sensitivity = _evt_cap_sensitivity_records(diagnostics)
     evt_threshold_sensitivity = _evt_threshold_sensitivity_records(diagnostics)
+    evt_body_tail_diagnostics = _evt_body_tail_diagnostic_records(diagnostics)
+    evt_route_gate_status = _evt_route_gate_status_records(diagnostics)
     evt_ablation_metrics = _evt_ablation_metric_records(
         cast(list[dict[str, object]], artifacts["per_model_metrics"])
     )
@@ -229,6 +232,8 @@ def evaluate_ml_tail_suite(
     )
     _write_parquet(metrics_root / "evt_cap_sensitivity.parquet", evt_cap_sensitivity)
     _write_parquet(metrics_root / "evt_threshold_sensitivity.parquet", evt_threshold_sensitivity)
+    _write_parquet(metrics_root / "evt_body_tail_diagnostics.parquet", evt_body_tail_diagnostics)
+    _write_parquet(metrics_root / "evt_route_gate_status.parquet", evt_route_gate_status)
     _write_parquet(metrics_root / "evt_ablation_metrics.parquet", evt_ablation_metrics)
     _write_parquet(metrics_root / "ml_tail_cpa_inference.parquet", cpa_inference)
     _write_parquet(
@@ -264,6 +269,8 @@ def evaluate_ml_tail_suite(
             "extremal_index_diagnostic_rows": len(extremal_index_diagnostics),
             "evt_cap_sensitivity_rows": len(evt_cap_sensitivity),
             "evt_threshold_sensitivity_rows": len(evt_threshold_sensitivity),
+            "evt_body_tail_diagnostic_rows": len(evt_body_tail_diagnostics),
+            "evt_route_gate_status_rows": len(evt_route_gate_status),
             "evt_ablation_metric_rows": len(evt_ablation_metrics),
             "cpa_inference_rows": len(cpa_inference),
             "cross_model_cpa_inference_rows": len(cross_model_cpa_inference),
@@ -294,6 +301,8 @@ def evaluate_ml_tail_suite(
             "extremal_index_diagnostic_rows": len(extremal_index_diagnostics),
             "evt_cap_sensitivity_rows": len(evt_cap_sensitivity),
             "evt_threshold_sensitivity_rows": len(evt_threshold_sensitivity),
+            "evt_body_tail_diagnostic_rows": len(evt_body_tail_diagnostics),
+            "evt_route_gate_status_rows": len(evt_route_gate_status),
         },
     )
     _evaluation_log(
@@ -420,12 +429,82 @@ def _evt_threshold_sensitivity_records(rows: list[dict[str, object]]) -> list[di
     return records
 
 
+def _evt_body_tail_diagnostic_records(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for row in rows:
+        if not row.get("body_filter_method") and row.get("evt_variant") in (
+            None,
+            "empirical_standardized_tail",
+        ):
+            continue
+        records.append(
+            {
+                **_evt_base_record(row),
+                "body_filter_method": row.get("body_filter_method"),
+                "scale_method": row.get("scale_method"),
+                "tail_estimator_method": row.get("tail_estimator_method"),
+                "threshold_model_level": row.get("threshold_model_level"),
+                "q90_oof_breach_rate": row.get("q90_oof_breach_rate"),
+                "q90_expected_breach_rate": row.get("q90_expected_breach_rate"),
+                "q90_excess_probability_for_tail_level": row.get(
+                    "q90_excess_probability_for_tail_level"
+                ),
+                "oof_standardized_loss_count": row.get("oof_standardized_loss_count"),
+                "evt_exceedance_count": row.get("evt_exceedance_count"),
+                "evt_shape": row.get("evt_shape"),
+                "evt_scale": row.get("evt_scale"),
+                "evt_es_finite": row.get("evt_es_finite"),
+                "scale_floor": row.get("scale_floor"),
+                "mad_consistency_factor": row.get("mad_consistency_factor"),
+                "iqr_consistency_factor": row.get("iqr_consistency_factor"),
+                "quantile_crossing_rate": row.get("quantile_crossing_rate"),
+                "quantile_rearrangement_applied": row.get("quantile_rearrangement_applied"),
+                "threshold_diagnostics_json": row.get("threshold_diagnostics_json"),
+                "evt_evi_diagnostics_json": row.get("evt_evi_diagnostics_json"),
+                "evt_ei_diagnostics_json": row.get("evt_ei_diagnostics_json"),
+                "diagnostic_scope": "evt_body_tail_diagnostic",
+            }
+        )
+    return records
+
+
+def _evt_route_gate_status_records(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for row in rows:
+        if not row.get("body_filter_method") and not row.get("evt_route_gate_status"):
+            continue
+        records.append(
+            {
+                **_evt_base_record(row),
+                "body_filter_method": row.get("body_filter_method"),
+                "scale_method": row.get("scale_method"),
+                "tail_estimator_method": row.get("tail_estimator_method"),
+                "q90_gate_status": row.get("q90_gate_status"),
+                "evt_route_gate_status": row.get("evt_route_gate_status"),
+                "gpd_fit_status": row.get("gpd_fit_status"),
+                "gpd_es_status": row.get("gpd_es_status"),
+                "q90_oof_breach_rate": row.get("q90_oof_breach_rate"),
+                "q90_expected_breach_rate": row.get("q90_expected_breach_rate"),
+                "q90_excess_probability_for_tail_level": row.get(
+                    "q90_excess_probability_for_tail_level"
+                ),
+                "scale_floor": row.get("scale_floor"),
+                "quantile_crossing_rate": row.get("quantile_crossing_rate"),
+                "quantile_rearrangement_applied": row.get("quantile_rearrangement_applied"),
+                "fit_status": row.get("fit_status"),
+                "failure_reason": row.get("failure_reason"),
+            }
+        )
+    return records
+
+
 def _evt_ablation_metric_records(rows: list[dict[str, object]]) -> list[dict[str, object]]:
     return [
         {**row, "artifact_scope": "evt_ablation_metric"}
         for row in rows
         if str(row.get("model_name") or "").startswith("lightgbm_standardized_loss_pot_gpd")
         or str(row.get("model_name") or "") == "lightgbm_location_scale_empirical"
+        or str(row.get("model_name") or "") in ML_TAIL_ROBUST_POT_GPD_MODEL_NAMES
     ]
 
 
@@ -442,6 +521,13 @@ def _evt_base_record(row: dict[str, object]) -> dict[str, object]:
         "train_n": row.get("train_n"),
         "oof_standardized_loss_count": row.get("oof_standardized_loss_count"),
         "evt_variant": row.get("evt_variant"),
+        "body_filter_method": row.get("body_filter_method"),
+        "scale_method": row.get("scale_method"),
+        "tail_estimator_method": row.get("tail_estimator_method"),
+        "q90_gate_status": row.get("q90_gate_status"),
+        "evt_route_gate_status": row.get("evt_route_gate_status"),
+        "gpd_fit_status": row.get("gpd_fit_status"),
+        "gpd_es_status": row.get("gpd_es_status"),
     }
 
 

@@ -3152,6 +3152,62 @@ def test_export_figures_renders_target_distribution_diagnostics(tmp_path: Path) 
     assert all((run_dir / entry["path"]).exists() for entry in entries)
 
 
+def test_export_figures_renders_evt_standardized_residual_diagnostics(tmp_path: Path) -> None:
+    run_dir = tmp_path / "reports" / "runs" / "evt_residual_figures"
+    forecast_dir = run_dir / "forecasts"
+    forecast_dir.mkdir(parents=True)
+    rows = []
+    for tail_side in (paper_module.TAIL_SIDE_LEFT, paper_module.TAIL_SIDE_RIGHT):
+        for idx in range(220):
+            base = 0.02 + 0.003 * math.sin(idx / 9.0)
+            shock = 0.08 if idx % 31 == 0 else 0.0
+            rows.append(
+                {
+                    "forecast_date": f"2025-03-{(idx % 28) + 1:02d}",
+                    "target_family": "full_gap_settle_to_open",
+                    "tail_side": tail_side,
+                    "model_name": paper_module.ML_TAIL_LOCATION_SCALE_MODEL,
+                    "information_set": "japan_only",
+                    "tail_level": 0.95,
+                    "location_forecast": 0.01,
+                    "scale_forecast": 0.02,
+                    "realized_loss": base + shock,
+                    "is_valid_forecast": True,
+                }
+            )
+    pl.DataFrame(rows).write_parquet(forecast_dir / "ml_tail_forecasts.parquet")
+
+    result = reporting_figures.export_figures(
+        run_dir=run_dir,
+        manifest={"run_id": "evt_residual_figures"},
+    )
+    evt_entries = [
+        entry
+        for entry in result.figure_entries
+        if str(entry.get("name", "")).startswith("evt_standardized_")
+    ]
+    expected_names = {
+        f"evt_standardized_{kind}_{tail_side}"
+        for kind in ("qq", "log_survival", "mean_excess", "hill", "threshold_stability")
+        for tail_side in (paper_module.TAIL_SIDE_LEFT, paper_module.TAIL_SIDE_RIGHT)
+    }
+
+    assert {entry["name"] for entry in evt_entries if entry["format"] == "png"} == expected_names
+    assert {entry["tail_side"] for entry in evt_entries} == {
+        paper_module.TAIL_SIDE_LEFT,
+        paper_module.TAIL_SIDE_RIGHT,
+    }
+    assert all(
+        entry["source_artifacts"] == ["forecasts/ml_tail_forecasts.parquet"]
+        for entry in evt_entries
+    )
+    assert all(
+        entry["claim_scope"] == "evt_standardized_residual_diagnostic_not_forecast_claim"
+        for entry in evt_entries
+    )
+    assert all((run_dir / entry["path"]).exists() for entry in evt_entries)
+
+
 def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) -> None:
     metrics = pl.DataFrame(
         [

@@ -91,6 +91,7 @@ def figure_gallery_markdown(*, figure_manifest: dict[str, object], run_id: str) 
         ("dst", "Figure 5. DST Attenuation Diagnostics"),
         ("severity", "Figure 6. ES Severity Diagnostics"),
         ("trigger", "Figure 7. Trigger Diagnostics"),
+        ("evt_standardized", "Figure 8. EVT Standardized-Residual Diagnostics"),
     ]
     for family, title in order:
         family_entries = by_family.get(family, [])
@@ -144,6 +145,8 @@ def _figure_family(name: str) -> str:
         return "severity"
     if name.startswith("trigger_diagnostics"):
         return "trigger"
+    if name.startswith("evt_standardized"):
+        return "evt_standardized"
     return "other"
 
 
@@ -191,6 +194,11 @@ def _figure_key_readings(family: str) -> list[str]:
         "trigger": [
             "- Key readings: bars report pre-open risk-trigger diagnostics by model family.",
             "- The trigger output is a monitoring diagnostic, not an execution-performance result.",
+        ],
+        "evt_standardized": [
+            "- Key readings: figures show EVT diagnostics for LightGBM location-scale standardized residuals.",
+            "- QQ, log-survival, mean-excess, Hill, and threshold-stability diagnostics validate the POT-GPD tail assumption.",
+            "- These are assumption-validation diagnostics, not forecast-performance claims.",
         ],
     }
     return readings.get(family, ["- Key readings: generated diagnostic figure."])

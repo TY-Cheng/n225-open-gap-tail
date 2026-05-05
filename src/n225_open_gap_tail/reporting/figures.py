@@ -46,6 +46,7 @@ def export_figures(*, run_dir: Path, manifest: Mapping[str, object]) -> FigureEx
     entries.extend(_dst_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_severity_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_trigger_figures(run_dir=run_dir, figure_dir=figure_dir))
+    entries.extend(_evt_standardized_residual_figures(run_dir=run_dir, figure_dir=figure_dir))
     _ = manifest
     return FigureExportResult(figure_dir=figure_dir, figure_entries=entries)
 
@@ -745,6 +746,372 @@ def _trigger_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, objec
             )
         )
     return entries
+
+
+def _evt_standardized_residual_figures(
+    *, run_dir: Path, figure_dir: Path
+) -> list[dict[str, object]]:
+    """EVT diagnostics for LightGBM location-scale standardized residuals.
+
+    Reconstructs z_t = (realized_loss - location_forecast) / scale_forecast
+    from the saved forecast file and produces QQ, log-survival, mean-excess,
+    Hill, and threshold-stability figures per tail side.
+    """
+    frame = _read_optional_parquet(run_dir / "forecasts" / "ml_tail_forecasts.parquet")
+    if frame.is_empty():
+        return []
+    required = {
+        "model_name",
+        "tail_side",
+        "location_forecast",
+        "scale_forecast",
+        "realized_loss",
+        "is_valid_forecast",
+    }
+    if not required.issubset(frame.columns):
+        return []
+    source_artifacts = ["forecasts/ml_tail_forecasts.parquet"]
+    claim_scope = "evt_standardized_residual_diagnostic_not_forecast_claim"
+    entries: list[dict[str, object]] = []
+    location_scale_names = set()
+    for row in frame.iter_rows(named=True):
+        mn = str(row.get("model_name") or "")
+        if mn.startswith("lightgbm_") and mn != ML_TAIL_DIRECT_QUANTILE_MODEL:
+            location_scale_names.add(mn)
+    anchor_model = "lightgbm_location_scale_empirical"
+    if anchor_model not in location_scale_names:
+        if location_scale_names:
+            anchor_model = sorted(location_scale_names)[0]
+        else:
+            return []
+    for tail_side in _available_tail_sides(frame):
+        z_values = _reconstruct_standardized_residuals(frame, tail_side, anchor_model)
+        if z_values.size < 80:
+            continue
+        entries.extend(
+            _evt_qq_figure(
+                z_values,
+                tail_side=tail_side,
+                run_dir=run_dir,
+                figure_dir=figure_dir,
+                source_artifacts=source_artifacts,
+                claim_scope=claim_scope,
+            )
+        )
+        entries.extend(
+            _evt_log_survival_figure(
+                z_values,
+                tail_side=tail_side,
+                run_dir=run_dir,
+                figure_dir=figure_dir,
+                source_artifacts=source_artifacts,
+                claim_scope=claim_scope,
+            )
+        )
+        entries.extend(
+            _evt_mean_excess_figure(
+                z_values,
+                tail_side=tail_side,
+                run_dir=run_dir,
+                figure_dir=figure_dir,
+                source_artifacts=source_artifacts,
+                claim_scope=claim_scope,
+            )
+        )
+        entries.extend(
+            _evt_hill_figure(
+                z_values,
+                tail_side=tail_side,
+                run_dir=run_dir,
+                figure_dir=figure_dir,
+                source_artifacts=source_artifacts,
+                claim_scope=claim_scope,
+            )
+        )
+        entries.extend(
+            _evt_threshold_stability_figure(
+                z_values,
+                tail_side=tail_side,
+                run_dir=run_dir,
+                figure_dir=figure_dir,
+                source_artifacts=source_artifacts,
+                claim_scope=claim_scope,
+            )
+        )
+    return entries
+
+
+def _reconstruct_standardized_residuals(
+    frame: pl.DataFrame, tail_side: str, model_name: str
+) -> np.ndarray:
+    """Reconstruct z_t from saved forecast rows."""
+    filtered = frame.filter(
+        (pl.col("tail_side") == tail_side)
+        & (pl.col("model_name") == model_name)
+        & (pl.col("is_valid_forecast") == True)  # noqa: E712
+        & pl.col("location_forecast").is_not_null()
+        & pl.col("scale_forecast").is_not_null()
+        & pl.col("realized_loss").is_not_null()
+    )
+    if filtered.is_empty():
+        return np.asarray([], dtype=float)
+    location = np.asarray(filtered["location_forecast"].to_list(), dtype=float)
+    scale = np.asarray(filtered["scale_forecast"].to_list(), dtype=float)
+    realized = np.asarray(filtered["realized_loss"].to_list(), dtype=float)
+    mask = np.isfinite(location) & np.isfinite(scale) & (scale > 0) & np.isfinite(realized)
+    z = (realized[mask] - location[mask]) / scale[mask]
+    return z[np.isfinite(z)]
+
+
+def _evt_qq_figure(
+    z_values: np.ndarray,
+    *,
+    tail_side: str,
+    run_dir: Path,
+    figure_dir: Path,
+    source_artifacts: list[str],
+    claim_scope: str,
+) -> list[dict[str, object]]:
+    """GPD Q-Q plot for standardized residuals."""
+    qq = _gpd_qq_values(z_values, threshold_probability=0.90)
+    if qq is None:
+        return []
+    empirical, fitted, threshold = qq
+    fig, ax = plt.subplots(figsize=(6.2, 5.6))
+    ax.scatter(fitted, empirical, s=18, color="#059669", alpha=0.78)
+    max_value = max(float(np.max(empirical)), float(np.max(fitted)))
+    ax.plot([0.0, max_value], [0.0, max_value], color="#111827", linewidth=1.1, linestyle="--")
+    ax.set_title(f"Standardized residual GPD Q-Q ({_label_tail_side(tail_side)})")
+    ax.set_xlabel("Fitted GPD excess quantile")
+    ax.set_ylabel("Empirical excess quantile")
+    ax.text(
+        0.02,
+        0.96,
+        f"threshold = {threshold:.3f}  |  n_excess = {int(np.sum(z_values > threshold))}",
+        transform=ax.transAxes,
+        va="top",
+        fontsize=8,
+        color="#374151",
+    )
+    _style_axes(ax)
+    return _save_figure(
+        fig,
+        run_dir=run_dir,
+        figure_dir=figure_dir,
+        name=f"evt_standardized_qq_{tail_side}",
+        source_artifacts=source_artifacts,
+        tail_side=tail_side,
+        caption=(
+            f"GPD Q-Q diagnostic for LightGBM location-scale standardized residuals "
+            f"({tail_side}). Excesses above the OOF 90th percentile threshold are "
+            "compared with fitted GPD quantiles. This diagnostic validates the EVT tail "
+            "assumption for the filtered residuals, not a forecast-performance claim."
+        ),
+        claim_scope=claim_scope,
+    )
+
+
+def _evt_log_survival_figure(
+    z_values: np.ndarray,
+    *,
+    tail_side: str,
+    run_dir: Path,
+    figure_dir: Path,
+    source_artifacts: list[str],
+    claim_scope: str,
+) -> list[dict[str, object]]:
+    """Log survival plot for standardized residuals."""
+    x, survival = _survival_curve(z_values)
+    if x.size < 10:
+        return []
+    fig, ax = plt.subplots(figsize=(8.4, 5.4))
+    ax.semilogy(x, survival, color="#059669", linewidth=1.5, label="standardized residuals")
+    # overlay normal reference
+    x_norm = np.linspace(float(np.min(x)), float(np.max(x)), 200)
+    from scipy.stats import norm  # type: ignore[import-untyped]
+
+    survival_norm = 1.0 - norm.cdf(
+        x_norm, loc=float(np.mean(z_values)), scale=float(np.std(z_values, ddof=1))
+    )
+    survival_norm = np.maximum(survival_norm, 1e-12)
+    ax.semilogy(
+        x_norm,
+        survival_norm,
+        color="#94a3b8",
+        linewidth=1.0,
+        linestyle="--",
+        label="normal reference",
+    )
+    ax.set_title(f"Standardized residual log survival ({_label_tail_side(tail_side)})")
+    ax.set_xlabel("Standardized loss z")
+    ax.set_ylabel("Empirical survival probability, log scale")
+    ax.legend(frameon=False, fontsize=8)
+    _style_axes(ax)
+    return _save_figure(
+        fig,
+        run_dir=run_dir,
+        figure_dir=figure_dir,
+        name=f"evt_standardized_log_survival_{tail_side}",
+        source_artifacts=source_artifacts,
+        tail_side=tail_side,
+        caption=(
+            f"Log survival curve for LightGBM standardized residuals ({tail_side}) "
+            "compared with a normal reference. Departures above the normal curve "
+            "indicate heavier-than-normal tails in the filtered residuals."
+        ),
+        claim_scope=claim_scope,
+    )
+
+
+def _evt_mean_excess_figure(
+    z_values: np.ndarray,
+    *,
+    tail_side: str,
+    run_dir: Path,
+    figure_dir: Path,
+    source_artifacts: list[str],
+    claim_scope: str,
+) -> list[dict[str, object]]:
+    """Mean excess plot for standardized residuals."""
+    thresholds, mean_excess = _mean_excess_curve(z_values)
+    if thresholds.size < 5:
+        return []
+    fig, ax = plt.subplots(figsize=(8.4, 5.4))
+    ax.plot(thresholds, mean_excess, color="#059669", linewidth=1.6, marker="o", markersize=3)
+    ax.set_title(f"Standardized residual mean excess ({_label_tail_side(tail_side)})")
+    ax.set_xlabel("Threshold z")
+    ax.set_ylabel("Mean excess E[Z - z | Z > z]")
+    ax.text(
+        0.02,
+        0.96,
+        "Linear pattern → GPD appropriate",
+        transform=ax.transAxes,
+        va="top",
+        fontsize=8,
+        color="#374151",
+        style="italic",
+    )
+    _style_axes(ax)
+    return _save_figure(
+        fig,
+        run_dir=run_dir,
+        figure_dir=figure_dir,
+        name=f"evt_standardized_mean_excess_{tail_side}",
+        source_artifacts=source_artifacts,
+        tail_side=tail_side,
+        caption=(
+            f"Mean excess function for LightGBM standardized residuals ({tail_side}). "
+            "A near-linear pattern above the threshold supports GPD modeling. This is "
+            "a tail-assumption diagnostic, not a forecast-validation claim."
+        ),
+        claim_scope=claim_scope,
+    )
+
+
+def _evt_hill_figure(
+    z_values: np.ndarray,
+    *,
+    tail_side: str,
+    run_dir: Path,
+    figure_dir: Path,
+    source_artifacts: list[str],
+    claim_scope: str,
+) -> list[dict[str, object]]:
+    """Hill plot for standardized residuals."""
+    ks, xi = _hill_curve(z_values)
+    if ks.size < 5:
+        return []
+    fig, ax = plt.subplots(figsize=(8.4, 5.4))
+    ax.plot(ks, xi, color="#059669", linewidth=1.5)
+    ax.axhline(0.0, color="#94a3b8", linewidth=0.8, linestyle=":")
+    ax.set_title(f"Standardized residual Hill plot ({_label_tail_side(tail_side)})")
+    ax.set_xlabel("Number of upper order statistics k")
+    ax.set_ylabel("Hill estimate of tail index ξ")
+    # annotate stable region
+    if ks.size > 10:
+        mid = len(ks) // 2
+        xi_window = xi[max(0, mid - 5) : mid + 5]
+        if len(xi_window) > 0:
+            ax.axhspan(
+                float(np.min(xi_window)),
+                float(np.max(xi_window)),
+                alpha=0.08,
+                color="#059669",
+                label=f"mid-range ξ ≈ {float(np.mean(xi_window)):.3f}",
+            )
+            ax.legend(frameon=False, fontsize=8)
+    _style_axes(ax)
+    return _save_figure(
+        fig,
+        run_dir=run_dir,
+        figure_dir=figure_dir,
+        name=f"evt_standardized_hill_{tail_side}",
+        source_artifacts=source_artifacts,
+        tail_side=tail_side,
+        caption=(
+            f"Hill tail-index estimates for LightGBM standardized residuals ({tail_side}) "
+            "as a function of the number of upper order statistics k. A stable plateau "
+            "indicates consistent tail behavior. This is a tail-assumption diagnostic."
+        ),
+        claim_scope=claim_scope,
+    )
+
+
+def _evt_threshold_stability_figure(
+    z_values: np.ndarray,
+    *,
+    tail_side: str,
+    run_dir: Path,
+    figure_dir: Path,
+    source_artifacts: list[str],
+    claim_scope: str,
+) -> list[dict[str, object]]:
+    """Threshold stability plot for GPD shape and modified scale."""
+    grid = np.array([0.80, 0.85, 0.875, 0.90, 0.925, 0.95, 0.975])
+    shapes: list[float] = []
+    mod_scales: list[float] = []
+    kept_grid: list[float] = []
+    for probability in grid:
+        threshold = float(np.quantile(z_values, probability))
+        excess = z_values[z_values > threshold] - threshold
+        if excess.size < 15:
+            continue
+        try:
+            shape, _, scale = genpareto.fit(excess, floc=0.0)
+        except Exception:
+            continue
+        if not np.isfinite(shape) or not np.isfinite(scale) or scale <= 0.0:
+            continue
+        kept_grid.append(probability)
+        shapes.append(float(shape))
+        mod_scales.append(float(scale - shape * threshold))
+    if len(kept_grid) < 3:
+        return []
+    fig, axes = plt.subplots(2, 1, figsize=(8.4, 7.0), sharex=True)
+    axes[0].plot(kept_grid, shapes, color="#059669", linewidth=1.6, marker="o", markersize=4)
+    axes[0].axhline(0.0, color="#94a3b8", linewidth=0.8, linestyle=":")
+    axes[0].set_ylabel("GPD shape ξ̂")
+    axes[0].set_title(f"GPD threshold stability ({_label_tail_side(tail_side)})")
+    axes[1].plot(kept_grid, mod_scales, color="#2563eb", linewidth=1.6, marker="s", markersize=4)
+    axes[1].set_ylabel("Modified scale σ̂* = σ̂ − ξ̂·u")
+    axes[1].set_xlabel("Threshold quantile")
+    for ax in axes:
+        _style_axes(ax)
+    return _save_figure(
+        fig,
+        run_dir=run_dir,
+        figure_dir=figure_dir,
+        name=f"evt_standardized_threshold_stability_{tail_side}",
+        source_artifacts=source_artifacts,
+        tail_side=tail_side,
+        caption=(
+            f"GPD parameter stability across threshold quantiles for LightGBM standardized "
+            f"residuals ({tail_side}). Stable shape and modified scale across thresholds "
+            "support the POT-GPD specification. This diagnostic validates the threshold "
+            "choice, not forecast accuracy."
+        ),
+        claim_scope=claim_scope,
+    )
 
 
 def _combined_severity_metrics(run_dir: Path) -> pl.DataFrame:

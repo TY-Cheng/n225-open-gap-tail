@@ -560,6 +560,179 @@ def _pot_gpd_standardized_tail(
     }
 
 
+def _pot_gpd_excess_tail(
+    *,
+    excesses: np.ndarray,
+    tail_level: float,
+    gpd_probability: float,
+    evt_variant: str = "plain_mle",
+    shape_cap: tuple[float, float] | None = None,
+    shape_shrinkage_k: float | None = None,
+    min_exceedances: int | None = None,
+    exceedance_indices: np.ndarray | None = None,
+) -> dict[str, object]:
+    values = excesses[np.isfinite(excesses) & (excesses > 0.0)]
+    min_exceedances = (
+        DEFAULT_MIN_TRAIN_EXCEEDANCES if min_exceedances is None else int(min_exceedances)
+    )
+    if values.size < min_exceedances:
+        return {
+            "excess_var": None,
+            "excess_es": None,
+            "evt_variant": evt_variant,
+            "evt_exceedance_count": int(values.size),
+            "evt_min_exceedances": min_exceedances,
+            "gpd_fit_status": "unavailable_insufficient_exceedances",
+            "gpd_es_status": "unavailable_gpd_fit_failed",
+            "tail_method": "conditional_threshold_pot_gpd",
+        }
+    if not math.isfinite(gpd_probability) or not 0.0 < gpd_probability < 1.0:
+        return {
+            "excess_var": None,
+            "excess_es": None,
+            "evt_variant": evt_variant,
+            "evt_exceedance_count": int(values.size),
+            "evt_min_exceedances": min_exceedances,
+            "gpd_fit_status": "unavailable_invalid_gpd_probability",
+            "gpd_es_status": "unavailable_gpd_fit_failed",
+            "tail_method": "conditional_threshold_pot_gpd",
+        }
+    try:
+        shape_mle, _, scale_mle = stats.genpareto.fit(values, floc=0.0)
+        shape_mle = float(shape_mle)
+        scale_mle = float(max(scale_mle, 1e-12))
+    except Exception:
+        return {
+            "excess_var": None,
+            "excess_es": None,
+            "evt_variant": evt_variant,
+            "evt_exceedance_count": int(values.size),
+            "evt_min_exceedances": min_exceedances,
+            "gpd_fit_status": "unavailable_optimizer_failed",
+            "gpd_es_status": "unavailable_gpd_fit_failed",
+            "tail_method": "conditional_threshold_pot_gpd",
+        }
+    if not math.isfinite(shape_mle):
+        return {
+            "excess_var": None,
+            "excess_es": None,
+            "evt_variant": evt_variant,
+            "evt_shape_mle": shape_mle,
+            "evt_scale_mle": scale_mle,
+            "evt_exceedance_count": int(values.size),
+            "evt_min_exceedances": min_exceedances,
+            "gpd_fit_status": "unavailable_invalid_shape",
+            "gpd_es_status": "unavailable_gpd_fit_failed",
+            "tail_method": "conditional_threshold_pot_gpd",
+        }
+    if not math.isfinite(scale_mle) or scale_mle <= 0.0:
+        return {
+            "excess_var": None,
+            "excess_es": None,
+            "evt_variant": evt_variant,
+            "evt_shape_mle": shape_mle,
+            "evt_scale_mle": scale_mle,
+            "evt_exceedance_count": int(values.size),
+            "evt_min_exceedances": min_exceedances,
+            "gpd_fit_status": "unavailable_negative_scale",
+            "gpd_es_status": "unavailable_invalid_scale",
+            "tail_method": "conditional_threshold_pot_gpd",
+        }
+    try:
+        selected_shape, selected_scale = _select_evt_shape_and_scale(
+            excesses=values,
+            exceedance_indices=np.arange(values.size)
+            if exceedance_indices is None
+            else np.asarray(exceedance_indices, dtype=int),
+            shape_mle=shape_mle,
+            scale_mle=scale_mle,
+            evt_variant=evt_variant,
+            shape_cap=shape_cap,
+            shape_shrinkage_k=shape_shrinkage_k,
+        )
+        shape = _required_float(selected_shape["shape_final"])
+        scale = _required_float(selected_scale["scale_final"])
+    except Exception:
+        return {
+            "excess_var": None,
+            "excess_es": None,
+            "evt_variant": evt_variant,
+            "evt_shape_mle": shape_mle,
+            "evt_scale_mle": scale_mle,
+            "evt_exceedance_count": int(values.size),
+            "evt_min_exceedances": min_exceedances,
+            "gpd_fit_status": "unavailable_optimizer_failed",
+            "gpd_es_status": "unavailable_gpd_fit_failed",
+            "tail_method": "conditional_threshold_pot_gpd",
+        }
+    evi = cast(dict[str, object], selected_shape.get("evi") or {})
+    ei = cast(dict[str, object], selected_shape.get("ei") or {})
+    if not math.isfinite(scale) or scale <= 0.0:
+        gpd_fit_status = "unavailable_negative_scale"
+        excess_var = None
+    else:
+        excess_var = float(stats.genpareto.ppf(gpd_probability, c=shape, loc=0.0, scale=scale))
+        if not math.isfinite(excess_var):
+            gpd_fit_status = "unavailable_invalid_quantile"
+            excess_var = None
+        elif shape < 0.0 and excess_var >= -scale / shape:
+            gpd_fit_status = "unavailable_support_violation"
+            excess_var = None
+        else:
+            gpd_fit_status = "ok"
+    excess_es: float | None = None
+    gpd_es_status = "unavailable_gpd_fit_failed"
+    if excess_var is not None:
+        if shape < 1.0:
+            excess_es = float((excess_var + scale) / (1.0 - shape))
+            gpd_es_status = "ok" if math.isfinite(excess_es) else "unavailable_nonfinite_es"
+        else:
+            gpd_es_status = "unavailable_shape_ge_1"
+    cap_sensitivity = _evt_cap_sensitivity(
+        shape_mle=shape_mle,
+        caps=(
+            PIPELINE_CONFIG.model_policy.evt_shape_cap_conservative,
+            PIPELINE_CONFIG.model_policy.evt_shape_cap_baseline,
+            PIPELINE_CONFIG.model_policy.evt_shape_cap_loose,
+        ),
+    )
+    diagnostics = _evt_threshold_diagnostics(values)
+    return {
+        "excess_var": excess_var,
+        "excess_es": excess_es,
+        "tail_level": float(tail_level),
+        "gpd_probability": float(gpd_probability),
+        "evt_exceedance_count": int(values.size),
+        "evt_min_exceedances": int(min_exceedances),
+        "evt_shape": shape,
+        "evt_scale": scale,
+        "evt_variant": evt_variant,
+        "evt_shape_method": selected_shape.get("shape_method"),
+        "evt_cap_policy": selected_shape.get("cap_policy"),
+        "evt_cap_hit": selected_shape.get("cap_hit"),
+        "evt_shape_mle": shape_mle,
+        "evt_scale_mle": scale_mle,
+        "evt_evi_status": evi.get("status"),
+        "evt_ei_status": ei.get("status"),
+        "evt_xi_evi_anchor": evi.get("xi_evi_anchor"),
+        "evt_theta_hat": ei.get("theta_hat"),
+        "evt_effective_exceedance_count": ei.get("effective_exceedance_count"),
+        "evt_scale_refit_status": selected_scale.get("scale_refit_status"),
+        "evt_es_finite": gpd_es_status == "ok",
+        "evt_evi_diagnostics_json": json.dumps(evi, sort_keys=True, default=str),
+        "evt_ei_diagnostics_json": json.dumps(ei, sort_keys=True, default=str),
+        "evt_cap_sensitivity_json": json.dumps(cap_sensitivity, sort_keys=True),
+        "evt_threshold_sensitivity_json": json.dumps([], sort_keys=True),
+        "threshold_diagnostics_json": json.dumps(diagnostics, sort_keys=True),
+        "threshold_policy": "conditional_q90_threshold",
+        "threshold_smoothing": "not_applicable_conditional_threshold",
+        "threshold_selection": "blocked_expanding_oof_conditional_q90",
+        "tail_method": "conditional_threshold_pot_gpd",
+        "gpd_fit_status": gpd_fit_status,
+        "gpd_es_status": gpd_es_status,
+    }
+
+
 def _select_evt_shape_and_scale(
     *,
     excesses: np.ndarray,

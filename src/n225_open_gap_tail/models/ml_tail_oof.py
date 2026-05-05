@@ -10,8 +10,15 @@ from n225_open_gap_tail.config.runtime import (
     Mapping,
     math,
     ML_TAIL_MIN_OOF_TRAIN_ROWS,
+    ML_TAIL_IQR_CONSISTENCY_FACTOR,
+    ML_TAIL_MAD_CONSISTENCY_FACTOR,
     ML_TAIL_OOF_SPLITS,
+    ML_TAIL_Q90_ACCEPTABLE_BAND,
+    ML_TAIL_Q90_EXPECTED_BREACH_RATE,
+    ML_TAIL_Q90_MARGINAL_BAND,
+    ML_TAIL_Q90_THRESHOLD_LEVEL,
     ML_TAIL_REFIT_FREQUENCY,
+    ML_TAIL_ROBUST_SCALE_FLOOR,
     ML_TAIL_SCALE_FLOOR,
     np,
     PipelineRunError,
@@ -119,6 +126,224 @@ def _ml_tail_oof_location_scale(
     }
 
 
+def _ml_tail_oof_conditional_q90_threshold(
+    *,
+    train_rows: list[dict[str, object]],
+    candidate_features: list[str],
+    information_set: str,
+    tail_level: float,
+    lgb: Any,
+) -> dict[str, object]:
+    row_count = len(train_rows)
+    folds = _blocked_expanding_oof_folds(
+        row_count,
+        n_splits=ML_TAIL_OOF_SPLITS,
+        min_train_rows=ML_TAIL_MIN_OOF_TRAIN_ROWS,
+    )
+    if not folds:
+        raise PipelineRunError("unavailable_oof_threshold_insufficient_sample: no folds")
+    y = np.array([_required_float(row["realized_loss"]) for row in train_rows], dtype=float)
+    threshold_oof = np.full(row_count, np.nan, dtype=float)
+    for fold_index, (fold_train, fold_validation) in enumerate(folds):
+        fold_rows = [train_rows[index] for index in fold_train]
+        model, _, active_features = _fit_lgb_regression_model(
+            lgb=lgb,
+            rows=fold_rows,
+            target=y[fold_train],
+            candidate_features=candidate_features,
+            objective="quantile",
+            alpha=ML_TAIL_Q90_THRESHOLD_LEVEL,
+            random_state=_ml_tail_seed(information_set, tail_level, "q90_oof", fold_index),
+        )
+        validation_rows = [train_rows[index] for index in fold_validation]
+        threshold_oof[fold_validation] = _predict_lgb_rows(model, validation_rows, active_features)
+    valid = np.isfinite(threshold_oof)
+    if int(np.sum(valid)) < ML_TAIL_MIN_OOF_TRAIN_ROWS:
+        raise PipelineRunError(
+            f"unavailable_oof_threshold_insufficient_sample: {int(np.sum(valid))}"
+        )
+    breaches = y[valid] > threshold_oof[valid]
+    breach_rate = float(np.mean(breaches)) if breaches.size else math.nan
+    gate_status = _q90_gate_status(breach_rate)
+    p_tail = 1.0 - tail_level
+    if gate_status == "unavailable_q90_calibration_failed":
+        raise PipelineRunError(gate_status)
+    if not math.isfinite(breach_rate) or breach_rate <= p_tail:
+        raise PipelineRunError("unavailable_q90_breach_rate_too_low_for_target_tail")
+    exceedance_mask = valid & (y > threshold_oof)
+    exceedances = y[exceedance_mask] - threshold_oof[exceedance_mask]
+    exceedance_indices = np.flatnonzero(exceedance_mask)
+    return {
+        "threshold_oof": threshold_oof,
+        "exceedances": exceedances[np.isfinite(exceedances) & (exceedances > 0.0)],
+        "exceedance_indices": exceedance_indices,
+        "q90_oof_breach_rate": breach_rate,
+        "q90_expected_breach_rate": ML_TAIL_Q90_EXPECTED_BREACH_RATE,
+        "q90_gate_status": gate_status,
+        "q90_oof_count": int(np.sum(valid)),
+    }
+
+
+def _ml_tail_oof_median_mad_location_scale(
+    *,
+    train_rows: list[dict[str, object]],
+    candidate_features: list[str],
+    information_set: str,
+    tail_level: float,
+    lgb: Any,
+) -> dict[str, object]:
+    row_count = len(train_rows)
+    folds = _blocked_expanding_oof_folds(
+        row_count,
+        n_splits=ML_TAIL_OOF_SPLITS,
+        min_train_rows=ML_TAIL_MIN_OOF_TRAIN_ROWS,
+    )
+    if not folds:
+        raise PipelineRunError("unavailable_oof_standardization_insufficient_sample: no folds")
+    y = np.array([_required_float(row["realized_loss"]) for row in train_rows], dtype=float)
+    median_oof = _quantile_oof_predictions(
+        train_rows=train_rows,
+        candidate_features=candidate_features,
+        target=y,
+        information_set=information_set,
+        tail_level=tail_level,
+        lgb=lgb,
+        alpha=0.50,
+        seed_label="median_q50_oof",
+        folds=folds,
+    )
+    abs_resid_oof = np.full(row_count, np.nan, dtype=float)
+    finite_median = np.isfinite(median_oof)
+    abs_resid_oof[finite_median] = np.abs(y[finite_median] - median_oof[finite_median])
+    raw_mad_oof = np.full(row_count, np.nan, dtype=float)
+    for fold_index, (fold_train, fold_validation) in enumerate(folds):
+        scale_train = [index for index in fold_train if math.isfinite(abs_resid_oof[index])]
+        scale_validation = [
+            index for index in fold_validation if math.isfinite(abs_resid_oof[index])
+        ]
+        if len(scale_train) < ML_TAIL_MIN_OOF_TRAIN_ROWS or not scale_validation:
+            continue
+        model, _, active_features = _fit_lgb_regression_model(
+            lgb=lgb,
+            rows=[train_rows[index] for index in scale_train],
+            target=abs_resid_oof[scale_train],
+            candidate_features=candidate_features,
+            objective="regression_l1",
+            random_state=_ml_tail_seed(information_set, tail_level, "mad_oof", fold_index),
+        )
+        raw_mad_oof[scale_validation] = _predict_lgb_rows(
+            model,
+            [train_rows[index] for index in scale_validation],
+            active_features,
+        )
+    mad_scale_oof = _positive_scale(
+        raw_mad_oof * ML_TAIL_MAD_CONSISTENCY_FACTOR,
+        floor=ML_TAIL_ROBUST_SCALE_FLOOR,
+    )
+    valid_z = np.isfinite(median_oof) & np.isfinite(mad_scale_oof) & (mad_scale_oof > 0.0)
+    standardized = (y[valid_z] - median_oof[valid_z]) / mad_scale_oof[valid_z]
+    standardized = standardized[np.isfinite(standardized)]
+    if standardized.size < ML_TAIL_MIN_OOF_TRAIN_ROWS:
+        raise PipelineRunError(
+            f"unavailable_oof_standardization_insufficient_sample: {standardized.size}"
+        )
+    return {
+        "mu_oof": median_oof,
+        "scale_oof": mad_scale_oof,
+        "scale_target_oof": abs_resid_oof,
+        "raw_scale_oof": raw_mad_oof,
+        "standardized_losses": standardized,
+        "location_oof_count": int(np.sum(np.isfinite(median_oof))),
+        "scale_oof_count": int(np.sum(np.isfinite(raw_mad_oof))),
+        "scale_invalid_count": int(np.sum(np.isfinite(raw_mad_oof) & (raw_mad_oof <= 0.0))),
+        "scale_floor": ML_TAIL_ROBUST_SCALE_FLOOR,
+        "mad_consistency_factor": ML_TAIL_MAD_CONSISTENCY_FACTOR,
+        "iqr_consistency_factor": None,
+        "quantile_crossing_rate": None,
+        "quantile_rearrangement_applied": False,
+    }
+
+
+def _ml_tail_oof_median_iqr_location_scale(
+    *,
+    train_rows: list[dict[str, object]],
+    candidate_features: list[str],
+    information_set: str,
+    tail_level: float,
+    lgb: Any,
+) -> dict[str, object]:
+    row_count = len(train_rows)
+    folds = _blocked_expanding_oof_folds(
+        row_count,
+        n_splits=ML_TAIL_OOF_SPLITS,
+        min_train_rows=ML_TAIL_MIN_OOF_TRAIN_ROWS,
+    )
+    if not folds:
+        raise PipelineRunError("unavailable_oof_standardization_insufficient_sample: no folds")
+    y = np.array([_required_float(row["realized_loss"]) for row in train_rows], dtype=float)
+    q25 = _quantile_oof_predictions(
+        train_rows=train_rows,
+        candidate_features=candidate_features,
+        target=y,
+        information_set=information_set,
+        tail_level=tail_level,
+        lgb=lgb,
+        alpha=0.25,
+        seed_label="iqr_q25_oof",
+        folds=folds,
+    )
+    q50 = _quantile_oof_predictions(
+        train_rows=train_rows,
+        candidate_features=candidate_features,
+        target=y,
+        information_set=information_set,
+        tail_level=tail_level,
+        lgb=lgb,
+        alpha=0.50,
+        seed_label="iqr_q50_oof",
+        folds=folds,
+    )
+    q75 = _quantile_oof_predictions(
+        train_rows=train_rows,
+        candidate_features=candidate_features,
+        target=y,
+        information_set=information_set,
+        tail_level=tail_level,
+        lgb=lgb,
+        alpha=0.75,
+        seed_label="iqr_q75_oof",
+        folds=folds,
+    )
+    q25_r, q50_r, q75_r, crossing_rate = _rearrange_quantile_predictions(q25, q50, q75)
+    scale = _positive_scale(
+        (q75_r - q25_r) / ML_TAIL_IQR_CONSISTENCY_FACTOR,
+        floor=ML_TAIL_ROBUST_SCALE_FLOOR,
+    )
+    valid_z = np.isfinite(q50_r) & np.isfinite(scale) & (scale > 0.0)
+    standardized = (y[valid_z] - q50_r[valid_z]) / scale[valid_z]
+    standardized = standardized[np.isfinite(standardized)]
+    if standardized.size < ML_TAIL_MIN_OOF_TRAIN_ROWS:
+        raise PipelineRunError(
+            f"unavailable_oof_standardization_insufficient_sample: {standardized.size}"
+        )
+    return {
+        "mu_oof": q50_r,
+        "scale_oof": scale,
+        "q25_oof": q25,
+        "q50_oof": q50,
+        "q75_oof": q75,
+        "standardized_losses": standardized,
+        "location_oof_count": int(np.sum(np.isfinite(q50))),
+        "scale_oof_count": int(np.sum(np.isfinite(scale))),
+        "scale_invalid_count": int(np.sum(np.isfinite(q75 - q25) & ((q75 - q25) <= 0.0))),
+        "scale_floor": ML_TAIL_ROBUST_SCALE_FLOOR,
+        "mad_consistency_factor": None,
+        "iqr_consistency_factor": ML_TAIL_IQR_CONSISTENCY_FACTOR,
+        "quantile_crossing_rate": crossing_rate,
+        "quantile_rearrangement_applied": crossing_rate > 0.0,
+    }
+
+
 def _fit_lgb_regression_model(
     *,
     lgb: Any,
@@ -127,6 +352,7 @@ def _fit_lgb_regression_model(
     candidate_features: list[str],
     objective: str,
     random_state: int,
+    alpha: float | None = None,
 ) -> tuple[Any, dict[str, object], list[str]]:
     frame = pl.DataFrame(rows, infer_schema_length=None)
     gate = build_feature_matrix_gate_records(frame, candidate_features)
@@ -134,18 +360,21 @@ def _fit_lgb_regression_model(
     if not active_features:
         raise PipelineRunError("ML tail LightGBM has no active features after training gate")
     x_train = _feature_matrix(frame, active_features)
-    model = lgb.LGBMRegressor(
-        objective=objective,
-        n_estimators=80,
-        learning_rate=0.05,
-        num_leaves=15,
-        min_child_samples=20,
-        subsample=0.9,
-        colsample_bytree=0.9,
-        random_state=random_state,
-        num_threads=1,
-        verbosity=-1,
-    )
+    params: dict[str, object] = {
+        "objective": objective,
+        "n_estimators": 80,
+        "learning_rate": 0.05,
+        "num_leaves": 15,
+        "min_child_samples": 20,
+        "subsample": 0.9,
+        "colsample_bytree": 0.9,
+        "random_state": random_state,
+        "num_threads": 1,
+        "verbosity": -1,
+    }
+    if alpha is not None:
+        params["alpha"] = float(alpha)
+    model = lgb.LGBMRegressor(**params)
     model.fit(x_train, target)
     return model, gate, active_features
 
@@ -162,6 +391,71 @@ def _predict_lgb_rows(
             category=UserWarning,
         )
         return np.asarray(model.predict(x_predict), dtype=float)
+
+
+def _quantile_oof_predictions(
+    *,
+    train_rows: list[dict[str, object]],
+    candidate_features: list[str],
+    target: np.ndarray,
+    information_set: str,
+    tail_level: float,
+    lgb: Any,
+    alpha: float,
+    seed_label: str,
+    folds: list[tuple[list[int], list[int]]],
+) -> np.ndarray:
+    predictions = np.full(len(train_rows), np.nan, dtype=float)
+    for fold_index, (fold_train, fold_validation) in enumerate(folds):
+        model, _, active_features = _fit_lgb_regression_model(
+            lgb=lgb,
+            rows=[train_rows[index] for index in fold_train],
+            target=target[fold_train],
+            candidate_features=candidate_features,
+            objective="quantile",
+            alpha=alpha,
+            random_state=_ml_tail_seed(information_set, tail_level, seed_label, fold_index),
+        )
+        predictions[fold_validation] = _predict_lgb_rows(
+            model,
+            [train_rows[index] for index in fold_validation],
+            active_features,
+        )
+    return predictions
+
+
+def _positive_scale(values: np.ndarray, *, floor: float) -> np.ndarray:
+    output = np.full(values.shape, np.nan, dtype=float)
+    finite = np.isfinite(values)
+    output[finite] = np.maximum(values[finite], floor)
+    return output
+
+
+def _rearrange_quantile_predictions(
+    q25: np.ndarray,
+    q50: np.ndarray,
+    q75: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    stacked = np.vstack([q25, q50, q75])
+    finite = np.all(np.isfinite(stacked), axis=0)
+    crossing = finite & ((q25 > q50) | (q50 > q75) | (q25 > q75))
+    crossing_rate = float(np.mean(crossing[finite])) if np.any(finite) else math.nan
+    rearranged = stacked.copy()
+    if np.any(finite):
+        rearranged[:, finite] = np.sort(stacked[:, finite], axis=0)
+    return rearranged[0], rearranged[1], rearranged[2], crossing_rate
+
+
+def _q90_gate_status(breach_rate: float) -> str:
+    if not math.isfinite(breach_rate):
+        return "unavailable_q90_calibration_failed"
+    acceptable_low, acceptable_high = ML_TAIL_Q90_ACCEPTABLE_BAND
+    marginal_low, marginal_high = ML_TAIL_Q90_MARGINAL_BAND
+    if acceptable_low <= breach_rate <= acceptable_high:
+        return "ok"
+    if marginal_low <= breach_rate <= marginal_high:
+        return "marginal_q90_calibration"
+    return "unavailable_q90_calibration_failed"
 
 
 def _blocked_expanding_oof_folds(
@@ -251,8 +545,25 @@ def _predict_ml_tail_location_scale_forecast(
         "location_forecast": location_forecast,
         "scale_forecast": scale_forecast,
         "scale_smearing_factor": smearing_factor,
-        "scale_floor": ML_TAIL_SCALE_FLOOR,
+        "scale_floor": bundle.get("scale_floor", ML_TAIL_SCALE_FLOOR),
         "standardization_method": bundle.get("standardization_method"),
+        "body_filter_method": bundle.get("body_filter_method"),
+        "scale_method": bundle.get("scale_method"),
+        "tail_estimator_method": bundle.get("tail_estimator_method"),
+        "threshold_model_level": bundle.get("threshold_model_level"),
+        "q90_oof_breach_rate": bundle.get("q90_oof_breach_rate"),
+        "q90_expected_breach_rate": bundle.get("q90_expected_breach_rate"),
+        "q90_excess_probability_for_tail_level": bundle.get(
+            "q90_excess_probability_for_tail_level"
+        ),
+        "q90_gate_status": bundle.get("q90_gate_status"),
+        "evt_route_gate_status": bundle.get("evt_route_gate_status"),
+        "gpd_fit_status": evt_tail.get("gpd_fit_status"),
+        "gpd_es_status": evt_tail.get("gpd_es_status"),
+        "mad_consistency_factor": bundle.get("mad_consistency_factor"),
+        "iqr_consistency_factor": bundle.get("iqr_consistency_factor"),
+        "quantile_crossing_rate": bundle.get("quantile_crossing_rate"),
+        "quantile_rearrangement_applied": bundle.get("quantile_rearrangement_applied"),
         "oof_standardized_loss_count": bundle.get("oof_standardized_loss_count"),
         "standardized_var": standardized_var,
         "standardized_es": standardized_es,
@@ -310,8 +621,25 @@ def _ml_tail_location_scale_diagnostic(
         "refit_frequency": ML_TAIL_REFIT_FREQUENCY,
         "refit_month": refit_month,
         "scale_smearing_factor": bundle["smearing_factor"],
-        "scale_floor": ML_TAIL_SCALE_FLOOR,
+        "scale_floor": bundle.get("scale_floor", ML_TAIL_SCALE_FLOOR),
         "standardization_method": bundle["standardization_method"],
+        "body_filter_method": bundle.get("body_filter_method"),
+        "scale_method": bundle.get("scale_method"),
+        "tail_estimator_method": bundle.get("tail_estimator_method"),
+        "threshold_model_level": bundle.get("threshold_model_level"),
+        "q90_oof_breach_rate": bundle.get("q90_oof_breach_rate"),
+        "q90_expected_breach_rate": bundle.get("q90_expected_breach_rate"),
+        "q90_excess_probability_for_tail_level": bundle.get(
+            "q90_excess_probability_for_tail_level"
+        ),
+        "q90_gate_status": bundle.get("q90_gate_status"),
+        "evt_route_gate_status": bundle.get("evt_route_gate_status"),
+        "gpd_fit_status": evt_tail.get("gpd_fit_status"),
+        "gpd_es_status": evt_tail.get("gpd_es_status"),
+        "mad_consistency_factor": bundle.get("mad_consistency_factor"),
+        "iqr_consistency_factor": bundle.get("iqr_consistency_factor"),
+        "quantile_crossing_rate": bundle.get("quantile_crossing_rate"),
+        "quantile_rearrangement_applied": bundle.get("quantile_rearrangement_applied"),
         "location_scale_backbone_key": bundle.get("location_scale_backbone_key"),
         "location_scale_location_seed": bundle.get("location_scale_location_seed"),
         "location_scale_scale_seed": bundle.get("location_scale_scale_seed"),
@@ -394,6 +722,21 @@ def _ml_tail_extended_forecast_fields() -> dict[str, object]:
         "scale_smearing_factor": None,
         "scale_floor": None,
         "standardization_method": None,
+        "body_filter_method": None,
+        "scale_method": None,
+        "tail_estimator_method": None,
+        "threshold_model_level": None,
+        "q90_oof_breach_rate": None,
+        "q90_expected_breach_rate": None,
+        "q90_excess_probability_for_tail_level": None,
+        "q90_gate_status": None,
+        "evt_route_gate_status": None,
+        "gpd_fit_status": None,
+        "gpd_es_status": None,
+        "mad_consistency_factor": None,
+        "iqr_consistency_factor": None,
+        "quantile_crossing_rate": None,
+        "quantile_rearrangement_applied": None,
         "oof_standardized_loss_count": None,
         "standardized_var": None,
         "standardized_es": None,

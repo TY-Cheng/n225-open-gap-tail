@@ -61,11 +61,20 @@ def write_results_snapshot_from_run(
     paths = _full_run_snapshot_paths(settings=settings, run_dir=run_dir, manifest=manifest)
     panel = _read_parquet_optional(paths["modeling_panel"])
     docs_path = Path("docs/results_snapshot.md")
+    discussion_path = Path("docs/discussion_qa.md")
     docs_path.parent.mkdir(parents=True, exist_ok=True)
     _snapshot_gallery.sync_snapshot_figure_assets(
         run_dir=run_dir,
         figure_manifest=_read_json_dict(paths["figure_manifest"]),
         docs_dir=docs_path.parent,
+    )
+    discussion_path.write_text(
+        _full_run_discussion_qa_markdown(
+            run_dir=run_dir,
+            manifest=manifest,
+            paths=paths,
+        ),
+        encoding="utf-8",
     )
     docs_path.write_text(
         _full_run_results_markdown(
@@ -216,6 +225,65 @@ def _read_parquet_optional(path: Path) -> pl.DataFrame:
     return pl.read_parquet(path)
 
 
+def _full_run_discussion_qa_markdown(
+    *,
+    run_dir: Path,
+    manifest: dict[str, object],
+    paths: dict[str, Path],
+) -> str:
+    benchmark_status = _read_json_dict(paths["benchmark_status"])
+    panel = _read_parquet_optional(paths["modeling_panel"])
+    (
+        advanced_implementation_text,
+        advanced_implementation_bullet,
+        advanced_bottom_line_bullet,
+    ) = _advanced_benchmark_qa_text(benchmark_status)
+    return _discussion_qa(
+        advanced_implementation_text=advanced_implementation_text,
+        advanced_implementation_bullet=advanced_implementation_bullet,
+        advanced_bottom_line_bullet=advanced_bottom_line_bullet,
+        claim_scope_table=_claim_scope_markdown_table(),
+        opening_gap_scale_text=_opening_gap_scale_text(panel),
+    )
+
+
+def _advanced_benchmark_qa_text(
+    benchmark_status: dict[str, object],
+) -> tuple[str, str, str]:
+    advanced_forecast_rows = int(
+        _optional_float(benchmark_status.get("benchmark_advanced_forecast_rows")) or 0
+    )
+    if advanced_forecast_rows > 0:
+        return (
+            "The benchmark floor, advanced benchmark suite, and ML-tail suite are implemented and have completed artifacts in this run.",
+            (
+                "Advanced benchmark families such as CAViaR, CARE/expectile, Taylor ALD, "
+                "direct FZ-loss, and GAS produce nonblocking empirical forecast rows; "
+                "their interpretation still follows the benchmark and restricted-sample gates."
+            ),
+            (
+                "benchmark floor, advanced benchmark, and ML-tail suites completed with zero "
+                "recorded forecast failures; advanced rows are implemented evidence but remain "
+                "nonblocking until author-reviewed against the same sample and inference gates."
+            ),
+        )
+    return (
+        (
+            "The benchmark floor and ML-tail suite are implemented and have completed artifacts in this run. "
+            "The advanced benchmark layer is registered as nonblocking, but this run has not produced empirical advanced-model forecast rows."
+        ),
+        (
+            "Advanced benchmark families such as CAViaR, CARE/expectile, Taylor ALD, "
+            "direct FZ-loss, and GAS should be read as unavailable diagnostics when "
+            "their optimizers produce no valid forecast rows."
+        ),
+        (
+            "benchmark floor and ML-tail suites both completed with zero recorded forecast "
+            "failures; advanced benchmark rows are nonblocking diagnostics in this run."
+        ),
+    )
+
+
 def _full_run_results_markdown(
     *,
     run_dir: Path,
@@ -335,8 +403,6 @@ def _full_run_results_markdown(
     ml_headline_table = _metrics_table(ml_tail_metrics)
     ml_coverage_review = _coverage_review_sentence(ml_tail_metrics)
     result_matrix_table = _result_matrix_summary_table(result_matrix)
-    claim_scope_table = _claim_scope_markdown_table()
-    opening_gap_scale_text = _opening_gap_scale_text(panel)
     metric_artifact_table = _metric_artifact_relationship_table(
         ml_tail_metrics=ml_tail_metrics,
         ml_tail_metrics_per_model=ml_tail_metrics_per_model,
@@ -353,40 +419,6 @@ def _full_run_results_markdown(
         or benchmark_status.get("common_sample_status")
         or "unknown"
     )
-    advanced_forecast_rows = int(
-        _optional_float(benchmark_status.get("benchmark_advanced_forecast_rows")) or 0
-    )
-    if advanced_forecast_rows > 0:
-        advanced_implementation_text = (
-            "The benchmark floor, advanced benchmark suite, and ML-tail suite are "
-            "implemented and have completed artifacts in this run."
-        )
-        advanced_implementation_bullet = (
-            "Advanced benchmark families such as CAViaR, CARE/expectile, Taylor ALD, "
-            "direct FZ-loss, and GAS now produce nonblocking empirical forecast rows; "
-            "their interpretation still follows the benchmark/restricted-sample gates."
-        )
-        advanced_bottom_line_bullet = (
-            "Benchmark floor, advanced benchmark, and ML-tail suites completed with zero "
-            "recorded forecast failures; advanced rows are implemented evidence but remain "
-            "nonblocking until author-reviewed against the same sample/inference gates."
-        )
-    else:
-        advanced_implementation_text = (
-            "The benchmark floor and ML-tail suite are implemented and have completed "
-            "artifacts in this run. The advanced benchmark layer is registered as "
-            "nonblocking, but this run has not produced empirical advanced-model "
-            "forecast rows."
-        )
-        advanced_implementation_bullet = (
-            "Advanced benchmark families such as CAViaR, CARE/expectile, Taylor ALD, "
-            "direct FZ-loss, and GAS should be read as unavailable diagnostics when "
-            "their optimizers produce no valid forecast rows."
-        )
-        advanced_bottom_line_bullet = (
-            "Benchmark floor and ML-tail suites both completed with zero recorded forecast "
-            "failures; advanced benchmark rows are nonblocking diagnostics in this run."
-        )
     ml_tail_components = _join_model_list(ml_tail_status.get("implemented_components"))
     ml_tail_status_label = display_status_label(ml_tail_status.get("status"))
     stress_table = _markdown_table(
@@ -407,13 +439,6 @@ def _full_run_results_markdown(
         figure_manifest=figure_manifest,
         run_id=run_id,
     )
-    discussion_qa = _discussion_qa(
-        advanced_implementation_text=advanced_implementation_text,
-        advanced_implementation_bullet=advanced_implementation_bullet,
-        advanced_bottom_line_bullet=advanced_bottom_line_bullet,
-        claim_scope_table=claim_scope_table,
-        opening_gap_scale_text=opening_gap_scale_text,
-    )
     target_tail_diagnostics = _target_tail_diagnostics_markdown(
         panel=panel,
         figure_manifest=figure_manifest,
@@ -433,7 +458,9 @@ hide:
 > final manuscript claims require a clean committed run and author review of the
 > tables and notes.
 
-{discussion_qa}
+## Discussion Q&A
+
+The framing questions have moved to [Discussion Q&A](discussion_qa.md). This page now focuses on the generated evidence map, figures, tables, and run metadata.
 
 {target_tail_diagnostics}
 

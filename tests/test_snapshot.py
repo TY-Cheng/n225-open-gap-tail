@@ -551,9 +551,12 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     )
 
     rendered = Path("docs/results_snapshot.md").read_text(encoding="utf-8")
+    discussion_rendered = Path("docs/discussion_qa.md").read_text(encoding="utf-8")
     assert result.snapshot_id == run_id
-    assert "Discussion Q&A" in rendered
-    _assert_discussion_qa_headings_in_order(rendered)
+    assert "Discussion Q&A](discussion_qa.md)" in rendered
+    assert "### What is the empirical question?" not in rendered
+    assert "# Discussion Q&A" in discussion_rendered
+    _assert_discussion_qa_headings_in_order(discussion_rendered)
     assert "## Target Distribution And Tail Diagnostics" in rendered
     assert "Target-distribution diagnostics are unavailable" in rendered
     assert "## Results And Discussion" in rendered
@@ -690,32 +693,27 @@ def test_target_distribution_helpers_report_manifest_fallbacks() -> None:
 
 def _assert_discussion_qa_headings_in_order(rendered: str) -> None:
     headings = [
-        "### What is the empirical question?",
-        "### Why is this an economically meaningful risk problem?",
-        "### What is forecast, and how is the target constructed?",
-        "### How are look-ahead bias controls handled?",
-        "### What information enters the forecasts?",
-        "### What models are compared?",
-        "### How do the LightGBM tail variants work?",
-        "### How are forecasts evaluated?",
-        "### How should the current benchmark-versus-ML pattern be read?",
-        "### What do left-tail and right-tail results imply?",
-        "### Which evidence can support manuscript claims?",
-        "### What are the main manuscript risks and feasible paper framing?",
+        "## What is the paper asking?",
+        "## What is the target?",
+        "## Why is the OSE open worth studying?",
+        "## What data enter the forecasts?",
+        "## What models are compared?",
+        "## How do the LightGBM+EVT variants work?",
+        "## How are forecasts judged?",
+        "## What do the current results say?",
+        "## What can the paper claim?",
     ]
-    results_start = rendered.index("## Results And Discussion")
-    qa = rendered[:results_start]
-    positions = [qa.index(heading) for heading in headings]
+    positions = [rendered.index(heading) for heading in headings]
     assert positions == sorted(positions)
     assert "conditional loss-difference diagnostic" in rendered
-    assert "The hedge-trigger diagnostic has not yet been performed for this run" in rendered
-    assert "## Technical Infrastructure Note" in rendered
+    assert "The final VaR/ES level is still 95%" in rendered
+    assert "q90" in rendered
     assert "advanced benchmark layer is registered as nonblocking" in rendered
     assert "should be read as unavailable diagnostics" in rendered
     assert "Smoke-only artifact" not in rendered
     assert ("Giacomini" + "-White") not in rendered
     assert ("G" + "W") not in rendered
-    _assert_no_unsupported_affirmative_claims(rendered)
+    _assert_no_forbidden_promotional_terms(rendered)
 
 
 def test_results_discussion_coverage_sentence_uses_test_fields() -> None:
@@ -1311,15 +1309,7 @@ def _assert_results_discussion_subsections_in_order(rendered: str) -> None:
 
 
 def _assert_no_unsupported_affirmative_claims(rendered: str) -> None:
-    forbidden_anywhere = (
-        "best",
-        "dominates",
-        "winner",
-        "superior",
-        "significantly outperforms",
-    )
-    for phrase in forbidden_anywhere:
-        assert phrase.lower() not in rendered.lower()
+    _assert_no_forbidden_promotional_terms(rendered)
 
     restricted_disclaimer_terms = (
         "hedge PnL",
@@ -1345,6 +1335,18 @@ def _assert_no_unsupported_affirmative_claims(rendered: str) -> None:
         for phrase in restricted_disclaimer_terms:
             if phrase.lower() in line.lower():
                 assert line in allowed_lines, line
+
+
+def _assert_no_forbidden_promotional_terms(rendered: str) -> None:
+    forbidden_anywhere = (
+        "best",
+        "dominates",
+        "winner",
+        "superior",
+        "significantly outperforms",
+    )
+    for phrase in forbidden_anywhere:
+        assert phrase.lower() not in rendered.lower()
 
     assert re.search(
         r"DM|MCS|unconditional evaluation sample",

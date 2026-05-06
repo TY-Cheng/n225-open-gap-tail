@@ -557,12 +557,15 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     assert "### What is the empirical question?" not in rendered
     assert "# Discussion Q&A" in discussion_rendered
     _assert_discussion_qa_headings_in_order(discussion_rendered)
-    assert "## Target Distribution And Tail Diagnostics" in rendered
+    assert "## Introduction" in rendered
+    assert "## Materials: Data And Target" in rendered
+    assert "## Methods: Model Configuration And Evaluation" in rendered
+    assert "### Target Distribution And Tail Diagnostics" in rendered
     assert "Target-distribution diagnostics are unavailable" in rendered
     assert "## Results And Discussion" in rendered
     assert "<!-- generated: results_discussion -->" in rendered
     _assert_results_discussion_subsections_in_order(rendered)
-    assert "### CPA as conditional loss-difference diagnostics" in rendered
+    assert "#### CPA as conditional loss-difference diagnostics" in rendered
     assert "Figure: dst_attenuation_left_tail" in rendered
     assert "Source: metrics/ml_tail_dst_attenuation.parquet" in rendered
     assert (
@@ -571,10 +574,11 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     assert "File: latex/figures/dst_attenuation_left_tail.png" in rendered
     assert "Gold modeling rows" in rendered
     assert "JP only" in rendered
-    assert "## Run Metadata" in rendered
-    assert "## Evidence Map" in rendered
-    assert "## Paper-Facing Table And Figure Gallery" in rendered
-    assert "### Table Manifest" in rendered
+    assert "### Run Metadata" in rendered
+    assert "### Evidence Map" in rendered
+    assert "## Appendix: Tables, Figures, And Run Artifacts" in rendered
+    assert "### Paper-Facing Table And Figure Gallery" in rendered
+    assert "#### Table Manifest" in rendered
     assert "ml_tail_nested_information_set_table" in rendered
     assert "![dst_attenuation_left_tail]" in rendered
     assert "figures/tailrisk_test/dst_attenuation_left_tail.png" in rendered
@@ -1295,14 +1299,14 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
 
 def _assert_results_discussion_subsections_in_order(rendered: str) -> None:
     headings = [
-        "### Data and timing audit",
-        "### Benchmark floor and advanced benchmarks",
-        "### Left/right ML-tail nested information sets",
-        "### Restricted model-family comparison",
-        "### Coverage and inference gates",
-        "### CPA as conditional loss-difference diagnostics",
-        "### Supporting diagnostics",
-        "### Not yet claimed",
+        "#### Data and timing audit",
+        "#### Benchmark floor and advanced benchmarks",
+        "#### Left/right ML-tail nested information sets",
+        "#### Restricted model-family comparison",
+        "#### Coverage and inference gates",
+        "#### CPA as conditional loss-difference diagnostics",
+        "#### Supporting diagnostics",
+        "#### Not yet claimed",
     ]
     positions = [rendered.index(heading) for heading in headings]
     assert positions == sorted(positions)
@@ -1319,7 +1323,7 @@ def _assert_no_unsupported_affirmative_claims(rendered: str) -> None:
         "causal mechanism",
         "trading signal",
     )
-    not_claimed_start = rendered.index("### Not yet claimed")
+    not_claimed_start = rendered.index("#### Not yet claimed")
     not_claimed_end = rendered.find("\n## ", not_claimed_start + 1)
     not_claimed = (
         rendered[not_claimed_start:]

@@ -2,6 +2,38 @@
 from __future__ import annotations
 
 
+def advanced_benchmark_qa_text(advanced_forecast_rows: int) -> tuple[str, str, str]:
+    if advanced_forecast_rows > 0:
+        return (
+            "The benchmark floor, advanced benchmark suite, and ML-tail suite are implemented and have completed artifacts in this run.",
+            (
+                "Advanced benchmark families such as CAViaR, CARE/expectile, Taylor ALD, "
+                "direct FZ-loss, and GAS produce nonblocking empirical forecast rows; "
+                "their interpretation still follows the benchmark and restricted-sample gates."
+            ),
+            (
+                "benchmark floor, advanced benchmark, and ML-tail suites completed with zero "
+                "recorded forecast failures; advanced rows are implemented evidence but remain "
+                "nonblocking until author-reviewed against the same sample and inference gates."
+            ),
+        )
+    return (
+        (
+            "The benchmark floor and ML-tail suite are implemented and have completed artifacts in this run. "
+            "The advanced benchmark layer is registered as nonblocking, but this run has not produced empirical advanced-model forecast rows."
+        ),
+        (
+            "Advanced benchmark families such as CAViaR, CARE/expectile, Taylor ALD, "
+            "direct FZ-loss, and GAS should be read as unavailable diagnostics when "
+            "their optimizers produce no valid forecast rows."
+        ),
+        (
+            "benchmark floor and ML-tail suites both completed with zero recorded forecast "
+            "failures; advanced benchmark rows are nonblocking diagnostics in this run."
+        ),
+    )
+
+
 def discussion_qa_markdown(
     *,
     advanced_implementation_text: str,

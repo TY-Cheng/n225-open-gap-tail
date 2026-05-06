@@ -358,6 +358,14 @@ def test_conditional_q90_probability_uses_oof_breach_rate() -> None:
             q90_oof_breach_rate=0.05,
             tail_level=0.95,
         )
+    with pytest.raises(
+        paper_module.PipelineRunError,
+        match="unavailable_invalid_q90_excess_probability",
+    ):
+        paper_core._q90_excess_probability_for_tail_level(
+            q90_oof_breach_rate=0.10,
+            tail_level=1.10,
+        )
 
 
 def test_q90_gate_statuses_are_partitioned() -> None:
@@ -478,6 +486,80 @@ def test_pot_gpd_excess_tail_records_fit_failure_statuses(
         min_exceedances=10,
     )
     assert optimizer_failed["gpd_fit_status"] == "unavailable_optimizer_failed"
+
+    monkeypatch.setattr(
+        "n225_open_gap_tail.forecasting.stats.genpareto.fit",
+        lambda *args, **kwargs: (math.nan, 0.0, 1.0),
+    )
+    invalid_shape = paper_core._pot_gpd_excess_tail(
+        excesses=np.linspace(0.01, 1.0, 40),
+        tail_level=0.95,
+        gpd_probability=0.5,
+        min_exceedances=10,
+    )
+    assert invalid_shape["gpd_fit_status"] == "unavailable_invalid_shape"
+    assert invalid_shape["gpd_es_status"] == "unavailable_gpd_fit_failed"
+
+    monkeypatch.setattr(
+        "n225_open_gap_tail.forecasting.stats.genpareto.fit",
+        lambda *args, **kwargs: (0.1, 0.0, 1.0),
+    )
+    original_select_evt_shape_and_scale = benchmark_models._select_evt_shape_and_scale
+    monkeypatch.setattr(
+        "n225_open_gap_tail.models.benchmark._select_evt_shape_and_scale",
+        lambda **kwargs: (
+            {
+                "shape_final": 0.1,
+                "shape_method": "test",
+                "cap_policy": "none",
+                "cap_hit": False,
+                "evi": {},
+                "ei": {},
+            },
+            {"scale_final": -1.0, "scale_refit_status": "test_negative_scale"},
+        ),
+    )
+    negative_scale = paper_core._pot_gpd_excess_tail(
+        excesses=np.linspace(0.01, 1.0, 40),
+        tail_level=0.95,
+        gpd_probability=0.5,
+        min_exceedances=10,
+    )
+    assert negative_scale["gpd_fit_status"] == "unavailable_negative_scale"
+    assert negative_scale["gpd_es_status"] == "unavailable_gpd_fit_failed"
+
+    monkeypatch.setattr(
+        "n225_open_gap_tail.forecasting.stats.genpareto.fit",
+        lambda *args, **kwargs: (0.1, 0.0, 1.0),
+    )
+    monkeypatch.setattr(
+        "n225_open_gap_tail.models.benchmark._select_evt_shape_and_scale",
+        original_select_evt_shape_and_scale,
+    )
+    monkeypatch.setattr(
+        "n225_open_gap_tail.forecasting.stats.genpareto.ppf",
+        lambda *args, **kwargs: math.nan,
+    )
+    invalid_quantile = paper_core._pot_gpd_excess_tail(
+        excesses=np.linspace(0.01, 1.0, 40),
+        tail_level=0.95,
+        gpd_probability=0.5,
+        min_exceedances=10,
+    )
+    assert invalid_quantile["gpd_fit_status"] == "unavailable_invalid_quantile"
+
+    monkeypatch.setattr(
+        "n225_open_gap_tail.forecasting.stats.genpareto.ppf",
+        lambda *args, **kwargs: 0.5,
+    )
+    unknown_variant = paper_core._pot_gpd_excess_tail(
+        excesses=np.linspace(0.01, 1.0, 40),
+        tail_level=0.95,
+        gpd_probability=0.5,
+        min_exceedances=10,
+        evt_variant="not_registered",
+    )
+    assert unknown_variant["gpd_fit_status"] == "unavailable_optimizer_failed"
 
     monkeypatch.setattr(
         "n225_open_gap_tail.forecasting.stats.genpareto.fit",

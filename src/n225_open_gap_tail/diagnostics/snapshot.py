@@ -27,6 +27,9 @@ from n225_open_gap_tail.diagnostics.model_comparison import _all_model_compariso
 from n225_open_gap_tail.diagnostics.results_discussion import (
     generate_results_discussion as _generate_results_discussion,
 )
+from n225_open_gap_tail.diagnostics.snapshot_qa import (
+    advanced_benchmark_qa_text as _advanced_benchmark_qa_text,
+)
 from n225_open_gap_tail.diagnostics.snapshot_qa import discussion_qa_markdown as _discussion_qa
 from n225_open_gap_tail.diagnostics.target_distribution import (
     opening_gap_scale_text as _opening_gap_scale_text,
@@ -237,50 +240,15 @@ def _full_run_discussion_qa_markdown(
         advanced_implementation_text,
         advanced_implementation_bullet,
         advanced_bottom_line_bullet,
-    ) = _advanced_benchmark_qa_text(benchmark_status)
+    ) = _advanced_benchmark_qa_text(
+        int(_optional_float(benchmark_status.get("benchmark_advanced_forecast_rows")) or 0)
+    )
     return _discussion_qa(
         advanced_implementation_text=advanced_implementation_text,
         advanced_implementation_bullet=advanced_implementation_bullet,
         advanced_bottom_line_bullet=advanced_bottom_line_bullet,
         claim_scope_table=_claim_scope_markdown_table(),
         opening_gap_scale_text=_opening_gap_scale_text(panel),
-    )
-
-
-def _advanced_benchmark_qa_text(
-    benchmark_status: dict[str, object],
-) -> tuple[str, str, str]:
-    advanced_forecast_rows = int(
-        _optional_float(benchmark_status.get("benchmark_advanced_forecast_rows")) or 0
-    )
-    if advanced_forecast_rows > 0:
-        return (
-            "The benchmark floor, advanced benchmark suite, and ML-tail suite are implemented and have completed artifacts in this run.",
-            (
-                "Advanced benchmark families such as CAViaR, CARE/expectile, Taylor ALD, "
-                "direct FZ-loss, and GAS produce nonblocking empirical forecast rows; "
-                "their interpretation still follows the benchmark and restricted-sample gates."
-            ),
-            (
-                "benchmark floor, advanced benchmark, and ML-tail suites completed with zero "
-                "recorded forecast failures; advanced rows are implemented evidence but remain "
-                "nonblocking until author-reviewed against the same sample and inference gates."
-            ),
-        )
-    return (
-        (
-            "The benchmark floor and ML-tail suite are implemented and have completed artifacts in this run. "
-            "The advanced benchmark layer is registered as nonblocking, but this run has not produced empirical advanced-model forecast rows."
-        ),
-        (
-            "Advanced benchmark families such as CAViaR, CARE/expectile, Taylor ALD, "
-            "direct FZ-loss, and GAS should be read as unavailable diagnostics when "
-            "their optimizers produce no valid forecast rows."
-        ),
-        (
-            "benchmark floor and ML-tail suites both completed with zero recorded forecast "
-            "failures; advanced benchmark rows are nonblocking diagnostics in this run."
-        ),
     )
 
 
@@ -307,22 +275,25 @@ def _full_run_results_markdown(
     result_matrix = _read_parquet_optional(paths["ml_tail_result_matrix"])
     benchmark_stress = _read_parquet_optional(paths["benchmark_stress_windows"])
     ml_tail_stress = _read_parquet_optional(paths["ml_tail_stress_windows"])
-    results_discussion = _generate_results_discussion(
-        manifest=manifest,
-        paths=paths,
-        data_vintage=data_vintage,
-        benchmark_status=benchmark_status,
-        ml_tail_status=ml_tail_status,
-        leakage_summary=leakage_summary,
-        figure_manifest=figure_manifest,
-        panel=panel,
-        calendar=calendar,
-        benchmark_metrics=benchmark_metrics,
-        ml_tail_metrics=ml_tail_metrics,
-        result_matrix=result_matrix,
-        benchmark_stress=benchmark_stress,
-        ml_tail_stress=ml_tail_stress,
-    )
+    results_discussion = _demote_markdown_headings(
+        _generate_results_discussion(
+            manifest=manifest,
+            paths=paths,
+            data_vintage=data_vintage,
+            benchmark_status=benchmark_status,
+            ml_tail_status=ml_tail_status,
+            leakage_summary=leakage_summary,
+            figure_manifest=figure_manifest,
+            panel=panel,
+            calendar=calendar,
+            benchmark_metrics=benchmark_metrics,
+            ml_tail_metrics=ml_tail_metrics,
+            result_matrix=result_matrix,
+            benchmark_stress=benchmark_stress,
+            ml_tail_stress=ml_tail_stress,
+        ),
+        levels=1,
+    ).replace("### Results And Discussion", "### Results interpretation and claim boundaries")
 
     run_id = str(manifest.get("run_id") or run_dir.name)
     panel_bounds = _panel_bounds(panel)
@@ -435,14 +406,20 @@ def _full_run_results_markdown(
     artifact_table = _artifact_table(paths)
     evidence_map = _snapshot_gallery.evidence_map_mermaid()
     table_manifest_table = _snapshot_gallery.table_manifest_markdown(table_manifest)
-    figure_gallery = _snapshot_gallery.figure_gallery_markdown(
-        figure_manifest=figure_manifest,
-        run_id=run_id,
+    figure_gallery = _demote_markdown_headings(
+        _snapshot_gallery.figure_gallery_markdown(
+            figure_manifest=figure_manifest,
+            run_id=run_id,
+        ),
+        levels=1,
     )
-    target_tail_diagnostics = _target_tail_diagnostics_markdown(
-        panel=panel,
-        figure_manifest=figure_manifest,
-        run_id=run_id,
+    target_tail_diagnostics = _demote_markdown_headings(
+        _target_tail_diagnostics_markdown(
+            panel=panel,
+            figure_manifest=figure_manifest,
+            run_id=run_id,
+        ),
+        levels=1,
     )
 
     return f"""---
@@ -458,27 +435,13 @@ hide:
 > final manuscript claims require a clean committed run and author review of the
 > tables and notes.
 
-## Discussion Q&A
+## Introduction
 
-The framing questions have moved to [Discussion Q&A](discussion_qa.md). This page now focuses on the generated evidence map, figures, tables, and run metadata.
+The framing questions have moved to [Discussion Q&A](discussion_qa.md). This snapshot is organized as a paper-facing evidence map: data and target construction first, model and evaluation design second, results third, and paper-facing exports and artifact provenance at the end.
 
-{target_tail_diagnostics}
+The main result tables are in the Results section. Full table and figure provenance is collected in the Appendix section, including source artifacts and claim scopes for paper-facing outputs.
 
-{results_discussion}
-
-## Run Metadata
-
-{metadata_table}
-
-- `combined_clean_start` is the modeling lower bound; dates before it remain audit history rather than forecast evidence.
-- `git_dirty` is recorded so dirty runs can be rejected before manuscript tables are frozen.
-- `fred_vintage_safe=False` is an explicit limitation: FRED data are current historical values with conservative release lag, not real-time vintage observations.
-
-## Technical Infrastructure Note
-
-- Runtime imports are explicit at the module boundary; no dynamic runtime namespace bridge is required to generate this snapshot. This infrastructure note is separate from empirical claim boundaries.
-
-## Evidence Map
+### Evidence Map
 
 ```mermaid
 {evidence_map}
@@ -488,12 +451,60 @@ The framing questions have moved to [Discussion Q&A](discussion_qa.md). This pag
 - The middle branch compares benchmark floors, advanced econometric benchmarks, and ML-tail forecasts on registered loss units.
 - The right branch separates headline nested information sets, restricted model-family comparisons, unconditional DM/MCS inference, CPA diagnostics, and supporting figures.
 
-## Pipeline Structure
+## Materials: Data And Target
+
+### Run Metadata
+
+{metadata_table}
+
+- `combined_clean_start` is the modeling lower bound; dates before it remain audit history rather than forecast evidence.
+- `git_dirty` is recorded so dirty runs can be rejected before manuscript tables are frozen.
+- `fred_vintage_safe=False` is an explicit limitation: FRED data are current historical values with conservative release lag, not real-time vintage observations.
+
+{target_tail_diagnostics}
+
+### Gold Panel Construction
+
+{panel_table}
+
+{target_table}
+
+- The cache lower bound is 2016-07-19, but XLC/core predictor coverage pushes the actual forecast sample to the combined clean start.
+- Target exclusion is explicit: roll/SQ windows and the single missing reference price are carried as audit evidence, not silently dropped.
+- The forecast-sample reason column makes the sample boundary reproducible row by row.
+
+### Calendar And Timing Map
+
+{calendar_table}
+
+- The map covers EST/EDT, early closes, U.S./Japan holiday desynchronization, and normal trading alignments.
+- Desync rows are not treated as normal forecast rows.
+- The timing map is part of the leakage-bound gold artifact, not ad hoc evaluation logic.
+
+### Feature Coverage
+
+{feature_table}
+
+- U.S. core, proxy ETFs, minute late-session features, CBOE VIX, FRED rates, FRED H.10 FX, and any audit-gated options-risk fields are separated by source family and block.
+- Credit-spread FRED features are enriched/optional and visibly late-starting, so they do not move the core clean start.
+- Feature coverage should be read together with the leakage summary; high coverage alone is not enough without timestamp validity.
+
+### Leakage Audit
+
+{leakage_table}
+
+- Zero failures means no audited row violated the hard timestamp invariant.
+- Warnings are retained because they identify conservative-lag or missing-feature situations that may matter for interpretation.
+- The panel signature is deterministic and binds the leakage check to the current gold panel/config.
+
+## Methods: Model Configuration And Evaluation
+
+### Pipeline Structure
 
 | Step | Layer | Purpose |
 | --- | --- | --- |
 | 1 | Vendor and calendar sources | Pull or read J-Quants, Massive, FRED, CBOE, and exchange-calendar inputs. |
-| 2 | Bronze and silver cache | Preserve typed vendor/cache rows, then normalize timestamp-safe research features. |
+| 2 | Bronze and silver cache | Preserve typed vendor/cache rows, then normalize point-in-time research features. |
 | 3 | Gold modeling panel | Join targets, calendar map, feature coverage, and leakage-bound signatures. |
 | 4 | Leakage and coverage gates | Enforce timestamp ordering and sample eligibility before evaluation. |
 | 5 | Benchmark floor and ML-tail registry | Run target-history/econometric floors and LightGBM tail-model families. |
@@ -504,41 +515,19 @@ The framing questions have moved to [Discussion Q&A](discussion_qa.md). This pag
 - Durable modeling evidence lives under `data/gold`; forecast/evaluation/reporting read from gold and reports.
 - Run-specific forecasts, metrics, diagnostics, and LaTeX tables live under `reports/runs/<run_id>`.
 
-## Gold Panel Construction
+### Model And Evaluation Protocol
 
-{panel_table}
+- The registered risk level is `tail_level = 0.95`; the nominal VaR exception rate is 5%.
+- Benchmarks use target-history information only. ML-tail models add predictors through fixed nested information sets.
+- Most specifications use expanding pre-forecast training histories. The rolling-quantile benchmark is the designed exception and uses the most recent 1,000 clean observations.
+- LightGBM hyperparameters are held fixed across information sets and refit dates; the snapshot reports model-family evidence rather than tuning-search evidence.
+- DM/MCS inference is read on average across the unconditional evaluation sample. CPA is read as a conditional loss-difference diagnostic, not as a forecasting model.
 
-{target_table}
+## Results And Discussion
 
-- The cache lower bound is 2016-07-19, but XLC/core predictor coverage pushes the actual forecast sample to the combined clean start.
-- Target exclusion is explicit: roll/SQ windows and the single missing reference price are carried as audit evidence, not silently dropped.
-- The forecast-sample reason column makes the sample boundary reproducible row by row.
+### Main result tables
 
-## Calendar And Timing Map
-
-{calendar_table}
-
-- The map covers EST/EDT, early closes, U.S./Japan holiday desynchronization, and normal trading alignments.
-- Desync rows are not treated as normal forecast rows.
-- The timing map is part of the leakage-bound gold artifact, not ad hoc evaluation logic.
-
-## Feature Coverage
-
-{feature_table}
-
-- U.S. core, proxy ETFs, minute late-session features, CBOE VIX, FRED rates, FRED H.10 FX, and any audit-gated options-risk fields are separated by source family and block.
-- Credit-spread FRED features are enriched/optional and visibly late-starting, so they do not move the core clean start.
-- Feature coverage should be read together with the leakage summary; high coverage alone is not enough without timestamp validity.
-
-## Leakage Audit
-
-{leakage_table}
-
-- Zero failures means no audited row violated the hard timestamp invariant.
-- Warnings are retained because they identify conservative-lag or missing-feature situations that may matter for interpretation.
-- The panel signature is deterministic and binds the leakage check to the current gold panel/config.
-
-## Benchmark Suite
+#### Benchmark Suite
 
 Status: `{benchmark_status_label}`; forecast rows: `{benchmark_status.get("forecast_rows")}`; metric rows: `{benchmark_status.get("metric_rows")}`; failures: `{benchmark_status.get("failures")}`.
 
@@ -551,7 +540,7 @@ Status: `{benchmark_status_label}`; forecast rows: `{benchmark_status.get("forec
 - The table is not a leaderboard by itself; coverage, exception counts, quantile loss, and FZ loss must be read together.
 - Common-sample rows are reported directly so readers can see the effective evidence size.
 
-## ML-Tail Headline Ladder
+#### ML-Tail Headline Ladder
 
 Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; forecast rows: `{ml_tail_status.get("forecast_rows")}`; failures: `{ml_tail_status.get("failures")}`.
 
@@ -562,7 +551,7 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 - Differences across information blocks are candidate forecast evidence only after the common-sample, coverage, and inference diagnostics are reviewed.
 - {ml_coverage_review}
 
-### ML-tail artifact relationship
+#### ML-tail artifact relationship
 
 {metric_artifact_table}
 
@@ -570,7 +559,9 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 - `ml_tail_metrics_per_model.parquet` reports each implemented ML-tail model on its own valid OOS rows; it is useful for debugging coverage but is not a cross-model comparison table.
 - `ml_tail_result_matrix.parquet` creates restricted common samples for VaR-only and VaR-ES comparisons across model families and within-model information-set increments.
 
-### All-model diagnostic comparison
+### Other result tables
+
+#### All-model diagnostic scan
 
 {all_model_comparison_table}
 
@@ -578,7 +569,7 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 - Mean and standard deviation are computed across registered metric rows for the same suite/model/information-set configuration; for most rows this summarizes left- and right-tail metrics.
 - It is a diagnostic scan, not the formal cross-model comparison table. Cross-model claims still require common-sample result-matrix, DM, and MCS evidence because valid dates and model gates can differ.
 
-## Result Matrix Layer
+#### Restricted Common-Sample Result Matrix
 
 {result_matrix_table}
 
@@ -587,9 +578,23 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 - Restricted direct-quantile performance is only a comparison anchor for the tail-model family; it does not replace the headline direct-quantile evidence.
 - DM and MCS records are emitted only where registered row-count and exception-count gates pass; otherwise the result matrix remains descriptive.
 
-## Paper-Facing Table And Figure Gallery
+#### Stress And Diagnostic Windows
 
-### Table Manifest
+{stress_table}
+
+- Stress windows identify high-loss or high-volatility subsamples for two-sided risk diagnostics.
+- These rows use reproducible full-sample classifiers in this first pass, so they should be described as diagnostics rather than a live stress classifier.
+- They are useful for finding whether model behavior changes in difficult regimes before writing manuscript discussion.
+
+{results_discussion}
+
+## Appendix: Tables, Figures, And Run Artifacts
+
+The appendix collects generated exports and provenance. The main Results section refers back to these files when a table or figure is suitable for manuscript use.
+
+### Paper-Facing Table And Figure Gallery
+
+#### Table Manifest
 
 {table_manifest_table}
 
@@ -598,21 +603,17 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 
 {figure_gallery}
 
-## Stress And Diagnostic Windows
-
-{stress_table}
-
-- Stress windows identify high-loss or high-volatility subsamples for two-sided risk diagnostics.
-- These rows use reproducible full-sample classifiers in this first pass, so they should be described as diagnostics rather than a live stress classifier.
-- They are useful for finding whether model behavior changes in difficult regimes before writing manuscript discussion.
-
-## Artifact Index
+### Artifact Index
 
 {artifact_table}
 
 - All paths above are local ignored artifacts; they are reproducible outputs, not tracked source files.
 - Forecast/reporting rebuilds should read these artifacts and must not call vendor APIs.
 - If this page is stale, rerun `just snapshot` after a completed `just full` or pass an explicit run id to the CLI snapshot command.
+
+### Technical Infrastructure Note
+
+- Runtime imports are explicit at the module boundary; no dynamic runtime namespace bridge is required to generate this snapshot. This infrastructure note is separate from empirical claim boundaries.
 """
 
 
@@ -637,6 +638,17 @@ def _markdown_table(headers: tuple[str, ...], rows: Sequence[tuple[object, ...]]
     divider = "| " + " | ".join("---" for _ in headers) + " |"
     body = ["| " + " | ".join(_markdown_cell(cell) for cell in row) + " |" for row in rows]
     return "\n".join([header, divider, *body])
+
+
+def _demote_markdown_headings(markdown: str, *, levels: int) -> str:
+    prefix = "#" * levels
+    lines = []
+    for line in markdown.splitlines():
+        if line.startswith("#"):
+            lines.append(f"{prefix}{line}")
+        else:
+            lines.append(line)
+    return "\n".join(lines)
 
 
 def _markdown_cell(value: object) -> str:

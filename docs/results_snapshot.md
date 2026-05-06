@@ -11,18 +11,62 @@ hide:
 > final manuscript claims require a clean committed run and author review of the
 > tables and notes.
 
-## Discussion Q&A
+## Introduction
 
-The framing questions have moved to [Discussion Q&A](discussion_qa.md). This page now focuses on the generated evidence map, figures, tables, and run metadata.
+The framing questions have moved to [Discussion Q&A](discussion_qa.md). This snapshot is organized as a paper-facing evidence map: data and target construction first, model and evaluation design second, results third, and paper-facing exports and artifact provenance at the end.
 
-## Target Distribution And Tail Diagnostics
+The main result tables are in the Results section. Full table and figure provenance is collected in the Appendix section, including source artifacts and claim scopes for paper-facing outputs.
+
+### Evidence Map
+
+```mermaid
+flowchart LR
+  A["Vendor and calendar inputs"] --> B["Bronze / silver caches"]
+  B --> C["Gold panel and timing map"]
+  C --> D["Leakage and sample gates"]
+  D --> E["Benchmark floor and advanced benchmarks"]
+  D --> F["ML-tail nested information sets"]
+  E --> G["Metrics, DM/MCS, Murphy diagnostics"]
+  F --> G
+  F --> H["CPA conditional loss-difference diagnostics"]
+  G --> I["Tables and figures"]
+  H --> I
+  I --> J["Generated results snapshot"]
+```
+
+- The left branch binds vendor and calendar inputs into a timestamp-audited gold panel.
+- The middle branch compares benchmark floors, advanced econometric benchmarks, and ML-tail forecasts on registered loss units.
+- The right branch separates headline nested information sets, restricted model-family comparisons, unconditional DM/MCS inference, CPA diagnostics, and supporting figures.
+
+## Materials: Data And Target
+
+### Run Metadata
+
+| Field | Value |
+| --- | --- |
+| Run ID | `tailrisk_20160719_20260504_20260506T035942Z_commit_0c14f1be` |
+| Artifact root | `reports/runs/tailrisk_20160719_20260504_20260506T035942Z_commit_0c14f1be` |
+| Claim level | `research_candidate` |
+| Requested window | `['2016-07-19', '2026-05-04']` |
+| Combined clean start | `2018-06-20` |
+| Gold panel dates | `2016-07-19 to 2026-05-01` |
+| Forecast sample dates | `2018-06-20 to 2026-05-01 (1661 rows)` |
+| Git commit | `0c14f1bea7cf5a604b313cfb356fc0d75b490774` |
+| Git dirty | `False` |
+| FRED vintage safe | `False` |
+
+- `combined_clean_start` is the modeling lower bound; dates before it remain audit history rather than forecast evidence.
+- `git_dirty` is recorded so dirty runs can be rejected before manuscript tables are frozen.
+- `fred_vintage_safe=False` is an explicit limitation: FRED data are current historical values with conservative release lag, not real-time vintage observations.
+
+### Target Distribution And Tail Diagnostics
 
 - These diagnostics are computed from the raw clean settlement-to-open target `gap_t`; left loss is `-gap_t`, and right loss is `gap_t`.
 - The purpose is to show why the dependent variable is a tail-risk object before comparing VaR/ES forecasts.
 - Positive tail-shape estimates, heavy empirical tails, and upward mean-excess patterns are empirical support for using heavy-tail approximations such as POT-GPD; they are not a finite-sample proof of Frechet max-domain attraction.
 - Raw target diagnostics motivate VaR/ES and EVT modeling. They do not validate LightGBM+EVT forecasts; forecast validity must be read from standardized residual-loss EVT diagnostics and out-of-sample VaR/ES backtests.
 
-### Target Summary
+#### Target Summary
 
 | Measure | Value |
 | --- | --- |
@@ -42,7 +86,7 @@ The framing questions have moved to [Discussion Q&A](discussion_qa.md). This pag
 | Jarque-Bera p-value | 0 |
 | Jarque-Bera statistic | 11972.7 |
 
-### Raw-Tail EVT Diagnostics
+#### Raw-Tail EVT Diagnostics
 
 | Tail | Threshold probability | Threshold | Exceedances | Mean excess | GPD xi | GPD scale | Hill xi |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -65,7 +109,7 @@ The framing questions have moved to [Discussion Q&A](discussion_qa.md). This pag
 - The GPD threshold table is computed on raw left loss, raw right loss, and the absolute gap; it should not be read as a forecast-model diagnostic.
 - The Hill and GPD shape estimates are deliberately reported over multiple thresholds because tail-index estimates are sensitive in samples of this length.
 
-### Target Distribution Figures
+#### Target Distribution Figures
 
 | Figure | Tail side | Source | Claim scope | Docs file |
 | --- | --- | --- | --- | --- |
@@ -76,159 +120,7 @@ The framing questions have moved to [Discussion Q&A](discussion_qa.md). This pag
 | `target_mean_excess` | `left_right_target_distribution` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260504_20260506T035942Z_commit_0c14f1be/target_mean_excess.png` |
 | `target_hill_plot` | `left_right_target_distribution` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260504_20260506T035942Z_commit_0c14f1be/target_hill_plot.png` |
 
-
-## Results And Discussion
-
-<!-- generated: results_discussion -->
-
-### Data and timing audit
-
-- The gold timing map covers `2016-07-19 to 2026-05-01` and the combined clean start is `2018-06-20`.
-- No forecast-sample rows before `2018-06-20` enter the modeling evidence.
-- The leakage check reports status `pass_with_warnings` with zero leakage failures and `680103` warnings.
-- FRED vintage safety is recorded as `False`; FRED values use conservative release timing but remain current historical observations rather than ALFRED real-time vintages.
-
-### Benchmark floor and advanced benchmarks
-
-- `benchmark_metrics.parquet` reports `12` common-sample rows across `6` benchmark model families and `2` tail side(s), while benchmark forecasts contain `21146` model-date rows.
-- Benchmark-floor models are external target-history and econometric baselines; this section does not rank them.
-- Advanced benchmark rows are implemented for `10` model families and contribute `13214` nonblocking forecast rows; these rows are claim-gated diagnostics unless a manuscript table explicitly promotes them through the same sample and inference review.
-- Benchmark-floor breach rates have a median of `0.0605144`, within 2.5 percentage points of the nominal level, indicating reasonable coverage calibration relative to the ML-tail models whose breach rates are reported in the nested-information-set section.
-
-### Left/right ML-tail nested information sets
-
-- `ml_tail_metrics.parquet` defines the headline ML-tail comparison across nested information sets for this run.
-- The headline artifact contains `4` information sets, `1` tail level(s), and `2` tail side(s); the retained headline model rows are `LGBM direct quantile`.
-- The implemented ML-tail registry is `LGBM direct quantile`, `LGBM location-scale empirical`, `LGBM POT-GPD plain MLE`, `LGBM POT-GPD capped MLE`, `LGBM POT-GPD EVI shrink`, `LGBM POT-GPD EI-weighted`, `LGBM POT-GPD stabilized`, `LGBM conditional q90 POT-GPD plain MLE`, `LGBM conditional q90 POT-GPD stabilized`, `LGBM median/MAD POT-GPD plain MLE`, `LGBM median/MAD POT-GPD stabilized`, `LGBM median/IQR POT-GPD plain MLE`, but the headline nested-information-set comparison should be read only from `ml_tail_metrics.parquet`.
-- The nested information sets report downside-risk and upside-risk surfaces separately. The registered artifacts show different left/right patterns, and the generator does not assume that the two sides share the same economic mechanism.
-- Coverage warning: all `8` headline rows exhibit VaR breach rates (`0.0763636` to `0.127273`) that exceed the nominal level by more than 2.5 percentage points. Quantile-loss and FZ-loss differences across the nested information sets must be interpreted in this context; lower loss scores may partly reflect less conservative VaR estimates rather than better conditional tail calibration.
-- On `left_tail`, the largest quantile-loss change occurs at the first information-set augmentation (adding U.S. close core); subsequent additions of Japan proxy and Asia proxy ETFs contribute diminishing incremental loss changes. This saturation pattern is descriptive and does not automatically reduce the value of the broader information set.
-- The nested information sets are used to assess candidate incremental U.S.-close information under strict common-sample rules; they do not by themselves establish forecast improvement.
-
-### Restricted model-family comparison
-
-- `ml_tail_result_matrix.parquet` contains restricted common-sample comparisons for `12` LightGBM tail-model families.
-- The restricted common-N range is `0 to 550` and the joint-exception range is `0 to 87`.
-- Recorded claim scopes are `restricted_model_comparison_not_headline`; these rows are restricted evidence and cannot replace the headline nested-information-set comparison.
-- The tail-model family comparison is severely sample-limited: the largest restricted common-N is `28` rows. No model-family ranking claim is supportable from this restricted sample; extended OOS coverage is needed before tail-model family ranking becomes meaningful.
-- Result-matrix inference is recorded separately from the headline suite-level DM/MCS: restricted DM records include `120` gate-pass rows and `210` unavailable rows; restricted MCS records include `0` gate-pass rows and `144` unavailable rows. These entries are restricted common-sample diagnostics, not headline model-family rankings.
-- The result matrix is a matched-date diagnostic layer. It should not be worded as one family being better than another.
-
-### Coverage and inference gates
-
-- Coverage review flags `8/8` headline rows with breach rates more than 2.5 percentage points from nominal coverage; Kupiec p-values fall below 0.05 in `8/8` rows and Christoffersen p-values fall below 0.05 in `0/8` rows where reported.
-- Model-eviction artifacts record `8` retained rows and `80` non-retained rows under the headline sample policy.
-- Block-bootstrap DM and HLN Tmax MCS artifacts are unconditional forecast-comparison diagnostics; any p-value should be read on average across the unconditional evaluation sample, not as condition-specific evidence.
-- Loss differentials alone do not constitute an improvement claim; coverage, exception counts, sample gates, and inference status must be reviewed together.
-- Result-matrix tail-event power flags and suite-level inference gates report `36` restricted rows with insufficient tail-event power and `0/36` unavailable DM/MCS inference rows.
-
-### CPA as conditional loss-difference diagnostics
-
-- The ML-tail nested-information-set CPA artifact is a conditional loss-difference diagnostic across `2` tail side(s), with `42` registered row(s), `42` HAC-Wald gate pass(es), and loss families `var_es_fz_loss`, `var_quantile_loss`.
-- The registered cross-model CPA artifact is a conditional loss-difference diagnostic with `608` row(s), `608` HAC-Wald gate pass(es), and loss families `var_es_fz_loss`, `var_quantile_loss`.
-- Quantile-loss CPA and FZ-loss CPA are downstream inference over existing loss differentials; CPA does not generate VaR/ES forecasts and does not replace DM/MCS.
-
-### Supporting diagnostics
-
-- Supporting LaTeX diagnostic table files are present for `4/4` registered diagnostic families.
-- `ml_tail_dst_attenuation.parquet` contains `6` DST attenuation rows; these are descriptive timing-regime forecast diagnostics. They do not establish a structural timing mechanism.
-- ES severity diagnostics contain `108` finite rows with mean exceedance severity ranging from `6.58221e-05` to `0.0127453`; this is conditional-on-exception evidence.
-- The diagnostic 75th-percentile VaR trigger rule marks `15295` model-date rows; `1000` of those rows coincide with VaR exceptions out of `3614` total exceptions, and mean triggered exception severity is `0.013949`. This is a pre-open risk-monitoring diagnostic, not hedge PnL, transaction-cost, or trading-alpha evidence.
-- Stress-window diagnostics contain `354` rows, and Murphy diagnostics contain `1600` ML-tail rows.
-- Feature-unavailability diagnostics contain `330` rows.
-- Figure manifest references:
-  - Figure: coverage_breach_rates_left_tail (Source: metrics/benchmark_metrics.parquet, metrics/benchmark_metrics_per_model.parquet, metrics/ml_tail_metrics.parquet, metrics/ml_tail_metrics_per_model.parquet; Claim scope: coverage_diagnostic_not_headline_claim; File: latex/figures/coverage_breach_rates_left_tail.png).
-  - Figure: coverage_breach_rates_right_tail (Source: metrics/benchmark_metrics.parquet, metrics/benchmark_metrics_per_model.parquet, metrics/ml_tail_metrics.parquet, metrics/ml_tail_metrics_per_model.parquet; Claim scope: coverage_diagnostic_not_headline_claim; File: latex/figures/coverage_breach_rates_right_tail.png).
-  - Figure: benchmark_murphy_left_tail (Source: metrics/benchmark_murphy.parquet; Claim scope: murphy_diagnostic_benchmark_floor_common_grid; File: latex/figures/benchmark_murphy_left_tail.png).
-  - Figure: benchmark_murphy_right_tail (Source: metrics/benchmark_murphy.parquet; Claim scope: murphy_diagnostic_benchmark_floor_common_grid; File: latex/figures/benchmark_murphy_right_tail.png).
-  - Figure: ml_tail_murphy_left_tail (Source: metrics/ml_tail_murphy.parquet; Claim scope: murphy_diagnostic_ml_tail_nested_information_sets_common_grid; File: latex/figures/ml_tail_murphy_left_tail.png).
-  - Figure: ml_tail_murphy_right_tail (Source: metrics/ml_tail_murphy.parquet; Claim scope: murphy_diagnostic_ml_tail_nested_information_sets_common_grid; File: latex/figures/ml_tail_murphy_right_tail.png).
-  - Figure: dst_attenuation_left_tail (Source: metrics/ml_tail_dst_attenuation.parquet; Claim scope: descriptive_dst_attenuation_not_structural_causal_identification; File: latex/figures/dst_attenuation_left_tail.png).
-  - Figure: dst_attenuation_right_tail (Source: metrics/ml_tail_dst_attenuation.parquet; Claim scope: descriptive_dst_attenuation_not_structural_causal_identification; File: latex/figures/dst_attenuation_right_tail.png).
-  - Figure: es_severity_left_tail (Source: metrics/benchmark_metrics.parquet, metrics/ml_tail_metrics.parquet, metrics/ml_tail_metrics_per_model.parquet; Claim scope: es_severity_diagnostic_not_model_selection_claim; File: latex/figures/es_severity_left_tail.png).
-  - Figure: es_severity_right_tail (Source: metrics/benchmark_metrics.parquet, metrics/ml_tail_metrics.parquet, metrics/ml_tail_metrics_per_model.parquet; Claim scope: es_severity_diagnostic_not_model_selection_claim; File: latex/figures/es_severity_right_tail.png).
-  - Figure: trigger_diagnostics_left_tail (Source: forecasts/benchmark_forecasts.parquet, forecasts/ml_tail_forecasts.parquet; Claim scope: trigger_diagnostic_not_pnl_cost_or_alpha; File: latex/figures/trigger_diagnostics_left_tail.png).
-  - Figure: trigger_diagnostics_right_tail (Source: forecasts/benchmark_forecasts.parquet, forecasts/ml_tail_forecasts.parquet; Claim scope: trigger_diagnostic_not_pnl_cost_or_alpha; File: latex/figures/trigger_diagnostics_right_tail.png).
-  - Figure: evt_standardized_qq_left_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_qq_left_tail.png).
-  - Figure: evt_standardized_log_survival_left_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_log_survival_left_tail.png).
-  - Figure: evt_standardized_mean_excess_left_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_mean_excess_left_tail.png).
-  - Figure: evt_standardized_hill_left_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_hill_left_tail.png).
-  - Figure: evt_standardized_threshold_stability_left_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_threshold_stability_left_tail.png).
-  - Figure: evt_standardized_qq_right_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_qq_right_tail.png).
-  - Figure: evt_standardized_log_survival_right_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_log_survival_right_tail.png).
-  - Figure: evt_standardized_mean_excess_right_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_mean_excess_right_tail.png).
-  - Figure: evt_standardized_hill_right_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_hill_right_tail.png).
-  - Figure: evt_standardized_threshold_stability_right_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_threshold_stability_right_tail.png).
-
-### Not yet claimed
-
-- DST attenuation rows are descriptive forecast evidence; structural DST causal identification is not claimed.
-- No hedge PnL, transaction-cost, or trading-alpha analysis is performed. The trigger table is a pre-open risk-monitoring diagnostic only.
-- Left-tail and right-tail outputs are both economic tail-risk surfaces for futures positions; neither side should be promoted beyond the sample, coverage, and inference gates without author review.
-- The current evidence does not create an automatic model-selection statement; any manuscript claim still requires author review of sample gates, coverage, loss metrics, and inference diagnostics.
-
-
-## Run Metadata
-
-| Field | Value |
-| --- | --- |
-| Run ID | `tailrisk_20160719_20260504_20260506T035942Z_commit_0c14f1be` |
-| Artifact root | `reports/runs/tailrisk_20160719_20260504_20260506T035942Z_commit_0c14f1be` |
-| Claim level | `research_candidate` |
-| Requested window | `['2016-07-19', '2026-05-04']` |
-| Combined clean start | `2018-06-20` |
-| Gold panel dates | `2016-07-19 to 2026-05-01` |
-| Forecast sample dates | `2018-06-20 to 2026-05-01 (1661 rows)` |
-| Git commit | `0c14f1bea7cf5a604b313cfb356fc0d75b490774` |
-| Git dirty | `False` |
-| FRED vintage safe | `False` |
-
-- `combined_clean_start` is the modeling lower bound; dates before it remain audit history rather than forecast evidence.
-- `git_dirty` is recorded so dirty runs can be rejected before manuscript tables are frozen.
-- `fred_vintage_safe=False` is an explicit limitation: FRED data are current historical values with conservative release lag, not real-time vintage observations.
-
-## Technical Infrastructure Note
-
-- Runtime imports are explicit at the module boundary; no dynamic runtime namespace bridge is required to generate this snapshot. This infrastructure note is separate from empirical claim boundaries.
-
-## Evidence Map
-
-```mermaid
-flowchart LR
-  A["Vendor and calendar inputs"] --> B["Bronze / silver caches"]
-  B --> C["Gold panel and timing map"]
-  C --> D["Leakage and sample gates"]
-  D --> E["Benchmark floor and advanced benchmarks"]
-  D --> F["ML-tail nested information sets"]
-  E --> G["Metrics, DM/MCS, Murphy diagnostics"]
-  F --> G
-  F --> H["CPA conditional loss-difference diagnostics"]
-  G --> I["Tables and figures"]
-  H --> I
-  I --> J["Generated results snapshot"]
-```
-
-- The left branch binds vendor and calendar inputs into a timestamp-audited gold panel.
-- The middle branch compares benchmark floors, advanced econometric benchmarks, and ML-tail forecasts on registered loss units.
-- The right branch separates headline nested information sets, restricted model-family comparisons, unconditional DM/MCS inference, CPA diagnostics, and supporting figures.
-
-## Pipeline Structure
-
-| Step | Layer | Purpose |
-| --- | --- | --- |
-| 1 | Vendor and calendar sources | Pull or read J-Quants, Massive, FRED, CBOE, and exchange-calendar inputs. |
-| 2 | Bronze and silver cache | Preserve typed vendor/cache rows, then normalize timestamp-safe research features. |
-| 3 | Gold modeling panel | Join targets, calendar map, feature coverage, and leakage-bound signatures. |
-| 4 | Leakage and coverage gates | Enforce timestamp ordering and sample eligibility before evaluation. |
-| 5 | Benchmark floor and ML-tail registry | Run target-history/econometric floors and LightGBM tail-model families. |
-| 6 | Metrics, inference, diagnostics | Build loss matrices, DM/MCS/Murphy diagnostics, stress windows, and result matrix artifacts. |
-| 7 | Results snapshot | Summarize run-specific evidence and claim boundaries for reader review. |
-
-- Data-access and cache artifacts live under `data/bronze` and `data/silver`.
-- Durable modeling evidence lives under `data/gold`; forecast/evaluation/reporting read from gold and reports.
-- Run-specific forecasts, metrics, diagnostics, and LaTeX tables live under `reports/runs/<run_id>`.
-
-## Gold Panel Construction
+### Gold Panel Construction
 
 | Measure | Value |
 | --- | --- |
@@ -251,7 +143,7 @@ flowchart LR
 - Target exclusion is explicit: roll/SQ windows and the single missing reference price are carried as audit evidence, not silently dropped.
 - The forecast-sample reason column makes the sample boundary reproducible row by row.
 
-## Calendar And Timing Map
+### Calendar And Timing Map
 
 | Measure | Value |
 | --- | --- |
@@ -265,7 +157,7 @@ flowchart LR
 - Desync rows are not treated as normal forecast rows.
 - The timing map is part of the leakage-bound gold artifact, not ad hoc evaluation logic.
 
-## Feature Coverage
+### Feature Coverage
 
 | Source family | Block | Features | Mean missing | Max missing |
 | --- | --- | --- | --- | --- |
@@ -291,7 +183,7 @@ flowchart LR
 - Credit-spread FRED features are enriched/optional and visibly late-starting, so they do not move the core clean start.
 - Feature coverage should be read together with the leakage summary; high coverage alone is not enough without timestamp validity.
 
-## Leakage Audit
+### Leakage Audit
 
 | Field | Value |
 | --- | --- |
@@ -307,7 +199,37 @@ flowchart LR
 - Warnings are retained because they identify conservative-lag or missing-feature situations that may matter for interpretation.
 - The panel signature is deterministic and binds the leakage check to the current gold panel/config.
 
-## Benchmark Suite
+## Methods: Model Configuration And Evaluation
+
+### Pipeline Structure
+
+| Step | Layer | Purpose |
+| --- | --- | --- |
+| 1 | Vendor and calendar sources | Pull or read J-Quants, Massive, FRED, CBOE, and exchange-calendar inputs. |
+| 2 | Bronze and silver cache | Preserve typed vendor/cache rows, then normalize point-in-time research features. |
+| 3 | Gold modeling panel | Join targets, calendar map, feature coverage, and leakage-bound signatures. |
+| 4 | Leakage and coverage gates | Enforce timestamp ordering and sample eligibility before evaluation. |
+| 5 | Benchmark floor and ML-tail registry | Run target-history/econometric floors and LightGBM tail-model families. |
+| 6 | Metrics, inference, diagnostics | Build loss matrices, DM/MCS/Murphy diagnostics, stress windows, and result matrix artifacts. |
+| 7 | Results snapshot | Summarize run-specific evidence and claim boundaries for reader review. |
+
+- Data-access and cache artifacts live under `data/bronze` and `data/silver`.
+- Durable modeling evidence lives under `data/gold`; forecast/evaluation/reporting read from gold and reports.
+- Run-specific forecasts, metrics, diagnostics, and LaTeX tables live under `reports/runs/<run_id>`.
+
+### Model And Evaluation Protocol
+
+- The registered risk level is `tail_level = 0.95`; the nominal VaR exception rate is 5%.
+- Benchmarks use target-history information only. ML-tail models add predictors through fixed nested information sets.
+- Most specifications use expanding pre-forecast training histories. The rolling-quantile benchmark is the designed exception and uses the most recent 1,000 clean observations.
+- LightGBM hyperparameters are held fixed across information sets and refit dates; the snapshot reports model-family evidence rather than tuning-search evidence.
+- DM/MCS inference is read on average across the unconditional evaluation sample. CPA is read as a conditional loss-difference diagnostic, not as a forecasting model.
+
+## Results And Discussion
+
+### Main result tables
+
+#### Benchmark Suite
 
 Status: `completed`; forecast rows: `21146`; metric rows: `12`; failures: `0`.
 
@@ -336,7 +258,7 @@ Status: `completed`; forecast rows: `21146`; metric rows: `12`; failures: `0`.
 - The table is not a leaderboard by itself; coverage, exception counts, quantile loss, and FZ loss must be read together.
 - Common-sample rows are reported directly so readers can see the effective evidence size.
 
-## ML-Tail Headline Ladder
+#### ML-Tail Headline Ladder
 
 Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quantile`, `LGBM location-scale empirical`, `LGBM POT-GPD plain MLE`, `LGBM POT-GPD capped MLE`, `LGBM POT-GPD EVI shrink`, `LGBM POT-GPD EI-weighted`, `LGBM POT-GPD stabilized`, `LGBM conditional q90 POT-GPD plain MLE`, `LGBM conditional q90 POT-GPD stabilized`, `LGBM median/MAD POT-GPD plain MLE`, `LGBM median/MAD POT-GPD stabilized`, `LGBM median/IQR POT-GPD plain MLE`; forecast rows: `46892`; failures: `0`.
 
@@ -356,7 +278,7 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 - Differences across information blocks are candidate forecast evidence only after the common-sample, coverage, and inference diagnostics are reviewed.
 - Coverage review: `8/8` headline rows differ from the expected breach rate by more than 2.5 percentage points, so quantile/FZ loss differences alone must not be read as forecast improvement.
 
-### ML-tail artifact relationship
+#### ML-tail artifact relationship
 
 | Artifact | Rows | Role | Claim boundary |
 | --- | --- | --- | --- |
@@ -368,7 +290,9 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 - `ml_tail_metrics_per_model.parquet` reports each implemented ML-tail model on its own valid OOS rows; it is useful for debugging coverage but is not a cross-model comparison table.
 - `ml_tail_result_matrix.parquet` creates restricted common samples for VaR-only and VaR-ES comparisons across model families and within-model information-set increments.
 
-### All-model diagnostic comparison
+### Other result tables
+
+#### All-model diagnostic scan
 
 | Suite | Model | Information set | Metric rows | OOS N mean+-sd | Breach mean+-sd | Abs cov err mean+-sd | Q loss mean+-sd | FZ loss mean+-sd | ES severity mean+-sd |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -441,7 +365,7 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 - Mean and standard deviation are computed across registered metric rows for the same suite/model/information-set configuration; for most rows this summarizes left- and right-tail metrics.
 - It is a diagnostic scan, not the formal cross-model comparison table. Cross-model claims still require common-sample result-matrix, DM, and MCS evidence because valid dates and model gates can differ.
 
-## Result Matrix Layer
+#### Restricted Common-Sample Result Matrix
 
 | Family | Axis | Loss | Rows | Common N | Date range | Joint exceptions |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -457,9 +381,114 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 - Restricted direct-quantile performance is only a comparison anchor for the tail-model family; it does not replace the headline direct-quantile evidence.
 - DM and MCS records are emitted only where registered row-count and exception-count gates pass; otherwise the result matrix remains descriptive.
 
-## Paper-Facing Table And Figure Gallery
+#### Stress And Diagnostic Windows
 
-### Table Manifest
+| Suite | Rows | Window labels |
+| --- | --- | --- |
+| benchmark | 134 | `loss_top_decile` |
+| ml_tail | 220 | `loss_top_decile`, `vix_top_decile` |
+
+- Stress windows identify high-loss or high-volatility subsamples for two-sided risk diagnostics.
+- These rows use reproducible full-sample classifiers in this first pass, so they should be described as diagnostics rather than a live stress classifier.
+- They are useful for finding whether model behavior changes in difficult regimes before writing manuscript discussion.
+
+### Results interpretation and claim boundaries
+
+<!-- generated: results_discussion -->
+
+#### Data and timing audit
+
+- The gold timing map covers `2016-07-19 to 2026-05-01` and the combined clean start is `2018-06-20`.
+- No forecast-sample rows before `2018-06-20` enter the modeling evidence.
+- The leakage check reports status `pass_with_warnings` with zero leakage failures and `680103` warnings.
+- FRED vintage safety is recorded as `False`; FRED values use conservative release timing but remain current historical observations rather than ALFRED real-time vintages.
+
+#### Benchmark floor and advanced benchmarks
+
+- `benchmark_metrics.parquet` reports `12` common-sample rows across `6` benchmark model families and `2` tail side(s), while benchmark forecasts contain `21146` model-date rows.
+- Benchmark-floor models are external target-history and econometric baselines; this section does not rank them.
+- Advanced benchmark rows are implemented for `10` model families and contribute `13214` nonblocking forecast rows; these rows are claim-gated diagnostics unless a manuscript table explicitly promotes them through the same sample and inference review.
+- Benchmark-floor breach rates have a median of `0.0605144`, within 2.5 percentage points of the nominal level, indicating reasonable coverage calibration relative to the ML-tail models whose breach rates are reported in the nested-information-set section.
+
+#### Left/right ML-tail nested information sets
+
+- `ml_tail_metrics.parquet` defines the headline ML-tail comparison across nested information sets for this run.
+- The headline artifact contains `4` information sets, `1` tail level(s), and `2` tail side(s); the retained headline model rows are `LGBM direct quantile`.
+- The implemented ML-tail registry is `LGBM direct quantile`, `LGBM location-scale empirical`, `LGBM POT-GPD plain MLE`, `LGBM POT-GPD capped MLE`, `LGBM POT-GPD EVI shrink`, `LGBM POT-GPD EI-weighted`, `LGBM POT-GPD stabilized`, `LGBM conditional q90 POT-GPD plain MLE`, `LGBM conditional q90 POT-GPD stabilized`, `LGBM median/MAD POT-GPD plain MLE`, `LGBM median/MAD POT-GPD stabilized`, `LGBM median/IQR POT-GPD plain MLE`, but the headline nested-information-set comparison should be read only from `ml_tail_metrics.parquet`.
+- The nested information sets report downside-risk and upside-risk surfaces separately. The registered artifacts show different left/right patterns, and the generator does not assume that the two sides share the same economic mechanism.
+- Coverage warning: all `8` headline rows exhibit VaR breach rates (`0.0763636` to `0.127273`) that exceed the nominal level by more than 2.5 percentage points. Quantile-loss and FZ-loss differences across the nested information sets must be interpreted in this context; lower loss scores may partly reflect less conservative VaR estimates rather than better conditional tail calibration.
+- On `left_tail`, the largest quantile-loss change occurs at the first information-set augmentation (adding U.S. close core); subsequent additions of Japan proxy and Asia proxy ETFs contribute diminishing incremental loss changes. This saturation pattern is descriptive and does not automatically reduce the value of the broader information set.
+- The nested information sets are used to assess candidate incremental U.S.-close information under strict common-sample rules; they do not by themselves establish forecast improvement.
+
+#### Restricted model-family comparison
+
+- `ml_tail_result_matrix.parquet` contains restricted common-sample comparisons for `12` LightGBM tail-model families.
+- The restricted common-N range is `0 to 550` and the joint-exception range is `0 to 87`.
+- Recorded claim scopes are `restricted_model_comparison_not_headline`; these rows are restricted evidence and cannot replace the headline nested-information-set comparison.
+- The tail-model family comparison is severely sample-limited: the largest restricted common-N is `28` rows. No model-family ranking claim is supportable from this restricted sample; extended OOS coverage is needed before tail-model family ranking becomes meaningful.
+- Result-matrix inference is recorded separately from the headline suite-level DM/MCS: restricted DM records include `120` gate-pass rows and `210` unavailable rows; restricted MCS records include `0` gate-pass rows and `144` unavailable rows. These entries are restricted common-sample diagnostics, not headline model-family rankings.
+- The result matrix is a matched-date diagnostic layer. It should not be worded as one family being better than another.
+
+#### Coverage and inference gates
+
+- Coverage review flags `8/8` headline rows with breach rates more than 2.5 percentage points from nominal coverage; Kupiec p-values fall below 0.05 in `8/8` rows and Christoffersen p-values fall below 0.05 in `0/8` rows where reported.
+- Model-eviction artifacts record `8` retained rows and `80` non-retained rows under the headline sample policy.
+- Block-bootstrap DM and HLN Tmax MCS artifacts are unconditional forecast-comparison diagnostics; any p-value should be read on average across the unconditional evaluation sample, not as condition-specific evidence.
+- Loss differentials alone do not constitute an improvement claim; coverage, exception counts, sample gates, and inference status must be reviewed together.
+- Result-matrix tail-event power flags and suite-level inference gates report `36` restricted rows with insufficient tail-event power and `0/36` unavailable DM/MCS inference rows.
+
+#### CPA as conditional loss-difference diagnostics
+
+- The ML-tail nested-information-set CPA artifact is a conditional loss-difference diagnostic across `2` tail side(s), with `42` registered row(s), `42` HAC-Wald gate pass(es), and loss families `var_es_fz_loss`, `var_quantile_loss`.
+- The registered cross-model CPA artifact is a conditional loss-difference diagnostic with `608` row(s), `608` HAC-Wald gate pass(es), and loss families `var_es_fz_loss`, `var_quantile_loss`.
+- Quantile-loss CPA and FZ-loss CPA are downstream inference over existing loss differentials; CPA does not generate VaR/ES forecasts and does not replace DM/MCS.
+
+#### Supporting diagnostics
+
+- Supporting LaTeX diagnostic table files are present for `4/4` registered diagnostic families.
+- `ml_tail_dst_attenuation.parquet` contains `6` DST attenuation rows; these are descriptive timing-regime forecast diagnostics. They do not establish a structural timing mechanism.
+- ES severity diagnostics contain `108` finite rows with mean exceedance severity ranging from `6.58221e-05` to `0.0127453`; this is conditional-on-exception evidence.
+- The diagnostic 75th-percentile VaR trigger rule marks `15295` model-date rows; `1000` of those rows coincide with VaR exceptions out of `3614` total exceptions, and mean triggered exception severity is `0.013949`. This is a pre-open risk-monitoring diagnostic, not hedge PnL, transaction-cost, or trading-alpha evidence.
+- Stress-window diagnostics contain `354` rows, and Murphy diagnostics contain `1600` ML-tail rows.
+- Feature-unavailability diagnostics contain `330` rows.
+- Figure manifest references:
+  - Figure: coverage_breach_rates_left_tail (Source: metrics/benchmark_metrics.parquet, metrics/benchmark_metrics_per_model.parquet, metrics/ml_tail_metrics.parquet, metrics/ml_tail_metrics_per_model.parquet; Claim scope: coverage_diagnostic_not_headline_claim; File: latex/figures/coverage_breach_rates_left_tail.png).
+  - Figure: coverage_breach_rates_right_tail (Source: metrics/benchmark_metrics.parquet, metrics/benchmark_metrics_per_model.parquet, metrics/ml_tail_metrics.parquet, metrics/ml_tail_metrics_per_model.parquet; Claim scope: coverage_diagnostic_not_headline_claim; File: latex/figures/coverage_breach_rates_right_tail.png).
+  - Figure: benchmark_murphy_left_tail (Source: metrics/benchmark_murphy.parquet; Claim scope: murphy_diagnostic_benchmark_floor_common_grid; File: latex/figures/benchmark_murphy_left_tail.png).
+  - Figure: benchmark_murphy_right_tail (Source: metrics/benchmark_murphy.parquet; Claim scope: murphy_diagnostic_benchmark_floor_common_grid; File: latex/figures/benchmark_murphy_right_tail.png).
+  - Figure: ml_tail_murphy_left_tail (Source: metrics/ml_tail_murphy.parquet; Claim scope: murphy_diagnostic_ml_tail_nested_information_sets_common_grid; File: latex/figures/ml_tail_murphy_left_tail.png).
+  - Figure: ml_tail_murphy_right_tail (Source: metrics/ml_tail_murphy.parquet; Claim scope: murphy_diagnostic_ml_tail_nested_information_sets_common_grid; File: latex/figures/ml_tail_murphy_right_tail.png).
+  - Figure: dst_attenuation_left_tail (Source: metrics/ml_tail_dst_attenuation.parquet; Claim scope: descriptive_dst_attenuation_not_structural_causal_identification; File: latex/figures/dst_attenuation_left_tail.png).
+  - Figure: dst_attenuation_right_tail (Source: metrics/ml_tail_dst_attenuation.parquet; Claim scope: descriptive_dst_attenuation_not_structural_causal_identification; File: latex/figures/dst_attenuation_right_tail.png).
+  - Figure: es_severity_left_tail (Source: metrics/benchmark_metrics.parquet, metrics/ml_tail_metrics.parquet, metrics/ml_tail_metrics_per_model.parquet; Claim scope: es_severity_diagnostic_not_model_selection_claim; File: latex/figures/es_severity_left_tail.png).
+  - Figure: es_severity_right_tail (Source: metrics/benchmark_metrics.parquet, metrics/ml_tail_metrics.parquet, metrics/ml_tail_metrics_per_model.parquet; Claim scope: es_severity_diagnostic_not_model_selection_claim; File: latex/figures/es_severity_right_tail.png).
+  - Figure: trigger_diagnostics_left_tail (Source: forecasts/benchmark_forecasts.parquet, forecasts/ml_tail_forecasts.parquet; Claim scope: trigger_diagnostic_not_pnl_cost_or_alpha; File: latex/figures/trigger_diagnostics_left_tail.png).
+  - Figure: trigger_diagnostics_right_tail (Source: forecasts/benchmark_forecasts.parquet, forecasts/ml_tail_forecasts.parquet; Claim scope: trigger_diagnostic_not_pnl_cost_or_alpha; File: latex/figures/trigger_diagnostics_right_tail.png).
+  - Figure: evt_standardized_qq_left_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_qq_left_tail.png).
+  - Figure: evt_standardized_log_survival_left_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_log_survival_left_tail.png).
+  - Figure: evt_standardized_mean_excess_left_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_mean_excess_left_tail.png).
+  - Figure: evt_standardized_hill_left_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_hill_left_tail.png).
+  - Figure: evt_standardized_threshold_stability_left_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_threshold_stability_left_tail.png).
+  - Figure: evt_standardized_qq_right_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_qq_right_tail.png).
+  - Figure: evt_standardized_log_survival_right_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_log_survival_right_tail.png).
+  - Figure: evt_standardized_mean_excess_right_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_mean_excess_right_tail.png).
+  - Figure: evt_standardized_hill_right_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_hill_right_tail.png).
+  - Figure: evt_standardized_threshold_stability_right_tail (Source: forecasts/ml_tail_forecasts.parquet; Claim scope: evt_standardized_residual_diagnostic_not_forecast_claim; File: latex/figures/evt_standardized_threshold_stability_right_tail.png).
+
+#### Not yet claimed
+
+- DST attenuation rows are descriptive forecast evidence; structural DST causal identification is not claimed.
+- No hedge PnL, transaction-cost, or trading-alpha analysis is performed. The trigger table is a pre-open risk-monitoring diagnostic only.
+- Left-tail and right-tail outputs are both economic tail-risk surfaces for futures positions; neither side should be promoted beyond the sample, coverage, and inference gates without author review.
+- The current evidence does not create an automatic model-selection statement; any manuscript claim still requires author review of sample gates, coverage, loss metrics, and inference diagnostics.
+
+## Appendix: Tables, Figures, And Run Artifacts
+
+The appendix collects generated exports and provenance. The main Results section refers back to these files when a table or figure is suitable for manuscript use.
+
+### Paper-Facing Table And Figure Gallery
+
+#### Table Manifest
 
 | Table | Source artifacts | Claim scope | Tail side | File |
 | --- | --- | --- | --- | --- |
@@ -479,7 +508,7 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 - The table manifest records the generated LaTeX table files, their source artifacts, and their claim scopes.
 - Tables are paper-facing exports; the Markdown tables above are snapshot summaries for browser review.
 
-### Figure 1. Target Distribution And Tail Diagnostics
+#### Figure 1. Target Distribution And Tail Diagnostics
 
 - Key readings: these figures describe the raw settlement-to-open gap and the left/right loss tails.
 - They motivate VaR/ES and POT-GPD modeling, but they do not validate LightGBM+EVT forecasts.
@@ -508,7 +537,7 @@ _Figure: `target_mean_excess`. Source: `panel/modeling_panel.parquet`. Claim sco
 
 _Figure: `target_hill_plot`. Source: `panel/modeling_panel.parquet`. Claim scope: `target_distribution_motivation_not_forecast_validation`. Tail side: `left_right_target_distribution`. Run file: `latex/figures/target_hill_plot.png`._
 
-### Figure 2. Coverage Breach-Rate Diagnostics
+#### Figure 2. Coverage Breach-Rate Diagnostics
 
 - Key readings: bars report realized VaR exception rates against the nominal line.
 - Read this first: exception-rate deviations set the boundary for any loss-based interpretation.
@@ -521,7 +550,7 @@ _Figure: `coverage_breach_rates_left_tail`. Source: `metrics/benchmark_metrics.p
 
 _Figure: `coverage_breach_rates_right_tail`. Source: `metrics/benchmark_metrics.parquet`, `metrics/benchmark_metrics_per_model.parquet`, `metrics/ml_tail_metrics.parquet`, `metrics/ml_tail_metrics_per_model.parquet`. Claim scope: `coverage_diagnostic_not_headline_claim`. Tail side: `right_tail`. Run file: `latex/figures/coverage_breach_rates_right_tail.png`._
 
-### Figure 3. Benchmark Murphy Diagnostics
+#### Figure 3. Benchmark Murphy Diagnostics
 
 - Key readings: curves report benchmark elementary-score diagnostics on a common grid.
 - The plot is a scoring-family diagnostic, not a pairwise ranking statement.
@@ -534,7 +563,7 @@ _Figure: `benchmark_murphy_left_tail`. Source: `metrics/benchmark_murphy.parquet
 
 _Figure: `benchmark_murphy_right_tail`. Source: `metrics/benchmark_murphy.parquet`. Claim scope: `murphy_diagnostic_benchmark_floor_common_grid`. Tail side: `right_tail`. Run file: `latex/figures/benchmark_murphy_right_tail.png`._
 
-### Figure 4. ML-Tail Murphy Diagnostics
+#### Figure 4. ML-Tail Murphy Diagnostics
 
 - Key readings: curves report the ML-tail nested information sets on a common grid.
 - Interpret curve separation together with the headline coverage warning and unconditional inference gates.
@@ -547,7 +576,7 @@ _Figure: `ml_tail_murphy_left_tail`. Source: `metrics/ml_tail_murphy.parquet`. C
 
 _Figure: `ml_tail_murphy_right_tail`. Source: `metrics/ml_tail_murphy.parquet`. Claim scope: `murphy_diagnostic_ml_tail_nested_information_sets_common_grid`. Tail side: `right_tail`. Run file: `latex/figures/ml_tail_murphy_right_tail.png`._
 
-### Figure 5. DST Attenuation Diagnostics
+#### Figure 5. DST Attenuation Diagnostics
 
 - Key readings: bars summarize timing-regime forecast diagnostics.
 - Treat this as descriptive timing evidence; left/right patterns should not be assigned a shared structural mechanism.
@@ -560,7 +589,7 @@ _Figure: `dst_attenuation_left_tail`. Source: `metrics/ml_tail_dst_attenuation.p
 
 _Figure: `dst_attenuation_right_tail`. Source: `metrics/ml_tail_dst_attenuation.parquet`. Claim scope: `descriptive_dst_attenuation_not_structural_causal_identification`. Tail side: `right_tail`. Run file: `latex/figures/dst_attenuation_right_tail.png`._
 
-### Figure 6. ES Severity Diagnostics
+#### Figure 6. ES Severity Diagnostics
 
 - Key readings: bars report conditional-on-exception severity diagnostics.
 - Severity is reported for risk interpretation but is not a standalone model-selection claim.
@@ -573,7 +602,7 @@ _Figure: `es_severity_left_tail`. Source: `metrics/benchmark_metrics.parquet`, `
 
 _Figure: `es_severity_right_tail`. Source: `metrics/benchmark_metrics.parquet`, `metrics/ml_tail_metrics.parquet`, `metrics/ml_tail_metrics_per_model.parquet`. Claim scope: `es_severity_diagnostic_not_model_selection_claim`. Tail side: `right_tail`. Run file: `latex/figures/es_severity_right_tail.png`._
 
-### Figure 7. Trigger Diagnostics
+#### Figure 7. Trigger Diagnostics
 
 - Key readings: bars report pre-open risk-trigger diagnostics by model family.
 - The trigger output is a monitoring diagnostic, not an execution-performance result.
@@ -586,7 +615,7 @@ _Figure: `trigger_diagnostics_left_tail`. Source: `forecasts/benchmark_forecasts
 
 _Figure: `trigger_diagnostics_right_tail`. Source: `forecasts/benchmark_forecasts.parquet`, `forecasts/ml_tail_forecasts.parquet`. Claim scope: `trigger_diagnostic_not_pnl_cost_or_alpha`. Tail side: `right_tail`. Run file: `latex/figures/trigger_diagnostics_right_tail.png`._
 
-### Figure 8. EVT Standardized-Residual Diagnostics
+#### Figure 8. EVT Standardized-Residual Diagnostics
 
 - Key readings: figures show EVT diagnostics for LightGBM location-scale standardized residuals.
 - QQ, log-survival, mean-excess, Hill, and threshold-stability diagnostics validate the POT-GPD tail assumption.
@@ -632,18 +661,7 @@ _Figure: `evt_standardized_qq_right_tail`. Source: `forecasts/ml_tail_forecasts.
 
 _Figure: `evt_standardized_threshold_stability_right_tail`. Source: `forecasts/ml_tail_forecasts.parquet`. Claim scope: `evt_standardized_residual_diagnostic_not_forecast_claim`. Tail side: `right_tail`. Run file: `latex/figures/evt_standardized_threshold_stability_right_tail.png`._
 
-## Stress And Diagnostic Windows
-
-| Suite | Rows | Window labels |
-| --- | --- | --- |
-| benchmark | 134 | `loss_top_decile` |
-| ml_tail | 220 | `loss_top_decile`, `vix_top_decile` |
-
-- Stress windows identify high-loss or high-volatility subsamples for two-sided risk diagnostics.
-- These rows use reproducible full-sample classifiers in this first pass, so they should be described as diagnostics rather than a live stress classifier.
-- They are useful for finding whether model behavior changes in difficult regimes before writing manuscript discussion.
-
-## Artifact Index
+### Artifact Index
 
 | Artifact | Path | Exists |
 | --- | --- | --- |
@@ -689,3 +707,7 @@ _Figure: `evt_standardized_threshold_stability_right_tail`. Source: `forecasts/m
 - All paths above are local ignored artifacts; they are reproducible outputs, not tracked source files.
 - Forecast/reporting rebuilds should read these artifacts and must not call vendor APIs.
 - If this page is stale, rerun `just snapshot` after a completed `just full` or pass an explicit run id to the CLI snapshot command.
+
+### Technical Infrastructure Note
+
+- Runtime imports are explicit at the module boundary; no dynamic runtime namespace bridge is required to generate this snapshot. This infrastructure note is separate from empirical claim boundaries.

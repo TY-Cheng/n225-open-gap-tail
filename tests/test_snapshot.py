@@ -636,6 +636,58 @@ def test_target_tail_diagnostics_markdown_reports_raw_target_boundary() -> None:
     )
 
 
+def test_target_tail_diagnostics_markdown_handles_empty_inputs() -> None:
+    empty_rendered = target_distribution_module.target_tail_diagnostics_markdown(
+        panel=pl.DataFrame({"other": [1.0]}),
+        figure_manifest={"figures": []},
+        run_id="tailrisk_test",
+    )
+    assert "Target-distribution diagnostics are unavailable" in empty_rendered
+    assert "does not change any forecast-evaluation claim" in empty_rendered
+
+    no_clean = pl.DataFrame({"gap_t": [None], "clean_sample": [True]})
+    assert "no clean target rows" in target_distribution_module.opening_gap_scale_text(no_clean)
+
+
+def test_target_distribution_helpers_report_manifest_fallbacks() -> None:
+    assert "not available" in target_distribution_module._target_distribution_figure_table(
+        figure_manifest={"figures": "not-a-list"},
+        run_id="tailrisk_test",
+    )
+    assert "not available" in target_distribution_module._target_distribution_figure_table(
+        figure_manifest={"figures": [{"name": "coverage_breach_rates_left_tail"}]},
+        run_id="tailrisk_test",
+    )
+    rendered = target_distribution_module._target_distribution_figure_table(
+        figure_manifest={
+            "figures": [
+                "bad-row",
+                {
+                    "name": "target_custom",
+                    "path": "latex/figures/target_custom.png",
+                    "tail_side": "target_distribution",
+                    "claim_scope": "diagnostic|with_pipe",
+                },
+                {
+                    "name": "target_custom",
+                    "path": "latex/figures/target_custom.pdf",
+                    "tail_side": "target_distribution",
+                    "source_artifacts": ["panel/modeling_panel.parquet"],
+                },
+            ]
+        },
+        run_id="tailrisk_test",
+    )
+    assert "target_custom" in rendered
+    assert "`missing`" in rendered
+    assert "diagnostic\\|with_pipe" in rendered
+    assert "figures/tailrisk_test/target_custom.png" in rendered
+
+    assert target_distribution_module._fmt_log_return("not-a-number") == "missing"
+    assert target_distribution_module._fmt_float(True) == "True"
+    assert target_distribution_module._optional_float(float("nan")) is None
+
+
 def _assert_discussion_qa_headings_in_order(rendered: str) -> None:
     headings = [
         "### What is the empirical question?",

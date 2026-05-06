@@ -82,6 +82,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Results Snapshot: results_snapshot.md
+  - Discussion Q&A: discussion_qa.md
   - Paper Plan: paper_plan.md
   - Data: data.md
   - Audit Prompts:

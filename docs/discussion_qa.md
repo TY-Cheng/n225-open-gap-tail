@@ -1,16 +1,4 @@
-# ruff: noqa: E501
-from __future__ import annotations
-
-
-def discussion_qa_markdown(
-    *,
-    advanced_implementation_text: str,
-    advanced_implementation_bullet: str,
-    advanced_bottom_line_bullet: str,
-    claim_scope_table: str,
-    opening_gap_scale_text: str,
-) -> str:
-    return f"""---
+---
 hide:
   - navigation
 ---
@@ -33,7 +21,7 @@ The paper asks whether information known by the U.S. cash-market close helps for
 
 The headline target is the settlement-to-open gap:
 
-`gap_t = log(OSE day-session open_t) - log(previous settlement_{{t-1}})`
+`gap_t = log(OSE day-session open_t) - log(previous settlement_{t-1})`
 
 - For left-tail models, loss is `-gap_t`.
 - For right-tail models, loss is `gap_t`.
@@ -47,7 +35,11 @@ The headline target is the settlement-to-open gap:
 
 The open matters because it is the first OSE day-session mark after the U.S. close information set and after the Japanese night-session interval.
 
-{opening_gap_scale_text}
+- In the current clean headline sample (`n=1661`), the settle-to-open gap ranges from `-0.087513 log (-8.38%)` on `2020-03-13` to `0.096937 log (+10.18%)` on `2025-04-10`.
+- The largest absolute clean settle-to-open gap is `0.096937 log (+10.18%)` on `2025-04-10`; this is large enough to make opening-gap tail risk a substantive risk-management forecasting problem rather than a cosmetic return-prediction exercise.
+- The clean 1% to 99% settle-to-open range is `-0.028446 log (-2.80%)` to `0.027351 log (+2.77%)`, so the extremes are far outside the usual daily opening-gap range.
+- Even after the night-session close, the clean night-close-to-open residual ranges from `-0.038278 log (-3.76%)` to `0.042071 log (+4.30%)`, with maximum absolute residual `0.042071 log (+4.30%)`.
+- These magnitudes make the empirical object an opening-tail risk problem, not only an average next-open return-forecasting problem.
 
 - JPX defines the OSE large contract as the home-market Nikkei 225 Futures contract with JPX/OSE trading hours, SQ rules, and JSCC clearing and margin rules.
 - JPX and JSCC documentation make the basic risk channel clear: adverse futures moves change mark-to-market PnL, account equity, collateral pressure, and risk limits. Formal margin calls follow exchange and clearing procedures; the paper does not assume a mechanical margin call exactly at 08:45 JST.
@@ -71,10 +63,10 @@ All predictors must be available before the OSE target open under the point-in-t
 
 ## What models are compared?
 
-{advanced_implementation_text}
+The benchmark floor, advanced benchmark suite, and ML-tail suite are implemented and have completed artifacts in this run.
 
 - Benchmark floor models include historical quantiles, rolling quantiles, EWMA, GARCH-t, GJR-GARCH-t, and GJR-GARCH-EVT.
-- {advanced_implementation_bullet}
+- Advanced benchmark families such as CAViaR, CARE/expectile, Taylor ALD, direct FZ-loss, and GAS produce nonblocking empirical forecast rows; their interpretation still follows the benchmark and restricted-sample gates.
 - The ML suite includes direct LightGBM quantile forecasts, location-scale empirical calibration, standardized-loss POT-GPD variants, and the new research-candidate LightGBM+EVT routes.
 - LightGBM is used as a fixed tabular learner. The paper does not claim a new machine-learning algorithm.
 - Hyperparameters are held fixed across information sets and refit dates.
@@ -121,7 +113,13 @@ The current evidence is a calibration-versus-loss tradeoff.
 
 ## What can the paper claim?
 
-{claim_scope_table}
+| Evidence layer | Can support headline claim? | How to read it |
+| --- | --- | --- |
+| Benchmark common-sample table | Yes, after review | External target-history/econometric floor on a shared sample. |
+| ML-tail nested information sets | Yes, after review | Strict nested-information-set comparison; currently direct quantile survived the gate. |
+| ML-tail per-model rows | No | Model-specific OOS diagnostics; samples need not match across model families. |
+| Restricted result matrix | No headline claim | Matched-date comparison for model families and within-model increments. |
+| DST, stress, Murphy, hedge-trigger diagnostics | Diagnostic only | Useful for interpretation and risk monitoring, not automatic model-selection evidence. |
 
 - The paper can claim a point-in-time forecast evaluation of OSE Nikkei 225 Futures opening-gap tail risk.
 - It can report that U.S. close information and proxy blocks change average loss and coverage patterns under registered information sets.
@@ -130,5 +128,4 @@ The current evidence is a calibration-versus-loss tradeoff.
 - It should not claim that one model is universally strongest.
 - It should not average left-tail and right-tail evidence into one mechanism.
 - It should not present DST, trigger, or feature-block diagnostics as causal proof or realized trading performance.
-- The current bottom line: the pipeline now produces a clean evidence set from the durable gold layer; {advanced_bottom_line_bullet}
-"""
+- The current bottom line: the pipeline now produces a clean evidence set from the durable gold layer; benchmark floor, advanced benchmark, and ML-tail suites completed with zero recorded forecast failures; advanced rows are implemented evidence but remain nonblocking until author-reviewed against the same sample and inference gates.

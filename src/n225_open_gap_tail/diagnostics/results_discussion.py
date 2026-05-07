@@ -9,6 +9,7 @@ from typing import Any, cast
 import polars as pl
 
 from n225_open_gap_tail.config.model_labels import display_model_label
+from n225_open_gap_tail.config.runtime import ML_TAIL_MODEL_NAMES
 
 
 def generate_results_discussion(
@@ -260,7 +261,7 @@ def _results_ml_tail_headline_discussion(
     tail_levels = _unique_count(ml_tail_metrics, "tail_level")
     tail_side_count = _unique_count(ml_tail_metrics, "tail_side")
     models = _unique_values(ml_tail_metrics, "model_name", formatter=display_model_label)
-    implemented = _join_model_list(ml_tail_status.get("implemented_components"))
+    implemented = _join_model_list(ML_TAIL_MODEL_NAMES)
     coverage_warning = _ml_tail_coverage_warning(ml_tail_metrics)
     saturation_note = _information_set_saturation_note(ml_tail_metrics)
     lines = [
@@ -719,7 +720,7 @@ def _join_list(value: object) -> str:
 
 
 def _join_model_list(value: object) -> str:
-    if isinstance(value, list):
+    if isinstance(value, list | tuple):
         return ", ".join(f"`{display_model_label(item)}`" for item in value)
     return f"`{display_model_label(value)}`"
 

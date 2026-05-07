@@ -621,19 +621,16 @@ positive-loss convention:
 - store threshold, exceedance indicator, exceedance severity, VaR forecast, and ES forecast;
 - report training-window standardized-loss counts and exceedance counts before reporting POT-GPD VaR/ES forecasts.
 
-The headline tail level is `0.95`. Plain standardized-loss POT-GPD remains the
-standard filtered-EVT comparator. The stabilized POT-GPD variant is a
-finite-sample regularized filtered-EVT variant, not plain maximum-likelihood
-POT-GPD. Its diagnostics must record shape method, EVI status, extremal-index
-(`EI`) status, cap policy, cap hits, conditional scale-refit status, and whether
-ES is finite.
-
-EVT diagnostics should include EVI paths, Ferro-Segers extremal-index
-diagnostics, K-gaps robustness diagnostics, cap sensitivity, threshold
-sensitivity, and shape/scale stability. In this project `EI` means
-extremal-index weighting, not expected improvement. The weighting is used only
-as a stabilization heuristic for effective exceedance counts; it is not a new
-GPD likelihood.
+The headline tail level is `0.95`. Plain standardized-loss POT-GPD is the
+registered filtered-EVT estimator. The UniBM route is a restricted
+shape-estimator comparison: it uses the same LightGBM mean/log-scale body
+filter, the same POT threshold, and a UniBM block-maxima-derived estimate of
+the GPD shape `xi`, with scale refit conditional on that fixed `xi`. Here EVI
+means the GPD shape convention `xi`; it is the reciprocal of the Pareto tail
+index `alpha` when `P(X > x) ~ x^{-alpha}`. UniBM failures are reported as
+unavailable rather than replaced by plain MLE. Diagnostics record shape method,
+UniBM block-grid diagnostics, threshold sensitivity, shape/scale stability,
+shape bins, and whether ES is finite.
 
 Upper-tail labels are part of the two-sided futures risk surface. They use the
 same positive-loss convention as lower-tail labels, with `right_tail` defined as
@@ -657,14 +654,14 @@ Processed model tables should carry the fields needed to audit the LightGBM-stan
 | `evt_threshold_u` | Training-window POT threshold used for the row's forecast. |
 | `exceedance_indicator_t` | Indicator that `standardized_loss_t` exceeds the threshold. |
 | `exceedance_severity_t` | Excess over threshold for EVT severity calibration. |
-| `evt_variant` | POT-GPD variant label: plain MLE, capped MLE, EVI shrink, extremal-index weighted (`ei_weighted`), or stabilized. |
+| `evt_variant` | POT-GPD variant label. The registered estimator is plain MLE; the restricted UniBM comparison is `unibm`. |
 | `evt_shape_method` | Shape-estimation method recorded for the row's EVT calibration. |
-| `evt_evi_status` | EVI-anchor status, including unavailable or diagnostic-disagreement cases. |
+| `evt_evi_status` | Extreme-value-index status for `xi`, including unavailable or diagnostic-disagreement cases. |
 | `evt_ei_status` | Extremal-index status, including unavailable or no-discount fallbacks. |
 | `evt_cap_policy` | Shape-cap policy used for the variant. |
-| `evt_cap_hit` | Indicator that the fitted or stabilized shape hit a cap. |
-| `evt_scale_refit_status` | Status for conditional GPD scale refit after shape stabilization. |
-| `evt_es_finite` | Whether the row supplies a finite ES under the fitted or stabilized shape. |
+| `evt_cap_hit` | Indicator that the fitted shape hit a cap where a cap policy is used. |
+| `evt_scale_refit_status` | Status for GPD scale handling. |
+| `evt_es_finite` | Whether the row supplies a finite ES under the fitted shape. |
 | `tail_probability_alpha` | VaR/ES tail probability for the forecast row. |
 | `var_forecast` | VaR forecast transformed back to target scale. |
 | `es_forecast` | ES forecast transformed back to target scale. |

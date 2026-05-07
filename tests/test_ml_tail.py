@@ -309,12 +309,72 @@ def test_ml_tail_standardized_pot_gpd_sequence_records_evt_metadata(
     ok = [row for row in result["forecasts"] if row["fit_status"] == "ok"]
     assert ok
     assert ok[0]["es_companion_type"] == "oof_standardized_loss_pot_gpd"
-    assert ok[0]["evt_variant"] == "stabilized"
+    assert ok[0]["evt_variant"] == "plain_mle"
     assert ok[0]["evt_shape_method"]
     assert ok[0]["evt_shape"] == pytest.approx(0.1)
     assert ok[0]["evt_scale"] == pytest.approx(1.0)
     assert ok[0]["threshold_value"] is not None
     assert cast(float, ok[0]["es_forecast"]) >= cast(float, ok[0]["var_forecast"])
+
+
+def test_ml_tail_unibm_pot_gpd_uses_unibm_slope_as_gpd_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 25)
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 1)
+    _patch_paper_module(monkeypatch, "ML_TAIL_MIN_OOF_TRAIN_ROWS", 8)
+
+    def fake_gpd_fit(*args: object, **kwargs: object) -> tuple[float, float, float]:
+        fixed_shape = kwargs.get("f0")
+        if fixed_shape is not None:
+            return (float(fixed_shape), 0.0, 2.0)
+        return (0.40, 0.0, 1.0)
+
+    monkeypatch.setattr("n225_open_gap_tail.forecasting.stats.genpareto.fit", fake_gpd_fit)
+    observed_sample_sizes: list[int] = []
+
+    def fake_unibm(sample: np.ndarray) -> dict[str, object]:
+        observed_sample_sizes.append(int(np.asarray(sample).size))
+        return {
+            "status": "ok",
+            "primary_estimator": "unibm_block_quantile_scaling",
+            "xi_evi_anchor": 0.25,
+            "quantile": 0.5,
+            "n_obs": int(np.asarray(sample).size),
+            "min_block_size": 5,
+            "max_block_size": 9,
+            "sliding": True,
+            "bootstrap_reps": 0,
+            "plateau_block_sizes": [5, 6, 7, 8, 9],
+            "plateau_block_counts": [85, 84, 83, 82, 81],
+            "plateau_point_count": 5,
+        }
+
+    monkeypatch.setattr(benchmark_models, "_estimate_unibm_evi_anchor", fake_unibm)
+
+    result = paper_core._forecast_ml_tail_lightgbm_sequence(
+        rows=_synthetic_ml_tail_location_scale_rows(90),
+        model_name=paper_module.ML_TAIL_POT_GPD_UNIBM_MODEL,
+        information_set="japan_only_plus_us_close_core",
+        candidate_features=["feature_x", "feature_cycle"],
+        tail_level=0.95,
+        oos_start="2026-02-10",
+    )
+
+    ok = [row for row in result["forecasts"] if row["fit_status"] == "ok"]
+    assert ok
+    assert observed_sample_sizes
+    assert observed_sample_sizes[0] > cast(int, ok[0]["evt_exceedance_count"])
+    assert ok[0]["evt_variant"] == "unibm"
+    assert ok[0]["evt_shape_method"] == "unibm_block_maxima_xi_fixed_shape_scale_refit"
+    assert ok[0]["evt_shape_mle"] == pytest.approx(0.40)
+    assert ok[0]["evt_shape"] == pytest.approx(0.25)
+    assert ok[0]["evt_shape_bin"] == "[0,0.75)"
+    assert ok[0]["evt_scale"] == pytest.approx(2.0)
+    assert ok[0]["evt_evi_status"] == "ok"
+    assert ok[0]["evt_ei_status"] == "not_used"
+    assert ok[0]["evt_unibm_n_obs"] == observed_sample_sizes[0]
+    assert ok[0]["evt_unibm_sliding_blocks"] is True
 
 
 def test_ml_tail_standardized_pot_gpd_shape_above_one_is_unavailable(
@@ -338,73 +398,6 @@ def test_ml_tail_standardized_pot_gpd_shape_above_one_is_unavailable(
             information_set="japan_only_plus_us_close_core",
             tail_level=0.95,
             lgb=lgb,
-        )
-
-
-def test_conditional_q90_probability_uses_oof_breach_rate() -> None:
-    assert paper_core._q90_excess_probability_for_tail_level(
-        q90_oof_breach_rate=0.115,
-        tail_level=0.95,
-    ) == pytest.approx(1.0 - 0.05 / 0.115)
-    assert paper_core._q90_excess_probability_for_tail_level(
-        q90_oof_breach_rate=0.10,
-        tail_level=0.95,
-    ) == pytest.approx(0.5)
-    with pytest.raises(
-        paper_module.PipelineRunError,
-        match="unavailable_q90_breach_rate_too_low_for_target_tail",
-    ):
-        paper_core._q90_excess_probability_for_tail_level(
-            q90_oof_breach_rate=0.05,
-            tail_level=0.95,
-        )
-    with pytest.raises(
-        paper_module.PipelineRunError,
-        match="unavailable_invalid_q90_excess_probability",
-    ):
-        paper_core._q90_excess_probability_for_tail_level(
-            q90_oof_breach_rate=0.10,
-            tail_level=1.10,
-        )
-
-
-def test_q90_gate_statuses_are_partitioned() -> None:
-    assert paper_core._q90_gate_status(0.10) == "ok"
-    assert paper_core._q90_gate_status(0.08) == "marginal_q90_calibration"
-    assert paper_core._q90_gate_status(0.13) == "unavailable_q90_calibration_failed"
-
-
-def test_conditional_q90_oof_rejects_failed_calibration(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class HighThresholdModel:
-        def predict(self, x_predict: object) -> np.ndarray:
-            return np.full(len(x_predict), 1.0)
-
-    def fake_fit(**kwargs: object) -> tuple[object, dict[str, object], list[str]]:
-        return (
-            HighThresholdModel(),
-            {
-                "candidate_feature_hash": "candidate",
-                "active_feature_hash": "active",
-                "active_features": ["feature_x"],
-            },
-            ["feature_x"],
-        )
-
-    _patch_paper_module(monkeypatch, "ML_TAIL_MIN_OOF_TRAIN_ROWS", 10)
-    monkeypatch.setattr(
-        "n225_open_gap_tail.models.ml_tail_oof._fit_lgb_regression_model",
-        fake_fit,
-    )
-
-    with pytest.raises(paper_module.PipelineRunError, match="unavailable_q90_calibration_failed"):
-        paper_core._ml_tail_oof_conditional_q90_threshold(
-            train_rows=_synthetic_ml_tail_location_scale_rows(70),
-            candidate_features=["feature_x"],
-            information_set="japan_only",
-            tail_level=0.95,
-            lgb=object(),
         )
 
 
@@ -435,229 +428,6 @@ def test_route_failure_metadata_keeps_status_taxonomy_separate() -> None:
     assert mad["gpd_es_status"] is None
     assert iqr["scale_method"] == "conditional_iqr_q25_q75"
     assert unknown == {}
-
-
-def test_pot_gpd_excess_tail_records_infinite_es_status(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        "n225_open_gap_tail.forecasting.stats.genpareto.fit",
-        lambda *args, **kwargs: (1.2, 0.0, 1.0),
-    )
-    tail = paper_core._pot_gpd_excess_tail(
-        excesses=np.linspace(0.01, 1.0, 40),
-        tail_level=0.95,
-        gpd_probability=0.5,
-        min_exceedances=10,
-        evt_variant="plain_mle",
-    )
-    assert tail["gpd_fit_status"] == "ok"
-    assert tail["gpd_es_status"] == "unavailable_shape_ge_1"
-    assert tail["excess_es"] is None
-
-
-def test_pot_gpd_excess_tail_records_fit_failure_statuses(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    low_count = paper_core._pot_gpd_excess_tail(
-        excesses=np.array([0.1, 0.2]),
-        tail_level=0.95,
-        gpd_probability=0.5,
-        min_exceedances=10,
-    )
-    assert low_count["gpd_fit_status"] == "unavailable_insufficient_exceedances"
-
-    bad_probability = paper_core._pot_gpd_excess_tail(
-        excesses=np.linspace(0.01, 1.0, 40),
-        tail_level=0.95,
-        gpd_probability=1.5,
-        min_exceedances=10,
-    )
-    assert bad_probability["gpd_fit_status"] == "unavailable_invalid_gpd_probability"
-
-    monkeypatch.setattr(
-        "n225_open_gap_tail.forecasting.stats.genpareto.fit",
-        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("fit failed")),
-    )
-    optimizer_failed = paper_core._pot_gpd_excess_tail(
-        excesses=np.linspace(0.01, 1.0, 40),
-        tail_level=0.95,
-        gpd_probability=0.5,
-        min_exceedances=10,
-    )
-    assert optimizer_failed["gpd_fit_status"] == "unavailable_optimizer_failed"
-
-    monkeypatch.setattr(
-        "n225_open_gap_tail.forecasting.stats.genpareto.fit",
-        lambda *args, **kwargs: (math.nan, 0.0, 1.0),
-    )
-    invalid_shape = paper_core._pot_gpd_excess_tail(
-        excesses=np.linspace(0.01, 1.0, 40),
-        tail_level=0.95,
-        gpd_probability=0.5,
-        min_exceedances=10,
-    )
-    assert invalid_shape["gpd_fit_status"] == "unavailable_invalid_shape"
-    assert invalid_shape["gpd_es_status"] == "unavailable_gpd_fit_failed"
-
-    monkeypatch.setattr(
-        "n225_open_gap_tail.forecasting.stats.genpareto.fit",
-        lambda *args, **kwargs: (0.1, 0.0, 1.0),
-    )
-    original_select_evt_shape_and_scale = benchmark_models._select_evt_shape_and_scale
-    monkeypatch.setattr(
-        "n225_open_gap_tail.models.benchmark._select_evt_shape_and_scale",
-        lambda **kwargs: (
-            {
-                "shape_final": 0.1,
-                "shape_method": "test",
-                "cap_policy": "none",
-                "cap_hit": False,
-                "evi": {},
-                "ei": {},
-            },
-            {"scale_final": -1.0, "scale_refit_status": "test_negative_scale"},
-        ),
-    )
-    negative_scale = paper_core._pot_gpd_excess_tail(
-        excesses=np.linspace(0.01, 1.0, 40),
-        tail_level=0.95,
-        gpd_probability=0.5,
-        min_exceedances=10,
-    )
-    assert negative_scale["gpd_fit_status"] == "unavailable_negative_scale"
-    assert negative_scale["gpd_es_status"] == "unavailable_gpd_fit_failed"
-
-    monkeypatch.setattr(
-        "n225_open_gap_tail.forecasting.stats.genpareto.fit",
-        lambda *args, **kwargs: (0.1, 0.0, 1.0),
-    )
-    monkeypatch.setattr(
-        "n225_open_gap_tail.models.benchmark._select_evt_shape_and_scale",
-        original_select_evt_shape_and_scale,
-    )
-    monkeypatch.setattr(
-        "n225_open_gap_tail.forecasting.stats.genpareto.ppf",
-        lambda *args, **kwargs: math.nan,
-    )
-    invalid_quantile = paper_core._pot_gpd_excess_tail(
-        excesses=np.linspace(0.01, 1.0, 40),
-        tail_level=0.95,
-        gpd_probability=0.5,
-        min_exceedances=10,
-    )
-    assert invalid_quantile["gpd_fit_status"] == "unavailable_invalid_quantile"
-
-    monkeypatch.setattr(
-        "n225_open_gap_tail.forecasting.stats.genpareto.ppf",
-        lambda *args, **kwargs: 0.5,
-    )
-    unknown_variant = paper_core._pot_gpd_excess_tail(
-        excesses=np.linspace(0.01, 1.0, 40),
-        tail_level=0.95,
-        gpd_probability=0.5,
-        min_exceedances=10,
-        evt_variant="not_registered",
-    )
-    assert unknown_variant["gpd_fit_status"] == "unavailable_optimizer_failed"
-
-    monkeypatch.setattr(
-        "n225_open_gap_tail.forecasting.stats.genpareto.fit",
-        lambda *args, **kwargs: (-0.5, 0.0, 1.0),
-    )
-    monkeypatch.setattr(
-        "n225_open_gap_tail.forecasting.stats.genpareto.ppf",
-        lambda *args, **kwargs: 3.0,
-    )
-    support = paper_core._pot_gpd_excess_tail(
-        excesses=np.linspace(0.01, 1.0, 40),
-        tail_level=0.95,
-        gpd_probability=0.5,
-        min_exceedances=10,
-    )
-    assert support["gpd_fit_status"] == "unavailable_support_violation"
-
-
-def test_conditional_q90_oof_helper_uses_threshold_predictions(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class FakeModel:
-        def predict(self, x_predict: object) -> np.ndarray:
-            return np.full(len(x_predict), 0.05)
-
-    def fake_fit(**kwargs: object) -> tuple[object, dict[str, object], list[str]]:
-        return (
-            FakeModel(),
-            {
-                "candidate_feature_hash": "candidate",
-                "active_feature_hash": "active",
-                "active_features": ["feature_x"],
-            },
-            ["feature_x"],
-        )
-
-    _patch_paper_module(monkeypatch, "ML_TAIL_MIN_OOF_TRAIN_ROWS", 10)
-    monkeypatch.setattr(
-        "n225_open_gap_tail.models.ml_tail_oof._fit_lgb_regression_model",
-        fake_fit,
-    )
-    rows = _synthetic_ml_tail_location_scale_rows(70)
-    for index, row in enumerate(rows):
-        row["realized_loss"] = 0.10 if index % 10 == 0 else 0.01
-
-    oof = paper_core._ml_tail_oof_conditional_q90_threshold(
-        train_rows=rows,
-        candidate_features=["feature_x"],
-        information_set="japan_only",
-        tail_level=0.95,
-        lgb=object(),
-    )
-
-    assert oof["q90_gate_status"] == "ok"
-    assert oof["q90_oof_breach_rate"] == pytest.approx(0.1)
-    assert cast(np.ndarray, oof["exceedances"]).size > 0
-
-
-def test_conditional_q90_route_writes_forecasts_and_statuses(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def fake_oof(**kwargs: object) -> dict[str, object]:
-        return {
-            "threshold_oof": np.zeros(80),
-            "exceedances": np.linspace(0.01, 1.0, 40),
-            "exceedance_indices": np.arange(40),
-            "q90_oof_breach_rate": 0.10,
-            "q90_expected_breach_rate": 0.10,
-            "q90_gate_status": "ok",
-            "q90_oof_count": 80,
-        }
-
-    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 25)
-    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 1)
-    monkeypatch.setattr(
-        "n225_open_gap_tail.models.ml_tail._ml_tail_oof_conditional_q90_threshold",
-        fake_oof,
-    )
-    monkeypatch.setattr(
-        "n225_open_gap_tail.forecasting.stats.genpareto.fit",
-        lambda *args, **kwargs: (0.1, 0.0, 1.0),
-    )
-
-    result = paper_core._forecast_ml_tail_lightgbm_sequence(
-        rows=_synthetic_ml_tail_location_scale_rows(80),
-        model_name="lightgbm_conditional_q90_pot_gpd_plain_mle",
-        information_set="japan_only_plus_us_close_core",
-        candidate_features=["feature_x", "feature_cycle"],
-        tail_level=0.95,
-        oos_start="2026-02-10",
-    )
-
-    ok = [row for row in result["forecasts"] if row["fit_status"] == "ok"]
-    assert ok
-    assert ok[0]["body_filter_method"] == "conditional_q90_threshold"
-    assert ok[0]["q90_excess_probability_for_tail_level"] == pytest.approx(0.5)
-    assert ok[0]["gpd_fit_status"] == "ok"
-    assert ok[0]["gpd_es_status"] == "ok"
 
 
 def test_ml_tail_median_mad_pot_gpd_sequence_records_route_metadata(
@@ -718,7 +488,7 @@ def test_ml_tail_median_iqr_pot_gpd_sequence_records_crossing_metadata(
     assert ok[0]["quantile_rearrangement_applied"] in {True, False}
 
 
-def test_pot_gpd_evt_variants_and_diagnostics_are_deterministic() -> None:
+def test_plain_pot_gpd_and_evt_diagnostics_are_deterministic() -> None:
     rng = np.random.default_rng(0)
     losses = np.concatenate(
         [
@@ -728,27 +498,36 @@ def test_pot_gpd_evt_variants_and_diagnostics_are_deterministic() -> None:
     )
     rng.shuffle(losses)
 
-    variants = {
-        "plain_mle": "fixed_loc_mle",
-        "capped_mle": "capped_fixed_loc_mle",
-        "evi_shrink": "mle_evi_anchor_shrinkage",
-        "ei_weighted": "mle_evi_anchor_ei_weighted",
-        "stabilized": "stabilized_mle_evi_anchor_ei_weighted",
-    }
-    for variant, expected_method in variants.items():
-        tail = benchmark_models._pot_gpd_standardized_tail(
-            standardized_losses=losses,
-            tail_level=0.95,
-            evt_variant=variant,
-            min_standardized_losses=100,
-            min_exceedances=10,
-            shape_cap=(-0.25, 0.75),
-            shape_shrinkage_k=50.0,
-        )
-        assert tail["evt_variant"] == variant
-        assert tail["evt_shape_method"] == expected_method
-        assert tail["evt_cap_policy"] in {"none", "clip_-0.25_0.75"}
-        assert cast(float, tail["standardized_es"]) >= cast(float, tail["standardized_var"])
+    tail = benchmark_models._pot_gpd_standardized_tail(
+        standardized_losses=losses,
+        tail_level=0.95,
+        evt_variant="plain_mle",
+        min_standardized_losses=100,
+        min_exceedances=10,
+        shape_cap=(-0.25, 0.75),
+        shape_shrinkage_k=50.0,
+    )
+    assert tail["evt_variant"] == "plain_mle"
+    assert tail["evt_shape_method"] == "fixed_loc_mle"
+    assert tail["evt_cap_policy"] == "none"
+    assert cast(float, tail["standardized_es"]) >= cast(float, tail["standardized_var"])
+
+    evi_tail = benchmark_models._pot_gpd_standardized_tail(
+        standardized_losses=losses,
+        tail_level=0.95,
+        evt_variant="unibm",
+        min_standardized_losses=100,
+        min_exceedances=10,
+        shape_cap=(-0.25, 0.75),
+        shape_shrinkage_k=50.0,
+    )
+    assert evi_tail["evt_variant"] == "unibm"
+    assert evi_tail["evt_shape_method"] == "unibm_block_maxima_xi_fixed_shape_scale_refit"
+    assert evi_tail["evt_cap_policy"] == "none"
+    assert evi_tail["evt_ei_status"] == "not_used"
+    assert evi_tail["evt_xi_evi_anchor"] == evi_tail["evt_shape"]
+    assert evi_tail["evt_unibm_n_obs"] == losses.size
+    assert evi_tail["evt_unibm_sliding_blocks"] is True
 
     threshold = float(np.quantile(losses, 0.90))
     exceedance_indices = np.flatnonzero(losses > threshold)
@@ -759,6 +538,125 @@ def test_pot_gpd_evt_variants_and_diagnostics_are_deterministic() -> None:
     assert evi["primary_estimator"] == "dedh_moment"
     assert ei["status"] == "ok"
     assert ei["primary_estimator"] == "ferro_segers"
+
+
+def test_unibm_registry_name_is_restricted_ablation() -> None:
+    assert (
+        pipeline_runtime.ML_TAIL_POT_GPD_UNIBM_MODEL == "lightgbm_standardized_loss_pot_gpd_unibm"
+    )
+    assert pipeline_runtime.ML_TAIL_POT_GPD_UNIBM_MODEL in pipeline_runtime.ML_TAIL_MODEL_NAMES
+    assert (
+        pipeline_runtime.ML_TAIL_POT_GPD_UNIBM_MODEL
+        not in pipeline_runtime.ML_TAIL_HEADLINE_MODEL_NAMES
+    )
+    old_suffix = "unibm" + "_evi_shape"
+    assert all(
+        old_suffix not in str(model_name) for model_name in pipeline_runtime.ML_TAIL_MODEL_NAMES
+    )
+
+
+def test_unibm_block_grid_and_shape_bins_are_registered() -> None:
+    block_sizes = benchmark_models._unibm_block_sizes(50)
+    assert block_sizes.size >= 5
+    assert int(np.max(block_sizes)) <= 50
+    assert int(np.min(block_sizes)) >= 2
+    assert benchmark_models._evt_shape_bin(-0.6) == "(-inf,-0.5]"
+    assert benchmark_models._evt_shape_bin(-0.3) == "(-0.5,-0.25]"
+    assert benchmark_models._evt_shape_bin(-0.1) == "(-0.25,0)"
+    assert benchmark_models._evt_shape_bin(0.25) == "[0,0.75)"
+    assert benchmark_models._evt_shape_bin(0.85) == "[0.75,1)"
+    assert benchmark_models._evt_shape_bin(1.2) == "[1,1.5)"
+    assert benchmark_models._evt_shape_bin(1.8) == "[1.5,inf)"
+
+
+def test_unibm_block_count_gate_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_maxima(values: np.ndarray, block_size: int) -> np.ndarray:
+        return np.linspace(1.0, 2.0, 19)
+
+    monkeypatch.setattr(benchmark_models, "_sliding_block_maxima", fake_maxima)
+    evi = benchmark_models._estimate_unibm_evi_anchor(np.linspace(1.0, 10.0, 200))
+    assert evi["status"] == "unavailable_unibm_insufficient_eligible_block_counts"
+    assert evi["n_obs"] == 200
+    assert evi["min_block_maxima_per_plateau_point"] == 20
+
+
+def test_unibm_failure_does_not_fallback_to_plain_mle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        benchmark_models,
+        "_estimate_unibm_evi_anchor",
+        lambda sample: {
+            "status": "unavailable_unibm_insufficient_eligible_block_counts",
+            "xi_evi_anchor": None,
+        },
+    )
+    losses = np.concatenate([np.linspace(-1.0, 1.0, 300), np.linspace(1.1, 5.0, 80)])
+    with pytest.raises(paper_module.PipelineRunError, match="unavailable_evt_unibm"):
+        benchmark_models._pot_gpd_standardized_tail(
+            standardized_losses=losses,
+            tail_level=0.95,
+            evt_variant="unibm",
+            min_standardized_losses=100,
+            min_exceedances=10,
+        )
+
+
+def test_evt_route_availability_records_unibm_fail_closed_refits() -> None:
+    records = ml_tail_suite._evt_route_availability_records(
+        [
+            {
+                "target_family": "full_gap_settle_to_open",
+                "tail_side": "left_tail",
+                "tail_level": 0.95,
+                "model_name": pipeline_runtime.ML_TAIL_POT_GPD_UNIBM_MODEL,
+                "information_set": "japan_only",
+                "refit_frequency": "monthly",
+                "body_filter_method": "conditional_mean_l2",
+                "evt_route_gate_status": "ok",
+                "fit_status": "ok",
+            },
+            {
+                "target_family": "full_gap_settle_to_open",
+                "tail_side": "left_tail",
+                "tail_level": 0.95,
+                "model_name": pipeline_runtime.ML_TAIL_POT_GPD_UNIBM_MODEL,
+                "information_set": "japan_only",
+                "refit_frequency": "monthly",
+                "body_filter_method": "conditional_mean_l2",
+                "evt_route_gate_status": "unavailable_evt_unibm",
+                "fit_status": "unavailable_evt_unibm",
+            },
+        ]
+    )
+    assert len(records) == 1
+    assert records[0]["available_refits"] == 1
+    assert records[0]["unavailable_refits"] == 1
+    assert records[0]["availability_rate"] == pytest.approx(0.5)
+    assert "unavailable_evt_unibm" in str(records[0]["status_counts_json"])
+
+
+def test_unibm_fixed_shape_scale_refit_enforces_negative_shape_support(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        benchmark_models.stats.genpareto,
+        "fit",
+        lambda *args, **kwargs: (-0.5, 0.0, 1.0),
+    )
+    with pytest.raises(paper_module.PipelineRunError, match="support violation"):
+        benchmark_models._refit_gpd_scale_fixed_shape(np.array([0.5, 3.0]), -0.5)
+
+    losses = np.concatenate(
+        [
+            np.random.default_rng(4).exponential(scale=0.5, size=420),
+            2.0 + np.random.default_rng(5).pareto(a=2.0, size=160),
+        ]
+    )
+    threshold = float(np.quantile(losses, 0.90))
+    exceedance_indices = np.flatnonzero(losses > threshold)
+    excesses = losses[losses > threshold] - threshold
+    ei = benchmark_models._estimate_extremal_index(exceedance_indices, int(excesses.size))
     assert ei["k_gaps_theta_hat"] is not None
 
     k_values = benchmark_models._candidate_tail_counts(excesses.size)
@@ -795,7 +693,7 @@ def test_pot_gpd_evt_variants_and_diagnostics_are_deterministic() -> None:
         tail_level=0.95,
         threshold_grid=(0.90, 0.925, 0.95),
         min_exceedances=10,
-        evt_variant="stabilized",
+        evt_variant="plain_mle",
         shape_cap=(-0.25, 0.75),
         shape_shrinkage_k=50.0,
     )
@@ -804,7 +702,7 @@ def test_pot_gpd_evt_variants_and_diagnostics_are_deterministic() -> None:
     assert threshold_sensitivity[-1]["status"] == "not_applicable_threshold_not_below_tail_level"
 
 
-def test_location_scale_evt_variants_share_final_backbone_seed(
+def test_location_scale_empirical_and_plain_pot_share_final_backbone_seed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import lightgbm as lgb
@@ -826,19 +724,19 @@ def test_location_scale_evt_variants_share_final_backbone_seed(
         tail_level=0.95,
         lgb=lgb,
     )
-    stabilized = paper_core._fit_ml_tail_location_scale_bundle(
+    plain_pot = paper_core._fit_ml_tail_location_scale_bundle(
         train_rows=rows,
         candidate_features=["feature_x", "feature_cycle"],
-        model_name=paper_module.ML_TAIL_POT_GPD_STABILIZED_MODEL,
+        model_name=paper_module.ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
         information_set="japan_only_plus_us_close_core",
         tail_level=0.95,
         lgb=lgb,
     )
 
-    assert empirical["location_scale_backbone_key"] == stabilized["location_scale_backbone_key"]
-    assert empirical["location_scale_location_seed"] == stabilized["location_scale_location_seed"]
-    assert empirical["location_scale_scale_seed"] == stabilized["location_scale_scale_seed"]
-    assert empirical["active_feature_hash"] == stabilized["active_feature_hash"]
+    assert empirical["location_scale_backbone_key"] == plain_pot["location_scale_backbone_key"]
+    assert empirical["location_scale_location_seed"] == plain_pot["location_scale_location_seed"]
+    assert empirical["location_scale_scale_seed"] == plain_pot["location_scale_scale_seed"]
+    assert empirical["active_feature_hash"] == plain_pot["active_feature_hash"]
 
 
 def test_evt_diagnostic_artifact_helpers_parse_json_rows() -> None:
@@ -847,13 +745,13 @@ def test_evt_diagnostic_artifact_helpers_parse_json_rows() -> None:
         "target_family": "full_gap_settle_to_open",
         "tail_side": "left_tail",
         "tail_level": 0.95,
-        "model_name": paper_module.ML_TAIL_POT_GPD_STABILIZED_MODEL,
+        "model_name": paper_module.ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
         "information_set": "japan_only_plus_us_close_core",
         "refit_frequency": "monthly",
         "refit_month": "2026-02",
         "train_n": 1200,
         "oof_standardized_loss_count": 700,
-        "evt_variant": "stabilized",
+        "evt_variant": "plain_mle",
         "evt_shape": 0.2,
         "evt_scale": 1.1,
         "evt_shape_mle": 0.3,
@@ -861,7 +759,7 @@ def test_evt_diagnostic_artifact_helpers_parse_json_rows() -> None:
         "evt_xi_evi_anchor": 0.1,
         "evt_cap_policy": "clip_-0.25_0.75",
         "evt_cap_hit": False,
-        "evt_shape_method": "stabilized_mle_evi_anchor_ei_weighted",
+        "evt_shape_method": "fixed_loc_mle",
         "evt_scale_refit_status": "fixed_shape_mle_completed",
         "evt_es_finite": True,
         "evt_ei_status": "ok",
@@ -912,7 +810,7 @@ def test_evt_diagnostic_artifact_helpers_parse_json_rows() -> None:
         ]
     )
 
-    assert shape_rows[0]["evt_shape_method"] == "stabilized_mle_evi_anchor_ei_weighted"
+    assert shape_rows[0]["evt_shape_method"] == "fixed_loc_mle"
     assert ei_rows[0]["ei_primary_estimator"] == "ferro_segers"
     assert cap_rows[1]["es_available"] is False
     assert threshold_rows[0]["sensitivity_threshold_quantile"] == 0.9

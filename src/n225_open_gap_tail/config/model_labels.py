@@ -6,14 +6,8 @@ _MODEL_DISPLAY_LABELS = {
     "lightgbm_location_scale_empirical": "LGBM location-scale empirical",
     "lightgbm_standardized_loss_pot_gpd": "LGBM POT-GPD",
     "lightgbm_standardized_loss_pot_gpd_plain_mle": "LGBM POT-GPD plain MLE",
-    "lightgbm_standardized_loss_pot_gpd_capped_mle": "LGBM POT-GPD capped MLE",
-    "lightgbm_standardized_loss_pot_gpd_evi_shrink": "LGBM POT-GPD EVI shrink",
-    "lightgbm_standardized_loss_pot_gpd_ei_weighted": "LGBM POT-GPD EI-weighted",
-    "lightgbm_standardized_loss_pot_gpd_stabilized": "LGBM POT-GPD stabilized",
-    "lightgbm_conditional_q90_pot_gpd_plain_mle": "LGBM conditional q90 POT-GPD plain MLE",
-    "lightgbm_conditional_q90_pot_gpd_stabilized": "LGBM conditional q90 POT-GPD stabilized",
+    "lightgbm_standardized_loss_pot_gpd_unibm": ("LGBM POT-GPD UniBM block-maxima shape"),
     "lightgbm_median_mad_pot_gpd_plain_mle": "LGBM median/MAD POT-GPD plain MLE",
-    "lightgbm_median_mad_pot_gpd_stabilized": "LGBM median/MAD POT-GPD stabilized",
     "lightgbm_median_iqr_pot_gpd_plain_mle": "LGBM median/IQR POT-GPD plain MLE",
 }
 

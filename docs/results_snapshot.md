@@ -260,7 +260,7 @@ Status: `completed`; forecast rows: `21146`; metric rows: `12`; failures: `0`.
 
 #### ML-Tail Headline Ladder
 
-Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quantile`, `LGBM location-scale empirical`, `LGBM POT-GPD plain MLE`, `LGBM POT-GPD capped MLE`, `LGBM POT-GPD EVI shrink`, `LGBM POT-GPD EI-weighted`, `LGBM POT-GPD stabilized`, `LGBM conditional q90 POT-GPD plain MLE`, `LGBM conditional q90 POT-GPD stabilized`, `LGBM median/MAD POT-GPD plain MLE`, `LGBM median/MAD POT-GPD stabilized`, `LGBM median/IQR POT-GPD plain MLE`; forecast rows: `46892`; failures: `0`.
+Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quantile`, `LGBM location-scale empirical`, `LGBM POT-GPD plain MLE`, `LGBM median/MAD POT-GPD plain MLE`, `LGBM median/IQR POT-GPD plain MLE`; forecast rows: `46892`; failures: `0`.
 
 | Model | Information set | Tail side | Rows | VaR breach rate | Exceptions | Mean quantile loss | Mean FZ loss |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -274,7 +274,7 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 | LGBM direct quantile | JP + US close core + JP proxy + Asia proxy | right_tail | 550 | 12.727% | 70 | 0.00127406 | -3.51453 |
 
 - This headline table remains strict and reports only ML-tail rows that pass the registered common-sample and coverage gates.
-- Location-scale empirical, plain POT-GPD, and stabilized POT-GPD are headline candidates only after their valid OOS coverage, standardized-loss, exceedance, and ES-validity gates pass.
+- Location-scale empirical and plain POT-GPD are headline candidates only after their valid OOS coverage, standardized-loss, exceedance, and ES-validity gates pass.
 - Differences across information blocks are candidate forecast evidence only after the common-sample, coverage, and inference diagnostics are reviewed.
 - Coverage review: `8/8` headline rows differ from the expected breach rate by more than 2.5 percentage points, so quantile/FZ loss differences alone must not be read as forecast improvement.
 
@@ -283,8 +283,8 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 | Artifact | Rows | Role | Claim boundary |
 | --- | --- | --- | --- |
 | `ml_tail_metrics.parquet` | 8 | Headline ML-tail nested-information-set comparison | Eligible for headline discussion after author review. |
-| `ml_tail_metrics_per_model.parquet` | 88 | Per-model diagnostics on each model's own valid OOS rows | Not a cross-model comparison and not a replacement headline table. |
-| `ml_tail_result_matrix.parquet` | 408 | Restricted common-sample VaR-only and VaR-ES comparisons | Restricted evidence; direct quantile rows here are comparison anchors. |
+| `ml_tail_metrics_per_model.parquet` | 40 | Per-model diagnostics on each model's own valid OOS rows | Not a cross-model comparison and not a replacement headline table. |
+| `ml_tail_result_matrix.parquet` | 180 | Restricted common-sample VaR-only and VaR-ES comparisons | Restricted evidence; direct quantile rows here are comparison anchors. |
 
 - `ml_tail_metrics.parquet` is the headline nested-information-set artifact. It contains the ML-tail rows that survived the strict common-sample gate in this run.
 - `ml_tail_metrics_per_model.parquet` reports each implemented ML-tail model on its own valid OOS rows; it is useful for debugging coverage but is not a cross-model comparison table.
@@ -312,34 +312,10 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 | benchmark_floor | gjr_garch_t | Target history | 2 | 661 +/- 0 | 5.144% +/- 1.926% | 1.362% +/- 0.203% | 0.00125676 +/- 0.000117851 | -3.76221 +/- 0.0749739 | 0.00940623 +/- 0.00137493 |
 | benchmark_floor | historical_quantile | Target history | 2 | 661 +/- 0 | 6.203% +/- 0.214% | 1.203% +/- 0.214% | 0.00147044 +/- 1.02336e-05 | -3.47657 +/- 0.0532175 | 0.0122667 +/- 0.000676839 |
 | benchmark_floor | rolling_quantile | Target history | 2 | 661 +/- 0 | 6.354% +/- 0.428% | 1.354% +/- 0.428% | 0.00147405 +/- 5.15148e-06 | -3.47034 +/- 0.0512931 | 0.0120561 +/- 0.000415452 |
-| ml_tail | LGBM POT-GPD EI-weighted | JP only | 2 | 475 +/- 0 | 5.158% +/- 1.340% | 0.947% +/- 0.223% | 0.00143629 +/- 0.000161593 | -3.53387 +/- 0.0716907 | 0.00997476 +/- 0.000842096 |
-| ml_tail | LGBM POT-GPD EI-weighted | JP + US close core | 2 | 475 +/- 0 | 5.474% +/- 0.298% | 0.474% +/- 0.298% | 0.00113815 +/- 1.72152e-06 | -3.8776 +/- 0.0952207 | 0.00862388 +/- 0.000602678 |
-| ml_tail | LGBM POT-GPD EI-weighted | JP + US close core + JP proxy | 2 | 461 +/- 0 | 4.664% +/- 0.460% | 0.336% +/- 0.460% | 0.00106108 +/- 3.15359e-05 | -3.94905 +/- 0.118796 | 0.00901382 +/- 0.000625581 |
-| ml_tail | LGBM POT-GPD EI-weighted | JP + US close core + JP proxy + Asia proxy | 2 | 461 +/- 0 | 4.881% +/- 1.687% | 1.193% +/- 0.169% | 0.00108099 +/- 9.24507e-05 | -3.82035 +/- 0.443333 | 0.00908733 +/- 0.000754414 |
-| ml_tail | LGBM POT-GPD EVI shrink | JP only | 2 | 475 +/- 0 | 5.158% +/- 1.340% | 0.947% +/- 0.223% | 0.00143653 +/- 0.000161814 | -3.53388 +/- 0.0721693 | 0.00997694 +/- 0.000849243 |
-| ml_tail | LGBM POT-GPD EVI shrink | JP + US close core | 2 | 475 +/- 0 | 5.474% +/- 0.298% | 0.474% +/- 0.298% | 0.00113825 +/- 1.7499e-06 | -3.87771 +/- 0.0950426 | 0.00862244 +/- 0.000602362 |
-| ml_tail | LGBM POT-GPD EVI shrink | JP + US close core + JP proxy | 2 | 461 +/- 0 | 4.664% +/- 0.460% | 0.336% +/- 0.460% | 0.00106093 +/- 3.15722e-05 | -3.9491 +/- 0.118256 | 0.0090113 +/- 0.000624728 |
-| ml_tail | LGBM POT-GPD EVI shrink | JP + US close core + JP proxy + Asia proxy | 2 | 461 +/- 0 | 4.881% +/- 1.687% | 1.193% +/- 0.169% | 0.00108099 +/- 9.24771e-05 | -3.82087 +/- 0.445122 | 0.00908606 +/- 0.000754356 |
-| ml_tail | LGBM POT-GPD capped MLE | JP only | 2 | 475 +/- 0 | 5.263% +/- 1.489% | 1.053% +/- 0.372% | 0.00143812 +/- 0.000161728 | -3.53127 +/- 0.0782643 | 0.00982267 +/- 0.00111114 |
-| ml_tail | LGBM POT-GPD capped MLE | JP + US close core | 2 | 475 +/- 0 | 5.474% +/- 0.298% | 0.474% +/- 0.298% | 0.0011394 +/- 2.8868e-06 | -3.88266 +/- 0.0929846 | 0.00858198 +/- 0.000546112 |
-| ml_tail | LGBM POT-GPD capped MLE | JP + US close core + JP proxy | 2 | 461 +/- 0 | 4.772% +/- 0.307% | 0.228% +/- 0.307% | 0.00105996 +/- 3.17773e-05 | -4.0774 +/- 0.068081 | 0.00874405 +/- 0.000328565 |
-| ml_tail | LGBM POT-GPD capped MLE | JP + US close core + JP proxy + Asia proxy | 2 | 461 +/- 0 | 4.881% +/- 1.380% | 0.976% +/- 0.169% | 0.00108202 +/- 9.21118e-05 | -3.82349 +/- 0.447209 | 0.0089689 +/- 0.000163428 |
 | ml_tail | LGBM POT-GPD plain MLE | JP only | 2 | 475 +/- 0 | 5.263% +/- 1.489% | 1.053% +/- 0.372% | 0.00143812 +/- 0.000161733 | -3.53128 +/- 0.0782704 | 0.00982267 +/- 0.00111104 |
 | ml_tail | LGBM POT-GPD plain MLE | JP + US close core | 2 | 475 +/- 0 | 5.368% +/- 0.149% | 0.368% +/- 0.149% | 0.00113983 +/- 3.50431e-06 | -3.86972 +/- 0.0746819 | 0.008734 +/- 0.000331215 |
 | ml_tail | LGBM POT-GPD plain MLE | JP + US close core + JP proxy | 2 | 461 +/- 0 | 4.772% +/- 0.307% | 0.228% +/- 0.307% | 0.00105996 +/- 3.17781e-05 | -4.0776 +/- 0.0682899 | 0.00874401 +/- 0.000328547 |
 | ml_tail | LGBM POT-GPD plain MLE | JP + US close core + JP proxy + Asia proxy | 2 | 461 +/- 0 | 4.881% +/- 1.380% | 0.976% +/- 0.169% | 0.00108132 +/- 9.31224e-05 | -3.82518 +/- 0.448947 | 0.0089437 +/- 0.000138481 |
-| ml_tail | LGBM POT-GPD stabilized | JP only | 2 | 475 +/- 0 | 5.158% +/- 1.340% | 0.947% +/- 0.223% | 0.00143629 +/- 0.000161593 | -3.53387 +/- 0.0716907 | 0.00997476 +/- 0.000842096 |
-| ml_tail | LGBM POT-GPD stabilized | JP + US close core | 2 | 475 +/- 0 | 5.474% +/- 0.298% | 0.474% +/- 0.298% | 0.00113815 +/- 1.72152e-06 | -3.8776 +/- 0.0952207 | 0.00862388 +/- 0.000602678 |
-| ml_tail | LGBM POT-GPD stabilized | JP + US close core + JP proxy | 2 | 461 +/- 0 | 4.664% +/- 0.460% | 0.336% +/- 0.460% | 0.00106108 +/- 3.15359e-05 | -3.94905 +/- 0.118796 | 0.00901382 +/- 0.000625581 |
-| ml_tail | LGBM POT-GPD stabilized | JP + US close core + JP proxy + Asia proxy | 2 | 461 +/- 0 | 4.881% +/- 1.687% | 1.193% +/- 0.169% | 0.00108099 +/- 9.24507e-05 | -3.82035 +/- 0.443333 | 0.00908733 +/- 0.000754414 |
-| ml_tail | LGBM conditional q90 POT-GPD plain MLE | JP only | 1 | 28 +/- 0 | 3.571% +/- 0.000% | 1.429% +/- 0.000% | 0.000990703 +/- 0 | -3.94912 +/- 0 | 0.00764752 +/- 0 |
-| ml_tail | LGBM conditional q90 POT-GPD plain MLE | JP + US close core | 1 | 36 +/- 0 | 5.556% +/- 0.000% | 0.556% +/- 0.000% | 0.000474017 +/- 0 | -4.77857 +/- 0 | 0.000673893 +/- 0 |
-| ml_tail | LGBM conditional q90 POT-GPD plain MLE | JP + US close core + JP proxy | 1 | 23 +/- 0 | 4.348% +/- 0.000% | 0.652% +/- 0.000% | 0.000376538 +/- 0 | -4.94318 +/- 0 | 6.58221e-05 +/- 0 |
-| ml_tail | LGBM conditional q90 POT-GPD plain MLE | JP + US close core + JP proxy + Asia proxy | 1 | 19 +/- 0 | 5.263% +/- 0.000% | 0.263% +/- 0.000% | 0.000403692 +/- 0 | -4.88732 +/- 0 | 0.000421166 +/- 0 |
-| ml_tail | LGBM conditional q90 POT-GPD stabilized | JP only | 1 | 28 +/- 0 | 3.571% +/- 0.000% | 1.429% +/- 0.000% | 0.000983391 +/- 0 | -3.95282 +/- 0 | 0.00871201 +/- 0 |
-| ml_tail | LGBM conditional q90 POT-GPD stabilized | JP + US close core | 1 | 36 +/- 0 | 5.556% +/- 0.000% | 0.556% +/- 0.000% | 0.00047967 +/- 0 | -4.75451 +/- 0 | 0.000945934 +/- 0 |
-| ml_tail | LGBM conditional q90 POT-GPD stabilized | JP + US close core + JP proxy | 1 | 23 +/- 0 | 13.043% +/- 0.000% | 8.043% +/- 0.000% | 0.000390424 +/- 0 | -4.91963 +/- 0 | 0.000151402 +/- 0 |
-| ml_tail | LGBM conditional q90 POT-GPD stabilized | JP + US close core + JP proxy + Asia proxy | 1 | 19 +/- 0 | 5.263% +/- 0.000% | 0.263% +/- 0.000% | 0.000396978 +/- 0 | -4.90251 +/- 0 | 0.00029148 +/- 0 |
 | ml_tail | LGBM direct quantile | JP only | 2 | 577 +/- 0 | 8.406% +/- 1.348% | 3.406% +/- 1.348% | 0.0013192 +/- 6.02852e-05 | -3.55586 +/- 0.0487363 | 0.00840518 +/- 0.0010658 |
 | ml_tail | LGBM direct quantile | JP + US close core | 2 | 577 +/- 0 | 11.265% +/- 0.735% | 6.265% +/- 0.735% | 0.00121287 +/- 8.41547e-05 | -3.56054 +/- 0.153657 | 0.00672302 +/- 0.000475093 |
 | ml_tail | LGBM direct quantile | JP + US close core + JP proxy | 2 | 550 +/- 0 | 11.818% +/- 0.257% | 6.818% +/- 0.257% | 0.00121441 +/- 0.000110342 | -3.60554 +/- 0.219328 | 0.0065262 +/- 0.000939602 |
@@ -356,10 +332,6 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 | ml_tail | LGBM median/MAD POT-GPD plain MLE | JP + US close core | 2 | 475 +/- 0 | 7.368% +/- 0.298% | 2.368% +/- 0.298% | 0.00119332 +/- 7.76125e-05 | -3.87811 +/- 0.125271 | 0.00878918 +/- 0.00120023 |
 | ml_tail | LGBM median/MAD POT-GPD plain MLE | JP + US close core + JP proxy | 2 | 461 +/- 0 | 7.050% +/- 0.767% | 2.050% +/- 0.767% | 0.00113052 +/- 0.000118817 | -3.96233 +/- 0.245708 | 0.00844573 +/- 0.00109905 |
 | ml_tail | LGBM median/MAD POT-GPD plain MLE | JP + US close core + JP proxy + Asia proxy | 2 | 461 +/- 0 | 6.833% +/- 1.687% | 1.833% +/- 1.687% | 0.00111197 +/- 0.00013827 | -3.97059 +/- 0.333302 | 0.00847972 +/- 0.00042278 |
-| ml_tail | LGBM median/MAD POT-GPD stabilized | JP only | 2 | 475 +/- 0 | 5.684% +/- 0.893% | 0.684% +/- 0.893% | 0.0013628 +/- 0.000166391 | -3.69421 +/- 0.126373 | 0.00964987 +/- 0.00219316 |
-| ml_tail | LGBM median/MAD POT-GPD stabilized | JP + US close core | 2 | 475 +/- 0 | 7.474% +/- 0.149% | 2.474% +/- 0.149% | 0.00119314 +/- 7.97593e-05 | -3.88149 +/- 0.125503 | 0.00870034 +/- 0.00137456 |
-| ml_tail | LGBM median/MAD POT-GPD stabilized | JP + US close core + JP proxy | 2 | 461 +/- 0 | 7.050% +/- 0.767% | 2.050% +/- 0.767% | 0.00113083 +/- 0.000117246 | -3.96339 +/- 0.24094 | 0.00846168 +/- 0.00108002 |
-| ml_tail | LGBM median/MAD POT-GPD stabilized | JP + US close core + JP proxy + Asia proxy | 2 | 461 +/- 0 | 7.158% +/- 1.227% | 2.158% +/- 1.227% | 0.00111244 +/- 0.000139018 | -3.96212 +/- 0.347415 | 0.00810695 +/- 0.000996253 |
 
 - This table joins `benchmark_metrics_per_model.parquet` and `ml_tail_metrics_per_model.parquet` so all benchmark and LGBM tail-model variants are visible in one place.
 - Mean and standard deviation are computed across registered metric rows for the same suite/model/information-set configuration; for most rows this summarizes left- and right-tail metrics.
@@ -369,14 +341,14 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 
 | Family | Axis | Loss | Rows | Common N | Date range | Joint exceptions |
 | --- | --- | --- | --- | --- | --- | --- |
-| nested information sets | information_set_increment | var_coverage | 88 | 0 to 550 | 2023-03-24 to 2026-05-01 | 0 to 87 |
-| nested information sets | information_set_increment | var_es_fz_loss | 88 | 0 to 550 | 2023-03-24 to 2026-05-01 | 0 to 87 |
-| nested information sets | information_set_increment | var_quantile_loss | 88 | 0 to 550 | 2023-03-24 to 2026-05-01 | 0 to 87 |
-| tail_model_family | model_family | var_coverage | 48 | 0 to 28 | None to None | 0 to 3 |
-| tail_model_family | model_family | var_es_fz_loss | 48 | 0 to 28 | None to None | 0 to 3 |
-| tail_model_family | model_family | var_quantile_loss | 48 | 0 to 28 | None to None | 0 to 3 |
+| nested information sets | information_set_increment | var_coverage | 40 | 461 to 550 | 2023-03-24 to 2026-05-01 | 46 to 87 |
+| nested information sets | information_set_increment | var_es_fz_loss | 40 | 461 to 550 | 2023-03-24 to 2026-05-01 | 46 to 87 |
+| nested information sets | information_set_increment | var_quantile_loss | 40 | 461 to 550 | 2023-03-24 to 2026-05-01 | 46 to 87 |
+| tail_model_family | model_family | var_coverage | 20 | 0 to 28 | None to None | 0 to 3 |
+| tail_model_family | model_family | var_es_fz_loss | 20 | 0 to 28 | None to None | 0 to 3 |
+| tail_model_family | model_family | var_quantile_loss | 20 | 0 to 28 | None to None | 0 to 3 |
 
-- The result matrix is the right place to compare direct quantile, location-scale empirical, plain POT-GPD, stabilized POT-GPD, and ablation variants on their restricted common dates.
+- The result matrix is the right place to compare direct quantile, location-scale empirical, plain POT-GPD, and the robust plain POT-GPD routes on their restricted common dates.
 - It separates VaR-only losses from VaR-ES joint scoring, so VaR-only claims are not confused with ES claims.
 - Restricted direct-quantile performance is only a comparison anchor for the tail-model family; it does not replace the headline direct-quantile evidence.
 - DM and MCS records are emitted only where registered row-count and exception-count gates pass; otherwise the result matrix remains descriptive.
@@ -414,7 +386,7 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 
 - `ml_tail_metrics.parquet` defines the headline ML-tail comparison across nested information sets for this run.
 - The headline artifact contains `4` information sets, `1` tail level(s), and `2` tail side(s); the retained headline model rows are `LGBM direct quantile`.
-- The implemented ML-tail registry is `LGBM direct quantile`, `LGBM location-scale empirical`, `LGBM POT-GPD plain MLE`, `LGBM POT-GPD capped MLE`, `LGBM POT-GPD EVI shrink`, `LGBM POT-GPD EI-weighted`, `LGBM POT-GPD stabilized`, `LGBM conditional q90 POT-GPD plain MLE`, `LGBM conditional q90 POT-GPD stabilized`, `LGBM median/MAD POT-GPD plain MLE`, `LGBM median/MAD POT-GPD stabilized`, `LGBM median/IQR POT-GPD plain MLE`, but the headline nested-information-set comparison should be read only from `ml_tail_metrics.parquet`.
+- The implemented ML-tail registry is `LGBM direct quantile`, `LGBM location-scale empirical`, `LGBM POT-GPD plain MLE`, `LGBM median/MAD POT-GPD plain MLE`, `LGBM median/IQR POT-GPD plain MLE`, but the headline nested-information-set comparison should be read only from `ml_tail_metrics.parquet`.
 - The nested information sets report downside-risk and upside-risk surfaces separately. The registered artifacts show different left/right patterns, and the generator does not assume that the two sides share the same economic mechanism.
 - Coverage warning: all `8` headline rows exhibit VaR breach rates (`0.0763636` to `0.127273`) that exceed the nominal level by more than 2.5 percentage points. Quantile-loss and FZ-loss differences across the nested information sets must be interpreted in this context; lower loss scores may partly reflect less conservative VaR estimates rather than better conditional tail calibration.
 - On `left_tail`, the largest quantile-loss change occurs at the first information-set augmentation (adding U.S. close core); subsequent additions of Japan proxy and Asia proxy ETFs contribute diminishing incremental loss changes. This saturation pattern is descriptive and does not automatically reduce the value of the broader information set.
@@ -422,7 +394,7 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 
 #### Restricted model-family comparison
 
-- `ml_tail_result_matrix.parquet` contains restricted common-sample comparisons for `12` LightGBM tail-model families.
+- `ml_tail_result_matrix.parquet` contains restricted common-sample comparisons for `5` LightGBM tail-model families.
 - The restricted common-N range is `0 to 550` and the joint-exception range is `0 to 87`.
 - Recorded claim scopes are `restricted_model_comparison_not_headline`; these rows are restricted evidence and cannot replace the headline nested-information-set comparison.
 - The tail-model family comparison is severely sample-limited: the largest restricted common-N is `28` rows. No model-family ranking claim is supportable from this restricted sample; extended OOS coverage is needed before tail-model family ranking becomes meaningful.
@@ -435,7 +407,7 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 - Model-eviction artifacts record `8` retained rows and `80` non-retained rows under the headline sample policy.
 - Block-bootstrap DM and HLN Tmax MCS artifacts are unconditional forecast-comparison diagnostics; any p-value should be read on average across the unconditional evaluation sample, not as condition-specific evidence.
 - Loss differentials alone do not constitute an improvement claim; coverage, exception counts, sample gates, and inference status must be reviewed together.
-- Result-matrix tail-event power flags and suite-level inference gates report `36` restricted rows with insufficient tail-event power and `0/36` unavailable DM/MCS inference rows.
+- Result-matrix tail-event power flags and suite-level inference gates report `15` restricted rows with insufficient tail-event power and `0/36` unavailable DM/MCS inference rows.
 
 #### CPA as conditional loss-difference diagnostics
 

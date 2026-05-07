@@ -33,6 +33,13 @@ from n225_open_gap_tail.config.runtime import (
 from n225_open_gap_tail.data_lake.artifacts import _forecast_shard_id
 from n225_open_gap_tail.features.asof import _evt_threshold_diagnostics
 
+UNIBM_EVI_MIN_FINITE_VALUES = 32
+UNIBM_EVI_MIN_POSITIVE_BLOCK_SUMMARIES = 5
+UNIBM_EVI_MIN_PLATEAU_POINTS = 5
+UNIBM_EVI_MIN_BLOCK_MAXIMA_PER_PLATEAU_POINT = 20
+UNIBM_EVI_QUANTILE = 0.5
+UNIBM_EVI_SLIDING_BLOCKS = True
+
 
 def resolve_run_dir(settings: Settings, run_id: str) -> Path:
     runs_dir = settings.reports_dir / "runs"
@@ -478,6 +485,7 @@ def _pot_gpd_standardized_tail(
         shape, scale = _select_evt_shape_and_scale(
             excesses=excesses,
             exceedance_indices=exceedance_indices,
+            evi_sample=values,
             shape_mle=shape_mle,
             scale_mle=scale_mle,
             evt_variant=evt_variant,
@@ -532,6 +540,7 @@ def _pot_gpd_standardized_tail(
         "threshold_value": threshold,
         "evt_exceedance_count": int(excesses.size),
         "evt_shape": shape if tail_level > threshold_quantile else None,
+        "evt_shape_bin": _evt_shape_bin(shape if tail_level > threshold_quantile else None),
         "evt_scale": scale if tail_level > threshold_quantile else None,
         "evt_variant": evt_variant,
         "evt_shape_method": shape_method,
@@ -544,6 +553,20 @@ def _pot_gpd_standardized_tail(
         "evt_xi_evi_anchor": evi.get("xi_evi_anchor"),
         "evt_theta_hat": ei.get("theta_hat"),
         "evt_effective_exceedance_count": ei.get("effective_exceedance_count"),
+        "evt_unibm_n_obs": evi.get("n_obs"),
+        "evt_unibm_min_block_size": evi.get("min_block_size"),
+        "evt_unibm_max_block_size": evi.get("max_block_size"),
+        "evt_unibm_sliding_blocks": evi.get("sliding"),
+        "evt_unibm_bootstrap_reps": evi.get("bootstrap_reps"),
+        "evt_unibm_plateau_point_count": evi.get("plateau_point_count"),
+        "evt_unibm_block_sizes_json": json.dumps(evi.get("block_sizes"), sort_keys=True),
+        "evt_unibm_block_counts_json": json.dumps(evi.get("block_counts"), sort_keys=True),
+        "evt_unibm_plateau_block_sizes_json": json.dumps(
+            evi.get("plateau_block_sizes"), sort_keys=True
+        ),
+        "evt_unibm_plateau_block_counts_json": json.dumps(
+            evi.get("plateau_block_counts"), sort_keys=True
+        ),
         "evt_scale_refit_status": scale_refit_status,
         "evt_es_finite": bool(math.isfinite(float(max(var_z, es_z)))),
         "evt_evi_diagnostics_json": json.dumps(evi, sort_keys=True, default=str),
@@ -560,183 +583,11 @@ def _pot_gpd_standardized_tail(
     }
 
 
-def _pot_gpd_excess_tail(
-    *,
-    excesses: np.ndarray,
-    tail_level: float,
-    gpd_probability: float,
-    evt_variant: str = "plain_mle",
-    shape_cap: tuple[float, float] | None = None,
-    shape_shrinkage_k: float | None = None,
-    min_exceedances: int | None = None,
-    exceedance_indices: np.ndarray | None = None,
-) -> dict[str, object]:
-    values = excesses[np.isfinite(excesses) & (excesses > 0.0)]
-    min_exceedances = (
-        DEFAULT_MIN_TRAIN_EXCEEDANCES if min_exceedances is None else int(min_exceedances)
-    )
-    if values.size < min_exceedances:
-        return {
-            "excess_var": None,
-            "excess_es": None,
-            "evt_variant": evt_variant,
-            "evt_exceedance_count": int(values.size),
-            "evt_min_exceedances": min_exceedances,
-            "gpd_fit_status": "unavailable_insufficient_exceedances",
-            "gpd_es_status": "unavailable_gpd_fit_failed",
-            "tail_method": "conditional_threshold_pot_gpd",
-        }
-    if not math.isfinite(gpd_probability) or not 0.0 < gpd_probability < 1.0:
-        return {
-            "excess_var": None,
-            "excess_es": None,
-            "evt_variant": evt_variant,
-            "evt_exceedance_count": int(values.size),
-            "evt_min_exceedances": min_exceedances,
-            "gpd_fit_status": "unavailable_invalid_gpd_probability",
-            "gpd_es_status": "unavailable_gpd_fit_failed",
-            "tail_method": "conditional_threshold_pot_gpd",
-        }
-    try:
-        shape_mle, _, scale_mle = stats.genpareto.fit(values, floc=0.0)
-        shape_mle = float(shape_mle)
-        scale_mle = float(max(scale_mle, 1e-12))
-    except Exception:
-        return {
-            "excess_var": None,
-            "excess_es": None,
-            "evt_variant": evt_variant,
-            "evt_exceedance_count": int(values.size),
-            "evt_min_exceedances": min_exceedances,
-            "gpd_fit_status": "unavailable_optimizer_failed",
-            "gpd_es_status": "unavailable_gpd_fit_failed",
-            "tail_method": "conditional_threshold_pot_gpd",
-        }
-    if not math.isfinite(shape_mle):
-        return {
-            "excess_var": None,
-            "excess_es": None,
-            "evt_variant": evt_variant,
-            "evt_shape_mle": shape_mle,
-            "evt_scale_mle": scale_mle,
-            "evt_exceedance_count": int(values.size),
-            "evt_min_exceedances": min_exceedances,
-            "gpd_fit_status": "unavailable_invalid_shape",
-            "gpd_es_status": "unavailable_gpd_fit_failed",
-            "tail_method": "conditional_threshold_pot_gpd",
-        }
-    if not math.isfinite(scale_mle) or scale_mle <= 0.0:
-        return {
-            "excess_var": None,
-            "excess_es": None,
-            "evt_variant": evt_variant,
-            "evt_shape_mle": shape_mle,
-            "evt_scale_mle": scale_mle,
-            "evt_exceedance_count": int(values.size),
-            "evt_min_exceedances": min_exceedances,
-            "gpd_fit_status": "unavailable_negative_scale",
-            "gpd_es_status": "unavailable_invalid_scale",
-            "tail_method": "conditional_threshold_pot_gpd",
-        }
-    try:
-        selected_shape, selected_scale = _select_evt_shape_and_scale(
-            excesses=values,
-            exceedance_indices=np.arange(values.size)
-            if exceedance_indices is None
-            else np.asarray(exceedance_indices, dtype=int),
-            shape_mle=shape_mle,
-            scale_mle=scale_mle,
-            evt_variant=evt_variant,
-            shape_cap=shape_cap,
-            shape_shrinkage_k=shape_shrinkage_k,
-        )
-        shape = _required_float(selected_shape["shape_final"])
-        scale = _required_float(selected_scale["scale_final"])
-    except Exception:
-        return {
-            "excess_var": None,
-            "excess_es": None,
-            "evt_variant": evt_variant,
-            "evt_shape_mle": shape_mle,
-            "evt_scale_mle": scale_mle,
-            "evt_exceedance_count": int(values.size),
-            "evt_min_exceedances": min_exceedances,
-            "gpd_fit_status": "unavailable_optimizer_failed",
-            "gpd_es_status": "unavailable_gpd_fit_failed",
-            "tail_method": "conditional_threshold_pot_gpd",
-        }
-    evi = cast(dict[str, object], selected_shape.get("evi") or {})
-    ei = cast(dict[str, object], selected_shape.get("ei") or {})
-    if not math.isfinite(scale) or scale <= 0.0:
-        gpd_fit_status = "unavailable_negative_scale"
-        excess_var = None
-    else:
-        excess_var = float(stats.genpareto.ppf(gpd_probability, c=shape, loc=0.0, scale=scale))
-        if not math.isfinite(excess_var):
-            gpd_fit_status = "unavailable_invalid_quantile"
-            excess_var = None
-        elif shape < 0.0 and excess_var >= -scale / shape:
-            gpd_fit_status = "unavailable_support_violation"
-            excess_var = None
-        else:
-            gpd_fit_status = "ok"
-    excess_es: float | None = None
-    gpd_es_status = "unavailable_gpd_fit_failed"
-    if excess_var is not None:
-        if shape < 1.0:
-            excess_es = float((excess_var + scale) / (1.0 - shape))
-            gpd_es_status = "ok" if math.isfinite(excess_es) else "unavailable_nonfinite_es"
-        else:
-            gpd_es_status = "unavailable_shape_ge_1"
-    cap_sensitivity = _evt_cap_sensitivity(
-        shape_mle=shape_mle,
-        caps=(
-            PIPELINE_CONFIG.model_policy.evt_shape_cap_conservative,
-            PIPELINE_CONFIG.model_policy.evt_shape_cap_baseline,
-            PIPELINE_CONFIG.model_policy.evt_shape_cap_loose,
-        ),
-    )
-    diagnostics = _evt_threshold_diagnostics(values)
-    return {
-        "excess_var": excess_var,
-        "excess_es": excess_es,
-        "tail_level": float(tail_level),
-        "gpd_probability": float(gpd_probability),
-        "evt_exceedance_count": int(values.size),
-        "evt_min_exceedances": int(min_exceedances),
-        "evt_shape": shape,
-        "evt_scale": scale,
-        "evt_variant": evt_variant,
-        "evt_shape_method": selected_shape.get("shape_method"),
-        "evt_cap_policy": selected_shape.get("cap_policy"),
-        "evt_cap_hit": selected_shape.get("cap_hit"),
-        "evt_shape_mle": shape_mle,
-        "evt_scale_mle": scale_mle,
-        "evt_evi_status": evi.get("status"),
-        "evt_ei_status": ei.get("status"),
-        "evt_xi_evi_anchor": evi.get("xi_evi_anchor"),
-        "evt_theta_hat": ei.get("theta_hat"),
-        "evt_effective_exceedance_count": ei.get("effective_exceedance_count"),
-        "evt_scale_refit_status": selected_scale.get("scale_refit_status"),
-        "evt_es_finite": gpd_es_status == "ok",
-        "evt_evi_diagnostics_json": json.dumps(evi, sort_keys=True, default=str),
-        "evt_ei_diagnostics_json": json.dumps(ei, sort_keys=True, default=str),
-        "evt_cap_sensitivity_json": json.dumps(cap_sensitivity, sort_keys=True),
-        "evt_threshold_sensitivity_json": json.dumps([], sort_keys=True),
-        "threshold_diagnostics_json": json.dumps(diagnostics, sort_keys=True),
-        "threshold_policy": "conditional_q90_threshold",
-        "threshold_smoothing": "not_applicable_conditional_threshold",
-        "threshold_selection": "blocked_expanding_oof_conditional_q90",
-        "tail_method": "conditional_threshold_pot_gpd",
-        "gpd_fit_status": gpd_fit_status,
-        "gpd_es_status": gpd_es_status,
-    }
-
-
 def _select_evt_shape_and_scale(
     *,
     excesses: np.ndarray,
     exceedance_indices: np.ndarray,
+    evi_sample: np.ndarray,
     shape_mle: float,
     scale_mle: float,
     evt_variant: str,
@@ -744,15 +595,8 @@ def _select_evt_shape_and_scale(
     shape_shrinkage_k: float | None,
 ) -> tuple[dict[str, object], dict[str, object]]:
     variant = evt_variant.strip().lower()
-    cap = shape_cap or PIPELINE_CONFIG.model_policy.evt_shape_cap_baseline
-    shrinkage_k = (
-        PIPELINE_CONFIG.model_policy.evt_shape_shrinkage_k
-        if shape_shrinkage_k is None
-        else float(shape_shrinkage_k)
-    )
     evi = _unavailable_evi_anchor("not_used")
     ei = _unavailable_extremal_index("not_used", theta=1.0)
-    xi_candidate = shape_mle
     shape_method = "fixed_loc_mle"
     if variant == "plain_mle":
         cap_policy = "none"
@@ -768,49 +612,246 @@ def _select_evt_shape_and_scale(
             },
             {"scale_final": float(scale_mle), "scale_refit_status": "original_fixed_loc_mle"},
         )
-    elif variant == "capped_mle":
-        xi_candidate, cap_hit = _clip_with_flag(shape_mle, cap)
-        cap_policy = _cap_policy_name(cap)
-        shape_method = "capped_fixed_loc_mle"
-    elif variant in {"evi_shrink", "ei_weighted", "stabilized"}:
-        evi = _estimate_evi_anchor(excesses)
-        if evi.get("status") == "ok":
-            if variant in {"ei_weighted", "stabilized"}:
-                ei = _estimate_extremal_index(exceedance_indices, excesses.size)
-            else:
-                ei = _unavailable_extremal_index("not_used_no_cluster_discount", theta=1.0)
-            theta_hat = _optional_float(ei.get("theta_hat")) or 1.0
-            n_eff = max(theta_hat * float(excesses.size), 1.0)
-            weight = n_eff / (n_eff + shrinkage_k)
-            anchor = _required_float(evi["xi_evi_anchor"])
-            xi_candidate = weight * shape_mle + (1.0 - weight) * anchor
-            shape_method = {
-                "evi_shrink": "mle_evi_anchor_shrinkage",
-                "ei_weighted": "mle_evi_anchor_ei_weighted",
-                "stabilized": "stabilized_mle_evi_anchor_ei_weighted",
-            }[variant]
-            ei["effective_exceedance_count"] = float(n_eff)
-            ei["shape_mle_weight"] = float(weight)
-        else:
-            xi_candidate = shape_mle
-            shape_method = f"{variant}_evi_unavailable_fallback_capped_mle"
-            ei = _unavailable_extremal_index("unavailable_evi_anchor_no_discount", theta=1.0)
-        xi_candidate, cap_hit = _clip_with_flag(xi_candidate, cap)
-        cap_policy = _cap_policy_name(cap)
+    if variant == "unibm":
+        evi = _estimate_unibm_evi_anchor(evi_sample)
+        shape = _optional_float(evi.get("xi_evi_anchor"))
+        if evi.get("status") != "ok" or shape is None:
+            raise PipelineRunError(f"unavailable_evt_unibm: {evi.get('status')}")
+        if not math.isfinite(shape):
+            raise PipelineRunError("unavailable_evt_unibm: nonfinite_xi")
+        scale = _refit_gpd_scale_fixed_shape(excesses, shape)
+        return (
+            {
+                "shape_final": float(shape),
+                "shape_method": "unibm_block_maxima_xi_fixed_shape_scale_refit",
+                "cap_policy": "none",
+                "cap_hit": False,
+                "evi": evi,
+                "ei": ei,
+            },
+            scale,
+        )
     else:
         raise PipelineRunError(f"Unknown EVT variant: {evt_variant}")
-    scale = _refit_gpd_scale_fixed_shape(excesses, xi_candidate)
-    return (
-        {
-            "shape_final": float(xi_candidate),
-            "shape_method": shape_method,
-            "cap_policy": cap_policy,
-            "cap_hit": cap_hit,
-            "evi": evi,
-            "ei": ei,
-        },
-        scale,
-    )
+
+
+def _evt_shape_bin(shape: object) -> str | None:
+    value = _optional_float(shape)
+    if value is None or not math.isfinite(value):
+        return None
+    if value <= -0.5:
+        return "(-inf,-0.5]"
+    if value <= -0.25:
+        return "(-0.5,-0.25]"
+    if value < 0.0:
+        return "(-0.25,0)"
+    if value < 0.75:
+        return "[0,0.75)"
+    if value < 1.0:
+        return "[0.75,1)"
+    if value < 1.5:
+        return "[1,1.5)"
+    return "[1.5,inf)"
+
+
+def _estimate_unibm_evi_anchor(sample: np.ndarray) -> dict[str, object]:
+    """Estimate GPD shape xi with the UniBM block-quantile scaling law."""
+    try:
+        values = np.asarray(sample, dtype=float).reshape(-1)
+        values = values[np.isfinite(values)]
+        n_obs = int(values.size)
+        if n_obs < UNIBM_EVI_MIN_FINITE_VALUES:
+            return {
+                **_unavailable_evi_anchor("unavailable_unibm_insufficient_finite_values"),
+                "n_obs": n_obs,
+                "min_finite_values": UNIBM_EVI_MIN_FINITE_VALUES,
+                "sliding": UNIBM_EVI_SLIDING_BLOCKS,
+            }
+        block_sizes = _unibm_block_sizes(values.size)
+        if block_sizes.size < 5:
+            return {
+                **_unavailable_evi_anchor("unavailable_unibm_insufficient_block_grid"),
+                "n_obs": n_obs,
+                "min_block_size": None,
+                "max_block_size": None,
+                "block_sizes": [int(value) for value in block_sizes],
+                "sliding": UNIBM_EVI_SLIDING_BLOCKS,
+            }
+        summaries: list[float] = []
+        counts: list[int] = []
+        for block_size in block_sizes:
+            maxima = _sliding_block_maxima(values, int(block_size))
+            counts.append(int(maxima.size))
+            summary = (
+                float(np.quantile(maxima, UNIBM_EVI_QUANTILE, method="median_unbiased"))
+                if maxima.size
+                else math.nan
+            )
+            summaries.append(summary)
+        summary_array = np.asarray(summaries, dtype=float)
+        count_array = np.asarray(counts, dtype=int)
+        positive_mask = np.isfinite(summary_array) & (summary_array > 0.0) & (count_array > 0)
+        eligible_mask = positive_mask & (
+            count_array >= UNIBM_EVI_MIN_BLOCK_MAXIMA_PER_PLATEAU_POINT
+        )
+        base_payload = {
+            "n_obs": n_obs,
+            "min_block_size": int(block_sizes[0]),
+            "max_block_size": int(block_sizes[-1]),
+            "block_sizes": [int(value) for value in block_sizes],
+            "block_counts": [int(value) for value in count_array],
+            "block_summary_values": [
+                None if not math.isfinite(value) else float(value) for value in summary_array
+            ],
+            "positive_block_sizes": [int(value) for value in block_sizes[positive_mask]],
+            "eligible_block_sizes": [int(value) for value in block_sizes[eligible_mask]],
+            "min_block_maxima_per_plateau_point": UNIBM_EVI_MIN_BLOCK_MAXIMA_PER_PLATEAU_POINT,
+            "sliding": UNIBM_EVI_SLIDING_BLOCKS,
+            "bootstrap_reps": 0,
+        }
+        if int(np.sum(positive_mask)) < UNIBM_EVI_MIN_POSITIVE_BLOCK_SUMMARIES:
+            return {
+                **_unavailable_evi_anchor("unavailable_unibm_insufficient_positive_summaries"),
+                **base_payload,
+            }
+        if int(np.sum(eligible_mask)) < UNIBM_EVI_MIN_PLATEAU_POINTS:
+            return {
+                **_unavailable_evi_anchor("unavailable_unibm_insufficient_eligible_block_counts"),
+                **base_payload,
+            }
+        x = np.log(block_sizes[eligible_mask].astype(float))
+        y = np.log(summary_array[eligible_mask])
+        selected = _unibm_select_plateau_window(x, y, min_points=UNIBM_EVI_MIN_PLATEAU_POINTS)
+        x_window = x[selected["start"] : selected["stop"]]
+        y_window = y[selected["start"] : selected["stop"]]
+        eligible_sizes = block_sizes[eligible_mask]
+        eligible_counts = count_array[eligible_mask]
+        plateau_counts = eligible_counts[selected["start"] : selected["stop"]]
+        if plateau_counts.size < UNIBM_EVI_MIN_PLATEAU_POINTS:
+            return {
+                **_unavailable_evi_anchor("unavailable_unibm_insufficient_plateau_points"),
+                **base_payload,
+            }
+        if int(np.min(plateau_counts)) < UNIBM_EVI_MIN_BLOCK_MAXIMA_PER_PLATEAU_POINT:
+            return {
+                **_unavailable_evi_anchor("unavailable_unibm_insufficient_plateau_block_counts"),
+                **base_payload,
+            }
+        fit = _unibm_fit_linear_model(x_window, y_window)
+        slope = _optional_float(fit.get("slope"))
+        if slope is None or not math.isfinite(slope):
+            return {
+                **_unavailable_evi_anchor("unavailable_unibm_nonfinite_slope"),
+                **base_payload,
+            }
+        se = _optional_float(fit.get("standard_error"))
+        ci = (
+            [float(slope - 1.96 * se), float(slope + 1.96 * se)]
+            if se is not None and math.isfinite(se)
+            else [None, None]
+        )
+        return {
+            **base_payload,
+            "status": "ok",
+            "primary_estimator": "unibm_block_quantile_scaling",
+            "xi_evi_anchor": float(slope),
+            "quantile": UNIBM_EVI_QUANTILE,
+            "plateau_block_sizes": [
+                int(value) for value in eligible_sizes[selected["start"] : selected["stop"]]
+            ],
+            "plateau_block_counts": [int(value) for value in plateau_counts],
+            "plateau_point_count": int(plateau_counts.size),
+            "plateau_score": float(selected["score"]),
+            "intercept": _optional_float(fit.get("intercept")),
+            "slope": float(slope),
+            "standard_error": se,
+            "confidence_interval": ci,
+            "method_note": (
+                "POT-GPD with UniBM block-maxima-derived shape: sliding block-maxima "
+                "median-quantile log-log scaling; the selected-plateau slope is GPD "
+                "shape xi, not reciprocal Pareto alpha."
+            ),
+        }
+    except Exception as exc:  # pragma: no cover - defensive diagnostics
+        return _unavailable_evi_anchor(f"unavailable_unibm_exception:{type(exc).__name__}")
+
+
+def _unibm_block_sizes(n_obs: int) -> np.ndarray:
+    if n_obs < UNIBM_EVI_MIN_FINITE_VALUES:
+        return np.asarray([], dtype=int)
+    min_block_size = max(5, int(math.ceil(n_obs**0.2)))
+    exponent_cap = int(math.floor(n_obs**0.55))
+    disjoint_cap = int(math.floor(n_obs / 15))
+    max_block_size = min(n_obs, max(min_block_size + 4, min(exponent_cap, disjoint_cap)))
+    num_step = min(32, max(10, max_block_size - min_block_size + 1))
+    grid = np.geomspace(min_block_size, max_block_size, num=num_step)
+    block_sizes = np.unique(np.clip(np.rint(grid).astype(int), min_block_size, max_block_size))
+    return block_sizes[(block_sizes > 1) & (block_sizes <= n_obs)]
+
+
+def _sliding_block_maxima(values: np.ndarray, block_size: int) -> np.ndarray:
+    if block_size < 2 or values.size < block_size:
+        return np.asarray([], dtype=float)
+    windows = np.lib.stride_tricks.sliding_window_view(values, block_size)
+    finite = np.all(np.isfinite(windows), axis=1)
+    if not np.any(finite):
+        return np.asarray([], dtype=float)
+    return np.max(windows[finite], axis=1)
+
+
+def _unibm_select_plateau_window(
+    log_block_sizes: np.ndarray,
+    log_values: np.ndarray,
+    *,
+    min_points: int = 5,
+    trim_fraction: float = 0.15,
+    curvature_penalty: float = 2.0,
+) -> dict[str, object]:
+    n = int(log_block_sizes.size)
+    if n < min_points:
+        raise PipelineRunError("UniBM EVI has insufficient positive block summaries")
+    lo = int(math.floor(n * trim_fraction))
+    hi = n - lo
+    lo = min(lo, max(n - min_points, 0))
+    if hi - lo < min_points:
+        lo = 0
+        hi = n
+    slopes = np.diff(log_values) / np.diff(log_block_sizes)
+    best: tuple[float, int, int] | None = None
+    for start in range(lo, hi - min_points + 1):
+        for stop in range(start + min_points, hi + 1):
+            x_window = log_block_sizes[start:stop]
+            y_window = log_values[start:stop]
+            fit = _unibm_fit_linear_model(x_window, y_window)
+            fitted = _required_float(fit["intercept"]) + _required_float(fit["slope"]) * x_window
+            mse = float(np.mean((y_window - fitted) ** 2))
+            if stop - start > 2:
+                curvature = float(np.mean(np.abs(np.diff(slopes[start : stop - 1]))))
+            else:
+                curvature = 0.0
+            score = (mse + curvature_penalty * curvature) / math.sqrt(float(stop - start))
+            if best is None or score < best[0]:
+                best = (score, start, stop)
+    if best is None:
+        raise PipelineRunError("UniBM EVI plateau selection failed")
+    return {"score": float(best[0]), "start": int(best[1]), "stop": int(best[2])}
+
+
+def _unibm_fit_linear_model(x: np.ndarray, y: np.ndarray) -> dict[str, object]:
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    x_design = np.column_stack([np.ones_like(x), x])
+    beta, *_ = np.linalg.lstsq(x_design, y, rcond=None)
+    fitted = x_design @ beta
+    resid = y - fitted
+    normal_inv = np.linalg.pinv(x_design.T @ x_design)
+    meat = x_design.T @ np.diag(resid**2) @ x_design
+    cov_beta = normal_inv @ meat @ normal_inv
+    return {
+        "intercept": float(beta[0]),
+        "slope": float(beta[1]),
+        "standard_error": float(math.sqrt(max(float(cov_beta[1, 1]), 0.0))),
+    }
 
 
 def _refit_gpd_scale_fixed_shape(excesses: np.ndarray, shape: float) -> dict[str, object]:
@@ -1101,6 +1142,7 @@ def _evt_threshold_sensitivity(
             selected_shape, selected_scale = _select_evt_shape_and_scale(
                 excesses=excesses,
                 exceedance_indices=exceedance_indices,
+                evi_sample=finite,
                 shape_mle=shape_mle,
                 scale_mle=scale_mle,
                 evt_variant=evt_variant,
@@ -1131,6 +1173,7 @@ def _evt_threshold_sensitivity(
                     "threshold_value": threshold,
                     "evt_exceedance_count": int(excesses.size),
                     "evt_shape": shape,
+                    "evt_shape_bin": _evt_shape_bin(shape),
                     "evt_scale": scale,
                     "evt_shape_mle": shape_mle,
                     "evt_scale_mle": scale_mle,
@@ -1140,6 +1183,11 @@ def _evt_threshold_sensitivity(
                     "evt_xi_evi_anchor": evi.get("xi_evi_anchor"),
                     "evt_theta_hat": ei.get("theta_hat"),
                     "evt_effective_exceedance_count": ei.get("effective_exceedance_count"),
+                    "evt_unibm_n_obs": evi.get("n_obs"),
+                    "evt_unibm_min_block_size": evi.get("min_block_size"),
+                    "evt_unibm_max_block_size": evi.get("max_block_size"),
+                    "evt_unibm_sliding_blocks": evi.get("sliding"),
+                    "evt_unibm_plateau_point_count": evi.get("plateau_point_count"),
                     "standardized_var": float(var_z),
                     "standardized_es": None if es_z is None else float(max(var_z, es_z)),
                     "evt_es_finite": es_z is not None and math.isfinite(es_z),

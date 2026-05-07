@@ -18,14 +18,14 @@ from n225_open_gap_tail.config.model_labels import (
     display_source_block_label,
     display_status_label,
 )
-from n225_open_gap_tail.data_lake.artifacts import (
-    _gold_leakage_dir,
-    _gold_panel_dir,
-)
+from n225_open_gap_tail.config.runtime import ML_TAIL_MODEL_NAMES
 from n225_open_gap_tail.diagnostics import snapshot_gallery as _snapshot_gallery
 from n225_open_gap_tail.diagnostics.model_comparison import _all_model_comparison_table
 from n225_open_gap_tail.diagnostics.results_discussion import (
     generate_results_discussion as _generate_results_discussion,
+)
+from n225_open_gap_tail.diagnostics.snapshot_paths import (
+    full_run_snapshot_paths as _full_run_snapshot_paths,
 )
 from n225_open_gap_tail.diagnostics.snapshot_qa import (
     advanced_benchmark_qa_text as _advanced_benchmark_qa_text,
@@ -145,87 +145,16 @@ def _read_json_dict(path: Path) -> dict[str, object]:
     return cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
 
 
-def _full_run_snapshot_paths(
-    *,
-    settings: Settings,
-    run_dir: Path,
-    manifest: dict[str, object],
-) -> dict[str, Path]:
-    run_id = str(manifest.get("run_id") or run_dir.name)
-    gold_artifacts = _dict_value(manifest.get("gold_artifacts"))
-    gold_panel_root = _gold_panel_dir(settings.gold_data_dir, run_id)
-    leakage_root = _gold_leakage_dir(settings.gold_data_dir, run_id)
-    leakage_summary = Path(
-        str(gold_artifacts.get("leakage_summary", leakage_root / "summary.json"))
-    )
-    return {
-        "manifest": run_dir / "manifest.json",
-        "data_vintage": run_dir / "data_vintage.json",
-        "modeling_panel": Path(
-            str(gold_artifacts.get("modeling_panel", gold_panel_root / "modeling_panel.parquet"))
-        ),
-        "target_audit": Path(
-            str(gold_artifacts.get("target_audit", gold_panel_root / "target_audit.parquet"))
-        ),
-        "calendar_map": Path(
-            str(gold_artifacts.get("calendar_map", gold_panel_root / "calendar_map.parquet"))
-        ),
-        "feature_coverage": Path(
-            str(
-                gold_artifacts.get("feature_coverage", gold_panel_root / "feature_coverage.parquet")
-            )
-        ),
-        "leakage_summary": leakage_summary,
-        "benchmark_status": run_dir / "metrics" / "benchmark_status.json",
-        "benchmark_metrics": run_dir / "metrics" / "benchmark_metrics.parquet",
-        "benchmark_metrics_per_model": run_dir / "metrics" / "benchmark_metrics_per_model.parquet",
-        "benchmark_forecasts": run_dir / "forecasts" / "benchmark_forecasts.parquet",
-        "benchmark_dm_inference": run_dir / "metrics" / "benchmark_dm_inference.parquet",
-        "benchmark_mcs": run_dir / "metrics" / "benchmark_mcs.parquet",
-        "ml_tail_status": run_dir / "metrics" / "ml_tail_status.json",
-        "ml_tail_metrics": run_dir / "metrics" / "ml_tail_metrics.parquet",
-        "ml_tail_metrics_per_model": run_dir / "metrics" / "ml_tail_metrics_per_model.parquet",
-        "ml_tail_forecasts": run_dir / "forecasts" / "ml_tail_forecasts.parquet",
-        "ml_tail_result_matrix": run_dir / "metrics" / "ml_tail_result_matrix.parquet",
-        "ml_tail_result_matrix_dm": run_dir / "metrics" / "ml_tail_result_matrix_dm.parquet",
-        "ml_tail_result_matrix_mcs": run_dir / "metrics" / "ml_tail_result_matrix_mcs.parquet",
-        "ml_tail_dm_inference": run_dir / "metrics" / "ml_tail_dm_inference.parquet",
-        "ml_tail_mcs": run_dir / "metrics" / "ml_tail_mcs.parquet",
-        "ml_tail_cpa_inference": run_dir / "metrics" / "ml_tail_cpa_inference.parquet",
-        "cross_model_cpa_inference": run_dir / "metrics" / "cross_model_cpa_inference.parquet",
-        "ml_tail_model_eviction": run_dir / "metrics" / "ml_tail_model_eviction.parquet",
-        "ml_tail_dst_attenuation": run_dir / "metrics" / "ml_tail_dst_attenuation.parquet",
-        "ml_tail_murphy": run_dir / "metrics" / "ml_tail_murphy.parquet",
-        "ml_tail_feature_unavailability": run_dir
-        / "metrics"
-        / "ml_tail_feature_unavailability.parquet",
-        "benchmark_stress_windows": run_dir / "metrics" / "benchmark_stress_windows.parquet",
-        "ml_tail_stress_windows": run_dir / "metrics" / "ml_tail_stress_windows.parquet",
-        "figure_manifest": run_dir / "latex" / "figure_manifest.json",
-        "table_manifest": run_dir / "latex" / "table_manifest.json",
-        "latex_dir": run_dir / "latex" / "tables",
-        "claim_scope_table": run_dir / "latex" / "tables" / "tailrisk_claim_scope_table.tex",
-        "es_severity_table": run_dir / "latex" / "tables" / "tailrisk_es_severity_table.tex",
-        "hedge_trigger_table": run_dir
-        / "latex"
-        / "tables"
-        / "tailrisk_hedge_trigger_diagnostics_table.tex",
-        "dst_attenuation_table": run_dir / "latex" / "tables" / "ml_tail_dst_attenuation_table.tex",
-        "result_matrix_summary_table": run_dir
-        / "latex"
-        / "tables"
-        / "ml_tail_result_matrix_summary_table.tex",
-    }
-
-
-def _dict_value(value: object) -> dict[str, object]:
-    return value if isinstance(value, dict) else {}
-
-
 def _read_parquet_optional(path: Path) -> pl.DataFrame:
     if not path.exists():
         return pl.DataFrame()
     return pl.read_parquet(path)
+
+
+def _filter_current_ml_tail_models(frame: pl.DataFrame) -> pl.DataFrame:
+    if frame.is_empty() or "model_name" not in frame.columns:
+        return frame
+    return frame.filter(pl.col("model_name").is_in(list(ML_TAIL_MODEL_NAMES)))
 
 
 def _full_run_discussion_qa_markdown(
@@ -271,8 +200,12 @@ def _full_run_results_markdown(
     benchmark_metrics = _read_parquet_optional(paths["benchmark_metrics"])
     benchmark_metrics_per_model = _read_parquet_optional(paths["benchmark_metrics_per_model"])
     ml_tail_metrics = _read_parquet_optional(paths["ml_tail_metrics"])
-    ml_tail_metrics_per_model = _read_parquet_optional(paths["ml_tail_metrics_per_model"])
-    result_matrix = _read_parquet_optional(paths["ml_tail_result_matrix"])
+    ml_tail_metrics_per_model = _filter_current_ml_tail_models(
+        _read_parquet_optional(paths["ml_tail_metrics_per_model"])
+    )
+    result_matrix = _filter_current_ml_tail_models(
+        _read_parquet_optional(paths["ml_tail_result_matrix"])
+    )
     benchmark_stress = _read_parquet_optional(paths["benchmark_stress_windows"])
     ml_tail_stress = _read_parquet_optional(paths["ml_tail_stress_windows"])
     results_discussion = _demote_markdown_headings(
@@ -390,7 +323,7 @@ def _full_run_results_markdown(
         or benchmark_status.get("common_sample_status")
         or "unknown"
     )
-    ml_tail_components = _join_model_list(ml_tail_status.get("implemented_components"))
+    ml_tail_components = _join_model_list(ML_TAIL_MODEL_NAMES)
     ml_tail_status_label = display_status_label(ml_tail_status.get("status"))
     stress_table = _markdown_table(
         ("Suite", "Rows", "Window labels"),
@@ -547,7 +480,7 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 {ml_headline_table}
 
 - This headline table remains strict and reports only ML-tail rows that pass the registered common-sample and coverage gates.
-- Location-scale empirical, plain POT-GPD, and stabilized POT-GPD are headline candidates only after their valid OOS coverage, standardized-loss, exceedance, and ES-validity gates pass.
+- Location-scale empirical and plain POT-GPD are headline candidates only after their valid OOS coverage, standardized-loss, exceedance, and ES-validity gates pass.
 - Differences across information blocks are candidate forecast evidence only after the common-sample, coverage, and inference diagnostics are reviewed.
 - {ml_coverage_review}
 
@@ -573,7 +506,7 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 
 {result_matrix_table}
 
-- The result matrix is the right place to compare direct quantile, location-scale empirical, plain POT-GPD, stabilized POT-GPD, and ablation variants on their restricted common dates.
+- The result matrix is the right place to compare direct quantile, location-scale empirical, plain POT-GPD, and the robust plain POT-GPD routes on their restricted common dates.
 - It separates VaR-only losses from VaR-ES joint scoring, so VaR-only claims are not confused with ES claims.
 - Restricted direct-quantile performance is only a comparison anchor for the tail-model family; it does not replace the headline direct-quantile evidence.
 - DM and MCS records are emitted only where registered row-count and exception-count gates pass; otherwise the result matrix remains descriptive.
@@ -628,7 +561,7 @@ def _join_list(value: object) -> str:
 
 
 def _join_model_list(value: object) -> str:
-    if isinstance(value, list):
+    if isinstance(value, list | tuple):
         return ", ".join(f"`{display_model_label(item)}`" for item in value)
     return _code(display_model_label(value))
 

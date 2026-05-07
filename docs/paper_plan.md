@@ -9,349 +9,529 @@ hide:
 
 **U.S. Close Information and Pre-Open Tail Risk in OSE Nikkei 225 Futures**
 
-- This paper asks whether information observed at the U.S. cash-market close helps forecast the tail risk of the next Osaka Exchange (OSE) Nikkei 225 Futures day-session open.
-- The setting is not a standard overnight-return problem. OSE futures trade through an active night session, so part of the U.S. information may already be incorporated before the Japanese opening auction.
-- The contribution is a point-in-time (PiT) out-of-sample forecast evaluation of VaR and Expected Shortfall (ES), not a new machine-learning algorithm.
-- The forecast origin is the U.S. close plus a realistic data-availability lag; all predictors are subject to look-ahead-bias controls.
+This page is the paper-facing plan for the empirical design. It is organized in
+the order a reader would expect in a finance paper: research question,
+institutional context, data, methods, workflow, expected outputs, and
+appendix material.
 
-## Main Question
+## 1. Introduction
 
-- Does U.S. close information improve out-of-sample forecasts of OSE Nikkei 225 Futures opening-gap tail risk beyond Japan-only history and established econometric benchmarks?
-- Related questions:
-    - Does the effect differ between downside and upside opening-gap risk?
-    - Does most of the marginal information arrive with the core U.S. close variables, with limited additional contribution from Japan and Asia proxy ETFs?
-    - Do ML tail models lower average VaR-ES loss mainly through less conservative VaR estimates, or do they improve conditional tail calibration?
-    - Does an EVT layer improve VaR-ES performance relative to direct LightGBM quantile forecasts?
-    - Do loss differentials vary with ex-ante observables such as VIX, EST/EDT timing, or calendar-based trading conditions?
+### 1.1 Main Question
 
-## Institutional Setting
-
-- OSE Nikkei 225 Futures have a Japanese day session and an extended night session.
-- The U.S. cash close precedes the next OSE day-session open, but the amount of post-U.S.-close OSE night trading differs between EST and EDT.
-- The PiT condition is:
-
-  `feature_available_ts_utc <= model_cutoff_ts_utc < target_open_ts_utc`.
-
-- FRED macro-financial predictors use conservative publication lags, but they do not use unrevised real-time ALFRED vintages. This is a data limitation, not a timing violation.
-- DST comparisons are descriptive timing-regime tests. They do not identify a structural causal mechanism.
-
-## Sample and Data
-
-- Current clean evaluation window: `2018-06-20` to `2026-05-01`.
-- Current forecast-sample size: `1661` trading-day observations.
-- Current registered headline tail level: 95% VaR, corresponding to a nominal 5% exception rate.
-- 97.5% VaR/ES is not part of the current headline pipeline. It can be reconsidered only as a separate future specification with sufficient common-sample size, exception counts, and EVT diagnostics.
-- Main data sources:
-    - J-Quants Premium: Nikkei 225 Futures prices, settlement, volume, and open interest; `NK225E` large-option chains enter only as lagged domestic option-implied and night-session option state when enabled and audited.
-    - Massive: U.S. ETFs, sector ETFs, dollar ETF proxy, Japan proxy ETFs, Asia proxy ETFs, and curated U.S.-listed ETF late-session minute predictors.
-    - FRED: Treasury rates, VIX, H.10 USD/JPY, and audited credit-spread controls with publication-lag controls.
-    - CBOE: volatility-index predictors, including VIX.
-
-## Forecast Computation Flow
-
-The empirical unit is one OSE target date \(t\). For that date, the model uses
-only information available by the matched U.S. cash-market close plus the
-registered data-availability lag, then forecasts the tail risk of the next OSE
-Nikkei 225 Futures day-session open.
-
-```mermaid
-flowchart TD
-    T["OSE target date t<br/>Nikkei 225 Futures large contract<br/>day-session open at 08:45 JST"]
-    C["Matched U.S. session s(t)<br/>official U.S. cash close<br/>regular close or NYSE early close"]
-    Cutoff["Model cutoff<br/>U.S. cash close + vendor lag<br/>must precede OSE open"]
-
-    JQ["J-Quants futures history<br/>prior settlement, prior day close, night close<br/>volume, open interest, roll/SQ flags"]
-    JQOpt["J-Quants NK225E option chain<br/>prior trading-date option-implied state<br/>implied volatility, night-session OHLC, open interest, volume, days-to-SQ"]
-    JP["Japan-only state<br/>lagged gaps and losses<br/>rolling volatility and rolling 95% loss quantile<br/>calendar, DST, absorption timing<br/>lagged domestic option state when available"]
-
-    MCore["Massive U.S. close core<br/>SPY, QQQ, DIA, IWM<br/>sector ETFs XLK...XLC<br/>TLT, GLD, USO, SMH, HYG, LQD<br/>core ETF options and aggregate sector ATM IV"]
-    MSpy["U.S.-listed minute late-session features<br/>canonical SPY names plus curated ETF prefixes<br/>returns, realized variance, semivariance, range, volume pressure"]
-    Fred["FRED and Cboe controls<br/>DGS2, DGS10, T10Y2Y, VIXCLS<br/>DEXJPUS H.10 USD/JPY<br/>Cboe VIX close and range"]
-    JPProxy["Japan-linked U.S. proxies<br/>EWJ/DXJ daily and minute features<br/>EWJ/DXJ options<br/>Japanese ADR spot and options aggregates"]
-    AsiaProxy["Asia and regional proxies<br/>EEM, FXI, EWY, EWT, EWH<br/>daily, minute, and aggregate options features"]
-
-    InfoA["Nested information set A<br/>japan_only"]
-    InfoB["Nested information set B<br/>japan_only + U.S. close core"]
-    InfoC["Nested information set C<br/>+ Japan proxy ETFs"]
-    InfoD["Nested information set D<br/>+ Asia proxy ETFs"]
-
-    Target["Primary target<br/>settlement-to-open gap<br/>log(open_t) - log(settlement_{t-1})"]
-    LossL["left_tail loss<br/>-gap_t<br/>downside open risk"]
-    LossR["right_tail loss<br/>gap_t<br/>upside open risk"]
-
-    Bench["Benchmark floor<br/>historical and rolling quantile<br/>EWMA, GARCH-t, GJR-GARCH-t, GJR-GARCH-EVT"]
-    Adv["Advanced econometric benchmarks<br/>CAViaR, CARE, GAS<br/>Taylor-style ALD and direct FZ VaR-ES"]
-    ML["ML tail models<br/>LightGBM direct quantile<br/>location-scale empirical<br/>plain and stabilized standardized-loss POT-GPD"]
-
-    Forecast["Forecast output<br/>VaR in positive loss units<br/>ES where the model supplies a valid VaR-ES pair"]
-    Metrics["Backtesting metrics<br/>breach rate, exception count<br/>Kupiec and Christoffersen tests<br/>quantile loss, FZ loss, Murphy diagrams<br/>ES exceedance severity"]
-    Inference["Model comparison and interpretation<br/>DM and MCS on paired OOS losses<br/>CPA loss-differential regressions on ex-ante observables<br/>DST, stress-window, and trigger diagnostics"]
-
-    C --> Cutoff
-    T --> Target
-    JQ --> JP
-    JQOpt --> JP
-    Cutoff --> MCore
-    Cutoff --> MSpy
-    Cutoff --> Fred
-    Cutoff --> JPProxy
-    Cutoff --> AsiaProxy
-    Cutoff --> JQOpt
-    JP --> InfoA
-    JP --> InfoB
-    MCore --> InfoB
-    MSpy --> InfoB
-    Fred --> InfoB
-    InfoB --> InfoC
-    JPProxy --> InfoC
-    InfoC --> InfoD
-    AsiaProxy --> InfoD
-    Target --> LossL
-    Target --> LossR
-    InfoA --> ML
-    InfoB --> ML
-    InfoC --> ML
-    InfoD --> ML
-    JP --> Bench
-    JP --> Adv
-    LossL --> Bench
-    LossL --> Adv
-    LossL --> ML
-    LossR --> Bench
-    LossR --> Adv
-    LossR --> ML
-    Bench --> Forecast
-    Adv --> Forecast
-    ML --> Forecast
-    Forecast --> Metrics
-    Metrics --> Inference
-```
-
-Operationally, the calculation proceeds as follows:
-
-- Map each OSE target date \(t\) to the relevant U.S. session \(s(t)\), accounting for U.S. holidays, Japan holidays, NYSE early closes, and DST.
-- Set the forecast origin to the U.S. cash close plus the configured vendor lag. No predictor is eligible unless its availability timestamp is no later than this cutoff.
-- Construct the main gap from the previous settlement to the OSE day-session open:
+- The paper asks whether information observed by the U.S. cash-market close helps forecast the tail risk of the next Osaka Exchange (OSE) Nikkei 225 Futures day-session open.
+- The primary empirical object is the settlement-to-open gap of the Nikkei 225 Futures large contract:
 
   `gap_t = log(day_session_open_t) - log(previous_settlement_{t-1})`.
 
-- Convert the same gap into two separate loss surfaces:
-    - downside risk: `left_tail_loss_t = -gap_t`;
-    - upside risk: `right_tail_loss_t = gap_t`.
-- Estimate benchmark, advanced benchmark, and ML tail models on expanding historical windows, with monthly refits for the ML tail models.
-- Store VaR and ES forecasts in positive loss units. A VaR exception is always `realized_loss_t > var_forecast_t`.
-- Compare forecasts on common out-of-sample dates using calibration tests, quantile loss, FZ loss for valid VaR-ES pairs, DM/MCS inference, CPA loss-differential regressions, and supporting diagnostics.
+- The same gap is evaluated as two loss surfaces:
+    - `left_tail`: downside opening-gap risk, `realized_loss_t = -gap_t`;
+    - `right_tail`: upside opening-gap risk, `realized_loss_t = gap_t`.
+- The registered headline tail level is 95% VaR, with a nominal 5% exception rate.
+- The empirical question is predictive and out-of-sample. It is not a structural causal design.
 
-## Risk Surfaces
+### 1.2 Market Context
 
-- The paper treats both sides of futures risk as economically meaningful:
-    - `left_tail`: downside opening-gap risk, with realized loss defined as `-gap_t`.
-    - `right_tail`: upside opening-gap risk, with realized loss defined as `gap_t`.
-- VaR and ES are expressed in positive loss units.
-- For both sides, a VaR exception is defined as:
+- OSE Nikkei 225 Futures trade in both day and night sessions.
+- The U.S. cash close occurs before the next OSE day-session open, but the Japanese night session means that some U.S. information may already be reflected before the opening auction.
+- The amount of post-U.S.-close night trading differs between EST and EDT, which makes DST a useful descriptive timing diagnostic.
+- The paper therefore studies pre-open tail risk, not a generic close-to-close or overnight-return problem.
+- The forecast origin is the matched U.S. cash-market close plus the registered vendor-data availability lag.
+- The point-in-time condition is:
 
-  `realized_loss > var_forecast`.
+  `feature_available_ts_utc <= model_cutoff_ts_utc < target_open_ts_utc`.
 
-- Left and right tails are evaluated separately. They are not assumed to have the same economic mechanism.
+### 1.3 Relation To The Literature
 
-## Targets
+- **International information transmission**:
+    - The empirical setting is cross-market and timing-sensitive: U.S. equity, rates, volatility, FX, credit, and proxy-ETF information is observed before the Japanese futures open.
+    - The paper does not claim price discovery or structural spillover identification.
+- **VaR and ES forecasting**:
+    - The study evaluates one-day-ahead opening-gap VaR and ES in positive loss units.
+    - VaR calibration is assessed through exception rates and coverage tests.
+    - ES enters through valid VaR-ES forecast pairs and Fissler-Ziegel (FZ) joint scoring.
+- **Dynamic quantile and tail models**:
+    - Econometric comparators include historical quantiles, volatility-scaled quantiles, GARCH/GJR-GARCH, CAViaR, CARE/expectile models, GAS models, and Taylor-style VaR-ES specifications.
+    - Machine-learning models use LightGBM as a flexible tabular forecaster, not as a new algorithmic contribution.
+- **Filtered EVT**:
+    - The EVT component follows the filtered-tail logic: use a conditional model to remove body/scale variation, then fit a POT-GPD tail model to exceedances.
+    - Plain fixed-location POT-GPD is the registered EVT estimator.
+- **Forecast comparison**:
+    - Average loss comparisons use paired out-of-sample losses.
+    - DM/MCS are interpreted as unconditional average-sample inference.
+    - CPA is treated as loss-differential regressions on ex-ante observables, not as a forecasting model.
 
-- **Settlement-to-open gap**: log day-session open minus log previous settlement.
-    - Main target.
-    - Measures full opening-level risk relative to the prior settlement.
-- **Close-to-open gap**: log day-session open minus log previous day-session close.
-    - Secondary target.
-    - Provides an alternative opening-gap reference.
-- **Night-close-to-open gap**: log day-session open minus log night-session close.
-    - Absorption robustness target.
-    - Available only when the night close is observed and PiT-valid.
-- **U.S.-close-mark-to-open gap**: log day-session open minus a timestamped Nikkei futures mark at the U.S. cash close.
-    - Deferred target.
-    - Requires licensed intraday OSE, CME, SGX, or equivalent Nikkei futures marks.
+### 1.4 Research Questions
 
-## Nested Information Sets
+- Does U.S. close information add predictive content beyond Japan-only history?
+- Is most of the marginal content captured by core U.S. close variables, or do Japan and Asia proxy blocks add further information?
+- Do the left and right tails display different patterns in calibration, loss, and timing diagnostics?
+- Are LightGBM direct quantile forecasts well calibrated at the 95% VaR level?
+- Do LightGBM body filters combined with POT-GPD tail extrapolation improve VaR/ES behavior relative to direct 95% quantile forecasts?
+- Are loss differentials related to ex-ante observables such as VIX, DST timing, or calendar conditions?
 
-- `japan_only`
-    - Target history, lagged Japanese futures variables, rolling volatility, volume/open-interest information, and Japanese calendar variables.
-- `japan_only_plus_us_close_core`
-    - Adds U.S. broad/core close equity, minute, volatility, FX, rates, credit-spread, dollar-risk ETF, and U.S. core options predictors available before the OSE open.
-- `japan_only_plus_us_close_core_plus_japan_proxy`
-    - Adds U.S.-traded Japan proxy ETFs such as `EWJ` and `DXJ`, Japan ETF minute features, Japan ETF options, and Japanese ADR spot/options aggregates.
-- `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy`
-    - Adds Asia and regional proxy ETFs such as `EEM`, `FXI`, `EWY`, `EWT`, and `EWH`, with daily, minute, and aggregate options features routed by economic exposure.
-- Interpretation:
-    - The nested information sets test marginal predictive content.
-    - Proxy ETF blocks are pre-specified robustness and mechanism checks, not an exhaustive variable search.
-    - Computed ATM-IV proxies are routed by underlying exposure: U.S. core and sector aggregate options into B, Japan ETF and ADR aggregate options into C, and Asia proxy aggregate options into D.
+## 2. Materials
 
-## Forecasting Models
+### 2.1 Sample And Evaluation Window
 
-- Benchmark floor:
-    - Historical empirical quantile.
-    - Rolling empirical quantile.
-    - EWMA or volatility-scaled quantile.
-    - GARCH and GJR-GARCH with Student-t innovations.
-    - GJR-GARCH-EVT in the McNeil-Frey tradition.
-- Advanced econometric benchmarks:
-    - CAViaR.
-    - CARE / expectile-based tail models.
-    - Generalized Autoregressive Score (GAS) models.
-    - Taylor-style asymmetric-Laplace VaR-ES specifications.
-    - Joint VaR-ES estimation via Fissler-Ziegel (FZ) scoring-function minimization, subject to numerical convergence checks.
-- ML tail specifications:
-    - Flexible, tree-based direct quantile estimation via gradient boosting (LightGBM).
-    - LightGBM location-scale empirical tail calibration.
-    - LightGBM standardized-loss Peaks-Over-Threshold Generalized Pareto Distribution (POT-GPD) with a plain MLE comparator.
-    - LightGBM standardized-loss POT-GPD stabilized variant, reported transparently as a finite-sample regularized filtered-EVT variant.
-    - Intermediate capped-MLE, EVI-shrink, and extremal-index-weighted (`ei_weighted`) POT-GPD variants for ablation evidence, not as headline model-family claims.
-- Estimation protocol:
-    - All specifications follow the same point-in-time out-of-sample forecasting protocol and the same minimum training-history requirement.
-    - Most specifications use expanding pre-forecast training histories.
-    - The rolling empirical quantile benchmark is the exception: by design, it uses the most recent 1,000 clean observations.
-    - ML tail models are refit monthly using expanding training windows.
-    - LightGBM hyperparameters are held fixed across information sets and refit dates to limit data-dependent tuning bias.
-    - The comparison is therefore aligned in forecast timing and sample discipline, but not in predictor dimensionality; benchmark models are target-history-only, whereas the ML specifications evaluate nested information sets.
+- Current clean evaluation window: `2018-06-20` to `2026-05-01`.
+- Current forecast-sample size: `1661` trading-day observations.
+- The current clean run is a research-candidate evidence set, not a final manuscript freeze.
+- The current headline level is 95% VaR/ES only.
+- A 97.5% level is deferred until common-sample size, exception counts, and EVT diagnostics are sufficient for a separate specification.
 
-## EVT Protocol
+### 2.2 Target Contract
 
-- EVT is used for tail calibration and ES extrapolation, not as a standalone contribution.
-- Plain POT-GPD is fitted to training-window standardized losses after conditional filtering and remains the standard filtered-EVT comparator.
-- Stabilized POT-GPD is a finite-sample regularized filtered-EVT variant, not plain standard POT-GPD.
-- VaR and ES forecasts are transformed back into the target loss units.
-- The primary comparison focuses on 95% direct LightGBM quantile forecasts, 95% location-scale empirical forecasts, 95% plain standardized-loss POT-GPD forecasts, and 95% stabilized standardized-loss POT-GPD forecasts on common out-of-sample dates.
-- Tail calibration gates are decoupled from the LightGBM final model training gate so the location-scale and POT-GPD variants can be evaluated without shortening the direct-quantile sample unnecessarily.
-- The stabilized variant records `evt_variant`, `evt_shape_method`, `evt_cap_policy`, `evt_evi_status`, `evt_ei_status`, `cap_hit`, `xi_mle`, `xi_evi_anchor`, `theta_hat`, `n_eff`, scale-refit status, and ES finite/unavailable status.
-- The primary EVI anchor is the de Haan-Ferreira moment estimator. Hill is diagnostic only and interpreted only when diagnostics support positive heavy-tail shape; Pickands is a cross-check.
-- The primary extremal-index estimator is Ferro-Segers. K-gaps is a robustness diagnostic. Extremal-index (`EI`) weighting is used only as a finite-sample effective-exceedance heuristic, not as a new GPD likelihood.
-- Shape cap sensitivity reports conservative `(-0.1, 0.5)`, baseline `(-0.25, 0.75)`, and loose `(-0.5, 1.0)` caps. If any sensitivity run has `xi_final >= 1`, ES is marked unavailable for that run.
+- Primary target:
+    - Settlement-to-open gap: log day-session open minus log previous settlement.
+    - This is the main target because settlement is the economically standard daily futures reference.
+- Secondary target:
+    - Close-to-open gap: log day-session open minus log previous day-session close.
+    - This provides an alternative opening-gap reference.
+- Absorption robustness target:
+    - Night-close-to-open gap: log day-session open minus log night-session close.
+    - This is available only when the night close is observed and point-in-time valid.
+- Deferred target:
+    - U.S.-close-mark-to-open gap: log day-session open minus a timestamped Nikkei futures mark at the U.S. cash close.
+    - This requires licensed intraday OSE, CME, SGX, or equivalent Nikkei futures marks.
 
-## Options Feature Protocol
+### 2.3 Japanese Data
 
-- Options are used only as additional predictors for the same N225 futures settle-to-open VaR/ES target.
-- J-Quants Nikkei 225 large options (`NK225E`) enter the domestic `japan_only` block as lagged option-implied and night-session option state only, using prior available option-chain aggregates, including `EO/EH/EL/EC` night-session OHLC summaries, and excluding same target-date option rows.
+- J-Quants Premium provides the domestic futures data used for the current target and Japan-only predictors:
+    - Nikkei 225 Futures large-contract OHLC fields;
+    - settlement price;
+    - day-session and night-session prices where available;
+    - volume;
+    - open interest;
+    - roll and SQ-related calendar variables.
+- Lagged Japanese futures history supplies:
+    - prior settlement and prior day-session close;
+    - lagged gap and loss variables;
+    - rolling volatility;
+    - rolling 95% loss quantile;
+    - volume and open-interest state;
+    - contract-roll and days-to-SQ variables.
+- J-Quants Nikkei 225 large options (`NK225E`) are treated as domestic option-state predictors when enabled and audited:
+    - lagged option-chain aggregates;
+    - prior available implied-volatility proxies;
+    - night-session option OHLC summaries;
+    - option volume, open interest, and days-to-SQ features.
+- Same target-date option rows are not used as predictors for that target date.
+
+### 2.4 U.S. And Cross-Market Data
+
+- Massive daily data supply U.S. and regional market predictors:
+    - broad U.S. ETFs: `SPY`, `QQQ`, `DIA`, `IWM`;
+    - sector ETFs: `XLK`, `XLF`, `XLE`, `XLV`, `XLI`, `XLY`, `XLP`, `XLB`, `XLU`, `XLC`;
+    - cross-asset ETFs: `TLT`, `GLD`, `USO`, `SMH`, `HYG`, `LQD`;
+    - Japan proxies: `EWJ`, `DXJ`;
+    - Asia and regional proxies: `EEM`, `FXI`, `EWY`, `EWT`, `EWH`.
+- Massive minute data supply late-session U.S. predictors:
+    - last-30-minute and last-60-minute returns;
+    - realized variance;
+    - upside and downside semivariance;
+    - late-session range;
+    - final-window momentum;
+    - volume pressure and volume-surge variables.
+- Massive OPRA day aggregates are used only for historical option-feature reconstruction when enabled:
+    - core U.S. options enter the U.S. core block;
+    - sector and semiconductor options enter as aggregate U.S. market-state variables;
+    - Japan ETF and Japanese ADR option aggregates enter the Japan proxy block;
+    - Asia proxy option aggregates enter the Asia proxy block.
 - Massive live option snapshots are not used for historical backfill.
-- Historical U.S. options features use Massive OPRA `day_aggs_v1`, computed ATM-IV proxies from option daily close prices, underlying daily closes, FRED `DGS2`, and zero-dividend Black-Scholes. Vendor historical IV/Greeks/OI are not assumed.
-- Candidate underlyings are capped before modeling:
-    - core U.S. options (`SPY`, `QQQ`, `DIA`, `IWM`) enter B with the U.S. core block;
-    - sector and semiconductor option aggregates (`XLK`, `XLF`, `XLE`, `XLV`, `XLI`, `XLY`, `XLP`, `XLB`, `XLU`, `XLC`, `SMH`) enter B as aggregate state only;
-    - Japan ETF options (`EWJ`, `DXJ`) enter C with the Japan proxy block;
-    - primary ADR aggregate options (`TM`, `SONY`, `MUFG`, `SMFG`, `MFG`) enter C as a Japan-linked U.S. corporate-risk proxy.
-    - Asia proxy option aggregates (`EEM`, `FXI`, `EWY`, `EWT`, `EWH`) enter D as aggregate state only.
-- DTE buckets are short `7-30` and medium `31-90`. ATM uses closest-to-spot by absolute log-moneyness in v1 because day aggregates do not contain delta; delta-neutral selection remains a future quote/Greeks-enabled upgrade.
-- ADR aggregate features use median and 20% trimmed mean as primary summaries; max, breadth, and count are diagnostics.
-- Curated options features are capped at 45 and routed by economic exposure. Raw per-contract, per-sector, per-Asia-ETF, and per-ADR outputs remain audit or appendix material.
 
-## Evaluation and Inference
+### 2.5 FRED, Cboe, FX, Rates, Volatility, And Credit Controls
+
+- FRED supplies macro-financial controls:
+    - Treasury yields: `DGS2`, `DGS10`;
+    - term spread: `T10Y2Y`;
+    - H.10 USD/JPY: `DEXJPUS`;
+    - VIX close where available through `VIXCLS`;
+    - credit-spread controls, including high-yield and investment-grade spread series when enabled in the clean run.
+- Cboe supplies volatility-index predictors:
+    - VIX close;
+    - VIX range and related volatility-state variables where available.
+- FRED variables use conservative publication-lag controls.
+- FRED predictors do not use unrevised real-time ALFRED vintages. This is a data-vintage limitation, not a look-ahead-bias failure.
+- The canonical USD/JPY control is FRED `DEXJPUS`; U.S.-listed dollar ETFs such as `UUP` are risk proxies, not a replacement for USD/JPY.
+
+### 2.6 Pretreatment And Data Discipline
+
+- Every row carries separate event, source, availability, cutoff, and target timestamps.
+- A predictor can enter only if its availability timestamp is no later than the model cutoff.
+- Data are staged through cache-first bronze/silver/gold artifacts:
+    - bronze: source-shaped cached data;
+    - silver: cleaned and source-specific intermediate data;
+    - gold: modeling panel and evaluation artifacts.
+- Contract rolls and calendar joins are audited before model evaluation.
+- Missingness, duplicate rows, source coverage, and calendar alignment are recorded in run artifacts.
+- Event flags such as FOMC, CPI, payrolls, and BOJ are candidate/planned controls unless a clean run explicitly includes their feature artifacts.
+
+### 2.7 Feature Engineering And Nested Information Sets
+
+- The information sets are nested by design:
+    - `japan_only`;
+    - `japan_only_plus_us_close_core`;
+    - `japan_only_plus_us_close_core_plus_japan_proxy`;
+    - `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy`.
+- `japan_only` includes:
+    - target history;
+    - lagged Japanese futures variables;
+    - rolling volatility and tail-loss history;
+    - volume and open-interest state;
+    - Japanese calendar, contract-roll, and SQ variables;
+    - lagged domestic option state when enabled and audited.
+- `japan_only_plus_us_close_core` adds:
+    - broad U.S. ETF daily and late-session information;
+    - sector ETF state;
+    - U.S. rates, volatility, FX, credit, dollar-risk, and cross-asset controls;
+    - core U.S. option aggregates when enabled and audited.
+- `japan_only_plus_us_close_core_plus_japan_proxy` adds:
+    - `EWJ` and `DXJ` daily and minute features;
+    - Japan ETF option aggregates;
+    - Japanese ADR spot and option aggregate state.
+- `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy` adds:
+    - Asia and regional ETF features;
+    - Asia proxy option aggregates when enabled and audited.
+- These blocks test marginal predictive content. They are not an exhaustive variable search.
+
+## 3. Methods
+
+### 3.1 Forecasting Protocol
+
+- All models use the same point-in-time forecasting protocol.
+- The minimum training-history requirement is common across model families.
+- Most specifications use expanding pre-forecast training histories.
+- The rolling empirical quantile benchmark is the exception: it uses the most recent 1,000 clean observations by design.
+- ML tail models are refit monthly using expanding training windows.
+- LightGBM hyperparameters are held fixed across information sets and refit dates to avoid data-dependent tuning-search evidence.
+- Forecasts are stored in positive loss units.
+- A VaR exception is always:
+
+  `realized_loss_t > var_forecast_t`.
+
+### 3.2 Benchmark Floor
+
+- The benchmark floor is target-history and econometric:
+    - historical empirical quantile;
+    - rolling empirical quantile;
+    - EWMA or volatility-scaled quantile;
+    - GARCH with Student-t innovations;
+    - GJR-GARCH with Student-t innovations;
+    - GJR-GARCH-EVT in the McNeil-Frey filtered-EVT tradition.
+- These models establish the external VaR/ES floor before adding high-dimensional cross-market predictors.
+
+### 3.3 Advanced Econometric Benchmarks
+
+- Advanced benchmarks are implemented to widen the peer comparison:
+    - CAViaR;
+    - CARE and expectile-based tail models;
+    - Generalized Autoregressive Score (GAS) models;
+    - Taylor-style asymmetric-Laplace VaR-ES specifications;
+    - joint VaR-ES estimation through Fissler-Ziegel scoring-function minimization.
+- These rows are claim-gated.
+- Numerical convergence and common-sample availability determine how they are used in the paper.
+
+### 3.4 LightGBM Direct Quantile
+
+- `lightgbm_direct_quantile` estimates the conditional 95% loss quantile directly:
+
+  `VaR_t = q_0.95(realized_loss_t | X_t)`.
+
+- It uses LightGBM with a quantile objective.
+- It is the cleanest specification for evaluating nested information sets.
+- Its ES companion is empirical rather than a separate ES model.
+- Current evidence shows that direct quantile rows must be read together with coverage diagnostics because lower average loss can coincide with higher exception rates.
+
+### 3.5 LightGBM Location-Scale Empirical Tail
+
+- `lightgbm_location_scale_empirical` separates conditional body learning from tail calibration:
+    - first-stage LightGBM estimates a conditional mean-like location with an L2 objective;
+    - second-stage LightGBM estimates log absolute residual scale;
+    - Duan-style smearing maps the scale estimate back to original units;
+    - out-of-fold standardized losses are used for empirical VaR/ES calibration.
+- This is the main non-EVT filtered-tail comparator inside the LightGBM family.
+
+### 3.6 LightGBM Standardized-Loss POT-GPD
+
+- The standardized-loss POT-GPD family uses the same location-scale body filter, then fits a GPD to standardized-loss exceedances.
+- Current registered variants:
+    - `lightgbm_standardized_loss_pot_gpd_plain_mle`;
+    - `lightgbm_standardized_loss_pot_gpd_unibm`.
+- Plain MLE is the registered fixed-location POT-GPD estimator and remains the standard comparator.
+- The UniBM route keeps the same LightGBM mean/log-scale body filter and POT threshold, but replaces the MLE shape estimate with a UniBM block-maxima-derived estimate of `xi`; the GPD scale is then refit with `xi` fixed.
+- This is a shape-estimator ablation, not a new headline model.
+
+### 3.7 LightGBM Robust Body Filters
+
+- New research-candidate LightGBM+EVT models are implemented at the 95% level only and remain outside the headline table until post-rerun review:
+    - `lightgbm_median_mad_pot_gpd_plain_mle`;
+    - `lightgbm_median_iqr_pot_gpd_plain_mle`.
+- Median/MAD route:
+    - LightGBM q50 estimates conditional median location;
+    - LightGBM L1 regression estimates conditional median absolute residual scale;
+    - the MAD normalization factor is recorded in artifacts.
+- Median/IQR route:
+    - LightGBM q25, q50, and q75 estimate conditional quantiles;
+    - scale is `(q75 - q25) / 1.349`;
+    - quantile crossing is handled and recorded.
+- These routes test whether a more robust body filter improves the filtered tail supplied to POT-GPD.
+
+### 3.8 EVT Details
+
+- POT-GPD is applied only to strictly positive exceedances.
+- The GPD location is fixed at zero for exceedances.
+- The base shape estimate is fixed-location maximum likelihood:
+
+  `stats.genpareto.fit(excesses, floc=0.0)`.
+
+- The registered EVT estimator uses the fixed-location MLE shape directly.
+- The UniBM comparison estimates the GPD shape `xi` as an extreme value index from the selected-plateau slope of a sliding block-maxima summary scaling regression. This is not the reciprocal Pareto tail index `alpha`; when a Pareto tail index is reported under the convention `P(X > x) ~ x^{-alpha}`, the relationship is `xi = 1 / alpha`.
+- UniBM failures are fail-closed and reported as unavailable; they are not silently replaced by plain MLE.
+- ES is available only when the fitted shape implies a finite ES.
+- If the shape is negative, finite-endpoint support is checked before accepting the extrapolated quantile.
+- EVT diagnostics include:
+    - log survival plots;
+    - QQ plots;
+    - mean excess plots;
+    - Hill/EVI paths;
+    - threshold stability;
+    - extremal-index diagnostics;
+    - raw versus filtered tail summaries.
+
+### 3.9 Performance Metrics And Inference
 
 - VaR calibration:
     - empirical breach rate;
+    - exception count;
+    - deviation from the nominal 5% exception rate;
     - Kupiec unconditional coverage test;
     - Christoffersen independence or conditional coverage test where sample size permits.
 - VaR loss:
-    - quantile loss on paired out-of-sample observations.
+    - quantile loss on paired out-of-sample forecasts.
 - Joint VaR-ES evaluation:
     - Fissler-Ziegel joint loss for valid VaR-ES pairs;
-    - Murphy diagrams to assess sensitivity to the scoring function within the relevant family;
-    - ES exceedance severity, interpreted conditional on an exception.
+    - ES exceedance severity, interpreted conditional on a VaR exception.
+- Scoring-function diagnostics:
+    - Murphy diagrams for benchmark floors and ML-tail information sets.
 - Model comparison:
     - block-bootstrap Diebold-Mariano tests on paired loss differentials;
-    - Hansen-Lunde-Nason Model Confidence Set where common-sample and exception-count gates pass;
-    - Conditional Predictive Ability (CPA) regressions, specified as loss-differential regressions on ex-ante observables.
+    - Hansen-Lunde-Nason MCS where sample and exception-count gates permit;
+    - CPA as loss-differential regressions on ex-ante observables.
 - Supporting diagnostics:
     - DST attenuation;
     - stress-window performance;
-    - pre-open VaR trigger summaries.
-- Trigger summaries are risk-monitoring diagnostics. They are not hedge PnL, transaction-cost, or trading-alpha evidence.
+    - pre-open risk-trigger summaries.
 
-## Preliminary Empirical Findings and Caveats
+## 4. Workflow Chart
 
-- PiT audit:
-    - The current audit records zero hard look-ahead-bias failures.
-    - Warnings remain visible and should be discussed rather than suppressed.
-    - FRED predictors are lagged by publication timing but are not ALFRED real-time vintages.
-- Benchmark calibration:
-    - Benchmark floor models have breach rates closer to the nominal 5% level than the ML direct-quantile headline models.
-    - In the current clean evaluation, the benchmark floor median breach rate is about 6.1%.
-- ML tail coverage drift:
-    - The ML direct-quantile nested information sets produce breach rates of about 9.1% to 12.6%, above the nominal 5% level.
-    - Lower average loss across information sets must therefore be interpreted alongside the coverage drift.
-- Nested information sets:
-    - The largest reduction in quantile loss occurs when core U.S. close variables are added.
-    - Japan proxy and Asia proxy blocks appear to add less marginal loss reduction after U.S. close core variables are included.
-- Restricted model-family comparison:
-    - Location-scale empirical, plain POT-GPD, and stabilized POT-GPD specifications are implemented.
-    - Their common out-of-sample comparison is shorter than the direct-quantile headline sample.
-    - These results are useful for model-family evidence, but they should not replace the headline nested-information-set analysis unless they pass the registered headline coverage and common-sample gates.
-- Options features:
-    - U.S.-listed OPRA day aggregates can now supply computed ATM-IV proxy features when enabled.
-    - The headline ladder routes options by economic exposure: U.S. core and sector aggregate options enter B, Japan ETF and Japanese ADR aggregate options enter C, and Asia proxy aggregate options enter D.
-    - U.S.-listed options should remain out of headline claims when coverage, liquidity, or timestamp-safe feature reconstruction is not proven.
-    - J-Quants `NK225E` option-implied and night-session option features are domestic, lagged, and source-audited separately inside `japan_only`.
-- CPA:
-    - CPA is an inference layer over loss differentials.
-    - It does not generate VaR or ES forecasts.
-    - It does not replace unconditional DM/MCS comparisons.
+### 4.1 Timing And Data Flow
 
-## Main Tables and Figures
+```mermaid
+flowchart TD
+    A["OSE target date t"]
+    B["Previous settlement<br/>Nikkei 225 Futures large contract"]
+    C["Matched U.S. cash session s(t)<br/>regular close or early close"]
+    D["Model cutoff<br/>U.S. close plus vendor lag"]
+    E["Eligible predictors<br/>availability timestamp no later than cutoff"]
+    F["OSE day-session open<br/>08:45 JST"]
+    G["Settlement-to-open gap"]
+    H["Left-tail loss<br/>minus gap"]
+    I["Right-tail loss<br/>gap"]
 
-- Main text candidates:
-    - data and timing audit;
-    - benchmark common-sample table;
-    - ML headline nested-information-set table for direct quantile and any eligible location-scale or POT-GPD variants;
-    - left-tail and right-tail coverage breach-rate figure;
-    - ML tail Murphy diagrams, read together with coverage diagnostics.
-- Appendix candidates:
-    - full benchmark metrics;
-    - restricted model-family result matrix;
-    - EVT ablation, shape-stability, extremal-index, and cap-sensitivity diagnostics;
-    - options source, coverage, and liquidity audit artifacts;
-    - result-matrix DM/MCS notes;
-    - CPA tables;
-    - DST attenuation figures;
-    - ES severity figures;
-    - trigger diagnostics;
-    - stress-window diagnostics;
-    - feature availability and PiT audit details.
+    A --> B
+    A --> C
+    C --> D
+    D --> E
+    B --> G
+    F --> G
+    G --> H
+    G --> I
+    E --> H
+    E --> I
+```
 
-## Manuscript Structure
+### 4.2 Empirical Pipeline
+
+```mermaid
+flowchart LR
+    subgraph Data["Materials"]
+        J["Japan futures and options<br/>J-Quants"]
+        U["U.S. and regional market data<br/>Massive"]
+        M["Rates, FX, volatility, credit<br/>FRED and Cboe"]
+    end
+
+    subgraph Features["Nested information sets"]
+        A["A: Japan only"]
+        B["B: A plus U.S. close core"]
+        C["C: B plus Japan proxies"]
+        D["D: C plus Asia proxies"]
+    end
+
+    subgraph Models["Forecast models"]
+        BF["Benchmark floor"]
+        AB["Advanced econometric benchmarks"]
+        LQ["LightGBM direct quantile"]
+        LS["LightGBM body filters"]
+        EVT["POT-GPD tail extrapolation"]
+    end
+
+    subgraph Evaluation["Evaluation"]
+        CAL["Coverage and exceptions"]
+        LOSS["Quantile and FZ loss"]
+        INF["DM, MCS, CPA"]
+        DIAG["Murphy, DST, ES severity, triggers"]
+    end
+
+    J --> A
+    J --> B
+    U --> B
+    M --> B
+    B --> C
+    C --> D
+    A --> BF
+    A --> AB
+    A --> LQ
+    B --> LQ
+    C --> LQ
+    D --> LQ
+    LQ --> CAL
+    LQ --> LOSS
+    LS --> EVT
+    EVT --> CAL
+    EVT --> LOSS
+    BF --> CAL
+    AB --> CAL
+    CAL --> INF
+    LOSS --> INF
+    INF --> DIAG
+```
+
+## 5. Expected Outputs
+
+### 5.1 Main Tables
+
+- Data and timing audit:
+    - sample period;
+    - forecast rows;
+    - target construction;
+    - zero hard look-ahead-bias failures;
+    - warnings and FRED vintage limitation.
+- Benchmark floor and advanced benchmark table:
+    - breach rate;
+    - exception count;
+    - quantile loss;
+    - FZ loss where available;
+    - coverage test status.
+- ML-tail nested information-set table:
+    - separate left and right tails;
+    - four nested information sets;
+    - 95% VaR breach rates;
+    - quantile loss;
+    - FZ loss;
+    - exception counts.
+- All-model diagnostic scan:
+    - broad inventory of implemented benchmark and ML model families;
+    - useful for screening;
+    - not a formal common-sample ranking.
+- Restricted common-sample result matrix:
+    - direct quantile, location-scale, and POT-GPD family comparisons;
+    - common-sample flags;
+    - DM/MCS availability;
+    - sample-size and exception-count gates.
+- CPA tables:
+    - loss-differential regressions on ex-ante observables;
+    - quantile-loss CPA and FZ-loss CPA reported separately.
+
+### 5.2 Main Figures
+
+- Target distribution and raw-tail diagnostics:
+    - histogram and density of the settlement-to-open gap;
+    - left/right loss QQ plots;
+    - log survival plot;
+    - mean excess plot;
+    - Hill plot;
+    - GPD threshold stability summary.
+- Coverage breach-rate plots:
+    - left and right tails shown separately;
+    - nominal 5% reference line;
+    - benchmark floor, advanced benchmarks, and ML-tail families shown together where readable.
+- Murphy diagrams:
+    - benchmark Murphy diagnostics;
+    - ML-tail nested information-set Murphy diagnostics;
+    - interpreted as scoring-function diagnostics, not pairwise dominance claims.
+- EVT standardized-residual diagnostics:
+    - log survival;
+    - QQ;
+    - mean excess;
+    - Hill;
+    - threshold stability.
+
+### 5.3 Appendix Figures And Tables
+
+- DST attenuation diagnostics.
+- ES severity diagnostics.
+- Pre-open trigger diagnostics.
+- Stress-window diagnostics.
+- Full per-model metrics.
+- Full DM/MCS and CPA artifacts.
+- Feature availability, missingness, and source-coverage audits.
+- Options-source and options-feature audit tables.
+- EVT EVI-path, extremal-index, and threshold-stability outputs.
+
+## 6. Manuscript Structure
 
 - Introduction:
-    - motivate pre-open tail risk in OSE Nikkei 225 Futures;
-    - explain why the night session matters;
-    - state the nested-information-set question.
-- Institutional setting and data:
-    - describe OSE day/night sessions, U.S. close timing, DST regimes, source availability, and target construction.
-- Methodology:
-    - define loss units, tail sides, information sets, benchmark models, ML tail models, and EVT calibration.
-- Empirical design:
-    - define OOS splits, refit schedule, common-sample rules, inference tests, and claim boundaries.
+    - state the pre-open tail-risk problem;
+    - explain why the OSE night session makes the U.S. close question nontrivial;
+    - state the nested information-set design;
+    - preview the calibration-versus-loss tension in ML tail forecasts.
+- Institutional setting:
+    - describe OSE day/night trading;
+    - define the U.S. close cutoff;
+    - explain DST timing relevance;
+    - state the point-in-time rule.
+- Materials:
+    - describe Japanese futures and options data;
+    - describe U.S. ETF, minute, option, rates, FX, volatility, and credit data;
+    - describe preprocessing, contract rolls, calendar joins, and feature blocks.
+- Methods:
+    - define target, left/right losses, VaR, and ES;
+    - describe benchmark and advanced econometric models;
+    - describe LightGBM direct quantile and filtered-tail models;
+    - describe POT-GPD shape, scale, and ES gates;
+    - describe evaluation metrics and inference.
 - Results:
-    - begin with PiT and sample audit;
-    - report benchmark calibration;
-    - report ML direct-quantile nested information sets for left and right tails;
-    - report restricted location-scale and POT-GPD comparisons;
-    - discuss coverage, DM/MCS, CPA, DST, ES severity, and trigger diagnostics.
-- Conclusion:
-    - summarize the incremental information content of U.S. close variables;
+    - begin with sample, timing, and target-tail diagnostics;
+    - report benchmark floor calibration;
+    - report ML-tail nested information sets separately for left and right tails;
+    - report restricted model-family comparisons;
+    - report EVT, DST, ES severity, stress-window, and trigger diagnostics as supporting evidence.
+- Discussion:
+    - interpret U.S. close information content;
     - distinguish downside and upside risk;
-    - state limits from coverage drift, FRED vintages, EVT sample size, and missing U.S.-close Nikkei futures marks.
+    - discuss VaR coverage before loss-based claims;
+    - explain where LightGBM+EVT is useful and where sample gates are still limiting.
+- Conclusion:
+    - summarize the predictive evidence;
+    - state limitations from coverage drift, FRED vintages, EVT sample size, and missing U.S.-close Nikkei futures marks;
+    - define the next empirical extension, including 97.5% tails only after sufficient exception-count evidence.
 
-## Claim Boundaries
+## 7. Claim Boundaries
 
 - No structural causal spillover claim.
 - No price-discovery claim.
 - No claim that left-tail and right-tail mechanisms are identical.
-- No trading-alpha claim.
-- No hedge PnL or transaction-cost claim.
-- No live deployment claim from historical J-Quants OHLC data.
+- No live deployment claim from historical OHLC data.
 - No `residual_usclosemark_to_open` claim without licensed timestamped intraday Nikkei futures marks.
 - No claim that LightGBM-EVT is a new ML algorithm.
-- No claim that stabilized POT-GPD is the same object as plain maximum-likelihood POT-GPD.
 - No options-risk headline claim unless historical options entitlement, timestamp safety, and liquidity gates pass.
 - No model-family ranking claim from restricted short samples.
 - No extreme-tail claim without sufficient exceptions and rolling out-of-sample diagnostics.
+- Risk-trigger diagnostics are monitoring diagnostics; they are not execution-performance evidence.
 
-## Source Notes
+## 8. Appendix And Source Notes
+
+### 8.1 Source Notes
 
 - JPX Nikkei 225 Futures contract specifications: [Nikkei 225 Futures | Japan Exchange Group](https://www.jpx.co.jp/english/derivatives/products/domestic/225futures/01.html)
 - JPX derivatives trading hours: [Trading Hours | Derivatives | Japan Exchange Group](https://www.jpx.co.jp/english/derivatives/rules/trading-hours/index.html)
@@ -362,8 +542,23 @@ Operationally, the calculation proceeds as follows:
 - FRED observations API: [fred/series/observations | FRED](https://fred.stlouisfed.org/docs/api/fred/series_observations.html)
 - Cboe VIX historical data: [VIX Index Historical Data | Cboe](https://www.cboe.com/tradable_products/vix/vix_historical_data)
 - CME Nikkei products: [Nikkei 225 futures | CME Group](https://www.cmegroup.com/nikkei)
-- Patton, Ziegel, and Chen dynamic ES-VaR models: [Dynamic semiparametric models for expected shortfall](https://www.sciencedirect.com/science/article/abs/pii/S030440761930048X)
-- Taylor asymmetric-Laplace VaR-ES benchmark: [Forecasting Value at Risk and Expected Shortfall](https://www.tandfonline.com/doi/abs/10.1080/07350015.2017.1281815)
-- Creal, Koopman, and Lucas score-driven models: [Generalized autoregressive score models with applications](https://tinbergen.nl/publication/160131/general-autoregressive-score-models-with-applications)
-- Hansen, Lunde, and Nason model comparison: [The Model Confidence Set](https://econpapers.repec.org/RePEc:ecm:emetrp:v:79:y:2011:i:2:p:453-497)
-- Murphy-diagram evaluation: [Murphy Diagrams: Forecast Evaluation of Expected Shortfall](https://arxiv.org/abs/1705.04537)
+
+### 8.2 Literature Notes
+
+- McNeil-Frey filtered EVT: conditional volatility/body filtering followed by EVT tail estimation.
+- CAViaR: dynamic quantile modeling for VaR.
+- CARE and expectile-based models: expectile links to tail-risk measures.
+- GAS models: score-driven updating for dynamic conditional distributions.
+- Fissler-Ziegel scoring: joint VaR-ES evaluation.
+- Murphy diagrams: sensitivity of forecast comparison to scoring-function choice.
+- Diebold-Mariano and MCS: unconditional average-sample model comparison.
+- CPA: state-dependent loss-differential inference using ex-ante instruments.
+
+### 8.3 Reproducibility Notes
+
+- The generated results snapshot is the evidence map; this paper plan is the manuscript design.
+- Data source details are maintained in `docs/data.md`.
+- Current result tables and figure provenance are maintained in `docs/results_snapshot.md`.
+- The canonical run artifacts live under `reports/runs/<run_id>/`.
+- Paper-facing tables and figures are emitted under `reports/runs/<run_id>/latex/`.
+- `table_manifest.json` and `figure_manifest.json` provide source-artifact and claim-scope traceability for the generated paper-facing outputs.

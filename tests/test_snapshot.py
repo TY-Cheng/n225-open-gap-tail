@@ -710,8 +710,8 @@ def _assert_discussion_qa_headings_in_order(rendered: str) -> None:
     positions = [rendered.index(heading) for heading in headings]
     assert positions == sorted(positions)
     assert "conditional loss-difference diagnostic" in rendered
-    assert "The final VaR/ES level is still 95%" in rendered
-    assert "q90" in rendered
+    assert "The final VaR/ES level is 95%" in rendered
+    assert "it is not the reported VaR level" in rendered
     assert "advanced benchmark layer is registered as nonblocking" in rendered
     assert "should be read as unavailable diagnostics" in rendered
     assert "Smoke-only artifact" not in rendered
@@ -963,7 +963,7 @@ def test_snapshot_private_helpers_cover_defensive_edges() -> None:
         ml_tail_metrics_per_model=pl.DataFrame(
             [
                 {
-                    "model_name": "lightgbm_standardized_loss_pot_gpd_stabilized",
+                    "model_name": "lightgbm_standardized_loss_pot_gpd_plain_mle",
                     "information_set": "japan_only",
                     "rows": 80,
                     "var_breach_rate": 0.075,
@@ -977,7 +977,7 @@ def test_snapshot_private_helpers_cover_defensive_edges() -> None:
         ),
     )
     assert "benchmark_floor" in all_model_table
-    assert "LGBM POT-GPD stabilized" in all_model_table
+    assert "LGBM POT-GPD plain MLE" in all_model_table
     assert "JP only" in all_model_table
     assert "japan_only" not in all_model_table
     assert "Breach mean+-sd" in all_model_table

@@ -10,6 +10,7 @@ from n225_open_gap_tail.config.model_labels import (
     display_information_set_label,
     display_model_label,
 )
+from n225_open_gap_tail.config.runtime import ML_TAIL_MODEL_NAMES
 
 
 def _all_model_comparison_table(
@@ -76,7 +77,10 @@ def _all_model_comparison_table(
         columns = [
             column for column in metric_columns if column in ml_tail_metrics_per_model.columns
         ]
+        active_ml_models = set(ML_TAIL_MODEL_NAMES)
         for row in ml_tail_metrics_per_model.select(columns).iter_rows(named=True):
+            if str(row["model_name"]) not in active_ml_models:
+                continue
             records.append(
                 {
                     **row,

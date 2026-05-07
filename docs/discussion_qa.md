@@ -74,14 +74,15 @@ The benchmark floor, advanced benchmark suite, and ML-tail suite are implemented
 
 ## How do the LightGBM+EVT variants work?
 
-The final VaR/ES level is still 95%. The `q90` models use 90% only as a POT threshold, not as the final risk level.
+The final VaR/ES level is 95%. POT-GPD variants use a 0.90 threshold only for
+tail fitting; it is not the reported VaR level.
 
 - Direct LightGBM estimates the 95% VaR level directly.
 - Location-scale models estimate a conditional center and scale, then calibrate the upper tail of standardized losses.
 - Standardized-loss POT-GPD models fit a Generalized Pareto tail above the registered 0.90 threshold of out-of-fold standardized losses.
-- Conditional-q90 POT-GPD estimates a dynamic 90% threshold with LightGBM, fits a GPD to losses above that threshold, and extrapolates to 95% VaR/ES.
 - Median/MAD and median/IQR routes use more robust body filters before the POT-GPD step.
-- Plain MLE is the standard EVT comparator. Stabilized variants are finite-sample regularized diagnostics until the evidence supports promotion.
+- Plain MLE is the standard EVT comparator. The UniBM route changes only the GPD shape estimator `xi`, using a UniBM block-maxima-derived scaling estimate; it does not use the reciprocal Pareto tail-index convention and does not use extremal-index weighting.
+- Robust body-filter routes remain research-candidate diagnostics until the evidence supports promotion.
 - New LightGBM+EVT routes are included in per-model and restricted model-family artifacts, but they are not automatically headline rows.
 
 ## How are forecasts judged?
@@ -107,7 +108,6 @@ The current evidence is a calibration-versus-loss tradeoff.
 - Direct LightGBM quantile rows often show lower average loss on this registered sample, but their breach rates are above the nominal level.
 - That means lower loss cannot be read alone as better tail calibration.
 - Filtered EVT and location-scale models improve coverage discipline in several comparisons, but the evidence is not one model-family ranking.
-- The new conditional-q90 POT-GPD route helps separate threshold estimation from tail extrapolation, but in the latest run most q90 calibration gates fail; its usable sample is too small for a headline claim.
 - Among the new EVT candidates, median/IQR POT-GPD has the clearest left-tail calibration diagnostics in the current run. Right-tail evidence is less clean and should be reported separately.
 - The paper should state the tension plainly: flexible ML information sets can change forecast loss, while VaR coverage gates determine whether that change is usable for risk claims.
 

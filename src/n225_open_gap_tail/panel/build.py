@@ -410,7 +410,7 @@ def build_panel(
             },
             "evt_tail_calibration_policy": {
                 "tail_levels": TAIL_LEVELS,
-                "stabilized_pot_gpd": PIPELINE_CONFIG.to_jsonable().get("model_policy", {}),
+                "plain_pot_gpd": PIPELINE_CONFIG.to_jsonable().get("model_policy", {}),
             },
         },
     )

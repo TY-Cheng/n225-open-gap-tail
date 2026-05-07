@@ -13,10 +13,6 @@ from n225_open_gap_tail.config.runtime import (
     ML_TAIL_IQR_CONSISTENCY_FACTOR,
     ML_TAIL_MAD_CONSISTENCY_FACTOR,
     ML_TAIL_OOF_SPLITS,
-    ML_TAIL_Q90_ACCEPTABLE_BAND,
-    ML_TAIL_Q90_EXPECTED_BREACH_RATE,
-    ML_TAIL_Q90_MARGINAL_BAND,
-    ML_TAIL_Q90_THRESHOLD_LEVEL,
     ML_TAIL_REFIT_FREQUENCY,
     ML_TAIL_ROBUST_SCALE_FLOOR,
     ML_TAIL_SCALE_FLOOR,
@@ -123,64 +119,6 @@ def _ml_tail_oof_location_scale(
         "standardized_losses": standardized,
         "location_oof_count": int(np.sum(np.isfinite(mu_oof))),
         "scale_oof_count": int(np.sum(np.isfinite(log_sigma_oof))),
-    }
-
-
-def _ml_tail_oof_conditional_q90_threshold(
-    *,
-    train_rows: list[dict[str, object]],
-    candidate_features: list[str],
-    information_set: str,
-    tail_level: float,
-    lgb: Any,
-) -> dict[str, object]:
-    row_count = len(train_rows)
-    folds = _blocked_expanding_oof_folds(
-        row_count,
-        n_splits=ML_TAIL_OOF_SPLITS,
-        min_train_rows=ML_TAIL_MIN_OOF_TRAIN_ROWS,
-    )
-    if not folds:
-        raise PipelineRunError("unavailable_oof_threshold_insufficient_sample: no folds")
-    y = np.array([_required_float(row["realized_loss"]) for row in train_rows], dtype=float)
-    threshold_oof = np.full(row_count, np.nan, dtype=float)
-    for fold_index, (fold_train, fold_validation) in enumerate(folds):
-        fold_rows = [train_rows[index] for index in fold_train]
-        model, _, active_features = _fit_lgb_regression_model(
-            lgb=lgb,
-            rows=fold_rows,
-            target=y[fold_train],
-            candidate_features=candidate_features,
-            objective="quantile",
-            alpha=ML_TAIL_Q90_THRESHOLD_LEVEL,
-            random_state=_ml_tail_seed(information_set, tail_level, "q90_oof", fold_index),
-        )
-        validation_rows = [train_rows[index] for index in fold_validation]
-        threshold_oof[fold_validation] = _predict_lgb_rows(model, validation_rows, active_features)
-    valid = np.isfinite(threshold_oof)
-    if int(np.sum(valid)) < ML_TAIL_MIN_OOF_TRAIN_ROWS:
-        raise PipelineRunError(
-            f"unavailable_oof_threshold_insufficient_sample: {int(np.sum(valid))}"
-        )
-    breaches = y[valid] > threshold_oof[valid]
-    breach_rate = float(np.mean(breaches)) if breaches.size else math.nan
-    gate_status = _q90_gate_status(breach_rate)
-    p_tail = 1.0 - tail_level
-    if gate_status == "unavailable_q90_calibration_failed":
-        raise PipelineRunError(gate_status)
-    if not math.isfinite(breach_rate) or breach_rate <= p_tail:
-        raise PipelineRunError("unavailable_q90_breach_rate_too_low_for_target_tail")
-    exceedance_mask = valid & (y > threshold_oof)
-    exceedances = y[exceedance_mask] - threshold_oof[exceedance_mask]
-    exceedance_indices = np.flatnonzero(exceedance_mask)
-    return {
-        "threshold_oof": threshold_oof,
-        "exceedances": exceedances[np.isfinite(exceedances) & (exceedances > 0.0)],
-        "exceedance_indices": exceedance_indices,
-        "q90_oof_breach_rate": breach_rate,
-        "q90_expected_breach_rate": ML_TAIL_Q90_EXPECTED_BREACH_RATE,
-        "q90_gate_status": gate_status,
-        "q90_oof_count": int(np.sum(valid)),
     }
 
 
@@ -446,18 +384,6 @@ def _rearrange_quantile_predictions(
     return rearranged[0], rearranged[1], rearranged[2], crossing_rate
 
 
-def _q90_gate_status(breach_rate: float) -> str:
-    if not math.isfinite(breach_rate):
-        return "unavailable_q90_calibration_failed"
-    acceptable_low, acceptable_high = ML_TAIL_Q90_ACCEPTABLE_BAND
-    marginal_low, marginal_high = ML_TAIL_Q90_MARGINAL_BAND
-    if acceptable_low <= breach_rate <= acceptable_high:
-        return "ok"
-    if marginal_low <= breach_rate <= marginal_high:
-        return "marginal_q90_calibration"
-    return "unavailable_q90_calibration_failed"
-
-
 def _blocked_expanding_oof_folds(
     row_count: int,
     *,
@@ -551,12 +477,6 @@ def _predict_ml_tail_location_scale_forecast(
         "scale_method": bundle.get("scale_method"),
         "tail_estimator_method": bundle.get("tail_estimator_method"),
         "threshold_model_level": bundle.get("threshold_model_level"),
-        "q90_oof_breach_rate": bundle.get("q90_oof_breach_rate"),
-        "q90_expected_breach_rate": bundle.get("q90_expected_breach_rate"),
-        "q90_excess_probability_for_tail_level": bundle.get(
-            "q90_excess_probability_for_tail_level"
-        ),
-        "q90_gate_status": bundle.get("q90_gate_status"),
         "evt_route_gate_status": bundle.get("evt_route_gate_status"),
         "gpd_fit_status": evt_tail.get("gpd_fit_status"),
         "gpd_es_status": evt_tail.get("gpd_es_status"),
@@ -568,6 +488,7 @@ def _predict_ml_tail_location_scale_forecast(
         "standardized_var": standardized_var,
         "standardized_es": standardized_es,
         "evt_shape": evt_tail.get("evt_shape"),
+        "evt_shape_bin": evt_tail.get("evt_shape_bin"),
         "evt_scale": evt_tail.get("evt_scale"),
         "threshold_quantile": evt_tail.get("threshold_quantile"),
         "threshold_value": evt_tail.get("threshold_value"),
@@ -583,6 +504,16 @@ def _predict_ml_tail_location_scale_forecast(
         "evt_xi_evi_anchor": evt_tail.get("evt_xi_evi_anchor"),
         "evt_theta_hat": evt_tail.get("evt_theta_hat"),
         "evt_effective_exceedance_count": evt_tail.get("evt_effective_exceedance_count"),
+        "evt_unibm_n_obs": evt_tail.get("evt_unibm_n_obs"),
+        "evt_unibm_min_block_size": evt_tail.get("evt_unibm_min_block_size"),
+        "evt_unibm_max_block_size": evt_tail.get("evt_unibm_max_block_size"),
+        "evt_unibm_sliding_blocks": evt_tail.get("evt_unibm_sliding_blocks"),
+        "evt_unibm_bootstrap_reps": evt_tail.get("evt_unibm_bootstrap_reps"),
+        "evt_unibm_plateau_point_count": evt_tail.get("evt_unibm_plateau_point_count"),
+        "evt_unibm_block_sizes_json": evt_tail.get("evt_unibm_block_sizes_json"),
+        "evt_unibm_block_counts_json": evt_tail.get("evt_unibm_block_counts_json"),
+        "evt_unibm_plateau_block_sizes_json": evt_tail.get("evt_unibm_plateau_block_sizes_json"),
+        "evt_unibm_plateau_block_counts_json": evt_tail.get("evt_unibm_plateau_block_counts_json"),
         "evt_scale_refit_status": evt_tail.get("evt_scale_refit_status"),
         "evt_es_finite": evt_tail.get("evt_es_finite"),
     }
@@ -627,12 +558,6 @@ def _ml_tail_location_scale_diagnostic(
         "scale_method": bundle.get("scale_method"),
         "tail_estimator_method": bundle.get("tail_estimator_method"),
         "threshold_model_level": bundle.get("threshold_model_level"),
-        "q90_oof_breach_rate": bundle.get("q90_oof_breach_rate"),
-        "q90_expected_breach_rate": bundle.get("q90_expected_breach_rate"),
-        "q90_excess_probability_for_tail_level": bundle.get(
-            "q90_excess_probability_for_tail_level"
-        ),
-        "q90_gate_status": bundle.get("q90_gate_status"),
         "evt_route_gate_status": bundle.get("evt_route_gate_status"),
         "gpd_fit_status": evt_tail.get("gpd_fit_status"),
         "gpd_es_status": evt_tail.get("gpd_es_status"),
@@ -649,6 +574,7 @@ def _ml_tail_location_scale_diagnostic(
         "standardized_var": bundle["standardized_var"],
         "standardized_es": bundle["standardized_es"],
         "evt_shape": evt_tail.get("evt_shape"),
+        "evt_shape_bin": evt_tail.get("evt_shape_bin"),
         "evt_scale": evt_tail.get("evt_scale"),
         "threshold_quantile": evt_tail.get("threshold_quantile"),
         "threshold_value": evt_tail.get("threshold_value"),
@@ -664,6 +590,16 @@ def _ml_tail_location_scale_diagnostic(
         "evt_xi_evi_anchor": evt_tail.get("evt_xi_evi_anchor"),
         "evt_theta_hat": evt_tail.get("evt_theta_hat"),
         "evt_effective_exceedance_count": evt_tail.get("evt_effective_exceedance_count"),
+        "evt_unibm_n_obs": evt_tail.get("evt_unibm_n_obs"),
+        "evt_unibm_min_block_size": evt_tail.get("evt_unibm_min_block_size"),
+        "evt_unibm_max_block_size": evt_tail.get("evt_unibm_max_block_size"),
+        "evt_unibm_sliding_blocks": evt_tail.get("evt_unibm_sliding_blocks"),
+        "evt_unibm_bootstrap_reps": evt_tail.get("evt_unibm_bootstrap_reps"),
+        "evt_unibm_plateau_point_count": evt_tail.get("evt_unibm_plateau_point_count"),
+        "evt_unibm_block_sizes_json": evt_tail.get("evt_unibm_block_sizes_json"),
+        "evt_unibm_block_counts_json": evt_tail.get("evt_unibm_block_counts_json"),
+        "evt_unibm_plateau_block_sizes_json": evt_tail.get("evt_unibm_plateau_block_sizes_json"),
+        "evt_unibm_plateau_block_counts_json": evt_tail.get("evt_unibm_plateau_block_counts_json"),
         "evt_scale_refit_status": evt_tail.get("evt_scale_refit_status"),
         "evt_es_finite": evt_tail.get("evt_es_finite"),
         "evt_evi_diagnostics_json": evt_tail.get("evt_evi_diagnostics_json"),
@@ -726,10 +662,6 @@ def _ml_tail_extended_forecast_fields() -> dict[str, object]:
         "scale_method": None,
         "tail_estimator_method": None,
         "threshold_model_level": None,
-        "q90_oof_breach_rate": None,
-        "q90_expected_breach_rate": None,
-        "q90_excess_probability_for_tail_level": None,
-        "q90_gate_status": None,
         "evt_route_gate_status": None,
         "gpd_fit_status": None,
         "gpd_es_status": None,
@@ -741,6 +673,7 @@ def _ml_tail_extended_forecast_fields() -> dict[str, object]:
         "standardized_var": None,
         "standardized_es": None,
         "evt_shape": None,
+        "evt_shape_bin": None,
         "evt_scale": None,
         "threshold_quantile": None,
         "threshold_value": None,
@@ -756,6 +689,16 @@ def _ml_tail_extended_forecast_fields() -> dict[str, object]:
         "evt_xi_evi_anchor": None,
         "evt_theta_hat": None,
         "evt_effective_exceedance_count": None,
+        "evt_unibm_n_obs": None,
+        "evt_unibm_min_block_size": None,
+        "evt_unibm_max_block_size": None,
+        "evt_unibm_sliding_blocks": None,
+        "evt_unibm_bootstrap_reps": None,
+        "evt_unibm_plateau_point_count": None,
+        "evt_unibm_block_sizes_json": None,
+        "evt_unibm_block_counts_json": None,
+        "evt_unibm_plateau_block_sizes_json": None,
+        "evt_unibm_plateau_block_counts_json": None,
         "evt_scale_refit_status": None,
         "evt_es_finite": None,
     }

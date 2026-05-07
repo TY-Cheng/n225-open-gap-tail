@@ -52,10 +52,9 @@ _SHARD_ALIASES: dict[str, dict[str, str]] = {
         "lightgbm_location_scale_empirical": "lgbm_ls_emp",
         "lightgbm_standardized_loss_pot_gpd": "lgbm_pot",
         "lightgbm_standardized_loss_pot_gpd_plain_mle": "lgbm_pot_plain",
-        "lightgbm_standardized_loss_pot_gpd_capped_mle": "lgbm_pot_cap",
-        "lightgbm_standardized_loss_pot_gpd_evi_shrink": "lgbm_pot_evi",
-        "lightgbm_standardized_loss_pot_gpd_ei_weighted": "lgbm_pot_ei",
-        "lightgbm_standardized_loss_pot_gpd_stabilized": "lgbm_pot_stab",
+        "lightgbm_standardized_loss_pot_gpd_unibm": "lgbm_pot_unibm",
+        "lightgbm_median_mad_pot_gpd_plain_mle": "lgbm_mad_pot_plain",
+        "lightgbm_median_iqr_pot_gpd_plain_mle": "lgbm_iqr_pot_plain",
     },
     "target": {
         "full_gap_settle_to_open": "sto",

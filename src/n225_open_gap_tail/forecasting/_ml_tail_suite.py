@@ -156,6 +156,7 @@ def evaluate_ml_tail_suite(
     evt_threshold_sensitivity = _evt_threshold_sensitivity_records(diagnostics)
     evt_body_tail_diagnostics = _evt_body_tail_diagnostic_records(diagnostics)
     evt_route_gate_status = _evt_route_gate_status_records(diagnostics)
+    evt_route_availability = _evt_route_availability_records(diagnostics)
     evt_ablation_metrics = _evt_ablation_metric_records(
         cast(list[dict[str, object]], artifacts["per_model_metrics"])
     )
@@ -234,6 +235,7 @@ def evaluate_ml_tail_suite(
     _write_parquet(metrics_root / "evt_threshold_sensitivity.parquet", evt_threshold_sensitivity)
     _write_parquet(metrics_root / "evt_body_tail_diagnostics.parquet", evt_body_tail_diagnostics)
     _write_parquet(metrics_root / "evt_route_gate_status.parquet", evt_route_gate_status)
+    _write_parquet(metrics_root / "evt_route_availability.parquet", evt_route_availability)
     _write_parquet(metrics_root / "evt_ablation_metrics.parquet", evt_ablation_metrics)
     _write_parquet(metrics_root / "ml_tail_cpa_inference.parquet", cpa_inference)
     _write_parquet(
@@ -271,6 +273,7 @@ def evaluate_ml_tail_suite(
             "evt_threshold_sensitivity_rows": len(evt_threshold_sensitivity),
             "evt_body_tail_diagnostic_rows": len(evt_body_tail_diagnostics),
             "evt_route_gate_status_rows": len(evt_route_gate_status),
+            "evt_route_availability_rows": len(evt_route_availability),
             "evt_ablation_metric_rows": len(evt_ablation_metrics),
             "cpa_inference_rows": len(cpa_inference),
             "cross_model_cpa_inference_rows": len(cross_model_cpa_inference),
@@ -303,6 +306,7 @@ def evaluate_ml_tail_suite(
             "evt_threshold_sensitivity_rows": len(evt_threshold_sensitivity),
             "evt_body_tail_diagnostic_rows": len(evt_body_tail_diagnostics),
             "evt_route_gate_status_rows": len(evt_route_gate_status),
+            "evt_route_availability_rows": len(evt_route_availability),
         },
     )
     _evaluation_log(
@@ -338,6 +342,7 @@ def _evt_shape_stability_records(rows: list[dict[str, object]]) -> list[dict[str
             {
                 **base,
                 "evt_shape": row.get("evt_shape"),
+                "evt_shape_bin": row.get("evt_shape_bin"),
                 "evt_scale": row.get("evt_scale"),
                 "evt_shape_mle": row.get("evt_shape_mle"),
                 "evt_scale_mle": row.get("evt_scale_mle"),
@@ -347,6 +352,18 @@ def _evt_shape_stability_records(rows: list[dict[str, object]]) -> list[dict[str
                 "evt_shape_method": row.get("evt_shape_method"),
                 "evt_scale_refit_status": row.get("evt_scale_refit_status"),
                 "evt_es_finite": row.get("evt_es_finite"),
+                "evt_unibm_n_obs": row.get("evt_unibm_n_obs"),
+                "evt_unibm_min_block_size": row.get("evt_unibm_min_block_size"),
+                "evt_unibm_max_block_size": row.get("evt_unibm_max_block_size"),
+                "evt_unibm_sliding_blocks": row.get("evt_unibm_sliding_blocks"),
+                "evt_unibm_bootstrap_reps": row.get("evt_unibm_bootstrap_reps"),
+                "evt_unibm_plateau_point_count": row.get("evt_unibm_plateau_point_count"),
+                "evt_unibm_block_sizes_json": row.get("evt_unibm_block_sizes_json"),
+                "evt_unibm_block_counts_json": row.get("evt_unibm_block_counts_json"),
+                "evt_unibm_plateau_block_sizes_json": row.get("evt_unibm_plateau_block_sizes_json"),
+                "evt_unibm_plateau_block_counts_json": row.get(
+                    "evt_unibm_plateau_block_counts_json"
+                ),
                 "evt_cap_sensitivity_json": row.get("evt_cap_sensitivity_json"),
             }
         )
@@ -412,6 +429,7 @@ def _evt_threshold_sensitivity_records(rows: list[dict[str, object]]) -> list[di
                     "threshold_value": item.get("threshold_value"),
                     "evt_exceedance_count": item.get("evt_exceedance_count"),
                     "evt_shape": item.get("evt_shape"),
+                    "evt_shape_bin": item.get("evt_shape_bin"),
                     "evt_scale": item.get("evt_scale"),
                     "evt_shape_mle": item.get("evt_shape_mle"),
                     "evt_scale_mle": item.get("evt_scale_mle"),
@@ -421,6 +439,11 @@ def _evt_threshold_sensitivity_records(rows: list[dict[str, object]]) -> list[di
                     "evt_xi_evi_anchor": item.get("evt_xi_evi_anchor"),
                     "evt_theta_hat": item.get("evt_theta_hat"),
                     "evt_effective_exceedance_count": item.get("evt_effective_exceedance_count"),
+                    "evt_unibm_n_obs": item.get("evt_unibm_n_obs"),
+                    "evt_unibm_min_block_size": item.get("evt_unibm_min_block_size"),
+                    "evt_unibm_max_block_size": item.get("evt_unibm_max_block_size"),
+                    "evt_unibm_sliding_blocks": item.get("evt_unibm_sliding_blocks"),
+                    "evt_unibm_plateau_point_count": item.get("evt_unibm_plateau_point_count"),
                     "standardized_var": item.get("standardized_var"),
                     "standardized_es": item.get("standardized_es"),
                     "evt_es_finite": item.get("evt_es_finite"),
@@ -444,14 +467,10 @@ def _evt_body_tail_diagnostic_records(rows: list[dict[str, object]]) -> list[dic
                 "scale_method": row.get("scale_method"),
                 "tail_estimator_method": row.get("tail_estimator_method"),
                 "threshold_model_level": row.get("threshold_model_level"),
-                "q90_oof_breach_rate": row.get("q90_oof_breach_rate"),
-                "q90_expected_breach_rate": row.get("q90_expected_breach_rate"),
-                "q90_excess_probability_for_tail_level": row.get(
-                    "q90_excess_probability_for_tail_level"
-                ),
                 "oof_standardized_loss_count": row.get("oof_standardized_loss_count"),
                 "evt_exceedance_count": row.get("evt_exceedance_count"),
                 "evt_shape": row.get("evt_shape"),
+                "evt_shape_bin": row.get("evt_shape_bin"),
                 "evt_scale": row.get("evt_scale"),
                 "evt_es_finite": row.get("evt_es_finite"),
                 "scale_floor": row.get("scale_floor"),
@@ -462,6 +481,18 @@ def _evt_body_tail_diagnostic_records(rows: list[dict[str, object]]) -> list[dic
                 "threshold_diagnostics_json": row.get("threshold_diagnostics_json"),
                 "evt_evi_diagnostics_json": row.get("evt_evi_diagnostics_json"),
                 "evt_ei_diagnostics_json": row.get("evt_ei_diagnostics_json"),
+                "evt_unibm_n_obs": row.get("evt_unibm_n_obs"),
+                "evt_unibm_min_block_size": row.get("evt_unibm_min_block_size"),
+                "evt_unibm_max_block_size": row.get("evt_unibm_max_block_size"),
+                "evt_unibm_sliding_blocks": row.get("evt_unibm_sliding_blocks"),
+                "evt_unibm_bootstrap_reps": row.get("evt_unibm_bootstrap_reps"),
+                "evt_unibm_plateau_point_count": row.get("evt_unibm_plateau_point_count"),
+                "evt_unibm_block_sizes_json": row.get("evt_unibm_block_sizes_json"),
+                "evt_unibm_block_counts_json": row.get("evt_unibm_block_counts_json"),
+                "evt_unibm_plateau_block_sizes_json": row.get("evt_unibm_plateau_block_sizes_json"),
+                "evt_unibm_plateau_block_counts_json": row.get(
+                    "evt_unibm_plateau_block_counts_json"
+                ),
                 "diagnostic_scope": "evt_body_tail_diagnostic",
             }
         )
@@ -479,15 +510,9 @@ def _evt_route_gate_status_records(rows: list[dict[str, object]]) -> list[dict[s
                 "body_filter_method": row.get("body_filter_method"),
                 "scale_method": row.get("scale_method"),
                 "tail_estimator_method": row.get("tail_estimator_method"),
-                "q90_gate_status": row.get("q90_gate_status"),
                 "evt_route_gate_status": row.get("evt_route_gate_status"),
                 "gpd_fit_status": row.get("gpd_fit_status"),
                 "gpd_es_status": row.get("gpd_es_status"),
-                "q90_oof_breach_rate": row.get("q90_oof_breach_rate"),
-                "q90_expected_breach_rate": row.get("q90_expected_breach_rate"),
-                "q90_excess_probability_for_tail_level": row.get(
-                    "q90_excess_probability_for_tail_level"
-                ),
                 "scale_floor": row.get("scale_floor"),
                 "quantile_crossing_rate": row.get("quantile_crossing_rate"),
                 "quantile_rearrangement_applied": row.get("quantile_rearrangement_applied"),
@@ -496,6 +521,64 @@ def _evt_route_gate_status_records(rows: list[dict[str, object]]) -> list[dict[s
             }
         )
     return records
+
+
+def _evt_route_availability_records(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    grouped: dict[tuple[object, ...], dict[str, object]] = {}
+    for row in rows:
+        if not row.get("body_filter_method") and not row.get("evt_route_gate_status"):
+            continue
+        key = (
+            row.get("target_family"),
+            row.get("tail_side"),
+            row.get("tail_level"),
+            row.get("model_name"),
+            row.get("information_set"),
+            row.get("refit_frequency"),
+        )
+        bucket = grouped.setdefault(
+            key,
+            {
+                "target_family": row.get("target_family"),
+                "tail_side": row.get("tail_side"),
+                "tail_level": row.get("tail_level"),
+                "model_name": row.get("model_name"),
+                "information_set": row.get("information_set"),
+                "refit_frequency": row.get("refit_frequency"),
+                "total_refits": 0,
+                "available_refits": 0,
+                "status_counts": {},
+            },
+        )
+        bucket["total_refits"] = int(bucket["total_refits"]) + 1
+        status = str(row.get("evt_route_gate_status") or row.get("fit_status") or "unknown")
+        if status == "ok" and row.get("fit_status") != "unavailable_optimizer_failed":
+            bucket["available_refits"] = int(bucket["available_refits"]) + 1
+        counts = cast(dict[str, int], bucket["status_counts"])
+        counts[status] = counts.get(status, 0) + 1
+    records: list[dict[str, object]] = []
+    for bucket in grouped.values():
+        total = int(bucket["total_refits"])
+        available = int(bucket["available_refits"])
+        status_counts = cast(dict[str, int], bucket.pop("status_counts"))
+        records.append(
+            {
+                **bucket,
+                "unavailable_refits": total - available,
+                "availability_rate": available / total if total else None,
+                "status_counts_json": json.dumps(status_counts, sort_keys=True),
+                "artifact_scope": "evt_route_availability",
+            }
+        )
+    return sorted(
+        records,
+        key=lambda row: (
+            str(row.get("model_name")),
+            str(row.get("information_set")),
+            str(row.get("tail_side")),
+            str(row.get("tail_level")),
+        ),
+    )
 
 
 def _evt_ablation_metric_records(rows: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -524,7 +607,6 @@ def _evt_base_record(row: dict[str, object]) -> dict[str, object]:
         "body_filter_method": row.get("body_filter_method"),
         "scale_method": row.get("scale_method"),
         "tail_estimator_method": row.get("tail_estimator_method"),
-        "q90_gate_status": row.get("q90_gate_status"),
         "evt_route_gate_status": row.get("evt_route_gate_status"),
         "gpd_fit_status": row.get("gpd_fit_status"),
         "gpd_es_status": row.get("gpd_es_status"),

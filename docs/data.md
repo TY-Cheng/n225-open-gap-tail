@@ -96,8 +96,8 @@ FRED uses current historical values with conservative availability semantics and
 The current paper-facing evidence map is generated from:
 
 ```text
-run_id = tailrisk_20160719_20260504_20260504T034739Z_commit_ecd3c375
-requested window = 2016-07-19 to 2026-05-04
+run_id = tailrisk_20160719_20260507_20260507T142030Z_commit_6bf8b0ae
+requested window = 2016-07-19 to 2026-05-07
 clean forecast sample = 2018-06-20 to 2026-05-01
 clean forecast observations = 1,661
 ```
@@ -360,7 +360,7 @@ Massive OPRA `day_aggs_v1` flat-file ingestion and computed ATM-IV options featu
 routed by underlying exposure into the B/C/D information sets. This matters because
 the multi-ticker Massive minute layer and the OPRA options layer can require
 substantial first-run vendor traffic, while normal reruns should reuse validated
-bronze/silver/gold caches. Use `just full 2016-07-19 "" 4 false false` for a run
+bronze/silver/gold caches. Use `just full 2016-07-19 "" 6 false false` for a run
 without U.S. options features. The default start is `2016-07-19`, treated as a
 clean-sample candidate rather than a hard empirical claim. The final modeling
 start is written to the run manifest as:

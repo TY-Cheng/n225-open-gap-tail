@@ -86,12 +86,13 @@ def figure_gallery_markdown(*, figure_manifest: dict[str, object], run_id: str) 
     order = [
         ("target_distribution", "Figure 1. Target Distribution And Tail Diagnostics"),
         ("coverage", "Figure 2. Coverage Breach-Rate Diagnostics"),
-        ("benchmark_murphy", "Figure 3. Benchmark Murphy Diagnostics"),
-        ("ml_tail_murphy", "Figure 4. ML-Tail Murphy Diagnostics"),
-        ("dst", "Figure 5. DST Attenuation Diagnostics"),
+        ("selected_performance", "Figure 3. Selected Benchmark-vs-LGBM Performance"),
+        ("benchmark_murphy", "Figure 4. Benchmark Murphy Diagnostics"),
+        ("ml_tail_murphy", "Figure 5. ML-Tail Murphy Diagnostics"),
         ("severity", "Figure 6. ES Severity Diagnostics"),
-        ("trigger", "Figure 7. Trigger Diagnostics"),
+        ("trigger", "Figure 7. Selected Trigger Diagnostics"),
         ("evt_standardized", "Figure 8. EVT Standardized-Residual Diagnostics"),
+        ("dst", "Appendix Figure A. DST Attenuation Diagnostics"),
     ]
     for family, title in order:
         family_entries = by_family.get(family, [])
@@ -135,6 +136,8 @@ def _figure_family(name: str) -> str:
         return "target_distribution"
     if name.startswith("coverage_breach_rates"):
         return "coverage"
+    if name.startswith("selected_model_performance"):
+        return "selected_performance"
     if name.startswith("benchmark_murphy"):
         return "benchmark_murphy"
     if name.startswith("ml_tail_murphy"):
@@ -175,6 +178,11 @@ def _figure_key_readings(family: str) -> list[str]:
             "- Key readings: bars report realized VaR exception rates against the nominal line.",
             "- Read this first: exception-rate deviations set the boundary for any loss-based interpretation.",
         ],
+        "selected_performance": [
+            "- Key readings: compact main-figure rows split models into two broad groups, Benchmark and LGBM.",
+            "- Within each tail and group, rows are selected by sufficient sample size, VaR coverage near 5%, then lower FZ loss and quantile loss.",
+            "- Full benchmark and LGBM per-model results are exported in appendix tables, so this figure is a readable summary rather than the full result set.",
+        ],
         "benchmark_murphy": [
             "- Key readings: curves report benchmark elementary-score diagnostics on a common grid.",
             "- The plot is a scoring-family diagnostic, not a pairwise ranking statement.",
@@ -184,7 +192,10 @@ def _figure_key_readings(family: str) -> list[str]:
             "- Interpret curve separation together with the headline coverage warning and unconditional inference gates.",
         ],
         "dst": [
-            "- Key readings: bars summarize timing-regime forecast diagnostics.",
+            "- Appendix-only diagnostic: the left/right timing-regime patterns are not stable enough for a main-text claim.",
+            "- Key readings: bars report loss gains from adding `JP + US close core` to `JP only`, split by EST/EDT timing regime.",
+            "- A positive gain means the expanded information set has lower average loss; a negative gain means it performs worse on that loss metric.",
+            "- This diagnostic is computed for the current headline nested-information-set anchor, `LGBM direct quantile`; it is not an average across all LightGBM/EVT variants or a best-model selection.",
             "- Treat this as descriptive timing evidence; left/right patterns should not be assigned a shared structural mechanism.",
         ],
         "severity": [
@@ -192,8 +203,11 @@ def _figure_key_readings(family: str) -> list[str]:
             "- Severity is reported for risk interpretation but is not a standalone model-selection claim.",
         ],
         "trigger": [
-            "- Key readings: bars report pre-open risk-trigger diagnostics by model family.",
-            "- The trigger output is a monitoring diagnostic, not an execution-performance result.",
+            "- Key readings: bars report pre-open VaR-trigger diagnostics for the same selected Benchmark-vs-LGBM candidates used in the compact performance figures.",
+            "- The trigger rule is within-model: `trigger = VaR forecast above that model's 75th-percentile VaR forecast` on the evaluation sample.",
+            "- This top-quartile rule is separate from the 95% VaR forecast target: VaR calibration is evaluated by breach rates, coverage tests, quantile loss, and FZ loss.",
+            "- Lower false-alarm and missed-exception rates are better; the trigger-rate bar is omitted because it is expected to be near 25% by construction.",
+            "- The trigger output is a monitoring diagnostic, not hedge PnL, not transaction-cost evidence, and not an execution-performance result.",
         ],
         "evt_standardized": [
             "- Key readings: figures show EVT diagnostics for LightGBM location-scale standardized residuals.",

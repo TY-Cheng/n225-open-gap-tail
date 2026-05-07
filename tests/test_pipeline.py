@@ -3364,7 +3364,8 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
     severity_export = (latex.latex_dir / "tailrisk_es_severity_table.tex").read_text(
         encoding="utf-8"
     )
-    assert latex.tables == 4
+    assert latex.tables == 5
+    assert (latex.latex_dir / "appendix_lgbm_all_models_table.tex").exists()
     assert "ml\\_tail\\_per\\_model" in severity_export
 
 

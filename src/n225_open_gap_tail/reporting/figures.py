@@ -21,10 +21,14 @@ from n225_open_gap_tail.config.runtime import (
     TAIL_SIDE_LEFT,
     TAIL_SIDE_RIGHT,
 )
-from n225_open_gap_tail.reporting.latex import _hedge_trigger_rows, _severity_rows
 from n225_open_gap_tail.config.model_labels import (
     display_information_set_label,
     display_model_label,
+)
+from n225_open_gap_tail.reporting.latex import (
+    _hedge_trigger_rows,
+    _selected_model_performance_rows,
+    _severity_rows,
 )
 
 
@@ -42,6 +46,7 @@ def export_figures(*, run_dir: Path, manifest: Mapping[str, object]) -> FigureEx
     entries: list[dict[str, object]] = []
     entries.extend(_target_distribution_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_coverage_figures(run_dir=run_dir, figure_dir=figure_dir))
+    entries.extend(_selected_model_performance_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_murphy_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_dst_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_severity_figures(run_dir=run_dir, figure_dir=figure_dir))
@@ -466,6 +471,89 @@ def _coverage_frame(run_dir: Path) -> pl.DataFrame:
     return pl.concat(frames, how="diagonal_relaxed")
 
 
+def _selected_model_performance_figures(
+    *, run_dir: Path, figure_dir: Path
+) -> list[dict[str, object]]:
+    frame = _selected_performance_frame(run_dir)
+    if frame.is_empty() or "tail_side" not in frame.columns:
+        return []
+    entries: list[dict[str, object]] = []
+    for tail_side in _available_tail_sides(frame):
+        side = frame.filter(pl.col("tail_side") == tail_side)
+        if side.is_empty():
+            continue
+        side = side.sort(["suite_order", "selection_rank", "model_label"])
+        labels = [
+            f"{row.get('suite_group')} | {row.get('model_label')}"
+            for row in side.iter_rows(named=True)
+        ]
+        colors = [_suite_color(str(row.get("suite_key"))) for row in side.iter_rows(named=True)]
+        breach = _series_percent(side, "var_breach_rate")
+        fz_loss = [float(_optional_float(value) or 0.0) for value in side["mean_fz_loss"].to_list()]
+        fig, axes = plt.subplots(1, 2, figsize=(13.2, max(5.0, len(labels) * 0.42)))
+        y = np.arange(len(labels))
+        axes[0].barh(y, breach, color=colors, alpha=0.88)
+        expected = _first_float(side, "expected_breach_rate") or 0.05
+        axes[0].axvline(expected * 100.0, color="#111827", linestyle="--", linewidth=1.25)
+        axes[0].set_xlabel("VaR breach rate (%)")
+        axes[0].set_title("Coverage")
+        axes[0].set_yticks(y, [_short_label(label, max_len=44) for label in labels])
+        axes[1].barh(y, fz_loss, color=colors, alpha=0.88)
+        axes[1].set_xlabel("Mean FZ loss (lower is better)")
+        axes[1].set_title("VaR-ES scoring")
+        axes[1].set_yticks(y, [""] * len(labels))
+        fig.suptitle(f"Selected Benchmark-vs-LGBM performance ({_label_tail_side(tail_side)})")
+        for ax in axes:
+            _style_axes(ax)
+        caption = (
+            f"Selected Benchmark-vs-LGBM performance for {tail_side}. Rows are selected "
+            "within each broad group by a deterministic rule: sufficient rows, VaR "
+            "coverage within the tolerance band, then lower FZ loss and quantile loss. "
+            "Full per-model results remain in appendix tables."
+        )
+        entries.extend(
+            _save_figure(
+                fig,
+                run_dir=run_dir,
+                figure_dir=figure_dir,
+                name=f"selected_model_performance_{tail_side}",
+                source_artifacts=[
+                    "metrics/benchmark_metrics_per_model.parquet",
+                    "metrics/ml_tail_metrics_per_model.parquet",
+                ],
+                tail_side=tail_side,
+                caption=caption,
+                claim_scope="selected_benchmark_vs_lgbm_main_figure_not_full_result_set",
+            )
+        )
+    return entries
+
+
+def _selected_performance_frame(run_dir: Path) -> pl.DataFrame:
+    benchmark = _read_optional_parquet(run_dir / "metrics" / "benchmark_metrics_per_model.parquet")
+    ml_tail = _read_optional_parquet(run_dir / "metrics" / "ml_tail_metrics_per_model.parquet")
+    rows = _selected_model_performance_rows(benchmark, ml_tail)
+    if not rows:
+        return pl.DataFrame()
+    frame = pl.DataFrame(rows)
+    return frame.with_columns(
+        pl.when(pl.col("suite_group") == "Benchmark")
+        .then(pl.lit(0))
+        .otherwise(pl.lit(1))
+        .alias("suite_order"),
+        pl.when(pl.col("suite_group") == "Benchmark")
+        .then(pl.lit("benchmark"))
+        .otherwise(pl.lit("lgbm"))
+        .alias("suite_key"),
+        (
+            _model_label_expr()
+            + pl.when(pl.col("suite_group") == "LGBM")
+            .then(pl.lit(" / ") + _information_set_label_expr())
+            .otherwise(pl.lit(""))
+        ).alias("model_label"),
+    )
+
+
 def _coverage_select(frame: pl.DataFrame) -> pl.DataFrame:
     required = {"model_name", "tail_side", "var_breach_rate", "expected_breach_rate"}
     if frame.is_empty() or not required.issubset(frame.columns):
@@ -679,8 +767,7 @@ def _severity_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, obje
 
 
 def _trigger_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object]]:
-    forecasts = _combined_forecasts(run_dir)
-    rows = _hedge_trigger_rows(forecasts) if not forecasts.is_empty() else []
+    rows = _selected_trigger_rows(run_dir)
     if not rows:
         return []
     frame = pl.DataFrame(rows)
@@ -701,17 +788,20 @@ def _trigger_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, objec
             for row in selected.iter_rows(named=True)
         ]
         x = np.arange(len(labels))
-        trigger_rate = _series_percent(selected, "trigger_rate")
         false_alarm_rate = _series_percent(selected, "false_alarm_rate")
         missed_rate = _series_percent(selected, "missed_exception_rate")
         fig, ax = plt.subplots(figsize=(12, 6.5))
-        width = 0.25
-        ax.bar(x - width, trigger_rate, width, label="trigger rate", color="#2563eb", alpha=0.85)
+        width = 0.34
         ax.bar(
-            x, false_alarm_rate, width, label="false alarm / trigger", color="#dc2626", alpha=0.75
+            x - width / 2,
+            false_alarm_rate,
+            width,
+            label="false alarm / trigger",
+            color="#dc2626",
+            alpha=0.75,
         )
         ax.bar(
-            x + width,
+            x + width / 2,
             missed_rate,
             width,
             label="missed exception / exception",
@@ -726,9 +816,11 @@ def _trigger_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, objec
         ax.legend(frameon=False, fontsize=8)
         _style_axes(ax)
         caption = (
-            f"VaR trigger diagnostic for {tail_side}; trigger is the within-model "
-            "75th-percentile VaR rule used in the reporting table. This is not hedge "
-            "PnL, not transaction-cost evidence, and not trading-alpha evidence."
+            f"VaR trigger diagnostic for selected Benchmark-vs-LGBM candidates in "
+            f"{tail_side}. Trigger is the within-model 75th-percentile VaR rule; "
+            "the trigger rate is therefore near 25% by construction and is omitted "
+            "from the compact plot. This is not hedge PnL, not transaction-cost "
+            "evidence, and not trading-alpha evidence."
         )
         entries.extend(
             _save_figure(
@@ -1172,6 +1264,51 @@ def _combined_forecasts(run_dir: Path) -> pl.DataFrame:
     return pl.concat(frames, how="diagonal_relaxed")
 
 
+def _all_forecasts_for_trigger(run_dir: Path) -> pl.DataFrame:
+    frames: list[pl.DataFrame] = []
+    benchmark_path = run_dir / "forecasts" / "benchmark_forecasts.parquet"
+    if benchmark_path.exists():
+        benchmark = pl.read_parquet(benchmark_path)
+        if not benchmark.is_empty():
+            frames.append(benchmark.with_columns(pl.lit("Benchmark").alias("suite")))
+    ml_tail_path = run_dir / "forecasts" / "ml_tail_forecasts.parquet"
+    if ml_tail_path.exists():
+        ml_tail = pl.read_parquet(ml_tail_path)
+        if not ml_tail.is_empty():
+            frames.append(ml_tail.with_columns(pl.lit("LGBM").alias("suite")))
+    if not frames:
+        return pl.DataFrame()
+    return pl.concat(frames, how="diagonal_relaxed")
+
+
+def _selected_trigger_rows(run_dir: Path) -> list[dict[str, object]]:
+    selected = _selected_performance_frame(run_dir)
+    forecasts = _all_forecasts_for_trigger(run_dir)
+    if selected.is_empty() or forecasts.is_empty():
+        return []
+    selected_keys = {
+        (
+            str(row.get("suite_group") or ""),
+            str(row.get("model_name") or ""),
+            str(row.get("information_set") or ""),
+            str(row.get("tail_side") or PRIMARY_TAIL_SIDE),
+        )
+        for row in selected.iter_rows(named=True)
+    }
+    rows = _hedge_trigger_rows(forecasts)
+    return [
+        row
+        for row in rows
+        if (
+            str(row.get("suite") or ""),
+            str(row.get("model_name") or ""),
+            str(row.get("information_set") or ""),
+            str(row.get("tail_side") or PRIMARY_TAIL_SIDE),
+        )
+        in selected_keys
+    ]
+
+
 def _trigger_plot_rows(frame: pl.DataFrame) -> pl.DataFrame:
     if frame.is_empty():
         return frame
@@ -1284,6 +1421,8 @@ def _short_label(value: object, *, max_len: int = 42) -> str:
 
 def _suite_color(suite_group: str) -> str:
     return {
+        "benchmark": "#475569",
+        "lgbm": "#2563eb",
         "benchmark_floor": "#475569",
         "benchmark_advanced": "#0f766e",
         "ml_tail_headline": "#2563eb",

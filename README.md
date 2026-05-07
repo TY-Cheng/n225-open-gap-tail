@@ -26,13 +26,13 @@ execution-cost study.
 ## Current Empirical Snapshot
 
 The current clean snapshot is based on the completed run
-`tailrisk_20160719_20260429_20260429T115723Z_commit_57b1ddab`.
+`tailrisk_20160719_20260507_20260507T142030Z_commit_6bf8b0ae`.
 
 - Clean evaluation window: `2018-06-20` to `2026-04-28`.
-- Forecast sample: `1660` trading-day observations.
+- Forecast sample: `1661` trading-day observations.
 - Headline risk level: 95% VaR, corresponding to a nominal 5% exception rate.
 - Benchmark floor median breach rate: about 6.1%.
-- ML direct-quantile breach rates across nested information sets: about 9.1% to 12.6%.
+- ML direct-quantile breach rates across nested information sets: about 7.6% to 12.7%.
 
 This means lower average loss values for the ML tail models must be read together with
 coverage diagnostics. In the current evidence, the direct-quantile LightGBM models often
@@ -154,7 +154,7 @@ proxies and routes them by economic exposure into the B/C information sets. To r
 without U.S. options features, use:
 
 ```bash
-just full 2016-07-19 "" 4 false false
+just full 2016-07-19 "" 6 false false
 ```
 
 For a completed run, regenerate the snapshot without fetching vendor data:

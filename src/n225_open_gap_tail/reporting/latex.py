@@ -7,6 +7,8 @@ from n225_open_gap_tail.config.runtime import (
     ML_TAIL_DIRECT_QUANTILE_MODEL,
     pl,
     PRIMARY_TAIL_SIDE,
+    TAIL_SIDE_LEFT,
+    TAIL_SIDE_RIGHT,
     _optional_float,
 )
 from n225_open_gap_tail.metrics.stat_utils import _fmt
@@ -14,6 +16,107 @@ from n225_open_gap_tail.config.model_labels import (
     display_information_set_label,
     display_model_label,
 )
+
+
+SELECTED_MODEL_MAX_PER_GROUP = 3
+SELECTED_MODEL_MIN_ROWS = 450
+SELECTED_MODEL_COVERAGE_TOLERANCE = 0.025
+
+
+def _selected_model_performance_rows(
+    benchmark_metrics: pl.DataFrame,
+    ml_tail_metrics: pl.DataFrame,
+    *,
+    max_per_group: int = SELECTED_MODEL_MAX_PER_GROUP,
+) -> list[dict[str, object]]:
+    """Select compact Benchmark-vs-LGBM rows for paper-facing figures/tables.
+
+    Selection is deterministic: per tail side and broad group, retain models with
+    enough rows and VaR coverage within the registered tolerance, then rank by
+    FZ loss and quantile loss. Full per-model tables remain the appendix record.
+    """
+
+    candidates: list[dict[str, object]] = []
+    candidates.extend(_selection_candidates(benchmark_metrics, suite_group="Benchmark"))
+    candidates.extend(_selection_candidates(ml_tail_metrics, suite_group="LGBM"))
+    selected: list[dict[str, object]] = []
+    tail_sides = [TAIL_SIDE_LEFT, TAIL_SIDE_RIGHT]
+    observed_sides = {str(row.get("tail_side") or PRIMARY_TAIL_SIDE) for row in candidates}
+    tail_sides.extend(sorted(side for side in observed_sides if side not in tail_sides))
+    for tail_side in tail_sides:
+        for suite_group in ("Benchmark", "LGBM"):
+            group = [
+                row
+                for row in candidates
+                if row.get("suite_group") == suite_group and row.get("tail_side") == tail_side
+            ]
+            eligible = [
+                row
+                for row in group
+                if int(_optional_float(row.get("rows")) or 0) >= SELECTED_MODEL_MIN_ROWS
+                and (_optional_float(row.get("coverage_abs_error")) or 1.0)
+                <= SELECTED_MODEL_COVERAGE_TOLERANCE
+            ]
+            fallback = sorted(
+                group,
+                key=lambda row: (
+                    _optional_float(row.get("coverage_abs_error")) or float("inf"),
+                    _optional_float(row.get("mean_fz_loss")) or float("inf"),
+                    _optional_float(row.get("mean_quantile_loss")) or float("inf"),
+                    str(row.get("model_name") or ""),
+                    str(row.get("information_set") or ""),
+                ),
+            )
+            ranked = (
+                sorted(
+                    eligible,
+                    key=lambda row: (
+                        _optional_float(row.get("mean_fz_loss")) or float("inf"),
+                        _optional_float(row.get("mean_quantile_loss")) or float("inf"),
+                        _optional_float(row.get("coverage_abs_error")) or float("inf"),
+                        str(row.get("model_name") or ""),
+                        str(row.get("information_set") or ""),
+                    ),
+                )
+                if eligible
+                else fallback
+            )
+            for rank, row in enumerate(ranked[:max_per_group], start=1):
+                selected.append({**row, "selection_rank": rank})
+    return selected
+
+
+def _selection_candidates(metrics: pl.DataFrame, *, suite_group: str) -> list[dict[str, object]]:
+    required = {
+        "model_name",
+        "tail_side",
+        "rows",
+        "var_breach_rate",
+        "expected_breach_rate",
+        "mean_quantile_loss",
+        "mean_fz_loss",
+    }
+    if metrics.is_empty() or not required.issubset(metrics.columns):
+        return []
+    rows: list[dict[str, object]] = []
+    for row in metrics.iter_rows(named=True):
+        breach = _optional_float(row.get("var_breach_rate"))
+        expected = _optional_float(row.get("expected_breach_rate")) or 0.05
+        if breach is None:
+            continue
+        rows.append(
+            {
+                **row,
+                "suite_group": suite_group,
+                "coverage_abs_error": abs(breach - expected),
+                "selection_rule": (
+                    f"rows>={SELECTED_MODEL_MIN_ROWS}; "
+                    f"abs(breach-expected)<={SELECTED_MODEL_COVERAGE_TOLERANCE}; "
+                    "rank_by=fz_loss_then_quantile_loss"
+                ),
+            }
+        )
+    return rows
 
 
 def _metrics_to_latex(
@@ -49,6 +152,94 @@ def _metrics_to_latex(
         "common-sample status is recorded in metrics metadata."
     )
     lines.extend(["\\midrule", f"\\multicolumn{{7}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(["\\bottomrule", "\\end{tabular}", ""])
+    return "\n".join(lines)
+
+
+def _selected_model_performance_to_latex(
+    benchmark_metrics: pl.DataFrame,
+    ml_tail_metrics: pl.DataFrame,
+    *,
+    manifest: Mapping[str, object] | None = None,
+) -> str:
+    manifest = manifest or {}
+    headers = ("group", "rank", "model", "info", "side", "N", "breach", "q_loss", "fz_loss")
+    lines = [
+        f"% run_id: {manifest.get('run_id', '')}",
+        f"% git_commit: {manifest.get('git_commit', '')}",
+        f"% config_hash: {manifest.get('config_hash', '')}",
+        "% table_scope: selected_benchmark_vs_lgbm_main_figure_rows",
+        "\\begin{tabular}{ll ll lrrrr}",
+        "\\toprule",
+        " & ".join(headers) + r" \\",
+        "\\midrule",
+    ]
+    for row in _selected_model_performance_rows(benchmark_metrics, ml_tail_metrics):
+        lines.append(
+            f"{_latex_escape(row.get('suite_group'))} & "
+            f"{int(_optional_float(row.get('selection_rank')) or 0)} & "
+            f"{_latex_escape(display_model_label(row.get('model_name')))} & "
+            f"{_latex_escape(display_information_set_label(row.get('information_set')))} & "
+            f"{_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
+            f"{int(_optional_float(row.get('rows')) or 0)} & "
+            f"{_fmt(row.get('var_breach_rate'))} & "
+            f"{_fmt(row.get('mean_quantile_loss'))} & "
+            f"{_fmt(row.get('mean_fz_loss'))} \\\\"
+        )
+    note = (
+        "Visible notes: selected rows use the deterministic main-figure rule: "
+        f"N >= {SELECTED_MODEL_MIN_ROWS}, absolute VaR coverage error <= "
+        f"{SELECTED_MODEL_COVERAGE_TOLERANCE:.3f}, then rank by FZ loss and "
+        "quantile loss within each broad group and tail side. Full per-model "
+        "results are exported separately for appendix use."
+    )
+    lines.extend(["\\midrule", f"\\multicolumn{{9}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(["\\bottomrule", "\\end{tabular}", ""])
+    return "\n".join(lines)
+
+
+def _full_per_model_metrics_to_latex(
+    metrics: pl.DataFrame,
+    *,
+    suite_group: str,
+    manifest: Mapping[str, object] | None = None,
+) -> str:
+    manifest = manifest or {}
+    headers = ("group", "model", "info", "side", "N", "breach", "q_loss", "fz_loss", "severity")
+    lines = [
+        f"% run_id: {manifest.get('run_id', '')}",
+        f"% git_commit: {manifest.get('git_commit', '')}",
+        f"% config_hash: {manifest.get('config_hash', '')}",
+        "% table_scope: full_per_model_appendix",
+        "\\begin{tabular}{lll lrrrrr}",
+        "\\toprule",
+        " & ".join(headers) + r" \\",
+        "\\midrule",
+    ]
+    sort_columns = [
+        column
+        for column in ("tail_side", "model_name", "information_set", "tail_level")
+        if column in metrics.columns
+    ]
+    frame = metrics.sort(sort_columns) if sort_columns else metrics
+    for row in frame.iter_rows(named=True):
+        lines.append(
+            f"{_latex_escape(suite_group)} & "
+            f"{_latex_escape(display_model_label(row.get('model_name')))} & "
+            f"{_latex_escape(display_information_set_label(row.get('information_set')))} & "
+            f"{_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
+            f"{int(_optional_float(row.get('rows')) or 0)} & "
+            f"{_fmt(row.get('var_breach_rate'))} & "
+            f"{_fmt(row.get('mean_quantile_loss'))} & "
+            f"{_fmt(row.get('mean_fz_loss'))} & "
+            f"{_fmt(row.get('mean_exceedance_severity'))} \\\\"
+        )
+    note = (
+        "Visible notes: appendix table; lower quantile/FZ loss and lower "
+        "exceedance severity are better, while VaR breach should be read relative "
+        "to the nominal 5% exception rate."
+    )
+    lines.extend(["\\midrule", f"\\multicolumn{{9}}{{l}}{{\\footnotesize {note}}} \\\\"])
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
 

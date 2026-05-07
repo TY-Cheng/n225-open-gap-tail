@@ -451,6 +451,12 @@ The main result tables are in the Results section. Full table and figure provena
 ### Model And Evaluation Protocol
 
 - The registered risk level is `tail_level = 0.95`; the nominal VaR exception rate is 5%.
+- A VaR exception is counted when `realized_loss > var_forecast`; this follows the
+  standard exception-counting logic of VaR backtesting, but the snapshot does not
+  apply Basel green/yellow/red traffic-light capital zones.
+- Forecast evaluation is based on coverage diagnostics, Kupiec/Christoffersen
+  tests where available, quantile loss, Fissler-Ziegel joint VaR-ES loss, and
+  DM/MCS inference.
 - Benchmarks use target-history information only. ML-tail models add predictors through fixed nested information sets.
 - Most specifications use expanding pre-forecast training histories. The rolling-quantile benchmark is the designed exception and uses the most recent 1,000 clean observations.
 - LightGBM hyperparameters are held fixed across information sets and refit dates; the snapshot reports model-family evidence rather than tuning-search evidence.

@@ -321,6 +321,13 @@ appendix material.
     - DST attenuation;
     - stress-window performance;
     - pre-open risk-trigger summaries.
+- Pre-open risk-trigger summaries are not VaR calibration tests. They use a
+  within-model alert rule: a date is flagged when that model's VaR forecast is
+  above its own 75th-percentile VaR forecast on the evaluation sample. The rule
+  therefore selects roughly the highest-risk quartile of model-date forecasts
+  and is evaluated by false-alarm and missed-exception rates. The nominal 95%
+  VaR level remains the tail forecast target and is evaluated separately by
+  breach rates, coverage tests, quantile loss, and FZ loss.
 
 ## 4. Workflow Chart
 
@@ -527,7 +534,9 @@ flowchart LR
 - No options-risk headline claim unless historical options entitlement, timestamp safety, and liquidity gates pass.
 - No model-family ranking claim from restricted short samples.
 - No extreme-tail claim without sufficient exceptions and rolling out-of-sample diagnostics.
-- Risk-trigger diagnostics are monitoring diagnostics; they are not execution-performance evidence.
+- Risk-trigger diagnostics are monitoring diagnostics; they are not VaR
+  calibration tests, hedge PnL, transaction-cost, trading-alpha, or execution
+  performance evidence.
 
 ## 8. Appendix And Source Notes
 
@@ -546,6 +555,9 @@ flowchart LR
 ### 8.2 Literature Notes
 
 - McNeil-Frey filtered EVT: conditional volatility/body filtering followed by EVT tail estimation.
+- Basel VaR backtesting: exception-counting intuition for VaR validation; this
+  paper reports coverage and exception diagnostics but does not apply regulatory
+  traffic-light capital zones.
 - CAViaR: dynamic quantile modeling for VaR.
 - CARE and expectile-based models: expectile links to tail-risk measures.
 - GAS models: score-driven updating for dynamic conditional distributions.

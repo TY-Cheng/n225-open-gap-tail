@@ -81,8 +81,7 @@ tail fitting; it is not the reported VaR level.
 - Location-scale models estimate a conditional center and scale, then calibrate the upper tail of standardized losses.
 - Standardized-loss POT-GPD models fit a Generalized Pareto tail above the registered 0.90 threshold of out-of-fold standardized losses.
 - Median/MAD and median/IQR routes use more robust body filters before the POT-GPD step.
-- Plain MLE is the standard EVT comparator. The UniBM route changes only the GPD shape estimator `xi`, using a UniBM block-maxima-derived scaling estimate; it does not use the reciprocal Pareto tail-index convention and does not use extremal-index weighting.
-- Robust body-filter routes remain research-candidate diagnostics until the evidence supports promotion.
+- Plain MLE is the standard EVT comparator. Robust body-filter routes remain research-candidate diagnostics until the evidence supports promotion.
 - New LightGBM+EVT routes are included in per-model and restricted model-family artifacts, but they are not automatically headline rows.
 
 ## How are forecasts judged?

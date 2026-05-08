@@ -26,10 +26,10 @@ execution-cost study.
 ## Current Empirical Snapshot
 
 The current clean snapshot is based on the completed run
-`tailrisk_20160719_20260507_20260507T142030Z_commit_6bf8b0ae`.
+`tailrisk_20160719_20260429_20260508T053721Z_commit_14205f41`.
 
 - Clean evaluation window: `2018-06-20` to `2026-04-28`.
-- Forecast sample: `1661` trading-day observations.
+- Forecast sample: `1660` trading-day observations.
 - Primary risk level: 95% VaR, corresponding to a nominal 5% exception rate.
 - Baseline benchmark median breach rate: about 6.1%.
 - ML direct-quantile breach rates across nested information sets: about 7.6% to 12.7%.

@@ -21,7 +21,7 @@ class FeatureSetVersion(StrEnum):
     """Pre-registered paper feature-set versions."""
 
     CORE_FULL_HISTORY = "core_full_history"
-    OPTIONS_EVT_HEADLINE = "options_evt_headline"
+    OPTIONS_EVT_PRIMARY = "options_evt_primary"
     POST_2018_ENRICHED = "post_2018_enriched"
     ROBUSTNESS_CANDIDATE = "robustness_candidate"
 
@@ -119,7 +119,7 @@ ROBUSTNESS_FRED_SERIES: tuple[str, ...] = ("NFCI", "ANFCI", "STLFSI4")
 
 @dataclass(frozen=True)
 class FeatureSetConfig:
-    version: FeatureSetVersion = FeatureSetVersion.OPTIONS_EVT_HEADLINE
+    version: FeatureSetVersion = FeatureSetVersion.OPTIONS_EVT_PRIMARY
     massive_core: tuple[str, ...] = CORE_MASSIVE_TICKERS
     massive_optional: tuple[str, ...] = OPTIONAL_MASSIVE_TICKERS
     massive_japan_proxy: tuple[str, ...] = JAPAN_PROXY_MASSIVE_TICKERS
@@ -168,7 +168,7 @@ class FeatureSetConfig:
 
 @dataclass(frozen=True)
 class FeatureEngineeringPolicy:
-    """Controls deterministic headline feature engineering."""
+    """Controls deterministic primary feature engineering."""
 
     n225_range_window: int = 20
     n225_range_min_periods: int = 20
@@ -186,7 +186,7 @@ class FeatureEngineeringPolicy:
     ml_options_feature_max_training_missingness: float = 0.30
     options_dte_short_bucket: tuple[int, int] = (7, 30)
     options_dte_medium_bucket: tuple[int, int] = (31, 90)
-    options_headline_feature_cap: int = 45
+    options_primary_feature_cap: int = 45
     options_atm_policy: str = "delta_neutral_preferred_else_closest_to_spot_or_forward"
     options_adr_aggregation_policy: str = "median_and_20pct_trimmed_mean_primary"
     options_historical_source_policy: str = (
@@ -256,7 +256,7 @@ class ModelPolicy:
 class EvaluationPolicy:
     primary_common_sample: str = "table_specific_intersection"
     pairwise_inference_sample: str = "pairwise_oos_intersection"
-    global_headline_sample: str = "headline_only_report_retained_n"
+    global_primary_sample: str = "primary_only_report_retained_n"
     min_common_oos_rows: int = 120
     one_percent_min_exceedances: int = 10
     bootstrap_reps: int = 999

@@ -37,7 +37,7 @@ def opening_gap_scale_text(panel: pl.DataFrame) -> str:
     ).to_dicts()[0]
     lines = [
         (
-            f"- In the current clean headline sample (`n={stats['rows']}`), the settle-to-open "
+            f"- In the current clean primary sample (`n={stats['rows']}`), the settle-to-open "
             f"gap ranges from `{_fmt_log_return(min_row['gap_t'])}` on "
             f"`{min_row.get(date_col)}` to `{_fmt_log_return(max_row['gap_t'])}` on "
             f"`{max_row.get(date_col)}`."

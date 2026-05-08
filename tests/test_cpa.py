@@ -49,7 +49,7 @@ from n225_open_gap_tail.forecasting import (
     build_spy_compat_late_session_feature_records,
     drop_low_variance_features,
     empirical_excess_es_companion,
-    evaluate_benchmark_floor_suite,
+    evaluate_benchmark_baseline_suite,
     evaluate_benchmark_suite,
     evaluate_ml_tail_suite,
     evaluate_suite,
@@ -152,8 +152,8 @@ def test_ml_tail_cpa_v1_runs_two_sided_direct_quantile_information_ladder() -> N
     assert core_record["tail_side"] == "left_tail"
     assert core_record["model_name"] == paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL
     assert core_record["loss_family"] == "var_quantile_loss"
-    assert core_record["claim_scope"] == "conditional_inference_diagnostic_not_headline"
-    assert core_record["headline_claim_allowed"] is False
+    assert core_record["claim_scope"] == "conditional_inference_diagnostic_not_primary"
+    assert core_record["primary_claim_allowed"] is False
     assert core_record["inference_status"] == "ok_newey_west_hac_wald_cpa"
     assert core_record["common_n"] == 150
     assert core_record["effective_n"] == 149

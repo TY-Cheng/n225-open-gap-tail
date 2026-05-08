@@ -40,7 +40,7 @@ def _all_model_comparison_table(
         "mean_exceedance_severity",
         "tail_side",
     ]
-    floor_models = (
+    baseline_models = (
         set(str(value) for value in benchmark_metrics["model_name"].drop_nulls().unique().to_list())
         if not benchmark_metrics.is_empty() and "model_name" in benchmark_metrics.columns
         else set()
@@ -59,8 +59,8 @@ def _all_model_comparison_table(
                 {
                     **row,
                     "suite": (
-                        "benchmark_floor"
-                        if not floor_models or model_name in floor_models
+                        "benchmark_baseline"
+                        if not baseline_models or model_name in baseline_models
                         else "benchmark_advanced"
                     ),
                     "model_label": display_model_label(model_name),

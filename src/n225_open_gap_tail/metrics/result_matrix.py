@@ -133,8 +133,8 @@ def build_ml_tail_result_matrix_artifacts(
                 loss_family=loss_family,
                 comparison_family="tail_model_family",
                 comparison_axis="model_family",
-                claim_scope="restricted_model_comparison_not_headline",
-                headline_claim_allowed=False,
+                claim_scope="restricted_model_comparison_not_primary",
+                primary_claim_allowed=False,
             )
             matrix.extend(group_rows)
             sample_audit.append(audit)
@@ -164,8 +164,8 @@ def build_ml_tail_result_matrix_artifacts(
                 loss_family=loss_family,
                 comparison_family="information_set_ladder",
                 comparison_axis="information_set_increment",
-                claim_scope="restricted_model_comparison_not_headline",
-                headline_claim_allowed=False,
+                claim_scope="restricted_model_comparison_not_primary",
+                primary_claim_allowed=False,
             )
             matrix.extend(group_rows)
             sample_audit.append(audit)

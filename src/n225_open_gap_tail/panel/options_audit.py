@@ -14,7 +14,7 @@ from n225_open_gap_tail.config.runtime import (
     _optional_float,
 )
 from n225_open_gap_tail.config.settings import Settings
-from n225_open_gap_tail.features.us_options import US_OPTIONS_HEADLINE_FEATURES
+from n225_open_gap_tail.features.us_options import US_OPTIONS_PRIMARY_FEATURES
 
 
 def build_options_source_audit_records(
@@ -43,7 +43,7 @@ def build_options_source_audit_records(
             "historical_iv_greeks_oi_available": False,
             "computed_iv_proxy_available": False,
             "panel_feature_rows": 0,
-            "headline_promotion_allowed": False,
+            "primary_promotion_allowed": False,
             "reason": "snapshot_endpoint_is_current_chain_state_not_a_historical_feature_source",
             "run_ts_utc": run_ts,
         },
@@ -54,7 +54,7 @@ def build_options_source_audit_records(
             "historical_iv_greeks_oi_available": False,
             "computed_iv_proxy_available": bool(feature_rows),
             "panel_feature_rows": feature_rows,
-            "headline_promotion_allowed": False,
+            "primary_promotion_allowed": False,
             "reason": (
                 "day_aggs_have_prices_and_volume_but_no_direct_iv_greeks_oi; "
                 "ATM IV is computed with Black-Scholes, DGS2, and zero dividend"
@@ -70,7 +70,7 @@ def build_options_source_audit_records(
             "historical_iv_greeks_oi_available": False,
             "computed_iv_proxy_available": False,
             "panel_feature_rows": 0,
-            "headline_promotion_allowed": False,
+            "primary_promotion_allowed": False,
             "reason": (
                 "contract_level_history_can_support_computed_iv_only_after_small_scope_smoke"
             ),
@@ -85,7 +85,7 @@ def build_options_source_audit_records(
             "historical_iv_greeks_oi_available": True if jquants_nikkei_enabled else None,
             "computed_iv_proxy_available": None,
             "panel_feature_rows": None,
-            "headline_promotion_allowed": jquants_nikkei_enabled,
+            "primary_promotion_allowed": jquants_nikkei_enabled,
             "reason": (
                 "used_only_as_prior_available_n225_large_option_aggregates; "
                 "same_target_date_option_rows_are_not_used"
@@ -103,11 +103,11 @@ def build_options_feature_coverage_records(
     configured = (
         settings.massive_options_underlying_list() or MASSIVE_OPTIONS_UNDERLYINGS_FOR_PIPELINE
     )
-    headline_feature_cap = PIPELINE_CONFIG.feature_engineering.options_headline_feature_cap
+    primary_feature_cap = PIPELINE_CONFIG.feature_engineering.options_primary_feature_cap
     if option_feature_records:
         records: list[dict[str, object]] = []
         total = len(option_feature_records)
-        for feature in US_OPTIONS_HEADLINE_FEATURES:
+        for feature in US_OPTIONS_PRIMARY_FEATURES:
             values = [
                 _optional_float(row.get(feature))
                 for row in option_feature_records
@@ -125,7 +125,7 @@ def build_options_feature_coverage_records(
                     "feature": feature,
                     "underlyings": ",".join(_options_feature_underlyings(feature)),
                     "configured_underlyings": ",".join(configured),
-                    "headline_feature_cap": headline_feature_cap,
+                    "primary_feature_cap": primary_feature_cap,
                     "feature_status": "computed_iv_proxy_available",
                     "valid_count": len(values),
                     "total_rows": total,
@@ -141,7 +141,7 @@ def build_options_feature_coverage_records(
             "feature_family": "option_us_sector_aggregate",
             "underlyings": ",".join(MASSIVE_OPTIONS_SECTOR_UNDERLYINGS_FOR_PIPELINE),
             "configured_underlyings": ",".join(configured),
-            "headline_feature_cap": headline_feature_cap,
+            "primary_feature_cap": primary_feature_cap,
             "feature_status": "disabled_pending_historical_options_source",
             "missingness_rate": None,
         },
@@ -150,7 +150,7 @@ def build_options_feature_coverage_records(
             "feature_family": "option_us_core",
             "underlyings": ",".join(MASSIVE_OPTIONS_CORE_UNDERLYINGS_FOR_PIPELINE),
             "configured_underlyings": ",".join(configured),
-            "headline_feature_cap": headline_feature_cap,
+            "primary_feature_cap": primary_feature_cap,
             "feature_status": "disabled_until_historical_options_source_audit_passes",
             "first_valid_date": None,
             "missingness_rate": None,
@@ -160,7 +160,7 @@ def build_options_feature_coverage_records(
             "feature_family": "option_japan_etf",
             "underlyings": ",".join(MASSIVE_OPTIONS_JAPAN_ETF_UNDERLYINGS_FOR_PIPELINE),
             "configured_underlyings": ",".join(configured),
-            "headline_feature_cap": headline_feature_cap,
+            "primary_feature_cap": primary_feature_cap,
             "feature_status": "disabled_until_historical_options_source_audit_passes",
             "first_valid_date": None,
             "missingness_rate": None,
@@ -170,7 +170,7 @@ def build_options_feature_coverage_records(
             "feature_family": "option_japan_adr_aggregate",
             "underlyings": ",".join(MASSIVE_OPTIONS_ADR_PRIMARY_UNDERLYINGS_FOR_PIPELINE),
             "configured_underlyings": ",".join(configured),
-            "headline_feature_cap": headline_feature_cap,
+            "primary_feature_cap": primary_feature_cap,
             "feature_status": "disabled_until_historical_options_source_audit_passes",
             "first_valid_date": None,
             "missingness_rate": None,
@@ -180,7 +180,7 @@ def build_options_feature_coverage_records(
             "feature_family": "option_asia_proxy_aggregate",
             "underlyings": ",".join(MASSIVE_OPTIONS_ASIA_PROXY_UNDERLYINGS_FOR_PIPELINE),
             "configured_underlyings": ",".join(configured),
-            "headline_feature_cap": headline_feature_cap,
+            "primary_feature_cap": primary_feature_cap,
             "feature_status": "disabled_pending_historical_options_source",
             "missingness_rate": None,
         },
@@ -220,7 +220,7 @@ def build_options_liquidity_audit_records(
                     "underlying": underlying,
                     "source_block": _underlying_source_block(underlying),
                     "candidate_role": (
-                        "headline_candidate" if underlying in primary else "diagnostic"
+                        "primary_candidate" if underlying in primary else "diagnostic"
                     ),
                     "dte_bucket": bucket,
                     "liquidity_status": (
@@ -236,7 +236,7 @@ def build_options_liquidity_audit_records(
                     "median_relative_spread": None,
                     "rolling_volume": sum(volume) if volume else None,
                     "iv_observation_count": sum(iv_counts) if iv_counts else 0.0,
-                    "headline_promotion_allowed": any((value or 0.0) > 0 for value in iv_counts),
+                    "primary_promotion_allowed": any((value or 0.0) > 0 for value in iv_counts),
                 }
             )
         return records
@@ -245,7 +245,7 @@ def build_options_liquidity_audit_records(
             {
                 "underlying": underlying,
                 "source_block": _underlying_source_block(underlying),
-                "candidate_role": "headline_candidate" if underlying in primary else "diagnostic",
+                "candidate_role": "primary_candidate" if underlying in primary else "diagnostic",
                 "liquidity_status": "not_evaluated_no_historical_options_source",
                 "dte_short_bucket": list(feature_policy.options_dte_short_bucket),
                 "dte_medium_bucket": list(feature_policy.options_dte_medium_bucket),
@@ -254,7 +254,7 @@ def build_options_liquidity_audit_records(
                 "valid_contract_count": None,
                 "median_relative_spread": None,
                 "rolling_volume": None,
-                "headline_promotion_allowed": False,
+                "primary_promotion_allowed": False,
             }
         )
     return records

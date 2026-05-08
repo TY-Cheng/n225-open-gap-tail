@@ -61,12 +61,12 @@ Current implementation status:
 - The main data-engineering path is implemented: source probes, cache-first reads,
   durable modeling-panel artifacts, calendar mapping, target audit, feature coverage,
   leakage binding, and run-specific reports.
-- The benchmark floor and advanced econometric benchmark layer are implemented behind
-  gates. Advanced benchmarks remain nonblocking diagnostics unless sample, stability,
+- The baseline benchmark and advanced econometric benchmark layers are implemented behind
+  gates. Advanced econometric benchmarks remain nonblocking diagnostics unless sample, stability,
   and author-review gates support stronger use.
 - The ML tail path is implemented for direct quantile, location-scale, and standardized
   loss POT-GPD variants over the registered nested information ladder.
-- Result governance is implemented for headline metrics, per-model diagnostics, result
+- Result governance is implemented for primary ML metrics, per-model diagnostics, result
   matrix artifacts, feature-unavailability diagnostics, paired-loss inference,
   confidence-set inference, Murphy diagnostics, stress windows, DST attenuation, and
   conditional predictive ability diagnostics.
@@ -102,9 +102,9 @@ Data and feature gates:
 Modeling gates:
 
 - Baseline and benchmark metrics should be saved before fitting more flexible models.
-- Econometric advanced benchmarks should emit explicit unavailable statuses when
+- Advanced econometric benchmarks should emit explicit unavailable statuses when
   optimization, filtering, sample size, or ES validity gates fail.
-- Score-driven and optimizer-heavy advanced benchmarks should remain appendix or
+- Score-driven and optimizer-heavy advanced econometric benchmarks should remain appendix or
   diagnostic evidence unless sample gates and author review support stronger use.
 - ML tail models must use chronological validation, month-level refits, fixed
   hyperparameter policy, recorded feature hashes, recorded feature drops, and
@@ -141,7 +141,7 @@ Evaluation and manuscript gates:
 - Murphy diagnostics are diagnostic plots, not standalone significance tests.
 - Conditional predictive ability diagnostics are conditional loss-difference evidence,
   not automatic model-selection claims.
-- Use the headline ML tail ladder for the main information-set story. Treat restricted
+- Use the primary ML nested information-set table for the main information-set story. Treat restricted
   cross-family rows as diagnostic or restricted evidence unless common-sample and
   inference gates justify promotion.
 - Additional forecast-distribution scoring extensions are not current evidence. Do not

@@ -5,31 +5,31 @@ from __future__ import annotations
 def advanced_benchmark_qa_text(advanced_forecast_rows: int) -> tuple[str, str, str]:
     if advanced_forecast_rows > 0:
         return (
-            "The benchmark floor, advanced benchmark suite, and ML-tail suite are implemented and have completed artifacts in this run.",
+            "The baseline benchmarks, advanced econometric benchmarks, and ML-tail suite are implemented and have completed artifacts in this run.",
             (
-                "Advanced benchmark families such as CAViaR, CARE/expectile, Taylor ALD, "
+                "Advanced econometric benchmark families such as CAViaR, CARE/expectile, Taylor ALD, "
                 "direct FZ-loss, and GAS produce nonblocking empirical forecast rows; "
                 "their interpretation still follows the benchmark and restricted-sample gates."
             ),
             (
-                "benchmark floor, advanced benchmark, and ML-tail suites completed with zero "
+                "baseline benchmark, advanced econometric benchmark, and ML-tail suites completed with zero "
                 "recorded forecast failures; advanced rows are implemented evidence but remain "
                 "nonblocking until author-reviewed against the same sample and inference gates."
             ),
         )
     return (
         (
-            "The benchmark floor and ML-tail suite are implemented and have completed artifacts in this run. "
-            "The advanced benchmark layer is registered as nonblocking, but this run has not produced empirical advanced-model forecast rows."
+            "The baseline benchmarks and ML-tail suite are implemented and have completed artifacts in this run. "
+            "The advanced econometric benchmark layer is registered as nonblocking, but this run has not produced empirical advanced-model forecast rows."
         ),
         (
-            "Advanced benchmark families such as CAViaR, CARE/expectile, Taylor ALD, "
+            "Advanced econometric benchmark families such as CAViaR, CARE/expectile, Taylor ALD, "
             "direct FZ-loss, and GAS should be read as unavailable diagnostics when "
             "their optimizers produce no valid forecast rows."
         ),
         (
-            "benchmark floor and ML-tail suites both completed with zero recorded forecast "
-            "failures; advanced benchmark rows are nonblocking diagnostics in this run."
+            "baseline benchmark and ML-tail suites both completed with zero recorded forecast "
+            "failures; advanced econometric benchmark rows are nonblocking diagnostics in this run."
         ),
     )
 
@@ -63,16 +63,16 @@ The paper asks whether information known by the U.S. cash-market close helps for
 
 ## What is the target?
 
-The headline target is the settlement-to-open gap:
+The primary target is the settlement-to-open gap:
 
 `gap_t = log(OSE day-session open_t) - log(previous settlement_{{t-1}})`
 
 - For left-tail models, loss is `-gap_t`.
 - For right-tail models, loss is `gap_t`.
 - A VaR exception occurs when `realized_loss > VaR forecast`.
-- The headline risk level is 95% VaR/ES, so the nominal exception rate is 5%.
-- Rows around roll and SQ windows are excluded from the clean headline sample.
-- `full_gap_close_to_open` and `residual_nightclose_to_day_open` are kept for audit and diagnostic use, but they are not the headline target.
+- The primary risk level is 95% VaR/ES, so the nominal exception rate is 5%.
+- Rows around roll and SQ windows are excluded from the clean primary sample.
+- `full_gap_close_to_open` and `residual_nightclose_to_day_open` are kept for audit and diagnostic use, but they are not the primary target.
 - A U.S.-close-mark-to-OSE-open residual target would need a licensed timestamped Nikkei futures mark at the U.S. close cutoff. That target is not active in this run.
 
 ## Why is the OSE open worth studying?
@@ -85,7 +85,7 @@ The open matters because it is the first OSE day-session mark after the U.S. clo
 - JPX and JSCC documentation make the basic risk channel clear: adverse futures moves change mark-to-market PnL, account equity, collateral pressure, and risk limits. Formal margin calls follow exchange and clearing procedures; the paper does not assume a mechanical margin call exactly at 08:45 JST.
 - OSE night trading is not ignored. J-Quants night-session fields, night-close residuals, and timing indicators are in the audit layer.
 - CME and SGX Nikkei contracts are important offshore venues, but they are not the target in this run. A cross-venue residual study would be a separate design.
-- SQ and open-based settlement are related market-structure motivation, but the clean headline sample is not an SQ event study.
+- SQ and open-based settlement are related market-structure motivation, but the clean primary sample is not an SQ event study.
 
 ## What data enter the forecasts?
 
@@ -99,13 +99,13 @@ All predictors must be available before the OSE target open under the point-in-t
 - CBOE supplies volatility-index data.
 - Benchmarks use target history only.
 - The ML information sets add predictors in a fixed order: Japan-only, then U.S. close core, then Japan proxies, then Asia proxies.
-- U.S.-listed options features are audit-gated. They are not headline evidence unless source, coverage, liquidity, and timing checks pass.
+- U.S.-listed options features are audit-gated. They are not primary evidence unless source, coverage, liquidity, and timing checks pass.
 
 ## What models are compared?
 
 {advanced_implementation_text}
 
-- Benchmark floor models include historical quantiles, rolling quantiles, EWMA, GARCH-t, GJR-GARCH-t, and GJR-GARCH-EVT.
+- Baseline benchmarks include historical quantiles, rolling quantiles, EWMA, GARCH-t, GJR-GARCH-t, and GJR-GARCH-EVT.
 - {advanced_implementation_bullet}
 - The ML suite includes direct LightGBM quantile forecasts, location-scale empirical calibration, standardized-loss POT-GPD variants, and the new research-candidate LightGBM+EVT routes.
 - LightGBM is used as a fixed tabular learner. The paper does not claim a new machine-learning algorithm.
@@ -122,7 +122,7 @@ tail fitting; it is not the reported VaR level.
 - Standardized-loss POT-GPD models fit a Generalized Pareto tail above the registered 0.90 threshold of out-of-fold standardized losses.
 - Median/MAD and median/IQR routes use more robust body filters before the POT-GPD step.
 - Plain MLE is the standard EVT comparator. Robust body-filter routes remain research-candidate diagnostics until the evidence supports promotion.
-- New LightGBM+EVT routes are included in per-model and restricted model-family artifacts, but they are not automatically headline rows.
+- The current paper-facing promotion bridge is side-specific: median/IQR POT-GPD is the left-tail promoted ML-tail row, and location-scale empirical is the right-tail promoted ML-tail row. These rows are read with restricted DM/MCS evidence and do not create a universal model-family ranking.
 
 ## How are forecasts judged?
 
@@ -143,11 +143,11 @@ The evaluation is built around tail-risk performance, not a single ranking.
 
 The current evidence is a calibration-versus-loss tradeoff.
 
-- Benchmark floor models generally sit closer to the 5% VaR exception target.
+- Baseline benchmarks generally sit closer to the 5% VaR exception target.
 - Direct LightGBM quantile rows often show lower average loss on this registered sample, but their breach rates are above the nominal level.
 - That means lower loss cannot be read alone as better tail calibration.
 - Filtered EVT and location-scale models improve coverage discipline in several comparisons, but the evidence is not one model-family ranking.
-- Among the new EVT candidates, median/IQR POT-GPD has the clearest left-tail calibration diagnostics in the current run. Right-tail evidence is less clean and should be reported separately.
+- Among the new EVT candidates, median/IQR POT-GPD has the clearest left-tail calibration diagnostics in the current run. The right-tail promoted ML-tail row is location-scale empirical, while right-tail EVT evidence is less clean and should be reported separately.
 - The paper should state the tension plainly: flexible ML information sets can change forecast loss, while VaR coverage gates determine whether that change is usable for risk claims.
 
 ## What can the paper claim?
@@ -156,8 +156,8 @@ The current evidence is a calibration-versus-loss tradeoff.
 
 - The paper can claim a point-in-time forecast evaluation of OSE Nikkei 225 Futures opening-gap tail risk.
 - It can report that U.S. close information and proxy blocks change average loss and coverage patterns under registered information sets.
-- It can report that direct LightGBM quantile forecasts are too liberal in the current headline rows.
-- It can report that filtered EVT and robust body-filter routes improve some coverage diagnostics, especially on the left tail, while remaining restricted model-family evidence.
+- It can report that direct LightGBM quantile forecasts are too liberal in the current primary ML rows.
+- It can report side-specific promoted ML-tail rows after showing the promotion gate and restricted DM/MCS evidence: median/IQR POT-GPD for the left tail and location-scale empirical for the right tail.
 - It should not claim that one model is universally strongest.
 - It should not average left-tail and right-tail evidence into one mechanism.
 - It should not present DST, trigger, or feature-block diagnostics as causal proof or realized trading performance.

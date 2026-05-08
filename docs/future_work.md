@@ -91,7 +91,7 @@ risk beyond ETFs, rates, FX, and the existing volatility-index controls?
 
 - Record the observation timestamp and the practical availability time for each predictor.
 - Treat delayed historical series as historical predictors, not live pre-open data.
-- Test incremental value through pre-specified information-set additions or ablations.
+- Test incremental value through pre-specified information-set additions or diagnostic variants.
 - Do not rely on feature-importance narratives without out-of-sample loss and coverage
   evidence.
 

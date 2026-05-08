@@ -11,6 +11,7 @@ from n225_open_gap_tail.config.runtime import (
     ML_TAIL_ANCHOR_INFORMATION_SET,
     ML_TAIL_DIRECT_QUANTILE_MODEL,
     ML_TAIL_MODEL_NAMES,
+    ML_TAIL_POT_GPD_MODEL_NAMES,
     ML_TAIL_ROBUST_POT_GPD_MODEL_NAMES,
     ML_TAIL_REFIT_FREQUENCY,
     Parallel,
@@ -18,6 +19,7 @@ from n225_open_gap_tail.config.runtime import (
     PIPELINE_CONFIG,
     PipelineRunError,
     pl,
+    stable_hash,
     TAIL_LEVELS,
     TAIL_SIDE_BOTH,
     tail_side_values,
@@ -29,8 +31,8 @@ from n225_open_gap_tail.config.runtime import (
 from n225_open_gap_tail.forecasting._guards import _assert_leakage_gate
 from n225_open_gap_tail.forecasting.artifacts import (
     _forecast_shard_id,
+    _read_manifest,
     _update_manifest,
-    _write_forecast_shards,
     _write_json,
     _write_parquet,
 )
@@ -46,12 +48,23 @@ from n225_open_gap_tail.metrics.information import (
     build_incremental_information_records,
 )
 from n225_open_gap_tail.metrics.result_matrix import build_ml_tail_result_matrix_artifacts
-from n225_open_gap_tail.models.ml_tail import _evaluate_ml_tail_shard
 from n225_open_gap_tail.models.ml_tail_oof import (
     build_ml_tail_feature_unavailability_date_records,
     build_ml_tail_feature_unavailability_records,
 )
-from n225_open_gap_tail.panel.build import registered_ml_tail_information_sets
+from n225_open_gap_tail.panel.build import (
+    ml_tail_feature_columns_for_information_set,
+    registered_ml_tail_information_sets,
+)
+from n225_open_gap_tail.forecasting._ml_tail_shards import (
+    _compute_and_write_ml_tail_shard_atomic,
+    _expected_ml_tail_shard_manifest,
+    _load_active_ml_tail_shards,
+    _ml_tail_leakage_context,
+    _partition_ml_tail_shard_jobs,
+    _sort_ml_tail_rows,
+    _warn_orphan_ml_tail_shards,
+)
 
 
 def evaluate_ml_tail_suite(
@@ -60,6 +73,7 @@ def evaluate_ml_tail_suite(
     workers: int = 1,
     force: bool = False,
     tail_side: str = TAIL_SIDE_BOTH,
+    resume: bool = True,
 ) -> EvaluationResult:
     panel_path = _gold_artifact_path(
         run_dir, "modeling_panel", run_dir / "panel" / "modeling_panel.parquet"
@@ -80,12 +94,27 @@ def evaluate_ml_tail_suite(
     forecast_root.mkdir(parents=True, exist_ok=True)
     metrics_root.mkdir(parents=True, exist_ok=True)
     information_sets = registered_ml_tail_information_sets()
+    coverage_rows = pl.read_parquet(coverage_path).to_dicts()
+    manifest = _read_manifest(run_dir)
+    leakage_context = _ml_tail_leakage_context(run_dir)
     jobs: list[dict[str, object]] = []
     active_tail_sides = tail_side_values(tail_side)
     for active_tail_side in active_tail_sides:
         for tail_level in TAIL_LEVELS:
             for model_name in ML_TAIL_MODEL_NAMES:
                 for information_set in information_sets:
+                    candidate_features = ml_tail_feature_columns_for_information_set(
+                        coverage_rows,
+                        information_set=information_set,
+                    )
+                    shard_id = _forecast_shard_id(
+                        model_name,
+                        tail_level,
+                        information_set=information_set,
+                        target_family=PIPELINE_CONFIG.target_policy.primary_target_family,
+                        tail_side=active_tail_side,
+                        refit_frequency=ML_TAIL_REFIT_FREQUENCY,
+                    )
                     jobs.append(
                         {
                             "panel_path": str(panel_path),
@@ -97,29 +126,45 @@ def evaluate_ml_tail_suite(
                             "information_set": information_set,
                             "model_name": model_name,
                             "refit_frequency": ML_TAIL_REFIT_FREQUENCY,
-                            "shard_id": _forecast_shard_id(
-                                model_name,
-                                tail_level,
-                                information_set=information_set,
-                                target_family=PIPELINE_CONFIG.target_policy.primary_target_family,
-                                tail_side=active_tail_side,
-                                refit_frequency=ML_TAIL_REFIT_FREQUENCY,
-                            ),
+                            "shard_id": shard_id,
+                            "candidate_feature_hash": stable_hash(candidate_features),
                         }
                     )
     for payload in jobs:
         validate_worker_payload(payload)
-    n_jobs = _bounded_workers(workers)
-    _evaluation_log(f"ML tail shards queued={len(jobs)} n_jobs={n_jobs}")
-    if n_jobs == 1:
-        outputs = [_evaluate_ml_tail_shard(payload) for payload in jobs]
-    else:
-        outputs = Parallel(n_jobs=n_jobs, backend=PIPELINE_CONFIG.model_policy.joblib_backend)(
-            delayed(_evaluate_ml_tail_shard)(payload) for payload in jobs
+        payload["expected_shard_manifest"] = _expected_ml_tail_shard_manifest(
+            payload,
+            manifest=manifest,
+            leakage_context=leakage_context,
         )
-    forecasts = [row for output in outputs for row in output["forecasts"]]
-    diagnostics = [row for output in outputs for row in output["diagnostics"]]
-    failures = [row for output in outputs for row in output["failures"]]
+    n_jobs = _bounded_workers(workers)
+    _warn_orphan_ml_tail_shards(run_dir, active_shard_ids={str(job["shard_id"]) for job in jobs})
+    if resume:
+        cached_jobs, compute_jobs = _partition_ml_tail_shard_jobs(run_dir, jobs)
+    else:
+        cached_jobs, compute_jobs = [], jobs
+    _evaluation_log(
+        "ML tail shards queued="
+        f"{len(jobs)} cached={len(cached_jobs)} compute={len(compute_jobs)} "
+        f"resume={resume} n_jobs={n_jobs}"
+    )
+    if compute_jobs:
+        if n_jobs == 1:
+            for payload in compute_jobs:
+                _compute_and_write_ml_tail_shard_atomic(payload)
+        else:
+            Parallel(n_jobs=n_jobs, backend=PIPELINE_CONFIG.model_policy.joblib_backend)(
+                delayed(_compute_and_write_ml_tail_shard_atomic)(payload)
+                for payload in compute_jobs
+            )
+    forecasts, diagnostics, failures = _load_active_ml_tail_shards(run_dir, jobs)
+    forecasts = _sort_ml_tail_rows(forecasts)
+    diagnostics = _sort_ml_tail_rows(diagnostics)
+    failures = _sort_ml_tail_rows(failures)
+    if not forecasts and not diagnostics and failures:
+        _evaluation_log(
+            "ML tail active shards contain failures only; downstream metrics may be empty"
+        )
     forecast_path = forecast_root / "ml_tail_forecasts.parquet"
     diagnostics_path = forecast_root / "ml_tail_fit_diagnostics.parquet"
     failures_path = forecast_root / "ml_tail_failures.parquet"
@@ -129,21 +174,20 @@ def evaluate_ml_tail_suite(
     _evaluation_log(f"wrote ML tail diagnostics: {diagnostics_path} rows={len(diagnostics)}")
     _write_parquet(failures_path, failures)
     _evaluation_log(f"wrote ML tail failures: {failures_path} rows={len(failures)}")
-    _write_forecast_shards(forecast_root, forecasts, diagnostics, failures)
     artifacts = build_common_sample_artifacts(
         forecasts,
         suite="ml_tail",
         anchor_model=ML_TAIL_DIRECT_QUANTILE_MODEL,
         anchor_information_set=ML_TAIL_ANCHOR_INFORMATION_SET,
     )
-    headline_forecasts = cast(list[dict[str, object]], artifacts["headline_forecasts"])
-    metrics = cast(list[dict[str, object]], artifacts["headline_metrics"])
+    primary_forecasts = cast(list[dict[str, object]], artifacts["primary_forecasts"])
+    metrics = cast(list[dict[str, object]], artifacts["primary_metrics"])
     incremental = build_incremental_information_records(
-        headline_forecasts,
+        primary_forecasts,
         baseline_information_set=PIPELINE_CONFIG.feature_sets.ml_tail_model_a_information_set,
     )
     dst_attenuation = build_dst_attenuation_records(
-        headline_forecasts,
+        primary_forecasts,
         baseline_information_set=PIPELINE_CONFIG.feature_sets.ml_tail_model_a_information_set,
         expanded_information_set=PIPELINE_CONFIG.feature_sets.ml_tail_model_b_information_set,
     )
@@ -157,7 +201,7 @@ def evaluate_ml_tail_suite(
     evt_body_tail_diagnostics = _evt_body_tail_diagnostic_records(diagnostics)
     evt_route_gate_status = _evt_route_gate_status_records(diagnostics)
     evt_route_availability = _evt_route_availability_records(diagnostics)
-    evt_ablation_metrics = _evt_ablation_metric_records(
+    evt_diagnostic_variant_metrics = _evt_diagnostic_variant_metric_records(
         cast(list[dict[str, object]], artifacts["per_model_metrics"])
     )
     cpa_inference = build_ml_tail_cpa_inference_records(forecasts)
@@ -236,7 +280,9 @@ def evaluate_ml_tail_suite(
     _write_parquet(metrics_root / "evt_body_tail_diagnostics.parquet", evt_body_tail_diagnostics)
     _write_parquet(metrics_root / "evt_route_gate_status.parquet", evt_route_gate_status)
     _write_parquet(metrics_root / "evt_route_availability.parquet", evt_route_availability)
-    _write_parquet(metrics_root / "evt_ablation_metrics.parquet", evt_ablation_metrics)
+    _write_parquet(
+        metrics_root / "evt_diagnostic_variant_metrics.parquet", evt_diagnostic_variant_metrics
+    )
     _write_parquet(metrics_root / "ml_tail_cpa_inference.parquet", cpa_inference)
     _write_parquet(
         metrics_root / "cross_model_cpa_inference.parquet",
@@ -274,7 +320,7 @@ def evaluate_ml_tail_suite(
             "evt_body_tail_diagnostic_rows": len(evt_body_tail_diagnostics),
             "evt_route_gate_status_rows": len(evt_route_gate_status),
             "evt_route_availability_rows": len(evt_route_availability),
-            "evt_ablation_metric_rows": len(evt_ablation_metrics),
+            "evt_diagnostic_variant_metric_rows": len(evt_diagnostic_variant_metrics),
             "cpa_inference_rows": len(cpa_inference),
             "cross_model_cpa_inference_rows": len(cross_model_cpa_inference),
             "cross_model_cpa_status": "completed"
@@ -581,11 +627,13 @@ def _evt_route_availability_records(rows: list[dict[str, object]]) -> list[dict[
     )
 
 
-def _evt_ablation_metric_records(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+def _evt_diagnostic_variant_metric_records(
+    rows: list[dict[str, object]],
+) -> list[dict[str, object]]:
     return [
-        {**row, "artifact_scope": "evt_ablation_metric"}
+        {**row, "artifact_scope": "evt_diagnostic_variant_metric"}
         for row in rows
-        if str(row.get("model_name") or "").startswith("lightgbm_standardized_loss_pot_gpd")
+        if str(row.get("model_name") or "") in ML_TAIL_POT_GPD_MODEL_NAMES
         or str(row.get("model_name") or "") == "lightgbm_location_scale_empirical"
         or str(row.get("model_name") or "") in ML_TAIL_ROBUST_POT_GPD_MODEL_NAMES
     ]

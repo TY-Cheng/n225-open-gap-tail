@@ -20,8 +20,11 @@ from n225_open_gap_tail.config.runtime import (
     ML_TAIL_DIRECT_QUANTILE_MODEL,
     ML_TAIL_LOCATION_SCALE_MODEL,
     ML_TAIL_MAD_CONSISTENCY_FACTOR,
+    ML_TAIL_MEDIAN_IQR_POT_GPD_MODEL_NAMES,
     ML_TAIL_MEDIAN_IQR_POT_GPD_PLAIN_MLE_MODEL,
+    ML_TAIL_MEDIAN_IQR_POT_GPD_UNIBM_MODEL,
     ML_TAIL_MEDIAN_MAD_POT_GPD_MODEL_NAMES,
+    ML_TAIL_MEDIAN_MAD_POT_GPD_UNIBM_MODEL,
     ML_TAIL_MIN_OOF_TRAIN_ROWS,
     ML_TAIL_POT_GPD_MODEL_NAMES,
     ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
@@ -623,8 +626,9 @@ def _fit_ml_tail_location_scale_bundle(
     tail_level: float,
     lgb: Any,
 ) -> dict[str, object]:
-    if model_name in ML_TAIL_MEDIAN_MAD_POT_GPD_MODEL_NAMES or (
-        model_name == ML_TAIL_MEDIAN_IQR_POT_GPD_PLAIN_MLE_MODEL
+    if (
+        model_name in ML_TAIL_MEDIAN_MAD_POT_GPD_MODEL_NAMES
+        or model_name in ML_TAIL_MEDIAN_IQR_POT_GPD_MODEL_NAMES
     ):
         return _fit_ml_tail_robust_location_scale_bundle(
             train_rows=train_rows,
@@ -802,7 +806,7 @@ def _ml_tail_route_failure_metadata(model_name: str, status: str) -> dict[str, o
             "mad_consistency_factor": ML_TAIL_MAD_CONSISTENCY_FACTOR,
             "iqr_consistency_factor": None,
         }
-    if model_name == ML_TAIL_MEDIAN_IQR_POT_GPD_PLAIN_MLE_MODEL:
+    if model_name in ML_TAIL_MEDIAN_IQR_POT_GPD_MODEL_NAMES:
         return {
             "body_filter_method": "conditional_median_q50",
             "scale_method": "conditional_iqr_q25_q75",
@@ -826,9 +830,7 @@ def _fit_ml_tail_robust_location_scale_bundle(
     tail_level: float,
     lgb: Any,
 ) -> dict[str, object]:
-    route = (
-        "median_iqr" if model_name == ML_TAIL_MEDIAN_IQR_POT_GPD_PLAIN_MLE_MODEL else "median_mad"
-    )
+    route = "median_iqr" if model_name in ML_TAIL_MEDIAN_IQR_POT_GPD_MODEL_NAMES else "median_mad"
     if route == "median_iqr":
         oof = _ml_tail_oof_median_iqr_location_scale(
             train_rows=train_rows,
@@ -1140,7 +1142,11 @@ def _predict_ml_tail_robust_location_scale_forecast(
 def _evt_variant_for_ml_tail_model(model_name: str) -> str:
     if model_name == ML_TAIL_POT_GPD_PLAIN_MLE_MODEL:
         return "plain_mle"
-    if model_name == ML_TAIL_POT_GPD_UNIBM_MODEL:
+    if model_name in {
+        ML_TAIL_POT_GPD_UNIBM_MODEL,
+        ML_TAIL_MEDIAN_MAD_POT_GPD_UNIBM_MODEL,
+        ML_TAIL_MEDIAN_IQR_POT_GPD_UNIBM_MODEL,
+    }:
         return "unibm"
     if model_name.endswith("_plain_mle"):
         return "plain_mle"

@@ -516,7 +516,7 @@ def build_panel(
                 ),
                 "feature_rows": len(us_options_features),
                 "liquidity_audit_rows": len(us_options_liquidity),
-                "headline_promotion_status": (
+                "primary_promotion_status": (
                     "candidate_e_layer_gated_by_coverage_and_liquidity"
                     if us_options_features
                     else "disabled_until_historical_source_audit_passes"
@@ -559,7 +559,7 @@ def build_panel(
                 "pairwise_inference_sample": (
                     PIPELINE_CONFIG.evaluation_policy.pairwise_inference_sample
                 ),
-                "global_headline_sample": PIPELINE_CONFIG.evaluation_policy.global_headline_sample,
+                "global_primary_sample": PIPELINE_CONFIG.evaluation_policy.global_primary_sample,
             },
             "residual_usclosemark_status": (
                 PIPELINE_CONFIG.target_policy.residual_usclosemark_status
@@ -649,7 +649,7 @@ def build_modeling_panel_records(
             "forecast_date": trading_date,
             "target_family": "full_gap_settle_to_open",
             "forecast_origin_name": "US_CASH_CLOSE",
-            "information_set": FeatureSetVersion.OPTIONS_EVT_HEADLINE.value,
+            "information_set": FeatureSetVersion.OPTIONS_EVT_PRIMARY.value,
             "contract_code": target.get("contract_code"),
             "contract_month": target.get("contract_month"),
             "clean_sample": forecast_sample,

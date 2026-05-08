@@ -45,11 +45,11 @@ snapshot run_id="latest": _require-external-uv-env
 _build-panel start="2016-07-19" end="": _require-external-uv-env
     {{cli}} build-panel --start "{{ start }}" {{ if end == "" { "" } else { "--end \"" + end + "\"" } }}
 
-_evaluate run_id="" workers="" suite="benchmark" force="false" tail_side="both": _require-external-uv-env
-    {{cli}} evaluate {{ if run_id == "" { "" } else { "--run-id \"" + run_id + "\"" } }} {{ if workers == "" { "" } else { "--workers " + workers } }} --suite "{{ suite }}" --tail-side "{{ tail_side }}" {{ if force == "true" { "--force" } else { "" } }}
+_evaluate run_id="" workers="" suite="benchmark" force="false" tail_side="both" no_resume="false": _require-external-uv-env
+    {{cli}} evaluate {{ if run_id == "" { "" } else { "--run-id \"" + run_id + "\"" } }} {{ if workers == "" { "" } else { "--workers " + workers } }} --suite "{{ suite }}" --tail-side "{{ tail_side }}" {{ if force == "true" { "--force" } else { "" } }} {{ if no_resume == "true" { "--no-resume" } else { "" } }}
 
-_run start="2016-07-19" end="" workers="" suite="all" force="false" tail_side="both": _require-external-uv-env
-    {{cli}} run --start "{{ start }}" {{ if end == "" { "" } else { "--end \"" + end + "\"" } }} {{ if workers == "" { "" } else { "--workers " + workers } }} --suite "{{ suite }}" --tail-side "{{ tail_side }}" {{ if force == "true" { "--force" } else { "" } }}
+_run start="2016-07-19" end="" workers="" suite="all" force="false" tail_side="both" no_resume="false": _require-external-uv-env
+    {{cli}} run --start "{{ start }}" {{ if end == "" { "" } else { "--end \"" + end + "\"" } }} {{ if workers == "" { "" } else { "--workers " + workers } }} --suite "{{ suite }}" --tail-side "{{ tail_side }}" {{ if force == "true" { "--force" } else { "" } }} {{ if no_resume == "true" { "--no-resume" } else { "" } }}
 
 _export-tables run_id="": _require-external-uv-env
     {{cli}} export-tables {{ if run_id == "" { "" } else { "--run-id \"" + run_id + "\"" } }}

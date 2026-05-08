@@ -25,7 +25,7 @@ from n225_open_gap_tail.panel.build import registered_ml_tail_information_sets
 CPA_QUANTILE_LOSS_FAMILY = "var_quantile_loss"
 CPA_FZ_LOSS_FAMILY = "var_es_fz_loss"
 CPA_LOSS_FAMILIES = (CPA_QUANTILE_LOSS_FAMILY, CPA_FZ_LOSS_FAMILY)
-CPA_CLAIM_SCOPE = "conditional_inference_diagnostic_not_headline"
+CPA_CLAIM_SCOPE = "conditional_inference_diagnostic_not_primary"
 CPA_HAC_KERNEL = "bartlett"
 CPA_INSTRUMENT_CANDIDATES = (
     "lagged_loss_diff",
@@ -298,7 +298,7 @@ def _cpa_record_for_pair(
         "loss_family": loss_family,
         "comparison_axis": comparison_axis,
         "claim_scope": CPA_CLAIM_SCOPE,
-        "headline_claim_allowed": False,
+        "primary_claim_allowed": False,
         "anchor_information_set": anchor_information_set,
         "candidate_information_set": candidate_information_set,
         "common_n": len(common_dates),
@@ -554,7 +554,7 @@ def _cross_model_skipped_record(status: str) -> dict[str, object]:
             "loss_family": None,
             "comparison_axis": "cross_model_registered_pair",
             "claim_scope": CPA_CLAIM_SCOPE,
-            "headline_claim_allowed": False,
+            "primary_claim_allowed": False,
             "anchor_information_set": None,
             "candidate_information_set": None,
             "common_n": 0,

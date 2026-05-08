@@ -49,7 +49,7 @@ from n225_open_gap_tail.forecasting import (
     build_spy_compat_late_session_feature_records,
     drop_low_variance_features,
     empirical_excess_es_companion,
-    evaluate_benchmark_floor_suite,
+    evaluate_benchmark_baseline_suite,
     evaluate_benchmark_suite,
     evaluate_ml_tail_suite,
     evaluate_suite,
@@ -171,7 +171,7 @@ def test_ml_tail_result_matrix_separates_var_and_var_es_layers() -> None:
     ]
     assert {row["model_name"] for row in tail_var_rows} == set(paper_module.ML_TAIL_MODEL_NAMES)
     assert all(row["sample_policy"] == "restricted_tail_model_common_sample" for row in matrix)
-    assert all(row["headline_claim_allowed"] is False for row in matrix)
+    assert all(row["primary_claim_allowed"] is False for row in matrix)
     assert any(row["loss_family"] == "var_es_fz_loss" for row in matrix)
     assert any(row["loss_family"] == "var_coverage" for row in matrix)
     assert any(row["comparison_axis"] == "information_set_increment" for row in matrix)

@@ -33,7 +33,7 @@ def test_claim_level_enum_is_controlled_vocabulary() -> None:
 def test_core_feature_sets_exclude_short_history_and_robustness_tickers() -> None:
     config = default_research_config()
 
-    assert config.feature_sets.version == FeatureSetVersion.OPTIONS_EVT_HEADLINE
+    assert config.feature_sets.version == FeatureSetVersion.OPTIONS_EVT_PRIMARY
     assert "SOFR" not in config.feature_sets.fred_core
     assert "EFFR" not in config.feature_sets.fred_core
     assert "SOFR" in config.feature_sets.fred_post_2018

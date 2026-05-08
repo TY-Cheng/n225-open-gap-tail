@@ -49,7 +49,7 @@ from n225_open_gap_tail.forecasting import (
     build_spy_compat_late_session_feature_records,
     drop_low_variance_features,
     empirical_excess_es_companion,
-    evaluate_benchmark_floor_suite,
+    evaluate_benchmark_baseline_suite,
     evaluate_benchmark_suite,
     evaluate_ml_tail_suite,
     evaluate_suite,
@@ -454,7 +454,7 @@ def test_benchmark_advanced_wiring_is_nonblocking_and_sharded(
         return {
             "var_forecast": var,
             "es_forecast": var + 0.01,
-            "es_companion_type": "synthetic_floor",
+            "es_companion_type": "synthetic_baseline",
             "optimizer_status": "ok",
             "convergence_code": 0,
         }
@@ -519,15 +519,15 @@ def test_benchmark_advanced_wiring_is_nonblocking_and_sharded(
         paper_module.BENCHMARK_ADVANCED_REFIT_FREQUENCY
     }
     assert (run_dir / "s" / "caviar_sav__sto__L__hist__q0950__m_state" / "f.pq").exists()
-    assert (run_dir / "metrics" / "benchmark_floor_metrics.parquet").exists()
+    assert (run_dir / "metrics" / "benchmark_baseline_metrics.parquet").exists()
     status = json.loads((run_dir / "metrics" / "benchmark_status.json").read_text())
-    assert status["benchmark_floor_status"] == "completed"
+    assert status["benchmark_baseline_status"] == "completed"
     assert status["benchmark_advanced_status"] == "completed_nonblocking"
     assert status["benchmark_advanced_forecast_rows"] == advanced.height
     assert status["benchmark_advanced_failures"] == 0
 
 
-def test_benchmark_tagged_dispatch_preserves_serial_floor_then_advanced_order(
+def test_benchmark_tagged_dispatch_preserves_serial_baseline_then_advanced_order(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -553,7 +553,7 @@ def test_benchmark_tagged_dispatch_preserves_serial_floor_then_advanced_order(
     )
     write_leakage_check(run_dir=run_dir)
     _patch_paper_module(monkeypatch, "TAIL_LEVELS", (0.95,))
-    _patch_paper_module(monkeypatch, "BENCHMARK_FLOOR_MODEL_NAMES", ("historical_quantile",))
+    _patch_paper_module(monkeypatch, "BENCHMARK_BASELINE_MODEL_NAMES", ("historical_quantile",))
     _patch_paper_module(monkeypatch, "BENCHMARK_ADVANCED_MODEL_NAMES", ("caviar_sav",))
     calls: list[str] = []
 
@@ -572,7 +572,7 @@ def test_benchmark_tagged_dispatch_preserves_serial_floor_then_advanced_order(
                 "information_set": "target_history_only",
                 "tail_level": 0.95,
                 "refit_frequency": None
-                if kind == "floor"
+                if kind == "baseline"
                 else paper_module.BENCHMARK_ADVANCED_REFIT_FREQUENCY,
                 "benchmark_tier": kind,
                 "var_forecast": 1.0,
@@ -592,17 +592,17 @@ def test_benchmark_tagged_dispatch_preserves_serial_floor_then_advanced_order(
 
     evaluate_benchmark_suite(run_dir=run_dir, workers=1)
 
-    assert calls == ["floor", "floor", "advanced", "advanced"]
+    assert calls == ["baseline", "baseline", "advanced", "advanced"]
     status = json.loads((run_dir / "metrics" / "benchmark_status.json").read_text())
-    assert status["benchmark_floor_forecast_rows"] == 60
+    assert status["benchmark_baseline_forecast_rows"] == 60
     assert status["benchmark_advanced_forecast_rows"] == 60
 
 
-def test_benchmark_floor_suite_skips_advanced_models(
+def test_benchmark_baseline_suite_skips_advanced_models(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "benchmark_floor_only"
+    run_dir = tmp_path / "reports" / "runs" / "benchmark_baseline_only"
     panel_dir = run_dir / "panel"
     panel_dir.mkdir(parents=True)
     rows = [
@@ -639,18 +639,18 @@ def test_benchmark_floor_suite_skips_advanced_models(
         return {
             "var_forecast": var,
             "es_forecast": var + 0.01,
-            "es_companion_type": "synthetic_floor",
+            "es_companion_type": "synthetic_baseline",
             "optimizer_status": "ok",
             "convergence_code": 0,
         }
 
     _patch_paper_module(monkeypatch, "_forecast_one", fake_forecast_one)
 
-    result = evaluate_suite(run_dir=run_dir, workers=1, suite="benchmark-floor")
+    result = evaluate_suite(run_dir=run_dir, workers=1, suite="benchmark-baseline")
 
     assert result.status == "completed"
     forecasts = pl.read_parquet(run_dir / "forecasts" / "benchmark_forecasts.parquet")
-    assert set(forecasts["benchmark_tier"].to_list()) == {"floor"}
+    assert set(forecasts["benchmark_tier"].to_list()) == {"baseline"}
     status = json.loads((run_dir / "metrics" / "benchmark_status.json").read_text())
-    assert status["benchmark_advanced_status"] == "skipped_benchmark_floor_suite"
+    assert status["benchmark_advanced_status"] == "skipped_benchmark_baseline_suite"
     assert status["benchmark_advanced_model_count"] == 0

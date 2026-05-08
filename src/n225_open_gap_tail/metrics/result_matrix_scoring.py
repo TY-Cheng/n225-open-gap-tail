@@ -38,7 +38,7 @@ def _build_result_matrix_group(
     comparison_family: str,
     comparison_axis: str,
     claim_scope: str,
-    headline_claim_allowed: bool,
+    primary_claim_allowed: bool,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     common_dates = cast(list[str], group["common_dates"])
     entities = cast(list[str], group["entities"])
@@ -69,7 +69,7 @@ def _build_result_matrix_group(
                     joint_exception_count=joint_exception_count,
                     status="unavailable_insufficient_common_rows_for_metrics",
                     claim_scope=claim_scope,
-                    headline_claim_allowed=headline_claim_allowed,
+                    primary_claim_allowed=primary_claim_allowed,
                 )
             )
         return records, audit
@@ -87,7 +87,7 @@ def _build_result_matrix_group(
                 common_n=common_n,
                 joint_exception_count=joint_exception_count,
                 claim_scope=claim_scope,
-                headline_claim_allowed=headline_claim_allowed,
+                primary_claim_allowed=primary_claim_allowed,
             )
         )
     return records, audit
@@ -109,8 +109,8 @@ def _result_matrix_sample_audit_record(
         "comparison_axis": comparison_axis,
         "sample_policy": "restricted_tail_model_common_sample",
         "loss_family": loss_family,
-        "claim_scope": "restricted_model_comparison_not_headline",
-        "headline_claim_allowed": False,
+        "claim_scope": "restricted_model_comparison_not_primary",
+        "primary_claim_allowed": False,
         "target_family": group.get("target_family"),
         "tail_side": group.get("tail_side") or PRIMARY_TAIL_SIDE,
         "information_set": group.get("information_set"),
@@ -152,7 +152,7 @@ def _result_matrix_metric_row(
     common_n: int,
     joint_exception_count: int,
     claim_scope: str,
-    headline_claim_allowed: bool,
+    primary_claim_allowed: bool,
 ) -> dict[str, object]:
     losses = np.array([_required_float(row["realized_loss"]) for row in rows], dtype=float)
     var = np.array([_required_float(row["var_forecast"]) for row in rows], dtype=float)
@@ -198,7 +198,7 @@ def _result_matrix_metric_row(
         "sample_policy": "restricted_tail_model_common_sample",
         "loss_family": loss_family,
         "claim_scope": claim_scope,
-        "headline_claim_allowed": headline_claim_allowed,
+        "primary_claim_allowed": primary_claim_allowed,
         "target_family": group.get("target_family"),
         "tail_side": group.get("tail_side") or PRIMARY_TAIL_SIDE,
         "information_set": entity
@@ -245,7 +245,7 @@ def _result_matrix_unavailable_row(
     joint_exception_count: int,
     status: str,
     claim_scope: str,
-    headline_claim_allowed: bool,
+    primary_claim_allowed: bool,
 ) -> dict[str, object]:
     return {
         "comparison_family": comparison_family,
@@ -253,7 +253,7 @@ def _result_matrix_unavailable_row(
         "sample_policy": "restricted_tail_model_common_sample",
         "loss_family": loss_family,
         "claim_scope": claim_scope,
-        "headline_claim_allowed": headline_claim_allowed,
+        "primary_claim_allowed": primary_claim_allowed,
         "target_family": group.get("target_family"),
         "tail_side": group.get("tail_side") or PRIMARY_TAIL_SIDE,
         "information_set": entity
@@ -341,8 +341,8 @@ def _build_result_matrix_dm_records(
                 "comparison_axis": comparison_axis,
                 "sample_policy": "restricted_tail_model_common_sample",
                 "loss_family": loss_family,
-                "claim_scope": "restricted_model_comparison_not_headline",
-                "headline_claim_allowed": False,
+                "claim_scope": "restricted_model_comparison_not_primary",
+                "primary_claim_allowed": False,
                 "target_family": group.get("target_family"),
                 "tail_side": group.get("tail_side") or PRIMARY_TAIL_SIDE,
                 "information_set": group.get("information_set")
@@ -395,8 +395,8 @@ def _build_result_matrix_mcs_records(
                 "comparison_axis": comparison_axis,
                 "sample_policy": "restricted_tail_model_common_sample",
                 "loss_family": loss_family,
-                "claim_scope": "restricted_model_comparison_not_headline",
-                "headline_claim_allowed": False,
+                "claim_scope": "restricted_model_comparison_not_primary",
+                "primary_claim_allowed": False,
                 "target_family": group.get("target_family"),
                 "tail_side": group.get("tail_side") or PRIMARY_TAIL_SIDE,
                 "information_set": group.get("information_set"),
@@ -448,8 +448,8 @@ def _build_result_matrix_mcs_records(
             "comparison_axis": comparison_axis,
             "sample_policy": "restricted_tail_model_common_sample",
             "loss_family": loss_family,
-            "claim_scope": "restricted_model_comparison_not_headline",
-            "headline_claim_allowed": False,
+            "claim_scope": "restricted_model_comparison_not_primary",
+            "primary_claim_allowed": False,
             "target_family": group.get("target_family"),
             "tail_side": group.get("tail_side") or PRIMARY_TAIL_SIDE,
             "information_set": group.get("information_set"),

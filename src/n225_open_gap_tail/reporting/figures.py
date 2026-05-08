@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import genpareto
 
 from n225_open_gap_tail.config.runtime import (
-    BENCHMARK_FLOOR_MODEL_NAMES,
+    BENCHMARK_BASELINE_MODEL_NAMES,
     Mapping,
     ML_TAIL_DIRECT_QUANTILE_MODEL,
     np,
@@ -400,7 +400,7 @@ def _coverage_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, obje
                 ],
                 tail_side=tail_side,
                 caption=caption,
-                claim_scope="coverage_diagnostic_not_headline_claim",
+                claim_scope="coverage_diagnostic_not_primary_claim",
             )
         )
     return entries
@@ -414,7 +414,7 @@ def _coverage_frame(run_dir: Path) -> pl.DataFrame:
         if not selected.is_empty():
             frames.append(
                 selected.with_columns(
-                    pl.lit("benchmark_floor").alias("suite_group"),
+                    pl.lit("benchmark_baseline").alias("suite_group"),
                     pl.lit(0).alias("suite_order"),
                     pl.col("model_name").alias("model_label"),
                 )
@@ -424,7 +424,7 @@ def _coverage_frame(run_dir: Path) -> pl.DataFrame:
     )
     if not benchmark_per_model.is_empty() and "model_name" in benchmark_per_model.columns:
         advanced = benchmark_per_model.filter(
-            ~pl.col("model_name").is_in(list(BENCHMARK_FLOOR_MODEL_NAMES))
+            ~pl.col("model_name").is_in(list(BENCHMARK_BASELINE_MODEL_NAMES))
         )
         if not advanced.is_empty():
             selected = _coverage_select(advanced)
@@ -442,7 +442,7 @@ def _coverage_frame(run_dir: Path) -> pl.DataFrame:
         if not selected.is_empty():
             frames.append(
                 selected.with_columns(
-                    pl.lit("ml_tail_headline").alias("suite_group"),
+                    pl.lit("ml_tail_primary").alias("suite_group"),
                     pl.lit(2).alias("suite_order"),
                     (_model_label_expr() + pl.lit(" / ") + _information_set_label_expr()).alias(
                         "model_label"
@@ -590,10 +590,10 @@ def _murphy_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object
         (
             "benchmark_murphy",
             run_dir / "metrics" / "benchmark_murphy.parquet",
-            "Benchmark floor Murphy diagnostics",
+            "Baseline benchmark Murphy diagnostics",
             "model_name",
             "metrics/benchmark_murphy.parquet",
-            "murphy_diagnostic_benchmark_floor_common_grid",
+            "murphy_diagnostic_benchmark_baseline_common_grid",
         ),
         (
             "ml_tail_murphy",
@@ -1212,16 +1212,16 @@ def _combined_severity_metrics(run_dir: Path) -> pl.DataFrame:
     if benchmark_path.exists():
         frames.append(
             pl.read_parquet(benchmark_path).with_columns(
-                pl.lit("benchmark_floor").alias("suite"),
-                pl.lit("headline_benchmark_floor").alias("claim_scope"),
+                pl.lit("benchmark_baseline").alias("suite"),
+                pl.lit("primary_benchmark_baseline").alias("claim_scope"),
             )
         )
-    ml_headline_path = run_dir / "metrics" / "ml_tail_metrics.parquet"
-    if ml_headline_path.exists():
+    ml_primary_path = run_dir / "metrics" / "ml_tail_metrics.parquet"
+    if ml_primary_path.exists():
         frames.append(
-            pl.read_parquet(ml_headline_path).with_columns(
-                pl.lit("ml_tail_headline").alias("suite"),
-                pl.lit("headline_nested_information_sets").alias("claim_scope"),
+            pl.read_parquet(ml_primary_path).with_columns(
+                pl.lit("ml_tail_primary").alias("suite"),
+                pl.lit("primary_nested_information_sets").alias("claim_scope"),
             )
         )
     ml_per_model_path = run_dir / "metrics" / "ml_tail_metrics_per_model.parquet"
@@ -1248,17 +1248,17 @@ def _combined_forecasts(run_dir: Path) -> pl.DataFrame:
         benchmark = pl.read_parquet(benchmark_path)
         if "model_name" in benchmark.columns:
             benchmark = benchmark.filter(
-                pl.col("model_name").is_in(list(BENCHMARK_FLOOR_MODEL_NAMES))
+                pl.col("model_name").is_in(list(BENCHMARK_BASELINE_MODEL_NAMES))
             )
         if not benchmark.is_empty():
-            frames.append(benchmark.with_columns(pl.lit("benchmark_floor").alias("suite")))
+            frames.append(benchmark.with_columns(pl.lit("benchmark_baseline").alias("suite")))
     ml_tail_path = run_dir / "forecasts" / "ml_tail_forecasts.parquet"
     if ml_tail_path.exists():
         ml_tail = pl.read_parquet(ml_tail_path)
         if "model_name" in ml_tail.columns:
             ml_tail = ml_tail.filter(pl.col("model_name") == ML_TAIL_DIRECT_QUANTILE_MODEL)
         if not ml_tail.is_empty():
-            frames.append(ml_tail.with_columns(pl.lit("ml_tail_headline").alias("suite")))
+            frames.append(ml_tail.with_columns(pl.lit("ml_tail_primary").alias("suite")))
     if not frames:
         return pl.DataFrame()
     return pl.concat(frames, how="diagonal_relaxed")
@@ -1423,9 +1423,9 @@ def _suite_color(suite_group: str) -> str:
     return {
         "benchmark": "#475569",
         "lgbm": "#2563eb",
-        "benchmark_floor": "#475569",
+        "benchmark_baseline": "#475569",
         "benchmark_advanced": "#0f766e",
-        "ml_tail_headline": "#2563eb",
+        "ml_tail_primary": "#2563eb",
         "ml_tail_restricted_family": "#7c3aed",
     }.get(suite_group, "#64748b")
 

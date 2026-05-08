@@ -5,6 +5,8 @@ from __future__ import annotations
 from n225_open_gap_tail.config.runtime import (
     Mapping,
     ML_TAIL_DIRECT_QUANTILE_MODEL,
+    ML_TAIL_LOCATION_SCALE_MODEL,
+    ML_TAIL_MEDIAN_IQR_POT_GPD_PLAIN_MLE_MODEL,
     pl,
     PRIMARY_TAIL_SIDE,
     TAIL_SIDE_LEFT,
@@ -21,6 +23,122 @@ from n225_open_gap_tail.config.model_labels import (
 SELECTED_MODEL_MAX_PER_GROUP = 3
 SELECTED_MODEL_MIN_ROWS = 450
 SELECTED_MODEL_COVERAGE_TOLERANCE = 0.025
+PROMOTED_TAIL_MODEL_SPECS = (
+    {
+        "tail_side": TAIL_SIDE_LEFT,
+        "model_name": ML_TAIL_MEDIAN_IQR_POT_GPD_PLAIN_MLE_MODEL,
+        "information_set": "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy",
+        "promotion_role": "left promoted",
+    },
+    {
+        "tail_side": TAIL_SIDE_RIGHT,
+        "model_name": ML_TAIL_LOCATION_SCALE_MODEL,
+        "information_set": "japan_only_plus_us_close_core_plus_japan_proxy",
+        "promotion_role": "right promoted",
+    },
+)
+
+
+def _promoted_tail_model_rows(
+    ml_tail_metrics: pl.DataFrame,
+    *,
+    dm: pl.DataFrame | None = None,
+    mcs: pl.DataFrame | None = None,
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for spec in PROMOTED_TAIL_MODEL_SPECS:
+        metric = _promoted_metric_row(ml_tail_metrics, spec)
+        if metric is None:
+            rows.append({**spec, "promotion_status": "missing_metric_row"})
+            continue
+        breach = _optional_float(metric.get("var_breach_rate"))
+        expected = _optional_float(metric.get("expected_breach_rate")) or 0.05
+        coverage_error = abs(breach - expected) if breach is not None else None
+        gate_pass = (
+            int(_optional_float(metric.get("rows")) or 0) >= SELECTED_MODEL_MIN_ROWS
+            and coverage_error is not None
+            and coverage_error <= SELECTED_MODEL_COVERAGE_TOLERANCE
+            and _optional_float(metric.get("mean_quantile_loss")) is not None
+            and _optional_float(metric.get("mean_fz_loss")) is not None
+        )
+        rows.append(
+            {
+                **metric,
+                **spec,
+                "coverage_abs_error": coverage_error,
+                "promotion_status": "pass" if gate_pass else "diagnostic_only",
+                "dm_quantile": _promoted_dm_row(dm, spec, "var_quantile_loss"),
+                "dm_fz": _promoted_dm_row(dm, spec, "var_es_fz_loss"),
+                "mcs_quantile": _promoted_mcs_row(mcs, spec, "var_quantile_loss"),
+                "mcs_fz": _promoted_mcs_row(mcs, spec, "var_es_fz_loss"),
+            }
+        )
+    return rows
+
+
+def _promoted_metric_row(
+    metrics: pl.DataFrame, spec: Mapping[str, object]
+) -> dict[str, object] | None:
+    required = {"model_name", "information_set", "tail_side"}
+    if metrics.is_empty() or not required.issubset(metrics.columns):
+        return None
+    frame = metrics.filter(
+        (pl.col("model_name") == spec["model_name"])
+        & (pl.col("information_set") == spec["information_set"])
+        & (pl.col("tail_side") == spec["tail_side"])
+    )
+    if frame.is_empty():
+        return None
+    return dict(frame.row(0, named=True))
+
+
+def _promoted_dm_row(
+    dm: pl.DataFrame | None,
+    spec: Mapping[str, object],
+    loss_family: str,
+) -> dict[str, object] | None:
+    if dm is None or dm.is_empty():
+        return None
+    required = {
+        "tail_side",
+        "information_set",
+        "candidate_entity",
+        "baseline_entity",
+        "loss_family",
+    }
+    if not required.issubset(dm.columns):
+        return None
+    frame = dm.filter(
+        (pl.col("tail_side") == spec["tail_side"])
+        & (pl.col("information_set") == spec["information_set"])
+        & (pl.col("candidate_entity") == spec["model_name"])
+        & (pl.col("baseline_entity") == ML_TAIL_DIRECT_QUANTILE_MODEL)
+        & (pl.col("loss_family") == loss_family)
+    )
+    if frame.is_empty():
+        return None
+    return dict(frame.row(0, named=True))
+
+
+def _promoted_mcs_row(
+    mcs: pl.DataFrame | None,
+    spec: Mapping[str, object],
+    loss_family: str,
+) -> dict[str, object] | None:
+    if mcs is None or mcs.is_empty():
+        return None
+    required = {"tail_side", "information_set", "model_name", "loss_family"}
+    if not required.issubset(mcs.columns):
+        return None
+    frame = mcs.filter(
+        (pl.col("tail_side") == spec["tail_side"])
+        & (pl.col("information_set") == spec["information_set"])
+        & (pl.col("model_name") == spec["model_name"])
+        & (pl.col("loss_family") == loss_family)
+    )
+    if frame.is_empty():
+        return None
+    return dict(frame.row(0, named=True))
 
 
 def _selected_model_performance_rows(
@@ -198,6 +316,91 @@ def _selected_model_performance_to_latex(
     return "\n".join(lines)
 
 
+def _promoted_tail_models_to_latex(
+    ml_tail_metrics: pl.DataFrame,
+    *,
+    dm: pl.DataFrame | None = None,
+    mcs: pl.DataFrame | None = None,
+    manifest: Mapping[str, object] | None = None,
+) -> str:
+    manifest = manifest or {}
+    headers = (
+        "role",
+        "model",
+        "info",
+        "side",
+        "N",
+        "breach",
+        "q_loss",
+        "fz_loss",
+        "DM q",
+        "DM FZ",
+        "MCS q/FZ",
+    )
+    lines = [
+        f"% run_id: {manifest.get('run_id', '')}",
+        f"% git_commit: {manifest.get('git_commit', '')}",
+        f"% config_hash: {manifest.get('config_hash', '')}",
+        "% table_scope: side_specific_ml_tail_promotion_gate",
+        "\\begin{tabular}{lll lrrrrlll}",
+        "\\toprule",
+        " & ".join(headers) + r" \\",
+        "\\midrule",
+    ]
+    for row in _promoted_tail_model_rows(ml_tail_metrics, dm=dm, mcs=mcs):
+        lines.append(
+            f"{_latex_escape(row.get('promotion_role'))} & "
+            f"{_latex_escape(display_model_label(row.get('model_name')))} & "
+            f"{_latex_escape(display_information_set_label(row.get('information_set')))} & "
+            f"{_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
+            f"{int(_optional_float(row.get('rows')) or 0)} & "
+            f"{_fmt(row.get('var_breach_rate'))} & "
+            f"{_fmt(row.get('mean_quantile_loss'))} & "
+            f"{_fmt(row.get('mean_fz_loss'))} & "
+            f"{_latex_escape(_dm_cell(row.get('dm_quantile')))} & "
+            f"{_latex_escape(_dm_cell(row.get('dm_fz')))} & "
+            f"{_latex_escape(_mcs_pair_cell(row.get('mcs_quantile'), row.get('mcs_fz')))} \\\\"
+        )
+    note = (
+        "Visible notes: side-specific promotion rows must pass N and VaR-coverage "
+        "gates and are read with restricted common-sample DM/MCS evidence versus "
+        "the direct-quantile anchor. Negative DM loss differences favor the "
+        "promoted candidate. This is not a universal model-family ranking."
+    )
+    lines.extend(["\\midrule", f"\\multicolumn{{11}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(["\\bottomrule", "\\end{tabular}", ""])
+    return "\n".join(lines)
+
+
+def _dm_cell(row: object) -> str:
+    if not isinstance(row, dict):
+        return "n/a"
+    diff = _optional_float(row.get("mean_loss_diff_candidate_minus_baseline"))
+    pvalue = _optional_float(row.get("pvalue_one_sided"))
+    status = str(row.get("inference_status") or "n/a")
+    reject = row.get("reject_10pct")
+    reject_mark = "rej10" if reject is True else "no-rej"
+    if diff is None or pvalue is None:
+        return status
+    return f"{diff:.3g}; p={pvalue:.3g}; {reject_mark}"
+
+
+def _mcs_pair_cell(q_row: object, fz_row: object) -> str:
+    return f"{_mcs_cell(q_row)}/{_mcs_cell(fz_row)}"
+
+
+def _mcs_cell(row: object) -> str:
+    if not isinstance(row, dict):
+        return "n/a"
+    status = str(row.get("mcs_status") or "n/a")
+    included = row.get("included_in_mcs")
+    if included is True:
+        return "in"
+    if included is False and status == "ok":
+        return "out"
+    return status
+
+
 def _full_per_model_metrics_to_latex(
     metrics: pl.DataFrame,
     *,
@@ -253,7 +456,7 @@ def _result_matrix_to_latex(
         f"% run_id: {manifest.get('run_id', '')}",
         f"% git_commit: {manifest.get('git_commit', '')}",
         f"% config_hash: {manifest.get('config_hash', '')}",
-        "% claim_scope: restricted_model_comparison_not_headline unless stated otherwise",
+        "% claim_scope: restricted_model_comparison_not_primary unless stated otherwise",
         "\\begin{tabular}{lllllrrrr}",
         "\\toprule",
         " & ".join(headers) + r" \\",
@@ -296,7 +499,7 @@ def _result_matrix_to_latex(
         "Visible notes: restricted result matrix; lower metric is better for "
         "quantile loss, FZ loss, and absolute coverage error; block-bootstrap DM "
         "and HLN Tmax MCS appear only when registered sample and exception gates pass; "
-        "these rows do not replace the headline ML tail table."
+        "these rows do not replace the primary ML table."
     )
     lines.extend(["\\midrule", f"\\multicolumn{{9}}{{l}}{{\\footnotesize {note}}} \\\\"])
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
@@ -453,7 +656,7 @@ def _result_matrix_summary_to_latex(
         )
     note = (
         "Visible notes: VaR-only and VaR-ES loss families are separated. "
-        "Restricted samples are not headline evidence. DM/MCS counts show how many "
+        "Restricted samples are not primary evidence. DM/MCS counts show how many "
         "registered inference records passed their sample and exception gates."
     )
     lines.extend(["\\midrule", f"\\multicolumn{{9}}{{l}}{{\\footnotesize {note}}} \\\\"])
@@ -466,13 +669,13 @@ def _claim_scope_to_latex(*, manifest: Mapping[str, object] | None = None) -> st
     rows = [
         (
             "benchmark_metrics.parquet",
-            "headline benchmark floor",
+            "baseline benchmarks",
             "yes after clean-run author review",
         ),
         (
             "ml_tail_metrics.parquet",
-            "headline ML-tail nested information sets",
-            "yes; current headline comparison is direct quantile",
+            "primary ML nested information sets",
+            "yes; current primary comparison is direct quantile",
         ),
         (
             "ml_tail_metrics_per_model.parquet",
@@ -492,7 +695,7 @@ def _claim_scope_to_latex(*, manifest: Mapping[str, object] | None = None) -> st
         (
             "*_cpa_inference.parquet",
             "conditional loss-difference diagnostics",
-            "no forecasting-model or headline-superiority claim",
+            "no forecasting-model or primary-superiority claim",
         ),
         (
             "hedge-trigger table",
@@ -516,7 +719,7 @@ def _claim_scope_to_latex(*, manifest: Mapping[str, object] | None = None) -> st
         )
     note = (
         "Visible notes: this map governs table placement. Restricted and diagnostic "
-        "artifacts may support discussion, but they do not replace headline common-sample "
+        "artifacts may support discussion, but they do not replace primary common-sample "
         "evidence."
     )
     lines.extend(["\\midrule", f"\\multicolumn{{3}}{{l}}{{\\footnotesize {note}}} \\\\"])
@@ -567,8 +770,8 @@ def _severity_claim_scope(row: Mapping[str, object]) -> str:
     suite = str(row.get("suite") or "")
     if suite == "ml_tail_per_model" and model_name != ML_TAIL_DIRECT_QUANTILE_MODEL:
         return "restricted_diagnostic"
-    if sample_policy == "headline_common_sample":
-        return "headline"
+    if sample_policy == "primary_common_sample":
+        return "primary"
     return "diagnostic"
 
 

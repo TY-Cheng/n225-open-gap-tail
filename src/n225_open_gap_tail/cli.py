@@ -9,12 +9,12 @@ from n225_open_gap_tail.diagnostics.snapshot import write_results_snapshot_from_
 from n225_open_gap_tail.forecasting import (
     build_panel,
     evaluate_suite,
-    export_tables,
     resolve_run_dir,
     write_leakage_check,
 )
 from n225_open_gap_tail.market.calendars import write_calendar_table
 from n225_open_gap_tail.market.contracts import write_contract_metadata
+from n225_open_gap_tail.reporting.tables import export_tables
 from n225_open_gap_tail.sources.cboe import write_cboe_smoke_sample
 from n225_open_gap_tail.sources.fred import write_fred_smoke_sample
 from n225_open_gap_tail.sources.jquants import write_jquants_smoke_sample
@@ -284,13 +284,16 @@ def evaluate_command(
     workers: int = typer.Option(0, help="Joblib workers. Defaults to bounded local workers."),
     suite: str = typer.Option(
         "benchmark",
-        help="Evaluation suite: benchmark, benchmark-floor, or ml-tail.",
+        help="Evaluation suite: benchmark, benchmark-baseline, or ml-tail.",
     ),
     tail_side: str = typer.Option(
         "both",
         help="Tail side: left-tail, right-tail, or both.",
     ),
     force: bool = typer.Option(False, help="Clear locked outputs when config hash changed."),
+    no_resume: bool = typer.Option(
+        False, help="Recompute ML-tail shards instead of reusing cache."
+    ),
 ) -> None:
     """Run a forecast evaluation suite for a tail-risk run."""
     settings = load_settings()
@@ -301,6 +304,7 @@ def evaluate_command(
         suite=suite,
         force=force,
         tail_side=tail_side,
+        resume=not no_resume,
     )
 
     typer.echo(f"run id: {result.run_id}")
@@ -317,13 +321,16 @@ def run_command(
     workers: int = typer.Option(0, help="Joblib workers. Defaults to bounded local workers."),
     suite: str = typer.Option(
         "all",
-        help="Evaluation suite: benchmark, benchmark-floor, ml-tail, or all.",
+        help="Evaluation suite: benchmark, benchmark-baseline, ml-tail, or all.",
     ),
     tail_side: str = typer.Option(
         "both",
         help="Tail side: left-tail, right-tail, or both.",
     ),
     force: bool = typer.Option(False, help="Clear locked outputs when config hash changed."),
+    no_resume: bool = typer.Option(
+        False, help="Recompute ML-tail shards instead of reusing cache."
+    ),
 ) -> None:
     """Build the panel, run requested evaluation suites, and export tables."""
     settings = load_settings()
@@ -338,6 +345,7 @@ def run_command(
             suite=active_suite,
             force=force,
             tail_side=tail_side,
+            resume=not no_resume,
         )
     latex = export_tables(run_dir=panel.run_dir)
 

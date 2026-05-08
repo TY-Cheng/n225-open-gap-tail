@@ -82,8 +82,8 @@ def _evaluate_benchmark_shard(payload: dict[str, object]) -> dict[str, list[dict
             "diagnostics": [
                 {
                     "model_name": model_name,
-                    "benchmark_tier": "floor",
-                    "model_family": _floor_model_family(model_name),
+                    "benchmark_tier": "baseline",
+                    "model_family": _baseline_model_family(model_name),
                     "model_variant": model_name,
                     "refit_frequency": None,
                     "advanced_model_nonblocking": False,
@@ -163,8 +163,8 @@ def _forecast_model_sequence(
                     "target_family": "full_gap_settle_to_open",
                     "tail_side": tail_side,
                     "model_name": model_name,
-                    "benchmark_tier": "floor",
-                    "model_family": _floor_model_family(model_name),
+                    "benchmark_tier": "baseline",
+                    "model_family": _baseline_model_family(model_name),
                     "model_variant": model_name,
                     "refit_frequency": None,
                     "advanced_model_nonblocking": False,
@@ -189,8 +189,8 @@ def _forecast_model_sequence(
                 {
                     "forecast_date": row["forecast_date"],
                     "model_name": model_name,
-                    "benchmark_tier": "floor",
-                    "model_family": _floor_model_family(model_name),
+                    "benchmark_tier": "baseline",
+                    "model_family": _baseline_model_family(model_name),
                     "model_variant": model_name,
                     "refit_frequency": None,
                     "advanced_model_nonblocking": False,
@@ -222,8 +222,8 @@ def _forecast_model_sequence(
                 {
                     "forecast_date": row["forecast_date"],
                     "model_name": model_name,
-                    "benchmark_tier": "floor",
-                    "model_family": _floor_model_family(model_name),
+                    "benchmark_tier": "baseline",
+                    "model_family": _baseline_model_family(model_name),
                     "model_variant": model_name,
                     "refit_frequency": None,
                     "advanced_model_nonblocking": False,
@@ -251,7 +251,7 @@ def _rows_for_tail_side(
     return output
 
 
-def _floor_model_family(model_name: str) -> str:
+def _baseline_model_family(model_name: str) -> str:
     if model_name in {"historical_quantile", "rolling_quantile"}:
         return "empirical_quantile"
     if model_name == "ewma_vol_scaled":
@@ -260,7 +260,7 @@ def _floor_model_family(model_name: str) -> str:
         return "arch"
     if model_name == "gjr_garch_evt":
         return "arch_evt"
-    return "benchmark_floor"
+    return "benchmark_baseline"
 
 
 def _forecast_one(

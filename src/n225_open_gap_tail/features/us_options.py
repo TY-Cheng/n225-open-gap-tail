@@ -34,7 +34,7 @@ from n225_open_gap_tail.sources.massive_flatfiles import (
 
 US_OPTIONS_IV_METHOD = "black_scholes_european_dgs2_zero_dividend_from_day_aggs_close"
 US_OPTIONS_RISK_FREE_SOURCE = "fred_dgs2_latest_timestamp_safe"
-US_OPTIONS_HEADLINE_FEATURES: tuple[str, ...] = (
+US_OPTIONS_PRIMARY_FEATURES: tuple[str, ...] = (
     "option_us_core_spy_atm_iv_short",
     "option_us_core_spy_atm_iv_medium",
     "option_us_core_spy_atm_iv_term_slope",
@@ -126,7 +126,7 @@ def build_us_options_atm_iv_feature_records(
             "risk_free_source": US_OPTIONS_RISK_FREE_SOURCE,
         }
         per_underlying_iv: dict[str, dict[str, float | None]] = {}
-        for underlying in _headline_underlyings():
+        for underlying in _primary_underlyings():
             spot = spot_by_ticker_date.get((underlying, date_key))
             iv_by_bucket, audit_rows = _underlying_bucket_ivs(
                 rows=grouped.get((date_key, underlying), []),
@@ -154,7 +154,7 @@ def build_us_options_atm_iv_feature_records(
             prefix="option_asia_proxy",
             include_dispersion=False,
         )
-        for feature in US_OPTIONS_HEADLINE_FEATURES:
+        for feature in US_OPTIONS_PRIMARY_FEATURES:
             output.setdefault(feature, None)
         feature_records.append(output)
     return UsOptionsAtmIvBuildResult(
@@ -311,7 +311,7 @@ def _underlying_bucket_ivs(
                 "spot_available": spot is not None,
                 "risk_free_available": risk_free_rate is not None,
                 "liquidity_status": "ok" if selected_ivs else "no_valid_atm_iv",
-                "headline_promotion_allowed": bool(selected_ivs),
+                "primary_promotion_allowed": bool(selected_ivs),
             }
         )
     return iv_by_bucket, audit_rows
@@ -468,7 +468,7 @@ def _risk_free_rate_for_date(
     return None if value is None else value / 100.0
 
 
-def _headline_underlyings() -> tuple[str, ...]:
+def _primary_underlyings() -> tuple[str, ...]:
     return tuple(
         dict.fromkeys(
             (

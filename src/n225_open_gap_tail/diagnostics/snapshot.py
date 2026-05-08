@@ -2,12 +2,10 @@
 from __future__ import annotations
 
 import json
-import math
-from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import polars as pl
 
@@ -24,6 +22,22 @@ from n225_open_gap_tail.diagnostics.model_comparison import _all_model_compariso
 from n225_open_gap_tail.diagnostics.results_discussion import (
     generate_results_discussion as _generate_results_discussion,
 )
+from n225_open_gap_tail.diagnostics.snapshot_formatting import (
+    _bool_sum,
+    _code,
+    _count_value,
+    _counts_table,
+    _demote_markdown_headings,
+    _fmt_float,
+    _fmt_rate,
+    _forecast_sample_bounds,
+    _join_model_list,
+    _markdown_table,
+    _optional_float,
+    _panel_bounds,
+    _result_matrix_display_value,
+    _unique_values,
+)
 from n225_open_gap_tail.diagnostics.snapshot_paths import (
     full_run_snapshot_paths as _full_run_snapshot_paths,
 )
@@ -37,6 +51,7 @@ from n225_open_gap_tail.diagnostics.target_distribution import (
 from n225_open_gap_tail.diagnostics.target_distribution import (
     target_tail_diagnostics_markdown as _target_tail_diagnostics_markdown,
 )
+from n225_open_gap_tail.reporting.latex import _promoted_tail_model_rows
 
 
 @dataclass(frozen=True)
@@ -206,6 +221,12 @@ def _full_run_results_markdown(
     result_matrix = _filter_current_ml_tail_models(
         _read_parquet_optional(paths["ml_tail_result_matrix"])
     )
+    result_matrix_dm = _filter_current_ml_tail_models(
+        _read_parquet_optional(paths["ml_tail_result_matrix_dm"])
+    )
+    result_matrix_mcs = _filter_current_ml_tail_models(
+        _read_parquet_optional(paths["ml_tail_result_matrix_mcs"])
+    )
     benchmark_stress = _read_parquet_optional(paths["benchmark_stress_windows"])
     ml_tail_stress = _read_parquet_optional(paths["ml_tail_stress_windows"])
     results_discussion = _demote_markdown_headings(
@@ -304,7 +325,7 @@ def _full_run_results_markdown(
     )
     benchmark_table = _metrics_table(benchmark_metrics)
     benchmark_layer_table = _benchmark_layer_table(benchmark_status)
-    ml_headline_table = _metrics_table(ml_tail_metrics)
+    ml_primary_table = _metrics_table(ml_tail_metrics)
     ml_coverage_review = _coverage_review_sentence(ml_tail_metrics)
     result_matrix_table = _result_matrix_summary_table(result_matrix)
     metric_artifact_table = _metric_artifact_relationship_table(
@@ -316,6 +337,11 @@ def _full_run_results_markdown(
         benchmark_metrics=benchmark_metrics,
         benchmark_metrics_per_model=benchmark_metrics_per_model,
         ml_tail_metrics_per_model=ml_tail_metrics_per_model,
+    )
+    promoted_tail_model_table = _promoted_tail_model_markdown_table(
+        ml_tail_metrics_per_model,
+        dm=result_matrix_dm,
+        mcs=result_matrix_mcs,
     )
     benchmark_status_label = (
         manifest.get("benchmark_eval_status")
@@ -381,8 +407,8 @@ The main result tables are in the Results section. Full table and figure provena
 ```
 
 - The left branch binds vendor and calendar inputs into a timestamp-audited gold panel.
-- The middle branch compares benchmark floors, advanced econometric benchmarks, and ML-tail forecasts on registered loss units.
-- The right branch separates headline nested information sets, restricted model-family comparisons, unconditional DM/MCS inference, CPA diagnostics, and supporting figures.
+- The middle branch compares baseline benchmarks, advanced econometric benchmarks, and ML-tail forecasts on registered loss units.
+- The right branch separates primary ML nested information sets, diagnostic model-family comparisons, unconditional DM/MCS inference, CPA diagnostics, and supporting figures.
 
 ## Materials: Data And Target
 
@@ -440,7 +466,7 @@ The main result tables are in the Results section. Full table and figure provena
 | 2 | Bronze and silver cache | Preserve typed vendor/cache rows, then normalize point-in-time research features. |
 | 3 | Gold modeling panel | Join targets, calendar map, feature coverage, and leakage-bound signatures. |
 | 4 | Leakage and coverage gates | Enforce timestamp ordering and sample eligibility before evaluation. |
-| 5 | Benchmark floor and ML-tail registry | Run target-history/econometric floors and LightGBM tail-model families. |
+| 5 | Baseline benchmarks and ML-tail registry | Run target-history/econometric baseline benchmarks and LightGBM tail-model families. |
 | 6 | Metrics, inference, diagnostics | Build loss matrices, DM/MCS/Murphy diagnostics, stress windows, and result matrix artifacts. |
 | 7 | Results snapshot | Summarize run-specific evidence and claim boundaries for reader review. |
 
@@ -474,27 +500,35 @@ Status: `{benchmark_status_label}`; forecast rows: `{benchmark_status.get("forec
 
 {benchmark_table}
 
-- Benchmark floor rows set the target-history/econometric floor that ML models should be interpreted against.
-- Advanced benchmark families are nonblocking; rows with valid forecasts are empirical evidence subject to the same sample and inference gates, while unavailable rows remain diagnostics.
+- Baseline benchmark rows set the target-history/econometric reference that ML models should be interpreted against.
+- Advanced econometric benchmark families are nonblocking; rows with valid forecasts are empirical evidence subject to the same sample and inference gates, while unavailable rows remain diagnostics.
 - The table is not a leaderboard by itself; coverage, exception counts, quantile loss, and FZ loss must be read together.
 - Common-sample rows are reported directly so readers can see the effective evidence size.
 
-#### ML-Tail Headline Ladder
+#### Primary ML Specifications
 
 Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; forecast rows: `{ml_tail_status.get("forecast_rows")}`; failures: `{ml_tail_status.get("failures")}`.
 
-{ml_headline_table}
+{ml_primary_table}
 
-- This headline table remains strict and reports only ML-tail rows that pass the registered common-sample and coverage gates.
-- Location-scale empirical and plain POT-GPD are headline candidates only after their valid OOS coverage, standardized-loss, exceedance, and ES-validity gates pass.
+- This primary ML table remains strict and reports only ML-tail rows that pass the registered common-sample and coverage gates.
+- Location-scale empirical and plain POT-GPD are primary candidates only after their valid OOS coverage, standardized-loss, exceedance, and ES-validity gates pass.
 - Differences across information blocks are candidate forecast evidence only after the common-sample, coverage, and inference diagnostics are reviewed.
 - {ml_coverage_review}
+
+#### Side-specific ML-tail Promotion Gate
+
+{promoted_tail_model_table}
+
+- This paper-facing bridge promotes side-specific ML-tail candidates only after the N/coverage gate and restricted common-sample inference are visible.
+- In the current run the left-tail promoted row is median/IQR POT-GPD, while the right-tail promoted row is location-scale empirical.
+- This is not a universal model-family ranking and does not replace the strict primary nested-information-set table above.
 
 #### ML-tail artifact relationship
 
 {metric_artifact_table}
 
-- `ml_tail_metrics.parquet` is the headline nested-information-set artifact. It contains the ML-tail rows that survived the strict common-sample gate in this run.
+- `ml_tail_metrics.parquet` is the primary nested-information-set artifact. It contains the ML-tail rows that survived the strict common-sample gate in this run.
 - `ml_tail_metrics_per_model.parquet` reports each implemented ML-tail model on its own valid OOS rows; it is useful for debugging coverage but is not a cross-model comparison table.
 - `ml_tail_result_matrix.parquet` creates restricted common samples for VaR-only and VaR-ES comparisons across model families and within-model information-set increments.
 
@@ -514,7 +548,7 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 
 - The result matrix is the right place to compare direct quantile, location-scale empirical, plain POT-GPD, and the robust plain POT-GPD routes on their restricted common dates.
 - It separates VaR-only losses from VaR-ES joint scoring, so VaR-only claims are not confused with ES claims.
-- Restricted direct-quantile performance is only a comparison anchor for the tail-model family; it does not replace the headline direct-quantile evidence.
+- Restricted direct-quantile performance is only a comparison anchor for the tail-model family; it does not replace the primary direct-quantile evidence.
 - DM and MCS records are emitted only where registered row-count and exception-count gates pass; otherwise the result matrix remains descriptive.
 
 #### Stress And Diagnostic Windows
@@ -554,91 +588,6 @@ The appendix collects generated exports and provenance. The main Results section
 
 - Runtime imports are explicit at the module boundary; no dynamic runtime namespace bridge is required to generate this snapshot. This infrastructure note is separate from empirical claim boundaries.
 """
-
-
-def _code(value: object) -> str:
-    return f"`{value}`"
-
-
-def _join_list(value: object) -> str:
-    if isinstance(value, list):
-        return ", ".join(f"`{item}`" for item in value)
-    return _code(value)
-
-
-def _join_model_list(value: object) -> str:
-    if isinstance(value, list | tuple):
-        return ", ".join(f"`{display_model_label(item)}`" for item in value)
-    return _code(display_model_label(value))
-
-
-def _markdown_table(headers: tuple[str, ...], rows: Sequence[tuple[object, ...]]) -> str:
-    header = "| " + " | ".join(headers) + " |"
-    divider = "| " + " | ".join("---" for _ in headers) + " |"
-    body = ["| " + " | ".join(_markdown_cell(cell) for cell in row) + " |" for row in rows]
-    return "\n".join([header, divider, *body])
-
-
-def _demote_markdown_headings(markdown: str, *, levels: int) -> str:
-    prefix = "#" * levels
-    lines = []
-    for line in markdown.splitlines():
-        if line.startswith("#"):
-            lines.append(f"{prefix}{line}")
-        else:
-            lines.append(line)
-    return "\n".join(lines)
-
-
-def _markdown_cell(value: object) -> str:
-    text = "" if value is None else str(value)
-    return text.replace("|", "\\|").replace("\n", " ")
-
-
-def _panel_bounds(frame: pl.DataFrame) -> str:
-    if frame.is_empty() or "forecast_date" not in frame.columns:
-        return "`missing`"
-    values = frame.select(
-        pl.col("forecast_date").min().alias("start"),
-        pl.col("forecast_date").max().alias("end"),
-    ).row(0, named=True)
-    return f"`{values['start']} to {values['end']}`"
-
-
-def _forecast_sample_bounds(frame: pl.DataFrame) -> str:
-    if frame.is_empty() or not {"forecast_date", "forecast_sample"}.issubset(frame.columns):
-        return "`missing`"
-    filtered = frame.filter(pl.col("forecast_sample") == True)  # noqa: E712
-    if filtered.is_empty():
-        return "`empty`"
-    values = filtered.select(
-        pl.col("forecast_date").min().alias("start"),
-        pl.col("forecast_date").max().alias("end"),
-        pl.len().alias("rows"),
-    ).row(0, named=True)
-    return f"`{values['start']} to {values['end']} ({values['rows']} rows)`"
-
-
-def _bool_sum(frame: pl.DataFrame, column: str) -> int:
-    if frame.is_empty() or column not in frame.columns:
-        return 0
-    return int(frame.select(pl.col(column).fill_null(False).sum()).item() or 0)
-
-
-def _count_value(frame: pl.DataFrame, column: str, value: str) -> int:
-    if frame.is_empty() or column not in frame.columns:
-        return 0
-    return int(frame.filter(pl.col(column) == value).height)
-
-
-def _counts_table(frame: pl.DataFrame, column: str, label: str) -> str:
-    if frame.is_empty() or column not in frame.columns:
-        return _markdown_table((label, "Rows"), [("missing", "0")])
-    rows = [
-        (str(row[column]), str(row["len"]))
-        for row in frame.group_by(column).len().sort("len", descending=True).iter_rows(named=True)
-    ]
-    return _markdown_table((label, "Rows"), rows)
 
 
 def _feature_coverage_table(frame: pl.DataFrame) -> str:
@@ -718,10 +667,80 @@ def _metrics_table(frame: pl.DataFrame) -> str:
     )
 
 
+def _promoted_tail_model_markdown_table(
+    metrics: pl.DataFrame,
+    *,
+    dm: pl.DataFrame | None = None,
+    mcs: pl.DataFrame | None = None,
+) -> str:
+    rows = []
+    for row in _promoted_tail_model_rows(metrics, dm=dm, mcs=mcs):
+        rows.append(
+            (
+                row.get("promotion_role"),
+                display_model_label(row.get("model_name")),
+                display_information_set_label(row.get("information_set")),
+                row.get("tail_side"),
+                row.get("rows") or "missing",
+                _fmt_rate(row.get("var_breach_rate")),
+                _fmt_float(row.get("mean_quantile_loss")),
+                _fmt_float(row.get("mean_fz_loss")),
+                _snapshot_dm_cell(row.get("dm_quantile")),
+                _snapshot_dm_cell(row.get("dm_fz")),
+                _snapshot_mcs_pair_cell(row.get("mcs_quantile"), row.get("mcs_fz")),
+                row.get("promotion_status"),
+            )
+        )
+    return _markdown_table(
+        (
+            "Role",
+            "Model",
+            "Information set",
+            "Tail side",
+            "Rows",
+            "Breach",
+            "Q loss",
+            "FZ loss",
+            "DM q",
+            "DM FZ",
+            "MCS q/FZ",
+            "Gate",
+        ),
+        rows or [("missing", "missing", "", "", "", "", "", "", "", "", "", "")],
+    )
+
+
+def _snapshot_dm_cell(row: object) -> str:
+    if not isinstance(row, dict):
+        return "n/a"
+    diff = _optional_float(row.get("mean_loss_diff_candidate_minus_baseline"))
+    pvalue = _optional_float(row.get("pvalue_one_sided"))
+    reject = row.get("reject_10pct")
+    if diff is None or pvalue is None:
+        return str(row.get("inference_status") or "n/a")
+    reject_text = "reject10" if reject is True else "no reject"
+    return f"{_fmt_float(diff)}; p={_fmt_float(pvalue)}; {reject_text}"
+
+
+def _snapshot_mcs_pair_cell(q_row: object, fz_row: object) -> str:
+    return f"{_snapshot_mcs_cell(q_row)} / {_snapshot_mcs_cell(fz_row)}"
+
+
+def _snapshot_mcs_cell(row: object) -> str:
+    if not isinstance(row, dict):
+        return "n/a"
+    status = str(row.get("mcs_status") or "n/a")
+    if row.get("included_in_mcs") is True:
+        return "in"
+    if row.get("included_in_mcs") is False and status == "ok":
+        return "out"
+    return status
+
+
 def _benchmark_layer_table(status: dict[str, object]) -> str:
     advanced_rows = int(_optional_float(status.get("benchmark_advanced_forecast_rows")) or 0)
     advanced_note = (
-        "Implemented nonblocking advanced benchmark forecasts; review with common-sample gates."
+        "Implemented nonblocking advanced econometric benchmark forecasts; review with common-sample gates."
         if advanced_rows > 0
         else "Nonblocking registry diagnostics unless valid advanced forecast rows are present."
     )
@@ -736,15 +755,17 @@ def _benchmark_layer_table(status: dict[str, object]) -> str:
         ),
         [
             (
-                "floor",
-                _code(status.get("benchmark_floor_status") or status.get("status") or "unknown"),
-                _code(status.get("benchmark_floor_forecast_rows") or status.get("forecast_rows")),
-                _code(status.get("benchmark_floor_metric_rows") or status.get("metric_rows")),
-                _code(status.get("benchmark_floor_failures") or 0),
-                "Implemented benchmark evidence for target-history and econometric floor models.",
+                "baseline",
+                _code(status.get("benchmark_baseline_status") or status.get("status") or "unknown"),
+                _code(
+                    status.get("benchmark_baseline_forecast_rows") or status.get("forecast_rows")
+                ),
+                _code(status.get("benchmark_baseline_metric_rows") or status.get("metric_rows")),
+                _code(status.get("benchmark_baseline_failures") or 0),
+                "Implemented evidence for target-history and econometric baseline benchmark models.",
             ),
             (
-                "advanced",
+                "advanced econometric",
                 _code(status.get("benchmark_advanced_status") or "not_reported"),
                 _code(status.get("benchmark_advanced_forecast_rows") or 0),
                 _code(status.get("benchmark_advanced_diagnostic_rows") or 0),
@@ -793,21 +814,14 @@ def _result_matrix_summary_table(frame: pl.DataFrame) -> str:
     )
 
 
-def _result_matrix_display_value(value: object) -> str:
-    text = str(value)
-    if text == "information_set_ladder":
-        return "nested information sets"
-    return text
-
-
 def _claim_scope_markdown_table() -> str:
     return _markdown_table(
-        ("Evidence layer", "Can support headline claim?", "How to read it"),
+        ("Evidence layer", "Can support primary claim?", "How to read it"),
         [
             (
                 "Benchmark common-sample table",
                 "Yes, after review",
-                "External target-history/econometric floor on a shared sample.",
+                "External target-history/econometric baseline benchmark on a shared sample.",
             ),
             (
                 "ML-tail nested information sets",
@@ -821,7 +835,7 @@ def _claim_scope_markdown_table() -> str:
             ),
             (
                 "Restricted result matrix",
-                "No headline claim",
+                "No primary claim",
                 "Matched-date comparison for model families and within-model increments.",
             ),
             (
@@ -845,14 +859,14 @@ def _metric_artifact_relationship_table(
             (
                 "`ml_tail_metrics.parquet`",
                 str(ml_tail_metrics.height),
-                "Headline ML-tail nested-information-set comparison",
-                "Eligible for headline discussion after author review.",
+                "Primary ML nested-information-set comparison",
+                "Eligible for primary discussion after author review.",
             ),
             (
                 "`ml_tail_metrics_per_model.parquet`",
                 str(ml_tail_metrics_per_model.height),
                 "Per-model diagnostics on each model's own valid OOS rows",
-                "Not a cross-model comparison and not a replacement headline table.",
+                "Not a cross-model comparison and not a replacement primary ML table.",
             ),
             (
                 "`ml_tail_result_matrix.parquet`",
@@ -887,22 +901,15 @@ def _coverage_review_sentence(frame: pl.DataFrame) -> str:
     flagged = sum(1 for value in rows if value)
     if flagged:
         return (
-            f"Coverage review: `{flagged}/{len(rows)}` headline rows differ from the "
+            f"Coverage review: `{flagged}/{len(rows)}` primary ML rows differ from the "
             "expected breach rate by more than 2.5 percentage points, so quantile/FZ loss "
             "differences alone must not be read as forecast improvement."
         )
     return (
-        "Coverage review: headline breach rates are within the 2.5 percentage-point "
+        "Coverage review: primary ML breach rates are within the 2.5 percentage-point "
         "snapshot review band, but final claims still require author review of inference "
         "and exception diagnostics."
     )
-
-
-def _unique_values(frame: pl.DataFrame, column: str) -> str:
-    if frame.is_empty() or column not in frame.columns:
-        return "`missing`"
-    values = sorted(str(value) for value in frame[column].drop_nulls().unique().to_list())
-    return ", ".join(f"`{value}`" for value in values)
 
 
 def _artifact_table(paths: dict[str, Path]) -> str:
@@ -910,29 +917,3 @@ def _artifact_table(paths: dict[str, Path]) -> str:
         (name, f"`{path}`", "yes" if path.exists() else "missing") for name, path in paths.items()
     ]
     return _markdown_table(("Artifact", "Path", "Exists"), rows)
-
-
-def _fmt_float(value: object) -> str:
-    if not isinstance(value, int | float) or isinstance(value, bool):
-        return str(value)
-    if not math.isfinite(float(value)):
-        return str(value)
-    return f"{float(value):.6g}"
-
-
-def _fmt_rate(value: object) -> str:
-    if not isinstance(value, int | float) or isinstance(value, bool):
-        return str(value)
-    if not math.isfinite(float(value)):
-        return str(value)
-    return f"{float(value):.3%}"
-
-
-def _optional_float(value: object) -> float | None:
-    if value is None or isinstance(value, bool):
-        return None
-    try:
-        parsed = float(cast(Any, value))
-    except (TypeError, ValueError):
-        return None
-    return parsed if math.isfinite(parsed) else None

@@ -46,7 +46,7 @@ def fetch_massive_options_day_agg_rows(
     ):
         return []
 
-    underlyings = massive_options_headline_underlyings(settings)
+    underlyings = massive_options_primary_underlyings(settings)
     us_dates = [
         str(row["calendar_date"])
         for row in calendar_records
@@ -126,7 +126,7 @@ def fetch_massive_options_day_agg_rows(
     return rows
 
 
-def massive_options_headline_underlyings(settings: Settings) -> tuple[str, ...]:
+def massive_options_primary_underlyings(settings: Settings) -> tuple[str, ...]:
     configured = settings.massive_options_underlying_list()
     if configured:
         return tuple(dict.fromkeys(underlying.upper() for underlying in configured))

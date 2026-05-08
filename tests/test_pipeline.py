@@ -87,7 +87,7 @@ from n225_open_gap_tail.forecasting import (
     build_spy_compat_late_session_feature_records,
     drop_low_variance_features,
     empirical_excess_es_companion,
-    evaluate_benchmark_floor_suite,
+    evaluate_benchmark_baseline_suite,
     evaluate_benchmark_suite,
     evaluate_ml_tail_suite,
     evaluate_suite,
@@ -172,7 +172,7 @@ def test_paper_package_split_preserves_import_compatibility() -> None:
     assert paper_leakage.write_leakage_check is write_leakage_check
     assert paper_reporting.export_tables is export_tables
     assert paper_reporting.export_figures is reporting_figures.export_figures
-    assert paper_evaluation.evaluate_benchmark_floor_suite is evaluate_benchmark_floor_suite
+    assert paper_evaluation.evaluate_benchmark_baseline_suite is evaluate_benchmark_baseline_suite
     assert paper_evaluation.evaluate_ml_tail_suite is ml_tail_suite.evaluate_ml_tail_suite
     assert paper_evaluation.evaluate_benchmark_suite is benchmark_suite.evaluate_benchmark_suite
     assert paper_evaluation._evaluate_benchmark_advanced_shard is (
@@ -201,28 +201,30 @@ def test_benchmark_tagged_dispatch_routes_by_shard_kind(
 ) -> None:
     calls: list[str] = []
 
-    def fake_floor(payload: dict[str, object]) -> dict[str, list[dict[str, object]]]:
-        calls.append(f"floor:{payload['shard_id']}")
-        return {"forecasts": [{"model_name": "floor"}], "diagnostics": [], "failures": []}
+    def fake_baseline(payload: dict[str, object]) -> dict[str, list[dict[str, object]]]:
+        calls.append(f"baseline:{payload['shard_id']}")
+        return {"forecasts": [{"model_name": "baseline"}], "diagnostics": [], "failures": []}
 
     def fake_advanced(payload: dict[str, object]) -> dict[str, list[dict[str, object]]]:
         calls.append(f"advanced:{payload['shard_id']}")
         return {"forecasts": [{"model_name": "advanced"}], "diagnostics": [], "failures": []}
 
-    monkeypatch.setattr(benchmark_suite, "_evaluate_benchmark_shard", fake_floor)
+    monkeypatch.setattr(benchmark_suite, "_evaluate_benchmark_shard", fake_baseline)
     monkeypatch.setattr(
         benchmark_suite,
         "_evaluate_benchmark_advanced_shard",
         fake_advanced,
     )
 
-    floor = benchmark_suite._dispatch_benchmark_shard({"shard_kind": "floor", "shard_id": "a"})
+    baseline = benchmark_suite._dispatch_benchmark_shard(
+        {"shard_kind": "baseline", "shard_id": "a"}
+    )
     advanced = benchmark_suite._dispatch_benchmark_shard(
         {"shard_kind": "advanced", "shard_id": "b"}
     )
 
-    assert calls == ["floor:a", "advanced:b"]
-    assert floor["shard_kind"] == "floor"
+    assert calls == ["baseline:a", "advanced:b"]
+    assert baseline["shard_kind"] == "baseline"
     assert advanced["shard_kind"] == "advanced"
 
 
@@ -238,7 +240,7 @@ def test_paper_root_is_compatibility_surface() -> None:
         "PipelineRunError",
         "build_panel",
         "evaluate_suite",
-        "evaluate_benchmark_floor_suite",
+        "evaluate_benchmark_baseline_suite",
         "evaluate_benchmark_suite",
         "evaluate_ml_tail_suite",
         "export_tables",
@@ -668,12 +670,12 @@ def test_options_audit_artifacts_are_disabled_until_historical_source_is_verifie
 
     assert any(row["source_name"] == "massive_options_snapshot" for row in source_audit)
     assert all(
-        row["headline_promotion_allowed"] is False
+        row["primary_promotion_allowed"] is False
         for row in source_audit
         if str(row["source_name"]).startswith("massive_options")
     )
     assert any(
-        row["source_name"] == "jquants_nikkei_options" and row["headline_promotion_allowed"] is True
+        row["source_name"] == "jquants_nikkei_options" and row["primary_promotion_allowed"] is True
         for row in source_audit
     )
     assert {row["source_block"] for row in feature_coverage} == {
@@ -2311,7 +2313,7 @@ def _with_panel_signature_fields(row: dict[str, object]) -> dict[str, object]:
     }
 
 
-def test_common_sample_eviction_and_headline_artifacts() -> None:
+def test_common_sample_eviction_and_primary_artifacts() -> None:
     dates = [f"2026-01-{day:02d}" for day in range(1, 21)]
     forecasts = [
         *_synthetic_forecasts(
@@ -2343,15 +2345,15 @@ def test_common_sample_eviction_and_headline_artifacts() -> None:
 
     evictions = cast(list[dict[str, object]], artifacts["model_eviction"])
     fragile = next(row for row in evictions if row["model_name"] == "fragile_model")
-    assert fragile["retained_for_headline"] is False
+    assert fragile["retained_for_primary"] is False
     assert fragile["eviction_reason"] == "coverage_below_model_eviction_threshold"
-    headline_models = {
-        row["model_name"] for row in cast(list[dict[str, object]], artifacts["headline_metrics"])
+    primary_models = {
+        row["model_name"] for row in cast(list[dict[str, object]], artifacts["primary_metrics"])
     }
     per_model_models = {
         row["model_name"] for row in cast(list[dict[str, object]], artifacts["per_model_metrics"])
     }
-    assert "fragile_model" not in headline_models
+    assert "fragile_model" not in primary_models
     assert "fragile_model" in per_model_models
     assert cast(list[dict[str, object]], artifacts["loss_matrix"])
     assert cast(list[dict[str, object]], artifacts["dm_inference"])[0]["alternative"] == (
@@ -2402,7 +2404,7 @@ def test_hln_tmax_mcs_eliminates_worst_model_on_balanced_loss_matrix() -> None:
     assert by_model["worst"]["active_model_set"] is not None
 
 
-def test_headline_dm_and_mcs_gate_on_common_rows_and_tail_events() -> None:
+def test_primary_dm_and_mcs_gate_on_common_rows_and_tail_events() -> None:
     loss_matrix: list[dict[str, object]] = []
     for index in range(130):
         forecast_date = (datetime(2026, 2, 1, tzinfo=UTC) + timedelta(days=index)).date()
@@ -2810,8 +2812,8 @@ def test_result_matrix_latex_export_has_restricted_notes(tmp_path: Path) -> None
                 "comparison_axis": "model_family",
                 "sample_policy": "restricted_tail_model_common_sample",
                 "loss_family": "var_quantile_loss",
-                "claim_scope": "restricted_model_comparison_not_headline",
-                "headline_claim_allowed": False,
+                "claim_scope": "restricted_model_comparison_not_primary",
+                "primary_claim_allowed": False,
                 "target_family": "full_gap_settle_to_open",
                 "information_set": "japan_only",
                 "model_name": paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
@@ -2833,10 +2835,10 @@ def test_result_matrix_latex_export_has_restricted_notes(tmp_path: Path) -> None
 
     assert latex.tables == 2
     assert "restricted result matrix" in latex_text
-    assert "headline ML tail table" in latex_text
+    assert "primary ML table" in latex_text
     assert "block-bootstrap DM" in latex_text
     assert "VaR-only and VaR-ES" in summary_text
-    assert "Restricted samples are not headline evidence" in summary_text
+    assert "Restricted samples are not primary evidence" in summary_text
     assert "conditional predictive ability" not in latex_text
     assert "instrumented conditional predictive ability" not in latex_text
 
@@ -2912,7 +2914,7 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
                     "information_set": "target_history_only",
                     "tail_level": 0.95,
                     "refit_frequency": "daily",
-                    "sample_policy": "headline_common_sample",
+                    "sample_policy": "primary_common_sample",
                     "common_sample_status": "ok",
                     "rows": 20,
                     "var_breach_rate": breach,
@@ -2945,7 +2947,7 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
                 "information_set": information_set,
                 "tail_level": 0.95,
                 "refit_frequency": "monthly",
-                "sample_policy": "headline_common_sample",
+                "sample_policy": "primary_common_sample",
                 "common_sample_status": "ok",
                 "rows": 20,
                 "var_breach_rate": breach,
@@ -3216,7 +3218,7 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
                 "model_name": paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
                 "information_set": "japan_only",
                 "tail_level": 0.95,
-                "sample_policy": "headline_common_sample",
+                "sample_policy": "primary_common_sample",
                 "rows": 20,
                 "var_breach_rate": 0.05,
                 "exceedance_count": 1,
@@ -3229,7 +3231,7 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
                 "model_name": paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
                 "information_set": "japan_only_plus_us_close_core",
                 "tail_level": 0.95,
-                "sample_policy": "headline_common_sample",
+                "sample_policy": "primary_common_sample",
                 "rows": 20,
                 "var_breach_rate": 0.05,
                 "exceedance_count": 1,
@@ -3264,7 +3266,7 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
         ]
     )
     severity_text = reporting_latex._es_severity_to_latex(metrics)
-    assert "headline" in severity_text
+    assert "primary" in severity_text
     assert "LGBM direct quantile" in severity_text
     assert "JP only" in severity_text
     assert "japan\\_only" not in severity_text
@@ -3281,6 +3283,104 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
     assert reporting_latex._range_label(None, 1) == "n/a"
     assert reporting_latex._range_label(5, 5) == "5"
     assert reporting_latex._range_label(5, 7) == "5--7"
+    promoted_spec = reporting_latex.PROMOTED_TAIL_MODEL_SPECS[0]
+    promoted_metric = pl.DataFrame(
+        [
+            {
+                "model_name": promoted_spec["model_name"],
+                "information_set": promoted_spec["information_set"],
+                "tail_side": promoted_spec["tail_side"],
+                "rows": 550,
+                "var_breach_rate": 0.047,
+                "expected_breach_rate": 0.05,
+                "mean_quantile_loss": 0.001,
+                "mean_fz_loss": -4.0,
+                "mean_exceedance_severity": 0.01,
+            }
+        ]
+    )
+    promoted_dm = pl.DataFrame(
+        [
+            {
+                "tail_side": promoted_spec["tail_side"],
+                "information_set": promoted_spec["information_set"],
+                "candidate_entity": promoted_spec["model_name"],
+                "baseline_entity": paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
+                "loss_family": "var_quantile_loss",
+                "mean_loss_diff_candidate_minus_baseline": -0.1,
+                "pvalue_one_sided": 0.04,
+                "reject_10pct": True,
+                "inference_status": "ok_block_bootstrap_dm",
+            },
+            {
+                "tail_side": promoted_spec["tail_side"],
+                "information_set": promoted_spec["information_set"],
+                "candidate_entity": promoted_spec["model_name"],
+                "baseline_entity": paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
+                "loss_family": "var_es_fz_loss",
+                "mean_loss_diff_candidate_minus_baseline": None,
+                "pvalue_one_sided": None,
+                "reject_10pct": False,
+                "inference_status": "unavailable",
+            },
+        ]
+    )
+    promoted_mcs = pl.DataFrame(
+        [
+            {
+                "tail_side": promoted_spec["tail_side"],
+                "information_set": promoted_spec["information_set"],
+                "model_name": promoted_spec["model_name"],
+                "loss_family": "var_quantile_loss",
+                "included_in_mcs": True,
+                "mcs_status": "ok",
+            },
+            {
+                "tail_side": promoted_spec["tail_side"],
+                "information_set": promoted_spec["information_set"],
+                "model_name": promoted_spec["model_name"],
+                "loss_family": "var_es_fz_loss",
+                "included_in_mcs": False,
+                "mcs_status": "ok",
+            },
+        ]
+    )
+    promoted_rows = reporting_latex._promoted_tail_model_rows(
+        promoted_metric, dm=promoted_dm, mcs=promoted_mcs
+    )
+    assert promoted_rows[0]["promotion_status"] == "pass"
+    assert promoted_rows[0]["dm_quantile"]["reject_10pct"] is True
+    assert promoted_rows[0]["mcs_quantile"]["included_in_mcs"] is True
+    assert (
+        reporting_latex._promoted_tail_model_rows(pl.DataFrame())[0]["promotion_status"]
+        == "missing_metric_row"
+    )
+    assert reporting_latex._promoted_dm_row(None, promoted_spec, "var_quantile_loss") is None
+    assert reporting_latex._promoted_dm_row(pl.DataFrame({"x": [1]}), promoted_spec, "x") is None
+    assert reporting_latex._promoted_mcs_row(None, promoted_spec, "var_quantile_loss") is None
+    assert reporting_latex._promoted_mcs_row(pl.DataFrame({"x": [1]}), promoted_spec, "x") is None
+    assert "rej10" in reporting_latex._dm_cell(promoted_rows[0]["dm_quantile"])
+    assert reporting_latex._dm_cell(promoted_rows[0]["dm_fz"]) == "unavailable"
+    assert reporting_latex._dm_cell(None) == "n/a"
+    assert (
+        reporting_latex._mcs_pair_cell(promoted_rows[0]["mcs_quantile"], promoted_rows[0]["mcs_fz"])
+        == "in/out"
+    )
+    assert reporting_latex._mcs_cell({"mcs_status": "skipped"}) == "skipped"
+    assert reporting_latex._mcs_cell(None) == "n/a"
+    assert (
+        reporting_latex._severity_claim_scope(
+            {
+                "suite": "ml_tail_per_model",
+                "model_name": paper_module.ML_TAIL_LOCATION_SCALE_MODEL,
+            }
+        )
+        == "restricted_diagnostic"
+    )
+    assert reporting_latex._severity_claim_scope({"sample_policy": "primary_common_sample"}) == (
+        "primary"
+    )
+    assert reporting_latex._severity_claim_scope({}) == "diagnostic"
 
     matrix = pl.DataFrame(
         [
@@ -3364,7 +3464,8 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
     severity_export = (latex.latex_dir / "tailrisk_es_severity_table.tex").read_text(
         encoding="utf-8"
     )
-    assert latex.tables == 5
+    assert latex.tables == 6
+    assert (latex.latex_dir / "ml_tail_promoted_tail_models_table.tex").exists()
     assert (latex.latex_dir / "appendix_lgbm_all_models_table.tex").exists()
     assert "ml\\_tail\\_per\\_model" in severity_export
 

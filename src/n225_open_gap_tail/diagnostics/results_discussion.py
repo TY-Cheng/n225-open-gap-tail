@@ -69,7 +69,7 @@ def generate_results_discussion(
         )
     }
 
-### Benchmark floor and advanced benchmarks
+### Baseline benchmarks and advanced econometric benchmarks
 
 {
         _results_benchmark_discussion(
@@ -79,10 +79,10 @@ def generate_results_discussion(
         )
     }
 
-### Left/right ML-tail nested information sets
+### Primary ML specifications across nested information sets
 
 {
-        _results_ml_tail_headline_discussion(
+        _results_ml_tail_primary_discussion(
             ml_tail_status=ml_tail_status,
             ml_tail_metrics=ml_tail_metrics,
         )
@@ -217,7 +217,7 @@ def _results_benchmark_discussion(
 ) -> str:
     if benchmark_metrics.is_empty() and benchmark_forecasts.is_empty():
         return _analysis_not_available("Benchmark metrics and forecasts")
-    headline_model_count = _unique_count(benchmark_metrics, "model_name")
+    baseline_model_count = _unique_count(benchmark_metrics, "model_name")
     metric_rows = int(benchmark_metrics.height)
     tail_side_count = _unique_count(benchmark_metrics, "tail_side")
     forecast_rows = int(
@@ -233,16 +233,16 @@ def _results_benchmark_discussion(
         _optional_float(benchmark_status.get("benchmark_advanced_forecast_rows")) or advanced.height
     )
     advanced_sentence = (
-        f"Advanced benchmark rows are implemented for `{advanced_model_count}` model families "
+        f"Advanced econometric benchmark rows are implemented for `{advanced_model_count}` model families "
         f"and contribute `{advanced_rows}` nonblocking forecast rows; these rows are claim-gated "
         "diagnostics unless a manuscript table explicitly promotes them through the same sample and inference review."
         if advanced_rows > 0
-        else "The advanced benchmark registry is nonblocking, but this run does not provide advanced forecast rows for interpretation."
+        else "The advanced econometric benchmark registry is nonblocking, but this run does not provide advanced forecast rows for interpretation."
     )
     calibration_sentence = _benchmark_calibration_note(benchmark_metrics)
     lines = [
-        f"- `benchmark_metrics.parquet` reports `{metric_rows}` common-sample rows across `{headline_model_count}` benchmark model families and `{tail_side_count}` tail side(s), while benchmark forecasts contain `{forecast_rows}` model-date rows.",
-        "- Benchmark-floor models are external target-history and econometric baselines; this section does not rank them.",
+        f"- `benchmark_metrics.parquet` reports `{metric_rows}` common-sample rows across `{baseline_model_count}` baseline benchmark model families and `{tail_side_count}` tail side(s), while benchmark forecasts contain `{forecast_rows}` model-date rows.",
+        "- Baseline benchmark models are external target-history and econometric references; this section does not rank them.",
         f"- {advanced_sentence}",
     ]
     if calibration_sentence:
@@ -250,7 +250,7 @@ def _results_benchmark_discussion(
     return "\n".join(lines)
 
 
-def _results_ml_tail_headline_discussion(
+def _results_ml_tail_primary_discussion(
     *,
     ml_tail_status: Mapping[str, object],
     ml_tail_metrics: pl.DataFrame,
@@ -265,9 +265,9 @@ def _results_ml_tail_headline_discussion(
     coverage_warning = _ml_tail_coverage_warning(ml_tail_metrics)
     saturation_note = _information_set_saturation_note(ml_tail_metrics)
     lines = [
-        "- `ml_tail_metrics.parquet` defines the headline ML-tail comparison across nested information sets for this run.",
-        f"- The headline artifact contains `{information_sets}` information sets, `{tail_levels}` tail level(s), and `{tail_side_count}` tail side(s); the retained headline model rows are {models}.",
-        f"- The implemented ML-tail registry is {implemented}, but the headline nested-information-set comparison should be read only from `ml_tail_metrics.parquet`.",
+        "- `ml_tail_metrics.parquet` defines the primary ML specification comparison across nested information sets for this run.",
+        f"- The primary ML artifact contains `{information_sets}` information sets, `{tail_levels}` tail level(s), and `{tail_side_count}` tail side(s); the retained primary ML rows are {models}.",
+        f"- The implemented ML-tail registry is {implemented}, but the primary nested-information-set comparison should be read only from `ml_tail_metrics.parquet`.",
         "- The nested information sets report downside-risk and upside-risk surfaces separately. The registered artifacts show different left/right patterns, and the generator does not assume that the two sides share the same economic mechanism.",
     ]
     if coverage_warning:
@@ -296,7 +296,7 @@ def _results_restricted_model_family_discussion(
     lines = [
         f"- `ml_tail_result_matrix.parquet` contains restricted common-sample comparisons for `{model_count}` LightGBM tail-model families.",
         f"- The restricted common-N range is `{common_n}` and the joint-exception range is `{joint_exceptions}`.",
-        f"- Recorded claim scopes are {claim_scope}; these rows are restricted evidence and cannot replace the headline nested-information-set comparison.",
+        f"- Recorded claim scopes are {claim_scope}; these rows are restricted evidence and cannot replace the primary ML nested-information-set comparison.",
     ]
     if short_sample_sentence:
         lines.append(f"- {short_sample_sentence}")
@@ -491,7 +491,7 @@ def _coverage_test_discussion_sentence(frame: pl.DataFrame) -> str:
     required = {"var_breach_rate", "expected_breach_rate"}
     if frame.is_empty() or not required.issubset(frame.columns):
         return (
-            "Coverage review is descriptive because headline coverage fields are not available; "
+            "Coverage review is descriptive because primary ML coverage fields are not available; "
             "loss differences alone must not be read as improvement."
         )
     total = 0
@@ -515,19 +515,21 @@ def _coverage_test_discussion_sentence(frame: pl.DataFrame) -> str:
             "loss differences alone must not be read as improvement."
         )
     return (
-        f"Coverage review flags `{wide}/{total}` headline rows with breach rates more than 2.5 percentage points from nominal coverage; "
+        f"Coverage review flags `{wide}/{total}` primary ML rows with breach rates more than 2.5 percentage points from nominal coverage; "
         f"Kupiec p-values fall below 0.05 in `{kupiec_flags}/{total}` rows and Christoffersen p-values fall below 0.05 in `{christoffersen_flags}/{total}` rows where reported."
     )
 
 
 def _eviction_discussion_sentence(eviction: pl.DataFrame) -> str:
     if eviction.is_empty():
-        return "Model-eviction artifacts are not available; headline inclusion must be checked from the metric tables."
-    if "retained_for_headline" not in eviction.columns:
-        return "Model-eviction artifacts are present but do not expose retained-for-headline flags."
-    evicted = int(eviction.filter(pl.col("retained_for_headline") == False).height)  # noqa: E712
-    retained = int(eviction.filter(pl.col("retained_for_headline") == True).height)  # noqa: E712
-    return f"Model-eviction artifacts record `{retained}` retained rows and `{evicted}` non-retained rows under the headline sample policy."
+        return "Model-eviction artifacts are not available; primary ML inclusion must be checked from the metric tables."
+    if "retained_for_primary" not in eviction.columns:
+        return (
+            "Model-eviction artifacts are present but do not expose retained-for-primary-ML flags."
+        )
+    evicted = int(eviction.filter(pl.col("retained_for_primary") == False).height)  # noqa: E712
+    retained = int(eviction.filter(pl.col("retained_for_primary") == True).height)  # noqa: E712
+    return f"Model-eviction artifacts record `{retained}` retained rows and `{evicted}` non-retained rows under the primary ML sample policy."
 
 
 def _tail_event_power_sentence(
@@ -599,9 +601,9 @@ def _result_matrix_inference_sentence(
     if not parts:
         return None
     return (
-        "Result-matrix inference is recorded separately from the headline suite-level DM/MCS: "
+        "Result-matrix inference is recorded separately from the primary suite-level DM/MCS: "
         + "; ".join(parts)
-        + ". These entries are restricted common-sample diagnostics, not headline model-family rankings."
+        + ". These entries are restricted common-sample diagnostics, not primary model-family rankings."
     )
 
 
@@ -771,7 +773,7 @@ def _optional_float(value: object) -> float | None:
 
 
 def _benchmark_calibration_note(benchmark_metrics: pl.DataFrame) -> str | None:
-    """Note that benchmark floor models tend to be better calibrated than ML-tail models."""
+    """Note that baseline benchmark models tend to be better calibrated than ML-tail models."""
     if benchmark_metrics.is_empty() or "var_breach_rate" not in benchmark_metrics.columns:
         return None
     rates = [
@@ -786,7 +788,7 @@ def _benchmark_calibration_note(benchmark_metrics: pl.DataFrame) -> str | None:
     deviation = abs(median_breach - expected)
     if deviation < 0.025:
         return (
-            f"Benchmark-floor breach rates have a median of `{_fmt_float(median_breach)}`, "
+            f"Baseline benchmark breach rates have a median of `{_fmt_float(median_breach)}`, "
             "within 2.5 percentage points of the nominal level, indicating reasonable coverage calibration "
             "relative to the ML-tail models whose breach rates are reported in the nested-information-set section."
         )
@@ -794,7 +796,7 @@ def _benchmark_calibration_note(benchmark_metrics: pl.DataFrame) -> str | None:
 
 
 def _ml_tail_coverage_warning(ml_tail_metrics: pl.DataFrame) -> str | None:
-    """Flag when all headline ML-tail rows systematically over-exceed nominal coverage."""
+    """Flag when all primary ML rows systematically over-exceed nominal coverage."""
     if ml_tail_metrics.is_empty() or "var_breach_rate" not in ml_tail_metrics.columns:
         return None
     total = 0
@@ -814,7 +816,7 @@ def _ml_tail_coverage_warning(ml_tail_metrics: pl.DataFrame) -> str | None:
     min_breach = _fmt_float(min(breach_values))
     max_breach = _fmt_float(max(breach_values))
     return (
-        f"Coverage warning: all `{total}` headline rows exhibit VaR breach rates "
+        f"Coverage warning: all `{total}` primary ML rows exhibit VaR breach rates "
         f"(`{min_breach}` to `{max_breach}`) that exceed the nominal level by more than 2.5 percentage points. "
         "Quantile-loss and FZ-loss differences across the nested information sets must be interpreted "
         "in this context; lower loss scores may partly reflect less conservative VaR estimates rather than "

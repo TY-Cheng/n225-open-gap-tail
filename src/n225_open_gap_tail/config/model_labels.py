@@ -2,13 +2,13 @@ from __future__ import annotations
 
 _MODEL_DISPLAY_LABELS = {
     "lightgbm_direct_quantile": "LGBM direct quantile",
-    "lightgbm_location_scale": "LGBM location-scale",
     "lightgbm_location_scale_empirical": "LGBM location-scale empirical",
-    "lightgbm_standardized_loss_pot_gpd": "LGBM POT-GPD",
     "lightgbm_standardized_loss_pot_gpd_plain_mle": "LGBM POT-GPD plain MLE",
     "lightgbm_standardized_loss_pot_gpd_unibm": ("LGBM POT-GPD UniBM block-maxima shape"),
     "lightgbm_median_mad_pot_gpd_plain_mle": "LGBM median/MAD POT-GPD plain MLE",
+    "lightgbm_median_mad_pot_gpd_unibm": "LGBM median/MAD POT-GPD UniBM block-maxima shape",
     "lightgbm_median_iqr_pot_gpd_plain_mle": "LGBM median/IQR POT-GPD plain MLE",
+    "lightgbm_median_iqr_pot_gpd_unibm": ("LGBM median/IQR POT-GPD UniBM block-maxima shape"),
 }
 
 _STATUS_DISPLAY_LABELS = {

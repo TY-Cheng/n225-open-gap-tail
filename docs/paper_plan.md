@@ -26,7 +26,7 @@ appendix material.
 - The same gap is evaluated as two loss surfaces:
     - `left_tail`: downside opening-gap risk, `realized_loss_t = -gap_t`;
     - `right_tail`: upside opening-gap risk, `realized_loss_t = gap_t`.
-- The registered headline tail level is 95% VaR, with a nominal 5% exception rate.
+- The registered primary tail level is 95% VaR, with a nominal 5% exception rate.
 - The empirical question is predictive and out-of-sample. It is not a structural causal design.
 
 ### 1.2 Market Context
@@ -76,7 +76,7 @@ appendix material.
 - Current clean evaluation window: `2018-06-20` to `2026-05-01`.
 - Current forecast-sample size: `1661` trading-day observations.
 - The current clean run is a research-candidate evidence set, not a final manuscript freeze.
-- The current headline level is 95% VaR/ES only.
+- The current primary level is 95% VaR/ES only.
 - A 97.5% level is deferred until common-sample size, exception counts, and EVT diagnostics are sufficient for a separate specification.
 
 ### 2.2 Target Contract
@@ -209,20 +209,20 @@ appendix material.
 
   `realized_loss_t > var_forecast_t`.
 
-### 3.2 Benchmark Floor
+### 3.2 Baseline Benchmarks
 
-- The benchmark floor is target-history and econometric:
+- The baseline benchmarks are target-history and econometric:
     - historical empirical quantile;
     - rolling empirical quantile;
     - EWMA or volatility-scaled quantile;
     - GARCH with Student-t innovations;
     - GJR-GARCH with Student-t innovations;
     - GJR-GARCH-EVT in the McNeil-Frey filtered-EVT tradition.
-- These models establish the external VaR/ES floor before adding high-dimensional cross-market predictors.
+- These models establish the external VaR/ES reference before adding high-dimensional cross-market predictors.
 
 ### 3.3 Advanced Econometric Benchmarks
 
-- Advanced benchmarks are implemented to widen the peer comparison:
+- Advanced econometric benchmarks are implemented to widen the peer comparison:
     - CAViaR;
     - CARE and expectile-based tail models;
     - Generalized Autoregressive Score (GAS) models;
@@ -259,11 +259,11 @@ appendix material.
     - `lightgbm_standardized_loss_pot_gpd_unibm`.
 - Plain MLE is the registered fixed-location POT-GPD estimator and remains the standard comparator.
 - The UniBM route keeps the same LightGBM mean/log-scale body filter and POT threshold, but replaces the MLE shape estimate with a UniBM block-maxima-derived estimate of `xi`; the GPD scale is then refit with `xi` fixed.
-- This is a shape-estimator ablation, not a new headline model.
+- This is a shape-estimator diagnostic variant, not a new primary ML specification.
 
 ### 3.7 LightGBM Robust Body Filters
 
-- New research-candidate LightGBM+EVT models are implemented at the 95% level only and remain outside the headline table until post-rerun review:
+- New research-candidate LightGBM+EVT models are implemented at the 95% level only and remain outside the primary ML table until post-rerun review:
     - `lightgbm_median_mad_pot_gpd_plain_mle`;
     - `lightgbm_median_iqr_pot_gpd_plain_mle`.
 - Median/MAD route:
@@ -312,7 +312,7 @@ appendix material.
     - Fissler-Ziegel joint loss for valid VaR-ES pairs;
     - ES exceedance severity, interpreted conditional on a VaR exception.
 - Scoring-function diagnostics:
-    - Murphy diagrams for benchmark floors and ML-tail information sets.
+    - Murphy diagrams for baseline benchmarks and ML-tail information sets.
 - Model comparison:
     - block-bootstrap Diebold-Mariano tests on paired loss differentials;
     - Hansen-Lunde-Nason MCS where sample and exception-count gates permit;
@@ -375,7 +375,7 @@ flowchart LR
     end
 
     subgraph Models["Forecast models"]
-        BF["Benchmark floor"]
+        BF["Baseline benchmarks"]
         AB["Advanced econometric benchmarks"]
         LQ["LightGBM direct quantile"]
         LS["LightGBM body filters"]
@@ -423,7 +423,7 @@ flowchart LR
     - target construction;
     - zero hard look-ahead-bias failures;
     - warnings and FRED vintage limitation.
-- Benchmark floor and advanced benchmark table:
+- Baseline benchmark and advanced econometric benchmark table:
     - breach rate;
     - exception count;
     - quantile loss;
@@ -461,7 +461,7 @@ flowchart LR
 - Coverage breach-rate plots:
     - left and right tails shown separately;
     - nominal 5% reference line;
-    - benchmark floor, advanced benchmarks, and ML-tail families shown together where readable.
+    - baseline benchmarks, advanced econometric benchmarks, and ML-tail families shown together where readable.
 - Murphy diagrams:
     - benchmark Murphy diagnostics;
     - ML-tail nested information-set Murphy diagnostics;
@@ -472,6 +472,10 @@ flowchart LR
     - mean excess;
     - Hill;
     - threshold stability.
+- Side-specific ML-tail promotion table:
+    - left tail: median/IQR POT-GPD after N/coverage gate and restricted DM/MCS review;
+    - right tail: location-scale empirical after N/coverage gate and restricted DM/MCS review;
+    - interpret as promoted tail-side rows, not as a universal model-family ranking.
 
 ### 5.3 Appendix Figures And Tables
 
@@ -509,7 +513,7 @@ flowchart LR
     - describe evaluation metrics and inference.
 - Results:
     - begin with sample, timing, and target-tail diagnostics;
-    - report benchmark floor calibration;
+    - report baseline benchmark calibration;
     - report ML-tail nested information sets separately for left and right tails;
     - report restricted model-family comparisons;
     - report EVT, DST, ES severity, stress-window, and trigger diagnostics as supporting evidence.
@@ -531,7 +535,7 @@ flowchart LR
 - No live deployment claim from historical OHLC data.
 - No `residual_usclosemark_to_open` claim without licensed timestamped intraday Nikkei futures marks.
 - No claim that LightGBM-EVT is a new ML algorithm.
-- No options-risk headline claim unless historical options entitlement, timestamp safety, and liquidity gates pass.
+- No options-risk primary claim unless historical options entitlement, timestamp safety, and liquidity gates pass.
 - No model-family ranking claim from restricted short samples.
 - No extreme-tail claim without sufficient exceptions and rolling out-of-sample diagnostics.
 - Risk-trigger diagnostics are monitoring diagnostics; they are not VaR

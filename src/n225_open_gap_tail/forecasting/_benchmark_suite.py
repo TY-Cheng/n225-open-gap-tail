@@ -6,7 +6,7 @@ from n225_open_gap_tail.config.runtime import (
     BENCHMARK_ADVANCED_MODEL_NAMES,
     BENCHMARK_ADVANCED_REFIT_FREQUENCY,
     BENCHMARK_ANCHOR_MODEL,
-    BENCHMARK_FLOOR_MODEL_NAMES,
+    BENCHMARK_BASELINE_MODEL_NAMES,
     cast,
     CLAIMS_LEVEL,
     delayed,
@@ -61,12 +61,12 @@ def evaluate_benchmark_suite(
     metrics_root = run_dir / "metrics"
     forecast_root.mkdir(parents=True, exist_ok=True)
     metrics_root.mkdir(parents=True, exist_ok=True)
-    floor_jobs: list[dict[str, object]] = []
+    baseline_jobs: list[dict[str, object]] = []
     active_tail_sides = tail_side_values(tail_side)
     for active_tail_side in active_tail_sides:
         for tail_level in TAIL_LEVELS:
-            for model_name in BENCHMARK_FLOOR_MODEL_NAMES:
-                floor_jobs.append(
+            for model_name in BENCHMARK_BASELINE_MODEL_NAMES:
+                baseline_jobs.append(
                     {
                         "panel_path": str(panel_path),
                         "run_dir": str(run_dir),
@@ -78,7 +78,7 @@ def evaluate_benchmark_suite(
                             tail_level,
                             tail_side=active_tail_side,
                         ),
-                        "shard_kind": "floor",
+                        "shard_kind": "baseline",
                     }
                 )
     advanced_jobs: list[dict[str, object]] = []
@@ -102,12 +102,12 @@ def evaluate_benchmark_suite(
                             "shard_kind": "advanced",
                         }
                     )
-    jobs = [*floor_jobs, *advanced_jobs]
+    jobs = [*baseline_jobs, *advanced_jobs]
     for payload in jobs:
         validate_worker_payload(payload)
     n_jobs = _bounded_workers(workers)
     _evaluation_log(
-        f"Benchmark shards queued={len(jobs)} floor={len(floor_jobs)} "
+        f"Benchmark shards queued={len(jobs)} baseline={len(baseline_jobs)} "
         f"advanced={len(advanced_jobs)} n_jobs={n_jobs}"
     )
     if n_jobs == 1:
@@ -116,13 +116,13 @@ def evaluate_benchmark_suite(
         outputs = Parallel(n_jobs=n_jobs, backend=PIPELINE_CONFIG.model_policy.joblib_backend)(
             delayed(_dispatch_benchmark_shard)(payload) for payload in jobs
         )
-    floor_outputs = [output for output in outputs if output.get("shard_kind") == "floor"]
+    baseline_outputs = [output for output in outputs if output.get("shard_kind") == "baseline"]
     advanced_outputs = [output for output in outputs if output.get("shard_kind") == "advanced"]
     forecasts = [row for output in outputs for row in output["forecasts"]]
     diagnostics = [row for output in outputs for row in output["diagnostics"]]
     failures = [row for output in outputs for row in output["failures"]]
-    floor_forecasts = [row for output in floor_outputs for row in output["forecasts"]]
-    floor_failures = [row for output in floor_outputs for row in output["failures"]]
+    baseline_forecasts = [row for output in baseline_outputs for row in output["forecasts"]]
+    baseline_failures = [row for output in baseline_outputs for row in output["failures"]]
     advanced_forecasts = [row for output in advanced_outputs for row in output["forecasts"]]
     advanced_diagnostics = [row for output in advanced_outputs for row in output["diagnostics"]]
     advanced_failures = [row for output in advanced_outputs for row in output["failures"]]
@@ -143,17 +143,17 @@ def evaluate_benchmark_suite(
         anchor_model=BENCHMARK_ANCHOR_MODEL,
         anchor_information_set="target_history_only",
     )
-    floor_artifacts = build_common_sample_artifacts(
-        floor_forecasts,
-        suite="benchmark_floor",
+    baseline_artifacts = build_common_sample_artifacts(
+        baseline_forecasts,
+        suite="benchmark_baseline",
         anchor_model=BENCHMARK_ANCHOR_MODEL,
         anchor_information_set="target_history_only",
     )
-    metrics = cast(list[dict[str, object]], artifacts["headline_metrics"])
+    metrics = cast(list[dict[str, object]], artifacts["primary_metrics"])
     _write_parquet(metrics_root / "benchmark_metrics.parquet", metrics)
     _write_parquet(
-        metrics_root / "benchmark_floor_metrics.parquet",
-        cast(list[dict[str, object]], floor_artifacts["headline_metrics"]),
+        metrics_root / "benchmark_baseline_metrics.parquet",
+        cast(list[dict[str, object]], baseline_artifacts["primary_metrics"]),
     )
     _write_parquet(
         metrics_root / "benchmark_metrics_per_model.parquet",
@@ -183,9 +183,9 @@ def evaluate_benchmark_suite(
         metrics_root / "benchmark_stress_windows.parquet",
         cast(list[dict[str, object]], artifacts["stress_windows"]),
     )
-    _evaluation_log(f"wrote headline metrics rows={len(metrics)}")
+    _evaluation_log(f"wrote primary metrics rows={len(metrics)}")
     advanced_status = (
-        "completed_nonblocking" if include_advanced else "skipped_benchmark_floor_suite"
+        "completed_nonblocking" if include_advanced else "skipped_benchmark_baseline_suite"
     )
     _write_json(
         metrics_root / "benchmark_status.json",
@@ -194,23 +194,23 @@ def evaluate_benchmark_suite(
             "claim_level": CLAIMS_LEVEL,
             "config_hash": PIPELINE_CONFIG.config_hash(),
             "suite": "benchmark",
-            "benchmark_floor_status": "completed",
+            "benchmark_baseline_status": "completed",
             "benchmark_advanced_status": advanced_status,
-            "benchmark_floor_model_count": len(BENCHMARK_FLOOR_MODEL_NAMES),
+            "benchmark_baseline_model_count": len(BENCHMARK_BASELINE_MODEL_NAMES),
             "benchmark_advanced_model_count": len(BENCHMARK_ADVANCED_MODEL_NAMES)
             if include_advanced
             else 0,
             "tail_sides": list(active_tail_sides),
             "forecast_rows": len(forecasts),
-            "benchmark_floor_forecast_rows": len(floor_forecasts),
+            "benchmark_baseline_forecast_rows": len(baseline_forecasts),
             "benchmark_advanced_forecast_rows": len(advanced_forecasts),
             "benchmark_advanced_diagnostic_rows": len(advanced_diagnostics),
             "benchmark_advanced_unavailable_diagnostic_rows": sum(
                 1 for row in advanced_diagnostics if row.get("fit_status") != "ok"
             ),
             "metric_rows": len(metrics),
-            "benchmark_floor_metric_rows": len(
-                cast(list[dict[str, object]], floor_artifacts["headline_metrics"])
+            "benchmark_baseline_metric_rows": len(
+                cast(list[dict[str, object]], baseline_artifacts["primary_metrics"])
             ),
             "per_model_metric_rows": len(
                 cast(list[dict[str, object]], artifacts["per_model_metrics"])
@@ -218,7 +218,7 @@ def evaluate_benchmark_suite(
             "loss_matrix_rows": len(cast(list[dict[str, object]], artifacts["loss_matrix"])),
             "common_sample_status": artifacts["common_sample_status"],
             "failures": len(failures),
-            "benchmark_floor_failures": len(floor_failures),
+            "benchmark_baseline_failures": len(baseline_failures),
             "benchmark_advanced_failures": len(advanced_failures),
         },
     )
@@ -226,7 +226,7 @@ def evaluate_benchmark_suite(
         run_dir,
         {
             "benchmark_eval_status": "completed",
-            "benchmark_floor_status": "completed",
+            "benchmark_baseline_status": "completed",
             "benchmark_advanced_status": advanced_status,
             "benchmark_forecast_rows": len(forecasts),
             "benchmark_tail_sides": list(active_tail_sides),
@@ -245,7 +245,7 @@ def evaluate_benchmark_suite(
     )
 
 
-def evaluate_benchmark_floor_suite(
+def evaluate_benchmark_baseline_suite(
     *,
     run_dir: Path,
     workers: int = 1,
@@ -262,12 +262,12 @@ def evaluate_benchmark_floor_suite(
 
 
 def _dispatch_benchmark_shard(payload: dict[str, object]) -> dict[str, object]:
-    shard_kind = str(payload.get("shard_kind") or "floor")
+    shard_kind = str(payload.get("shard_kind") or "baseline")
     if shard_kind == "advanced":
         output = _evaluate_benchmark_advanced_shard(payload)
     else:
         output = _evaluate_benchmark_shard(payload)
-        shard_kind = "floor"
+        shard_kind = "baseline"
     return {
         "shard_kind": shard_kind,
         "forecasts": output["forecasts"],

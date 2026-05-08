@@ -790,7 +790,7 @@ def _fetch_massive_predictors(
 
 def _massive_daily_tickers_for_fetch(settings: Settings) -> tuple[str, ...]:
     extra = (
-        _massive_options_headline_underlyings(settings)
+        _massive_options_primary_underlyings(settings)
         if (
             settings.massive_options_historical_enabled
             and settings.massive_options_flat_files_enabled
@@ -800,7 +800,7 @@ def _massive_daily_tickers_for_fetch(settings: Settings) -> tuple[str, ...]:
     return tuple(dict.fromkeys((*FETCH_MASSIVE_TICKERS_FOR_PIPELINE, *extra)))
 
 
-def _massive_options_headline_underlyings(settings: Settings) -> tuple[str, ...]:
+def _massive_options_primary_underlyings(settings: Settings) -> tuple[str, ...]:
     configured = settings.massive_options_underlying_list()
     if configured:
         return tuple(dict.fromkeys(underlying.upper() for underlying in configured))

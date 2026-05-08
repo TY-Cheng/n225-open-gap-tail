@@ -14,6 +14,7 @@ import pytest
 import n225_open_gap_tail.diagnostics.model_comparison as model_comparison_module
 import n225_open_gap_tail.diagnostics.results_discussion as results_discussion_module
 import n225_open_gap_tail.diagnostics.snapshot as snapshot_module
+import n225_open_gap_tail.diagnostics.snapshot_formatting as snapshot_formatting_module
 import n225_open_gap_tail.diagnostics.snapshot_gallery as snapshot_gallery
 import n225_open_gap_tail.diagnostics.target_distribution as target_distribution_module
 from n225_open_gap_tail.config import Settings
@@ -430,10 +431,10 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
                 "forecast_rows": 1,
                 "metric_rows": 1,
                 "failures": 0,
-                "benchmark_floor_status": "completed",
-                "benchmark_floor_forecast_rows": 1,
-                "benchmark_floor_metric_rows": 1,
-                "benchmark_floor_failures": 0,
+                "benchmark_baseline_status": "completed",
+                "benchmark_baseline_forecast_rows": 1,
+                "benchmark_baseline_metric_rows": 1,
+                "benchmark_baseline_failures": 0,
                 "benchmark_advanced_status": "completed_nonblocking",
                 "benchmark_advanced_forecast_rows": 0,
                 "benchmark_advanced_diagnostic_rows": 2,
@@ -479,7 +480,7 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
                         "format": "tex",
                         "source_artifacts": ["metrics/ml_tail_metrics.parquet"],
                         "tail_side": None,
-                        "caption": "ML-tail headline nested-information-set table.",
+                        "caption": "Primary ML nested-information-set table.",
                         "claim_scope": "ml_tail_nested_information_set_table",
                     }
                 ],
@@ -712,7 +713,7 @@ def _assert_discussion_qa_headings_in_order(rendered: str) -> None:
     assert "conditional loss-difference diagnostic" in rendered
     assert "The final VaR/ES level is 95%" in rendered
     assert "it is not the reported VaR level" in rendered
-    assert "advanced benchmark layer is registered as nonblocking" in rendered
+    assert "advanced econometric benchmark layer is registered as nonblocking" in rendered
     assert "should be read as unavailable diagnostics" in rendered
     assert "Smoke-only artifact" not in rendered
     assert ("Giacomini" + "-White") not in rendered
@@ -781,12 +782,12 @@ def test_results_discussion_private_helpers_cover_fallbacks(tmp_path: Path) -> N
     no_advanced = results_discussion_module._results_benchmark_discussion(
         benchmark_status={"forecast_rows": 2},
         benchmark_metrics=pl.DataFrame([{"model_name": "hist"}]),
-        benchmark_forecasts=pl.DataFrame([{"benchmark_tier": "floor", "model_name": "hist"}]),
+        benchmark_forecasts=pl.DataFrame([{"benchmark_tier": "baseline", "model_name": "hist"}]),
     )
     assert "does not provide advanced forecast rows" in no_advanced
     assert (
         "not yet been performed"
-        in results_discussion_module._results_ml_tail_headline_discussion(
+        in results_discussion_module._results_ml_tail_primary_discussion(
             ml_tail_status={},
             ml_tail_metrics=pl.DataFrame(),
         )
@@ -823,8 +824,8 @@ def test_results_discussion_private_helpers_cover_fallbacks(tmp_path: Path) -> N
     assert "1` retained" in results_discussion_module._eviction_discussion_sentence(
         pl.DataFrame(
             [
-                {"retained_for_headline": True},
-                {"retained_for_headline": False},
+                {"retained_for_primary": True},
+                {"retained_for_primary": False},
             ]
         )
     )
@@ -940,9 +941,83 @@ def test_results_discussion_private_helpers_cover_fallbacks(tmp_path: Path) -> N
 
 
 def test_snapshot_private_helpers_cover_defensive_edges() -> None:
-    assert snapshot_module._optional_float(True) is None
-    assert snapshot_module._optional_float("1.5") == 1.5
-    assert snapshot_module._markdown_cell("a|b\nc") == "a\\|b c"
+    assert snapshot_formatting_module._optional_float(True) is None
+    assert snapshot_formatting_module._optional_float("1.5") == 1.5
+    assert snapshot_formatting_module._markdown_cell("a|b\nc") == "a\\|b c"
+    assert snapshot_formatting_module._join_list(["a", "b"]) == "`a`, `b`"
+    assert snapshot_formatting_module._join_list("x") == "`x`"
+    assert "LGBM direct quantile" in snapshot_formatting_module._join_model_list(
+        ["lightgbm_direct_quantile"]
+    )
+    assert snapshot_formatting_module._demote_markdown_headings("# A\nbody\n## B", levels=2) == (
+        "### A\nbody\n#### B"
+    )
+    assert snapshot_formatting_module._panel_bounds(pl.DataFrame()) == "`missing`"
+    assert (
+        snapshot_formatting_module._panel_bounds(
+            pl.DataFrame({"forecast_date": ["2026-01-02", "2026-01-01"]})
+        )
+        == "`2026-01-01 to 2026-01-02`"
+    )
+    assert snapshot_formatting_module._forecast_sample_bounds(pl.DataFrame()) == "`missing`"
+    assert (
+        snapshot_formatting_module._forecast_sample_bounds(
+            pl.DataFrame({"forecast_date": ["2026-01-01"], "forecast_sample": [False]})
+        )
+        == "`empty`"
+    )
+    assert "2 rows" in snapshot_formatting_module._forecast_sample_bounds(
+        pl.DataFrame(
+            {
+                "forecast_date": ["2026-01-01", "2026-01-02", "2026-01-03"],
+                "forecast_sample": [True, False, True],
+            }
+        )
+    )
+    assert (
+        snapshot_formatting_module._bool_sum(pl.DataFrame({"flag": [True, None, False]}), "flag")
+        == 1
+    )
+    assert snapshot_formatting_module._bool_sum(pl.DataFrame(), "flag") == 0
+    assert (
+        snapshot_formatting_module._count_value(
+            pl.DataFrame({"status": ["ok", "fail"]}), "status", "ok"
+        )
+        == 1
+    )
+    assert snapshot_formatting_module._count_value(pl.DataFrame(), "status", "ok") == 0
+    assert "missing" in snapshot_formatting_module._counts_table(pl.DataFrame(), "status", "Status")
+    assert "ok" in snapshot_formatting_module._counts_table(
+        pl.DataFrame({"status": ["ok", "ok", "warn"]}), "status", "Status"
+    )
+    assert "missing" in snapshot_module._feature_coverage_table(pl.DataFrame())
+    feature_table = snapshot_module._feature_coverage_table(
+        pl.DataFrame(
+            {
+                "source_family": ["massive", "massive"],
+                "source_block": ["us_close_core", "us_close_core"],
+                "missingness_rate": [0.0, 0.1],
+            }
+        )
+    )
+    assert "massive" in feature_table
+    assert "5.000%" in feature_table
+    assert "missing" in snapshot_module._metrics_table(pl.DataFrame())
+    metric_frame = pl.DataFrame(
+        [
+            {
+                "model_name": "lightgbm_direct_quantile",
+                "information_set": "japan_only",
+                "tail_side": "left_tail",
+                "rows": 10,
+                "var_breach_rate": 0.05,
+                "exceedance_count": 1,
+                "mean_quantile_loss": 0.001,
+                "mean_fz_loss": -3.0,
+            }
+        ]
+    )
+    assert "Tail side" in snapshot_module._metrics_table(metric_frame)
     all_model_table = model_comparison_module._all_model_comparison_table(
         benchmark_metrics=pl.DataFrame(
             [
@@ -976,8 +1051,87 @@ def test_snapshot_private_helpers_cover_defensive_edges() -> None:
             ]
         ),
     )
-    assert "benchmark_floor" in all_model_table
+    assert "benchmark_baseline" in all_model_table
     assert "LGBM POT-GPD plain MLE" in all_model_table
+    dm_ok = {
+        "mean_loss_diff_candidate_minus_baseline": -0.1,
+        "pvalue_one_sided": 0.04,
+        "reject_10pct": True,
+    }
+    assert "reject10" in snapshot_module._snapshot_dm_cell(dm_ok)
+    assert snapshot_module._snapshot_dm_cell({"inference_status": "skipped"}) == "skipped"
+    assert snapshot_module._snapshot_dm_cell(None) == "n/a"
+    assert snapshot_module._snapshot_mcs_cell({"included_in_mcs": True}) == "in"
+    assert (
+        snapshot_module._snapshot_mcs_cell({"included_in_mcs": False, "mcs_status": "ok"}) == "out"
+    )
+    assert snapshot_module._snapshot_mcs_cell({"mcs_status": "skipped"}) == "skipped"
+    assert snapshot_module._snapshot_mcs_cell(None) == "n/a"
+    assert "baseline" in snapshot_module._benchmark_layer_table(
+        {
+            "benchmark_baseline_forecast_rows": 10,
+            "benchmark_baseline_model_count": 2,
+            "benchmark_baseline_failures": 0,
+            "benchmark_advanced_forecast_rows": 0,
+            "benchmark_advanced_model_count": 0,
+            "benchmark_advanced_diagnostic_rows": 0,
+            "benchmark_advanced_failures": 0,
+        }
+    )
+    assert "Implemented nonblocking" in snapshot_module._benchmark_layer_table(
+        {
+            "benchmark_baseline_forecast_rows": 10,
+            "benchmark_baseline_model_count": 2,
+            "benchmark_baseline_failures": 0,
+            "benchmark_advanced_forecast_rows": 5,
+            "benchmark_advanced_model_count": 1,
+            "benchmark_advanced_diagnostic_rows": 2,
+            "benchmark_advanced_failures": 0,
+        }
+    )
+    result_matrix = pl.DataFrame(
+        [
+            {
+                "comparison_family": "information_set_ladder",
+                "comparison_axis": "information_set",
+                "sample_policy": "restricted",
+                "loss_family": "var_quantile_loss",
+                "common_n": 120,
+                "date_start": "2026-01-01",
+                "date_end": "2026-02-01",
+                "joint_exception_count": 6,
+            }
+        ]
+    )
+    assert "missing" in snapshot_module._result_matrix_summary_table(pl.DataFrame())
+    assert "nested information sets" in snapshot_module._result_matrix_summary_table(result_matrix)
+    assert (
+        snapshot_formatting_module._result_matrix_display_value("tail_model_family")
+        == "tail_model_family"
+    )
+    assert "primary claim" in snapshot_module._claim_scope_markdown_table()
+    assert "ml_tail_result_matrix.parquet" in snapshot_module._metric_artifact_relationship_table(
+        ml_tail_metrics=metric_frame,
+        ml_tail_metrics_per_model=metric_frame,
+        result_matrix=result_matrix,
+    )
+    assert "unavailable" in snapshot_module._coverage_review_sentence(pl.DataFrame())
+    assert "1/1" in snapshot_module._coverage_review_sentence(
+        pl.DataFrame({"var_breach_rate": [0.10], "expected_breach_rate": [0.05]})
+    )
+    assert "within" in snapshot_module._coverage_review_sentence(
+        pl.DataFrame({"var_breach_rate": [0.051], "expected_breach_rate": [0.05]})
+    )
+    assert snapshot_formatting_module._unique_values(pl.DataFrame(), "x") == "`missing`"
+    assert (
+        snapshot_formatting_module._unique_values(pl.DataFrame({"x": ["b", "a"]}), "x")
+        == "`a`, `b`"
+    )
+    assert "Exists" in snapshot_module._artifact_table({"x": Path("missing")})
+    assert snapshot_formatting_module._fmt_float(float("inf")) == "inf"
+    assert snapshot_formatting_module._fmt_float(True) == "True"
+    assert snapshot_formatting_module._fmt_rate(float("nan")) == "nan"
+    assert snapshot_formatting_module._fmt_rate(False) == "False"
     assert "JP only" in all_model_table
     assert "japan_only" not in all_model_table
     assert "Breach mean+-sd" in all_model_table
@@ -1027,14 +1181,14 @@ def test_results_discussion_manuscript_audit_helpers_cover_branches(tmp_path: Pa
         ),
         benchmark_forecasts=pl.DataFrame(
             [
-                {"benchmark_tier": "floor", "model_name": "a"},
+                {"benchmark_tier": "baseline", "model_name": "a"},
                 {"benchmark_tier": "advanced", "model_name": "c"},
             ]
         ),
     )
     assert "reasonable coverage calibration" in calibrated
 
-    headline = results_discussion_module._results_ml_tail_headline_discussion(
+    primary = results_discussion_module._results_ml_tail_primary_discussion(
         ml_tail_status={"implemented_components": ["lightgbm_direct_quantile"]},
         ml_tail_metrics=pl.DataFrame(
             [
@@ -1079,18 +1233,18 @@ def test_results_discussion_manuscript_audit_helpers_cover_branches(tmp_path: Pa
             ]
         ),
     )
-    assert "Coverage warning" in headline
-    assert "largest quantile-loss change" in headline
+    assert "Coverage warning" in primary
+    assert "largest quantile-loss change" in primary
 
     restricted = results_discussion_module._results_restricted_model_family_discussion(
         result_matrix=pl.DataFrame(
             [
                 {
                     "comparison_family": "tail_model_family",
-                    "model_name": "lightgbm_location_scale",
+                    "model_name": "lightgbm_location_scale_empirical",
                     "common_n": 154,
                     "joint_exception_count": 17,
-                    "claim_scope": "restricted_model_comparison_not_headline",
+                    "claim_scope": "restricted_model_comparison_not_primary",
                 }
             ]
         ),
@@ -1217,7 +1371,7 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
                 "format": "png",
                 "source_artifacts": ["metrics/ml_tail_metrics.parquet"],
                 "tail_side": "left_tail",
-                "claim_scope": "coverage_diagnostic_not_headline_claim",
+                "claim_scope": "coverage_diagnostic_not_primary_claim",
             },
             {
                 "name": "coverage_breach_rates_left_tail",
@@ -1225,7 +1379,7 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
                 "format": "pdf",
                 "source_artifacts": ["metrics/ml_tail_metrics.parquet"],
                 "tail_side": "left_tail",
-                "claim_scope": "coverage_diagnostic_not_headline_claim",
+                "claim_scope": "coverage_diagnostic_not_primary_claim",
             },
             {
                 "name": "unknown_plot_left_tail",
@@ -1300,8 +1454,8 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
 def _assert_results_discussion_subsections_in_order(rendered: str) -> None:
     headings = [
         "#### Data and timing audit",
-        "#### Benchmark floor and advanced benchmarks",
-        "#### Left/right ML-tail nested information sets",
+        "#### Baseline benchmarks and advanced econometric benchmarks",
+        "#### Primary ML specifications across nested information sets",
         "#### Restricted model-family comparison",
         "#### Coverage and inference gates",
         "#### CPA as conditional loss-difference diagnostics",

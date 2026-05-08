@@ -12,7 +12,7 @@ from n225_open_gap_tail.config.runtime import (
     Mapping,
     math,
     MCS_ALPHA,
-    ML_TAIL_HEADLINE_MODEL_NAMES,
+    ML_TAIL_PRIMARY_MODEL_NAMES,
     MODEL_EVICTION_COVERAGE_THRESHOLD,
     np,
     PIPELINE_CONFIG,
@@ -44,7 +44,7 @@ def build_common_sample_artifacts(
     )
     grouped = _group_forecasts_by_key(valid_rows)
     evictions: list[dict[str, object]] = []
-    headline_forecasts: list[dict[str, object]] = []
+    primary_forecasts: list[dict[str, object]] = []
     status_by_tail: dict[tuple[str, float], str] = {}
     for target_family, tail_side, tail_level, refit_frequency in sorted(
         {(key[0], key[5], key[3], key[4]) for key in grouped}
@@ -91,15 +91,15 @@ def build_common_sample_artifacts(
         for key in keys:
             overlap_rows = len(set(grouped[key]).intersection(anchor_dates))
             coverage_ratio = overlap_rows / len(anchor_dates)
-            headline_candidate = suite != "ml_tail" or key[1] in ML_TAIL_HEADLINE_MODEL_NAMES
+            primary_candidate = suite != "ml_tail" or key[1] in ML_TAIL_PRIMARY_MODEL_NAMES
             retained = key == anchor_key or (
-                headline_candidate and coverage_ratio >= MODEL_EVICTION_COVERAGE_THRESHOLD
+                primary_candidate and coverage_ratio >= MODEL_EVICTION_COVERAGE_THRESHOLD
             )
             eviction_reason = None
             if not retained:
                 eviction_reason = (
-                    "ablation_variant_not_headline_candidate"
-                    if not headline_candidate
+                    "diagnostic_variant_not_primary_candidate"
+                    if not primary_candidate
                     else "coverage_below_model_eviction_threshold"
                 )
             if retained:
@@ -137,17 +137,17 @@ def build_common_sample_artifacts(
             evictions.append(row)
         for key in retained_keys:
             date_map = grouped[key]
-            headline_forecasts.extend(date_map[forecast_date] for forecast_date in common_dates)
+            primary_forecasts.extend(date_map[forecast_date] for forecast_date in common_dates)
 
-    headline_metrics = build_metric_records(
-        headline_forecasts,
-        sample_policy="headline_common_sample",
+    primary_metrics = build_metric_records(
+        primary_forecasts,
+        sample_policy="primary_common_sample",
         common_sample_status_value=_combined_common_sample_status(status_by_tail),
     )
-    loss_matrix = build_loss_matrix_records(headline_forecasts, suite=suite)
+    loss_matrix = build_loss_matrix_records(primary_forecasts, suite=suite)
     return {
-        "headline_forecasts": headline_forecasts,
-        "headline_metrics": headline_metrics,
+        "primary_forecasts": primary_forecasts,
+        "primary_metrics": primary_metrics,
         "per_model_metrics": per_model_metrics,
         "model_eviction": evictions,
         "loss_matrix": loss_matrix,
@@ -158,8 +158,8 @@ def build_common_sample_artifacts(
             anchor_information_set=anchor_information_set,
         ),
         "mcs": build_mcs_records(loss_matrix, suite=suite),
-        "murphy": build_murphy_records(headline_forecasts, suite=suite),
-        "stress_windows": build_stress_window_records(headline_forecasts, suite=suite),
+        "murphy": build_murphy_records(primary_forecasts, suite=suite),
+        "stress_windows": build_stress_window_records(primary_forecasts, suite=suite),
         "common_sample_status": _combined_common_sample_status(status_by_tail),
     }
 
@@ -263,7 +263,7 @@ def build_block_bootstrap_dm_records(
                 [anchor_key, candidate_key],
                 dates,
             )
-            inference_status = _headline_dm_gate_status(len(dates), joint_exception_count)
+            inference_status = _primary_dm_gate_status(len(dates), joint_exception_count)
             pvalue = (
                 _moving_block_one_sided_pvalue(
                     diffs,
@@ -334,7 +334,7 @@ def build_mcs_records(
             continue
         common_dates = sorted(set.intersection(*(set(grouped[key]) for key in keys)))
         joint_exception_count = _loss_matrix_joint_exception_count(grouped, keys, common_dates)
-        gate_status = _headline_mcs_gate_status(len(common_dates), joint_exception_count)
+        gate_status = _primary_mcs_gate_status(len(common_dates), joint_exception_count)
         if gate_status != "ok_hln_tmax_mcs":
             for key in keys:
                 records.append(
@@ -726,7 +726,7 @@ def _loss_matrix_joint_exception_count(
     return count
 
 
-def _headline_dm_gate_status(common_n: int, joint_exception_count: int) -> str:
+def _primary_dm_gate_status(common_n: int, joint_exception_count: int) -> str:
     if common_n < RESULT_MATRIX_MIN_DM_ROWS:
         return "unavailable_insufficient_common_rows_for_inference"
     if joint_exception_count < RESULT_MATRIX_MIN_DM_EXCEPTIONS:
@@ -734,7 +734,7 @@ def _headline_dm_gate_status(common_n: int, joint_exception_count: int) -> str:
     return "ok_block_bootstrap_dm"
 
 
-def _headline_mcs_gate_status(common_n: int, joint_exception_count: int) -> str:
+def _primary_mcs_gate_status(common_n: int, joint_exception_count: int) -> str:
     if common_n < RESULT_MATRIX_MIN_MCS_ROWS:
         return "unavailable_insufficient_common_rows_for_inference"
     if joint_exception_count < RESULT_MATRIX_MIN_MCS_EXCEPTIONS:
@@ -770,7 +770,7 @@ def _model_eviction_record(
         "overlap_rows": overlap_rows,
         "coverage_ratio": coverage_ratio,
         "eviction_threshold": MODEL_EVICTION_COVERAGE_THRESHOLD,
-        "retained_for_headline": retained,
+        "retained_for_primary": retained,
         "eviction_reason": eviction_reason,
         "common_rows": common_rows,
         "common_anchor_coverage": common_anchor_coverage,

@@ -47,7 +47,7 @@ def _result_matrix_notes(
         "",
         "## Artifact taxonomy",
         "",
-        "- `ml_tail_metrics.parquet` remains the headline ML tail information-set ladder.",
+        "- `ml_tail_metrics.parquet` remains the primary ML information-set table.",
         "- `ml_tail_metrics_per_model.parquet` is diagnostic, not a cross-model comparison "
         "table; its rows use each model family's own valid OOS coverage.",
         "- `ml_tail_result_matrix.parquet` provides restricted VaR-only and VaR-ES "
@@ -57,10 +57,11 @@ def _result_matrix_notes(
         "",
         "- Restricted direct-quantile rows are included only to compare against "
         "location-scale and POT-GPD on the same dates.",
-        "- Restricted rows do not replace the headline direct-quantile evidence.",
-        "- A model can be headline-evicted for common-sample coverage and still appear "
-        "as restricted evidence when the restricted common-sample rule is satisfied.",
-        "- `headline_claim_allowed=false` marks restricted and diagnostic rows.",
+        "- Restricted rows do not replace the primary direct-quantile evidence.",
+        "- A model can be excluded from the primary ML table for common-sample coverage "
+        "and still appear as restricted evidence when the restricted common-sample rule "
+        "is satisfied.",
+        "- `primary_claim_allowed=false` marks restricted and diagnostic rows.",
         "",
         "## Short-sample and ES interpretation",
         "",

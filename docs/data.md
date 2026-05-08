@@ -71,18 +71,18 @@ fred_credit_enriched = BAMLH0A0HYM2,BAMLC0A0CM
 ```
 
 These snippets describe the full clean-run fetch universe. Smoke commands can
-override them with smaller ticker or series lists. The headline ML nested
+override them with smaller ticker or series lists. The primary ML nested
 information sets do not use every fetched field: `UUP` and the credit-spread
 series are now B-layer U.S. close candidates, while short-history funding
 series, robustness stress indexes, and unaudited event/skew variables remain
-outside the registered headline ladder.
+outside the registered primary ML table.
 The options flags remain disabled in raw settings as a fail-safe for direct CLI
 calls. The standard `just full` recipe overrides them to `true` by default and
 therefore builds U.S. options features unless called with `options=false`. Those
 features are routed by underlying exposure into the nested information sets.
 
 Short-history and robustness-only candidates stay out of the current registered
-full-history headline feature set:
+full-history primary feature set:
 
 ```bash
 POST_2018_FRED_SERIES="SOFR,EFFR"
@@ -230,7 +230,7 @@ selection:
 The registered DTE buckets are short `7-30` calendar days and medium `31-90`
 calendar days. ATM selection is delta-neutral when delta is available or
 computed; otherwise the method falls back to closest-to-spot or closest-to-forward
-and records the method. Headline options features are capped at 45 curated
+and records the method. Primary options features are capped at 45 curated
 aggregate features. Raw per-contract, per-sector, per-Asia-ETF, and per-ADR
 fields remain audit or appendix outputs.
 
@@ -257,7 +257,7 @@ predictor used in the point-in-time U.S. close information set.
 ### Active ML Nested Information Sets
 
 The registered ML comparison uses four nested information sets. Options are
-routed by economic exposure instead of being grouped into a separate headline
+routed by economic exposure instead of being grouped into a separate primary
 layer: domestic N225 options enter A, U.S. core and sector-aggregate options enter
 B, Japan-linked ETF/ADR options enter C, and Asia proxy aggregate options enter D.
 
@@ -268,7 +268,7 @@ B, Japan-linked ETF/ADR options enter C, and Asia proxy aggregate options enter 
 | `japan_only_plus_us_close_core_plus_japan_proxy` | Previous set plus `EWJ` and `DXJ` daily/minute features, computed ATM-IV proxies for `EWJ` and `DXJ` options, Japanese ADR spot aggregate features, and Japanese ADR aggregate options features when enabled and audit-gated. |
 | `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy` | Previous set plus Asia/regional proxy features for `EEM`, `FXI`, `EWY`, `EWT`, and `EWH`, including daily, minute, and aggregate options features routed by underlying exposure. |
 
-The headline ML nested sets do not include SOFR/EFFR, NFCI/ANFCI/STLFSI4, SKEW,
+The primary ML nested sets do not include SOFR/EFFR, NFCI/ANFCI/STLFSI4, SKEW,
 VIX term-structure proxies, or macro-event flags in the current clean run.
 
 ### Planned or Candidate Inputs Not Active in the Clean Run
@@ -277,7 +277,7 @@ VIX term-structure proxies, or macro-event flags in the current clean run.
   candidate controls. They are not active feature artifacts in the current clean
   run.
 - SOFR and EFFR are post-2018 enriched FRED candidates and are not part of the
-  current full-history headline feature set.
+  current full-history primary feature set.
 - NFCI, ANFCI, and STLFSI4 are FRED robustness candidates and are not active in
   the current clean run.
 - Cboe SKEW, VIX9D, VIX3M, VIX6M, option-implied skew, volatility-surface
@@ -324,7 +324,7 @@ The first-paper predictor universe is pre-registered by economic role rather tha
 | U.S. late-session dynamics | SPY/QQQ/DIA/IWM/TLT/HYG/GLD last-30-minute return, last-hour return, late-session range, late-60-minute volume surge, final-window reversal or momentum | Massive.com minute bars | `US_CASH_CLOSE` after official close plus vendor lag | Late U.S. trading pressure and closing imbalance proxies that may be more informative than daily close-to-close moves. |
 | U.S. sectors | XLK, XLF, XLE, XLV, XLI, XLY, XLP, XLB, XLU, XLC returns and dispersion | Massive.com | `US_CASH_CLOSE` | Sector composition, growth/cyclical rotation, defensives, utilities, and communications exposure. |
 | U.S. global-risk proxies | SMH, HYG, LQD | Massive.com core candidates | `US_CASH_CLOSE` after source audit | Semiconductor and credit-risk channels relevant to Japan but treated as U.S. core risk proxies. |
-| Japan proxy block | EWJ, DXJ plus aggregate TM/SONY/MUFG/SMFG/MFG ADR spot summaries | Massive.com ML tail proxy block | `US_CASH_CLOSE` after source audit | U.S.-traded Japan equity proxies used to test whether Japan-exposure trading absorbs incremental signal beyond broad U.S. core without exposing headline models to individual ADR names. |
+| Japan proxy block | EWJ, DXJ plus aggregate TM/SONY/MUFG/SMFG/MFG ADR spot summaries | Massive.com ML tail proxy block | `US_CASH_CLOSE` after source audit | U.S.-traded Japan equity proxies used to test whether Japan-exposure trading absorbs incremental signal beyond broad U.S. core without exposing primary ML specifications to individual ADR names. |
 | Asia proxy block | EEM, FXI, EWY, EWT, EWH | Massive.com ML tail proxy block | `US_CASH_CLOSE` after source audit | Emerging-market, China, Korea, Taiwan, and Hong Kong proxies used to test regional and supply-chain information beyond Japan proxies. |
 | FX | Canonical USD/JPY from FRED `DEXJPUS` only | FRED H.10 | H.10 weekly-batch as-of release | Conservative lagged currency control without letting optional Massive FX entitlement determine the main sample. |
 | Safe-haven and commodity proxies | TLT, GLD, USO | Massive.com planned candidates | `US_CASH_CLOSE` after source audit | Flight-to-quality, dollar-rate duration, and commodity-risk channels. |
@@ -456,7 +456,7 @@ ML tail also writes a result-matrix layer under `metrics/` for model-family audi
 `ml_tail_result_matrix_dm.parquet`, `ml_tail_result_matrix_mcs.parquet`, and
 the run-specific `ml_tail_result_matrix_notes.md` artifact. This layer separates VaR-only comparisons
 (`var_quantile_loss`, coverage, exception diagnostics) from VaR-ES joint scoring
-(`var_es_fz_loss`) and uses restricted common samples. It does not replace the headline
+(`var_es_fz_loss`) and uses restricted common samples. It does not replace the primary
 ML tail ladder in `ml_tail_metrics.parquet`.
 
 ## Target Hierarchy
@@ -550,7 +550,7 @@ The data lake is intentionally tiered to prevent feature fishing.
 - Massive core block additions: XLY, XLP, XLB, XLU, XLC, TLT, GLD, USO, SMH, HYG, and LQD after source and coverage audit.
 - Massive ML tail proxy blocks: Japan proxy (`EWJ`, `DXJ`) and Asia proxy (`EEM`, `FXI`, `EWY`, `EWT`, `EWH`) are cached now but interpreted separately from the core U.S. close block.
 - Cboe or FRED VIX close; VIX high, low, and range only when the source supports them.
-- FRED 2-year and 10-year Treasury yields, T10Y2Y yield-curve slope, and ICE BofA credit-spread proxies. Credit spreads enter the B-layer U.S. close core as current-historical FRED series with conservative lag controls, not ALFRED/vintage-safe series. SOFR/EFFR funding proxies are `post_2018_enriched`, not part of the current full-history headline feature set.
+- FRED 2-year and 10-year Treasury yields, T10Y2Y yield-curve slope, and ICE BofA credit-spread proxies. Credit spreads enter the B-layer U.S. close core as current-historical FRED series with conservative lag controls, not ALFRED/vintage-safe series. SOFR/EFFR funding proxies are `post_2018_enriched`, not part of the current full-history primary feature set.
 - Planned event flags: FOMC, CPI, payrolls, BOJ policy events, and major Japan macro releases. These are not active feature artifacts in the current clean run.
 - Lagged Japanese futures variables: prior gap, lagged OSE day return, lagged OSE night return when available, volume/open-interest changes, roll/SQ flags, and holiday-adjacent flags.
 
@@ -565,7 +565,7 @@ The data lake is intentionally tiered to prevent feature fishing.
   proxies. They are routed by economic exposure: U.S. core and sector aggregate
   options into B, Japan ETF and ADR aggregate options into C, and Asia proxy
   aggregate options into D. They must pass coverage/liquidity gates before
-  supporting headline claims.
+  supporting primary claims.
   J-Quants `NK225E` daily options are already active only as lagged domestic
   `japan_only` state, including lagged night-session option OHLC summaries from
   `EO/EH/EL/EC`.
@@ -621,7 +621,7 @@ positive-loss convention:
 - store threshold, exceedance indicator, exceedance severity, VaR forecast, and ES forecast;
 - report training-window standardized-loss counts and exceedance counts before reporting POT-GPD VaR/ES forecasts.
 
-The headline tail level is `0.95`. Plain standardized-loss POT-GPD is the
+The primary tail level is `0.95`. Plain standardized-loss POT-GPD is the
 registered filtered-EVT estimator. The UniBM route is a restricted
 shape-estimator comparison: it uses the same LightGBM mean/log-scale body
 filter, the same POT threshold, and a UniBM block-maxima-derived estimate of
@@ -666,11 +666,11 @@ Processed model tables should carry the fields needed to audit the LightGBM-stan
 | `var_forecast` | VaR forecast transformed back to target scale. |
 | `es_forecast` | ES forecast transformed back to target scale. |
 
-The registered headline POT threshold remains fixed at `0.90`. Threshold
+The registered primary POT threshold remains fixed at `0.90`. Threshold
 sensitivity is written as a diagnostic artifact before any dynamic-threshold
-rule is promoted to the registered headline design. The location-scale
+rule is promoted to the registered primary design. The location-scale
 empirical and POT-GPD variants use a common final LightGBM location-scale
-backbone by construction; EVT ablations differ in tail calibration rather than
+backbone by construction; diagnostic EVT variants differ in tail calibration rather than
 in a variant-specific final location/scale seed.
 
 ## Source Notes

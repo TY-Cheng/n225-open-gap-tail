@@ -30,13 +30,13 @@ The current clean snapshot is based on the completed run
 
 - Clean evaluation window: `2018-06-20` to `2026-04-28`.
 - Forecast sample: `1661` trading-day observations.
-- Headline risk level: 95% VaR, corresponding to a nominal 5% exception rate.
-- Benchmark floor median breach rate: about 6.1%.
+- Primary risk level: 95% VaR, corresponding to a nominal 5% exception rate.
+- Baseline benchmark median breach rate: about 6.1%.
 - ML direct-quantile breach rates across nested information sets: about 7.6% to 12.7%.
 
 This means lower average loss values for the ML tail models must be read together with
 coverage diagnostics. In the current evidence, the direct-quantile LightGBM models often
-produce less conservative VaR estimates than the benchmark floor.
+produce less conservative VaR estimates than the baseline benchmarks.
 
 The current results are research-candidate evidence. Final manuscript claims still require
 author review of the tables, figures, and claim boundaries.
@@ -78,7 +78,7 @@ averaged across sides or interpreted as the same economic mechanism.
 
 ### Models
 
-- Benchmark floor: historical quantile, rolling quantile, volatility-scaled quantile,
+- Baseline benchmarks: historical quantile, rolling quantile, volatility-scaled quantile,
   GARCH/GJR-GARCH, and GJR-GARCH-EVT.
 - Advanced econometric benchmarks: CAViaR, CARE/expectile models, GAS models, Taylor-style
   asymmetric-Laplace VaR-ES specifications, and joint VaR-ES estimation through

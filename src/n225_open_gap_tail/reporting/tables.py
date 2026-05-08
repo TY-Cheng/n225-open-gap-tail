@@ -11,7 +11,6 @@ from n225_open_gap_tail.config.runtime import (
     TAIL_SIDE_LEFT,
     TAIL_SIDE_RIGHT,
 )
-from n225_open_gap_tail.forecasting.artifacts import _read_manifest, _update_manifest, _write_json
 from n225_open_gap_tail.reporting.figures import export_figures
 from n225_open_gap_tail.reporting.latex import (
     _claim_scope_to_latex,
@@ -20,6 +19,7 @@ from n225_open_gap_tail.reporting.latex import (
     _full_per_model_metrics_to_latex,
     _hedge_trigger_to_latex,
     _metrics_to_latex,
+    _promoted_tail_models_to_latex,
     _result_matrix_summary_to_latex,
     _result_matrix_to_latex,
     _selected_model_performance_to_latex,
@@ -27,6 +27,12 @@ from n225_open_gap_tail.reporting.latex import (
 
 
 def export_tables(*, run_dir: Path) -> TableExportResult:
+    from n225_open_gap_tail.forecasting.artifacts import (
+        _read_manifest,
+        _update_manifest,
+        _write_json,
+    )
+
     latex_dir = run_dir / "latex" / "tables"
     latex_dir.mkdir(parents=True, exist_ok=True)
     _remove_stale_tail_table_names(latex_dir)
@@ -95,6 +101,22 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
         tables += 1
         table_files.append(table_path.name)
     if not ml_tail_per_model.is_empty():
+        dm_path = run_dir / "metrics" / "ml_tail_result_matrix_dm.parquet"
+        mcs_path = run_dir / "metrics" / "ml_tail_result_matrix_mcs.parquet"
+        dm = pl.read_parquet(dm_path) if dm_path.exists() else None
+        mcs = pl.read_parquet(mcs_path) if mcs_path.exists() else None
+        table_path = latex_dir / "ml_tail_promoted_tail_models_table.tex"
+        table_path.write_text(
+            _promoted_tail_models_to_latex(
+                ml_tail_per_model,
+                dm=dm,
+                mcs=mcs,
+                manifest=manifest,
+            ),
+            encoding="utf-8",
+        )
+        tables += 1
+        table_files.append(table_path.name)
         table_path = latex_dir / "appendix_lgbm_all_models_table.tex"
         table_path.write_text(
             _full_per_model_metrics_to_latex(
@@ -201,7 +223,7 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
 
 
 def _remove_stale_tail_table_names(latex_dir: Path) -> None:
-    for pattern in ("*_left_headline_table.tex", "*_right_robustness_table.tex"):
+    for pattern in ("*_left_primary_table.tex", "*_right_robustness_table.tex"):
         for path in latex_dir.glob(pattern):
             path.unlink(missing_ok=True)
 
@@ -239,13 +261,13 @@ def _table_manifest_entry(table_file: str) -> dict[str, object]:
         "ml_tail_left_tail_risk_table.tex": (
             "ml_tail_left_tail_risk",
             ["metrics/ml_tail_metrics.parquet"],
-            "left_tail_ml_tail_headline_risk_table",
+            "left_tail_ml_tail_primary_risk_table",
             TAIL_SIDE_LEFT,
         ),
         "ml_tail_right_tail_risk_table.tex": (
             "ml_tail_right_tail_risk",
             ["metrics/ml_tail_metrics.parquet"],
-            "right_tail_ml_tail_headline_risk_table",
+            "right_tail_ml_tail_primary_risk_table",
             TAIL_SIDE_RIGHT,
         ),
         "tailrisk_es_severity_table.tex": (
@@ -265,6 +287,16 @@ def _table_manifest_entry(table_file: str) -> dict[str, object]:
                 "metrics/ml_tail_metrics_per_model.parquet",
             ],
             "selected_benchmark_vs_lgbm_main_figure_rows",
+            None,
+        ),
+        "ml_tail_promoted_tail_models_table.tex": (
+            "ml_tail_promoted_tail_models",
+            [
+                "metrics/ml_tail_metrics_per_model.parquet",
+                "metrics/ml_tail_result_matrix_dm.parquet",
+                "metrics/ml_tail_result_matrix_mcs.parquet",
+            ],
+            "side_specific_ml_tail_promotion_gate",
             None,
         ),
         "appendix_benchmark_all_models_table.tex": (
@@ -336,17 +368,18 @@ def _table_manifest_entry(table_file: str) -> dict[str, object]:
 
 def _table_caption(name: str) -> str:
     captions = {
-        "benchmark_metrics": (
-            "Benchmark common-sample metric table for target-history and econometric floors."
-        ),
+        "benchmark_metrics": "Baseline benchmark common-sample metric table.",
         "benchmark_left_tail_risk": "Benchmark downside-risk metric table.",
         "benchmark_right_tail_risk": "Benchmark upside-risk metric table.",
-        "ml_tail_metrics": "ML-tail headline nested-information-set table.",
-        "ml_tail_left_tail_risk": "ML-tail downside-risk headline table.",
-        "ml_tail_right_tail_risk": "ML-tail upside-risk headline table.",
+        "ml_tail_metrics": "Primary ML nested-information-set table.",
+        "ml_tail_left_tail_risk": "Primary ML downside-risk table.",
+        "ml_tail_right_tail_risk": "Primary ML upside-risk table.",
         "tailrisk_es_severity": "Conditional-on-exception severity diagnostic table.",
         "tailrisk_selected_model_performance": (
             "Selected Benchmark-vs-LGBM rows used for compact main performance figures."
+        ),
+        "ml_tail_promoted_tail_models": (
+            "Side-specific promoted ML-tail rows with restricted DM/MCS evidence."
         ),
         "appendix_benchmark_all_models": "Appendix table with all benchmark model results.",
         "appendix_lgbm_all_models": "Appendix table with all LightGBM model results.",
@@ -368,15 +401,15 @@ def _combined_severity_metrics(run_dir: Path) -> pl.DataFrame:
         frames.append(
             pl.read_parquet(benchmark_path).with_columns(
                 pl.lit("benchmark").alias("suite"),
-                pl.lit("headline").alias("claim_scope"),
+                pl.lit("primary").alias("claim_scope"),
             )
         )
-    ml_headline_path = run_dir / "metrics" / "ml_tail_metrics.parquet"
-    if ml_headline_path.exists():
+    ml_primary_path = run_dir / "metrics" / "ml_tail_metrics.parquet"
+    if ml_primary_path.exists():
         frames.append(
-            pl.read_parquet(ml_headline_path).with_columns(
+            pl.read_parquet(ml_primary_path).with_columns(
                 pl.lit("ml_tail").alias("suite"),
-                pl.lit("headline").alias("claim_scope"),
+                pl.lit("primary").alias("claim_scope"),
             )
         )
     ml_per_model_path = run_dir / "metrics" / "ml_tail_metrics_per_model.parquet"

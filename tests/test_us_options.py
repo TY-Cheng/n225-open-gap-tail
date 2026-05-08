@@ -13,7 +13,7 @@ import n225_open_gap_tail.panel.us_options as panel_us_options
 from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.config.runtime import build_feature_matrix_gate_records
 from n225_open_gap_tail.data_lake.massive_options_cache import (
-    massive_options_headline_underlyings,
+    massive_options_primary_underlyings,
 )
 from n225_open_gap_tail.features.asof import (
     _features_asof,
@@ -307,7 +307,7 @@ def test_options_underlying_helpers_are_gated_and_deduplicated() -> None:
             massive_options_underlyings="",
         )
     )
-    assert massive_options_headline_underlyings(
+    assert massive_options_primary_underlyings(
         Settings(massive_options_underlyings="spy,tm,SPY")
     ) == ("SPY", "TM")
 

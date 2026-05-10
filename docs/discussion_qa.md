@@ -72,6 +72,18 @@ The baseline benchmarks, advanced econometric benchmarks, and ML-tail suite are 
 - Hyperparameters are held fixed across information sets and refit dates.
 - Most models use expanding pre-forecast training histories. The rolling-quantile benchmark is the designed exception: it uses the most recent 1,000 clean observations.
 
+## Are all models tuned to maximum individual performance?
+
+No. The paper compares registered point-in-time forecast specifications, not a tuning contest.
+
+- Benchmark distributional parameters are fitted inside each training window where the model requires MLE or numerical optimization.
+- CARE, GAS, and related advanced benchmarks may use small pre-registered grids where that is part of the model specification.
+- LightGBM hyperparameters are held fixed across information sets and refit dates so information-set comparisons are not contaminated by a separate tuning search.
+- This design may leave some model-specific performance untapped, but it keeps the nested information-set experiment interpretable.
+- Appendix configuration robustness varies LightGBM capacity, EWMA lambda, and POT threshold choices after the primary run.
+- Those rows carry `primary_claim_allowed=false`: they answer reviewer concerns about sensitivity, but they do not select primary selections, promoted rows, DM/MCS gates, or selected-model figures.
+- The primary design compares pre-specified point-in-time forecast specifications. Configuration sensitivity is reported as appendix robustness evidence and is not used to select primary selections.
+
 ## How do the LightGBM+EVT variants work?
 
 The final VaR/ES level is 95%. POT-GPD variants use a 0.90 threshold only for

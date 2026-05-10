@@ -13,13 +13,19 @@ status: _require-external-uv-env
 
 check: _require-external-uv-env
     uv sync --all-extras --dev
-    uv run ruff format src tests
-    uv run ruff check --fix src tests
+    uv run ruff format --check src tests
+    uv run ruff check src tests
     uv run mypy src tests
-    uv run pytest
+    uv run python scripts/lint_mypy_ignore_debt.py
+    uv run pytest -m "not vendor and not realdata"
     uv run mkdocs build --strict
     just lint-legacy-names
     just lint-architecture
+
+fix: _require-external-uv-env
+    uv sync --all-extras --dev
+    uv run ruff format src tests
+    uv run ruff check --fix src tests
 
 full start="2016-07-19" end="" workers="6" force="false" options="true":
     @[[ "{{ options }}" == "true" || "{{ options }}" == "false" ]] || (echo 'error: options must be "true" or "false"' >&2; exit 1)
@@ -41,6 +47,9 @@ docs port="8000": _require-external-uv-env
 
 snapshot run_id="latest": _require-external-uv-env
     {{cli}} snapshot --run-id "{{ run_id }}"
+
+sensitivity run_id="latest" workers="6": _require-external-uv-env
+    {{cli}} sensitivity --run-id "{{ run_id }}" --workers "{{ workers }}"
 
 _build-panel start="2016-07-19" end="": _require-external-uv-env
     {{cli}} build-panel --start "{{ start }}" {{ if end == "" { "" } else { "--end \"" + end + "\"" } }}

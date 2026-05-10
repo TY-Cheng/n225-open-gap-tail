@@ -128,8 +128,10 @@ just status
 just check
 ```
 
-`just check` syncs the uv environment, formats and fixes `src` and `tests`, runs mypy,
-runs pytest, and performs a strict MkDocs build.
+`just check` syncs the uv environment and runs read-only validation: format check,
+ruff lint, mypy, the mypy-ignore debt guard, default pytest, strict MkDocs build,
+and local architecture/name guards. Use `just fix` when you want ruff to format
+and apply automatic lint fixes.
 
 To serve the documentation site:
 
@@ -161,6 +163,13 @@ For a completed run, regenerate the snapshot without fetching vendor data:
 
 ```bash
 just snapshot latest
+```
+
+Appendix-only configuration robustness can be generated without changing
+primary/promoted results:
+
+```bash
+just sensitivity latest
 ```
 
 Useful lower-level commands are available for debugging:

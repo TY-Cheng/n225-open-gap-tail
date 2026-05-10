@@ -73,8 +73,8 @@ appendix material.
 
 ### 2.1 Sample And Evaluation Window
 
-- Current clean evaluation window: `2018-06-20` to `2026-05-01`.
-- Current forecast-sample size: `1661` trading-day observations.
+- Current clean evaluation window: `2018-06-20` to `2026-04-28`.
+- Current forecast-sample size: `1660` trading-day observations.
 - The current clean run is a research-candidate evidence set, not a final manuscript freeze.
 - The current primary level is 95% VaR/ES only.
 - A 97.5% level is deferred until common-sample size, exception counts, and EVT diagnostics are sufficient for a separate specification.
@@ -488,6 +488,22 @@ flowchart LR
 - Feature availability, missingness, and source-coverage audits.
 - Options-source and options-feature audit tables.
 - EVT EVI-path, extremal-index, and threshold-stability outputs.
+
+### 5.4 Appendix Configuration Robustness
+
+- The primary design compares pre-specified point-in-time forecast specifications.
+- Configuration sensitivity is reported only as appendix robustness evidence and is not used to select primary selections.
+- LightGBM capacity sensitivity varies only:
+    - number of trees;
+    - learning rate;
+    - number of leaves;
+    - minimum child samples;
+    - row and column subsampling.
+- EWMA sensitivity reports the primary `lambda = 0.94` row and sensitivity rows at `0.90` and `0.97`.
+- POT threshold sensitivity reports forecastable thresholds `0.90` and `0.925`.
+- At 95% VaR, threshold `0.95` is recorded only as a boundary diagnostic with status `not_applicable_threshold_not_below_tail_level`.
+- Sensitivity artifacts live under `reports/runs/<run_id>/sensitivity/` and carry `primary_claim_allowed=false`.
+- Robustness labels describe conclusion stability versus the registered primary specification. They do not feed DM/MCS gates, promoted rows, result-matrix selection, or selected-model figures.
 
 ## 6. Manuscript Structure
 

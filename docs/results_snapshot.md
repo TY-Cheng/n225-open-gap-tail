@@ -677,7 +677,7 @@ _Figure: `evt_standardized_threshold_stability_right_tail`. Source: `forecasts/m
 - Appendix-only diagnostic: the left/right timing-regime patterns are not stable enough for a main-text claim.
 - Key readings: bars report loss gains from adding `JP + US close core` to `JP only`, split by EST/EDT timing regime.
 - A positive gain means the expanded information set has lower average loss; a negative gain means it performs worse on that loss metric.
-- This diagnostic is computed for the current primary nested-information-set anchor, `LGBM direct quantile`; it is not an average across all LightGBM/EVT variants or a best-model selection.
+- This diagnostic is computed for the current primary nested-information-set anchor, `LGBM direct quantile`; it is not an average across all LightGBM/EVT variants or a model-selection exercise.
 - Treat this as descriptive timing evidence; left/right patterns should not be assigned a shared structural mechanism.
 
 ![dst_attenuation_left_tail](figures/tailrisk_20160719_20260429_20260508T053721Z_commit_14205f41/dst_attenuation_left_tail.png)

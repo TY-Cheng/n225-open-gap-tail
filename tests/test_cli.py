@@ -33,6 +33,7 @@ def test_pipeline_commands_expose_help() -> None:
         "evaluate",
         "export-tables",
         "leakage-check",
+        "sensitivity",
         "source-probe",
     ):
         result = runner.invoke(app, [command, "--help"])
@@ -511,6 +512,43 @@ def test_evaluate_command_reports_summary(
     assert "forecast rows: 50" in result.output
     assert "metric rows: 6" in result.output
     assert "status: completed" in result.output
+
+
+def test_sensitivity_command_reports_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "tailrisk_run"
+
+    def fake_resolve_run_dir(settings: object, run_id: str) -> Path:
+        assert run_id == "tailrisk_test"
+        return run_dir
+
+    def fake_evaluate_suite(**kwargs: object) -> EvaluationResult:
+        assert kwargs["run_dir"] == run_dir
+        assert kwargs["workers"] == 3
+        assert kwargs["suite"] == "sensitivity"
+        assert kwargs["force"] is False
+        return EvaluationResult(
+            run_id="tailrisk_test",
+            run_dir=run_dir,
+            forecast_rows=123,
+            metric_rows=45,
+            status="ok",
+        )
+
+    monkeypatch.setattr(cli, "resolve_run_dir", fake_resolve_run_dir)
+    monkeypatch.setattr(cli, "evaluate_suite", fake_evaluate_suite)
+
+    result = CliRunner().invoke(
+        app,
+        ["sensitivity", "--run-id", "tailrisk_test", "--workers", "3"],
+    )
+
+    assert result.exit_code == 0
+    assert "sensitivity forecast rows: 123" in result.output
+    assert "sensitivity metric rows: 45" in result.output
+    assert "status: ok" in result.output
 
 
 def test_run_command_runs_panel_eval_and_latex(

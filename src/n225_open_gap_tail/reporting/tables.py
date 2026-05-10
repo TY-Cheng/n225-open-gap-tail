@@ -14,6 +14,7 @@ from n225_open_gap_tail.config.runtime import (
 from n225_open_gap_tail.reporting.figures import export_figures
 from n225_open_gap_tail.reporting.latex import (
     _claim_scope_to_latex,
+    _configuration_sensitivity_to_latex,
     _dst_attenuation_to_latex,
     _es_severity_to_latex,
     _full_per_model_metrics_to_latex,
@@ -185,6 +186,9 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
         )
         tables += 1
         table_files.append(table_path.name)
+    sensitivity_files = _export_sensitivity_tables(run_dir=run_dir, manifest=manifest)
+    tables += len(sensitivity_files)
+    table_files.extend(sensitivity_files)
     figure_result = export_figures(run_dir=run_dir, manifest=manifest)
     table_entries = _table_manifest_entries(table_files)
     _write_json(
@@ -222,10 +226,63 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
     return TableExportResult(run_id=run_dir.name, latex_dir=latex_dir, tables=tables)
 
 
+def export_sensitivity_tables(*, run_dir: Path) -> TableExportResult:  # pragma: no cover
+    from n225_open_gap_tail.forecasting.artifacts import (
+        _read_manifest,
+        _write_json,
+    )
+
+    manifest = _read_manifest(run_dir)
+    table_files = _export_sensitivity_tables(run_dir=run_dir, manifest=manifest)
+    if not table_files:
+        return TableExportResult(
+            run_id=run_dir.name,
+            latex_dir=run_dir / "sensitivity" / "latex" / "tables",
+            tables=0,
+        )
+    manifest_path = run_dir / "latex" / "table_manifest.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    existing = _read_existing_table_manifest(manifest_path)
+    existing_table_rows = existing.get("tables", [])
+    if not isinstance(existing_table_rows, list):
+        existing_table_rows = []
+    existing_tables = [
+        row
+        for row in existing_table_rows
+        if isinstance(row, dict) and not str(row.get("path") or "").startswith("sensitivity/")
+    ]
+    table_entries = [*existing_tables, *_table_manifest_entries(table_files)]
+    _write_json(
+        manifest_path,
+        {
+            "claims_level": existing.get("claims_level", CLAIMS_LEVEL),
+            "claim_level": existing.get("claim_level", manifest.get("claim_level", CLAIMS_LEVEL)),
+            "run_id": run_dir.name,
+            "git_commit": manifest.get("git_commit"),
+            "config_hash": manifest.get("config_hash"),
+            "tables": table_entries,
+            "table_count": len(table_entries),
+        },
+    )
+    return TableExportResult(
+        run_id=run_dir.name,
+        latex_dir=run_dir / "sensitivity" / "latex" / "tables",
+        tables=len(table_files),
+    )
+
+
 def _remove_stale_tail_table_names(latex_dir: Path) -> None:
     for pattern in ("*_left_primary_table.tex", "*_right_robustness_table.tex"):
         for path in latex_dir.glob(pattern):
             path.unlink(missing_ok=True)
+
+
+def _read_existing_table_manifest(path: Path) -> dict[str, object]:  # pragma: no cover
+    if not path.exists():
+        return {"tables": []}
+    import json
+
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _table_manifest_entries(table_files: list[str]) -> list[dict[str, object]]:
@@ -345,11 +402,30 @@ def _table_manifest_entry(table_file: str) -> dict[str, object]:
             "descriptive_dst_attenuation_table",
             None,
         ),
+        "appendix_lgbm_configuration_sensitivity_table.tex": (
+            "appendix_lgbm_configuration_sensitivity",
+            ["sensitivity/metrics/lgbm_configuration_sensitivity_metrics.parquet"],
+            "appendix_configuration_robustness_lgbm",
+            None,
+        ),
+        "appendix_benchmark_configuration_sensitivity_table.tex": (
+            "appendix_benchmark_configuration_sensitivity",
+            ["sensitivity/metrics/benchmark_configuration_sensitivity_metrics.parquet"],
+            "appendix_configuration_robustness_benchmark",
+            None,
+        ),
+        "appendix_evt_threshold_sensitivity_table.tex": (
+            "appendix_evt_threshold_sensitivity",
+            ["sensitivity/metrics/evt_threshold_sensitivity_metrics.parquet"],
+            "appendix_configuration_robustness_evt_threshold",
+            None,
+        ),
     }
+    key = Path(table_file).name if table_file.startswith("sensitivity/") else table_file
     name, sources, claim_scope, tail_side = specs.get(
-        table_file,
+        key,
         (
-            Path(table_file).stem,
+            Path(key).stem,
             [],
             "table_artifact_unclassified",
             None,
@@ -357,7 +433,9 @@ def _table_manifest_entry(table_file: str) -> dict[str, object]:
     )
     return {
         "name": name,
-        "path": f"latex/tables/{table_file}",
+        "path": table_file
+        if table_file.startswith("sensitivity/")
+        else f"latex/tables/{table_file}",
         "format": "tex",
         "source_artifacts": sources,
         "tail_side": tail_side,
@@ -390,8 +468,58 @@ def _table_caption(name: str) -> str:
             "Restricted result-matrix inference and gate summary table."
         ),
         "ml_tail_dst_attenuation": "Descriptive DST timing-regime diagnostic table.",
+        "appendix_lgbm_configuration_sensitivity": (
+            "Appendix LightGBM configuration sensitivity table."
+        ),
+        "appendix_benchmark_configuration_sensitivity": (
+            "Appendix benchmark configuration sensitivity table."
+        ),
+        "appendix_evt_threshold_sensitivity": "Appendix POT threshold sensitivity table.",
     }
     return captions.get(name, "Generated LaTeX table artifact.")
+
+
+def _export_sensitivity_tables(
+    *,
+    run_dir: Path,
+    manifest: dict[str, object],
+) -> list[str]:  # pragma: no cover
+    sensitivity_specs = (
+        (
+            "lgbm_configuration_sensitivity_metrics.parquet",
+            "appendix_lgbm_configuration_sensitivity_table.tex",
+            "appendix_configuration_robustness_lgbm",
+        ),
+        (
+            "benchmark_configuration_sensitivity_metrics.parquet",
+            "appendix_benchmark_configuration_sensitivity_table.tex",
+            "appendix_configuration_robustness_benchmark",
+        ),
+        (
+            "evt_threshold_sensitivity_metrics.parquet",
+            "appendix_evt_threshold_sensitivity_table.tex",
+            "appendix_configuration_robustness_evt_threshold",
+        ),
+    )
+    metrics_root = run_dir / "sensitivity" / "metrics"
+    latex_dir = run_dir / "sensitivity" / "latex" / "tables"
+    table_files: list[str] = []
+    for metrics_file, table_file, scope in sensitivity_specs:
+        metrics_path = metrics_root / metrics_file
+        if not metrics_path.exists():
+            continue
+        latex_dir.mkdir(parents=True, exist_ok=True)
+        table_path = latex_dir / table_file
+        table_path.write_text(
+            _configuration_sensitivity_to_latex(
+                pl.read_parquet(metrics_path),
+                table_scope=scope,
+                manifest=manifest,
+            ),
+            encoding="utf-8",
+        )
+        table_files.append(f"sensitivity/latex/tables/{table_file}")
+    return table_files
 
 
 def _combined_severity_metrics(run_dir: Path) -> pl.DataFrame:

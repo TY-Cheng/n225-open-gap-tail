@@ -24,6 +24,7 @@ htmlcov/
 .ipynb_checkpoints/
 
 # Local data and outputs
+/data
 data/bronze/*
 data/silver/*
 data/gold/*

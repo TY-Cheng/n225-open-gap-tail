@@ -361,9 +361,11 @@ routed by underlying exposure into the B/C/D information sets. This matters beca
 the multi-ticker Massive minute layer and the OPRA options layer can require
 substantial first-run vendor traffic, while normal reruns should reuse validated
 bronze/silver/gold caches. Use `just full 2016-07-19 "" 6 false false` for a run
-without U.S. options features. The default start is `2016-07-19`, treated as a
-clean-sample candidate rather than a hard empirical claim. The final modeling
-start is written to the run manifest as:
+without U.S. options features. When the end argument is blank, the default data
+cutoff is the most recent completed Friday rather than the calendar run date; use
+an explicit `YYYY-MM-DD` end date to override the paper-freeze default. The default
+start is `2016-07-19`, treated as a clean-sample candidate rather than a hard
+empirical claim. The final modeling start is written to the run manifest as:
 
 ```text
 combined_clean_start = max(

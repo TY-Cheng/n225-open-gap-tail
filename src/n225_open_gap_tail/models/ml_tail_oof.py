@@ -36,6 +36,7 @@ def _ml_tail_oof_location_scale(
     information_set: str,
     tail_level: float,
     lgb: Any,
+    lgbm_params: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     row_count = len(train_rows)
     folds = _blocked_expanding_oof_folds(
@@ -59,6 +60,7 @@ def _ml_tail_oof_location_scale(
             candidate_features=candidate_features,
             objective="regression_l2",
             random_state=_ml_tail_seed(information_set, tail_level, "location_oof", fold_index),
+            lgbm_params=lgbm_params,
         )
         validation_rows = [train_rows[index] for index in fold_validation]
         mu_oof[fold_validation] = _predict_lgb_rows(model, validation_rows, active_features)
@@ -81,6 +83,7 @@ def _ml_tail_oof_location_scale(
             candidate_features=candidate_features,
             objective="regression_l2",
             random_state=_ml_tail_seed(information_set, tail_level, "scale_oof", fold_index),
+            lgbm_params=lgbm_params,
         )
         validation_rows = [train_rows[index] for index in scale_validation]
         log_sigma_oof[scale_validation] = _predict_lgb_rows(
@@ -129,6 +132,7 @@ def _ml_tail_oof_median_mad_location_scale(
     information_set: str,
     tail_level: float,
     lgb: Any,
+    lgbm_params: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     row_count = len(train_rows)
     folds = _blocked_expanding_oof_folds(
@@ -149,6 +153,7 @@ def _ml_tail_oof_median_mad_location_scale(
         alpha=0.50,
         seed_label="median_q50_oof",
         folds=folds,
+        lgbm_params=lgbm_params,
     )
     abs_resid_oof = np.full(row_count, np.nan, dtype=float)
     finite_median = np.isfinite(median_oof)
@@ -168,6 +173,7 @@ def _ml_tail_oof_median_mad_location_scale(
             candidate_features=candidate_features,
             objective="regression_l1",
             random_state=_ml_tail_seed(information_set, tail_level, "mad_oof", fold_index),
+            lgbm_params=lgbm_params,
         )
         raw_mad_oof[scale_validation] = _predict_lgb_rows(
             model,
@@ -209,6 +215,7 @@ def _ml_tail_oof_median_iqr_location_scale(
     information_set: str,
     tail_level: float,
     lgb: Any,
+    lgbm_params: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     row_count = len(train_rows)
     folds = _blocked_expanding_oof_folds(
@@ -229,6 +236,7 @@ def _ml_tail_oof_median_iqr_location_scale(
         alpha=0.25,
         seed_label="iqr_q25_oof",
         folds=folds,
+        lgbm_params=lgbm_params,
     )
     q50 = _quantile_oof_predictions(
         train_rows=train_rows,
@@ -240,6 +248,7 @@ def _ml_tail_oof_median_iqr_location_scale(
         alpha=0.50,
         seed_label="iqr_q50_oof",
         folds=folds,
+        lgbm_params=lgbm_params,
     )
     q75 = _quantile_oof_predictions(
         train_rows=train_rows,
@@ -251,6 +260,7 @@ def _ml_tail_oof_median_iqr_location_scale(
         alpha=0.75,
         seed_label="iqr_q75_oof",
         folds=folds,
+        lgbm_params=lgbm_params,
     )
     q25_r, q50_r, q75_r, crossing_rate = _rearrange_quantile_predictions(q25, q50, q75)
     scale = _positive_scale(
@@ -291,6 +301,7 @@ def _fit_lgb_regression_model(
     objective: str,
     random_state: int,
     alpha: float | None = None,
+    lgbm_params: Mapping[str, object] | None = None,
 ) -> tuple[Any, dict[str, object], list[str]]:
     frame = pl.DataFrame(rows, infer_schema_length=None)
     gate = build_feature_matrix_gate_records(frame, candidate_features)
@@ -310,6 +321,17 @@ def _fit_lgb_regression_model(
         "num_threads": 1,
         "verbosity": -1,
     }
+    if lgbm_params:
+        for key in (
+            "n_estimators",
+            "learning_rate",
+            "num_leaves",
+            "min_child_samples",
+            "subsample",
+            "colsample_bytree",
+        ):
+            if key in lgbm_params:
+                params[key] = lgbm_params[key]
     if alpha is not None:
         params["alpha"] = float(alpha)
     model = lgb.LGBMRegressor(**params)
@@ -342,6 +364,7 @@ def _quantile_oof_predictions(
     alpha: float,
     seed_label: str,
     folds: list[tuple[list[int], list[int]]],
+    lgbm_params: Mapping[str, object] | None = None,
 ) -> np.ndarray:
     predictions = np.full(len(train_rows), np.nan, dtype=float)
     for fold_index, (fold_train, fold_validation) in enumerate(folds):
@@ -353,6 +376,7 @@ def _quantile_oof_predictions(
             objective="quantile",
             alpha=alpha,
             random_state=_ml_tail_seed(information_set, tail_level, seed_label, fold_index),
+            lgbm_params=lgbm_params,
         )
         predictions[fold_validation] = _predict_lgb_rows(
             model,

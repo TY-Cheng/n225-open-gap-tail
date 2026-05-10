@@ -284,7 +284,7 @@ def evaluate_command(
     workers: int = typer.Option(0, help="Joblib workers. Defaults to bounded local workers."),
     suite: str = typer.Option(
         "benchmark",
-        help="Evaluation suite: benchmark, benchmark-baseline, or ml-tail.",
+        help="Evaluation suite: benchmark, benchmark-baseline, ml-tail, or sensitivity.",
     ),
     tail_side: str = typer.Option(
         "both",
@@ -311,6 +311,34 @@ def evaluate_command(
     typer.echo(f"run dir: {result.run_dir}")
     typer.echo(f"forecast rows: {result.forecast_rows}")
     typer.echo(f"metric rows: {result.metric_rows}")
+    typer.echo(f"status: {result.status}")
+
+
+@app.command("sensitivity")
+def sensitivity_command(
+    run_id: str = typer.Option("latest", help="Run id. Defaults to the latest tail-risk run."),
+    workers: int = typer.Option(0, help="Joblib workers. Defaults to bounded local workers."),
+    tail_side: str = typer.Option(
+        "both",
+        help="Tail side: left-tail, right-tail, or both.",
+    ),
+    force: bool = typer.Option(False, help="Recompute appendix sensitivity artifacts."),
+) -> None:
+    """Run appendix-only configuration robustness diagnostics."""
+    settings = load_settings()
+    run_dir = resolve_run_dir(settings, "" if run_id == "latest" else run_id)
+    result = evaluate_suite(
+        run_dir=run_dir,
+        workers=workers,
+        suite="sensitivity",
+        force=force,
+        tail_side=tail_side,
+    )
+
+    typer.echo(f"run id: {result.run_id}")
+    typer.echo(f"run dir: {result.run_dir}")
+    typer.echo(f"sensitivity forecast rows: {result.forecast_rows}")
+    typer.echo(f"sensitivity metric rows: {result.metric_rows}")
     typer.echo(f"status: {result.status}")
 
 

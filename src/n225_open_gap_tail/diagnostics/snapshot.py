@@ -365,6 +365,7 @@ def _full_run_results_markdown(
     artifact_table = _artifact_table(paths)
     evidence_map = _snapshot_gallery.evidence_map_mermaid()
     table_manifest_table = _snapshot_gallery.table_manifest_markdown(table_manifest)
+    configuration_sensitivity = _configuration_sensitivity_markdown(run_dir)
     figure_gallery = _demote_markdown_headings(
         _snapshot_gallery.figure_gallery_markdown(
             figure_manifest=figure_manifest,
@@ -567,6 +568,10 @@ The appendix collects generated exports and provenance. The main Results section
 
 ### Paper-Facing Table And Figure Gallery
 
+#### Appendix Configuration Robustness
+
+{configuration_sensitivity}
+
 #### Table Manifest
 
 {table_manifest_table}
@@ -588,6 +593,80 @@ The appendix collects generated exports and provenance. The main Results section
 
 - Runtime imports are explicit at the module boundary; no dynamic runtime namespace bridge is required to generate this snapshot. This infrastructure note is separate from empirical claim boundaries.
 """
+
+
+def _configuration_sensitivity_markdown(run_dir: Path) -> str:
+    status_path = run_dir / "sensitivity" / "metrics" / "sensitivity_status.json"
+    metrics_root = run_dir / "sensitivity" / "metrics"
+    if not status_path.exists():
+        return (
+            "Appendix configuration robustness has not been generated for this run. "
+            "Run `just sensitivity latest` after the canonical full run, then rerun "
+            "`just snapshot latest`."
+        )
+    status = _read_json_dict(status_path)
+    rows = [
+        (
+            "LGBM capacity",
+            _sensitivity_metric_summary(
+                metrics_root / "lgbm_configuration_sensitivity_metrics.parquet"
+            ),
+        ),
+        (
+            "EWMA lambda",
+            _sensitivity_metric_summary(
+                metrics_root / "benchmark_configuration_sensitivity_metrics.parquet"
+            ),
+        ),
+        (
+            "POT threshold",
+            _sensitivity_metric_summary(metrics_root / "evt_threshold_sensitivity_metrics.parquet"),
+        ),
+    ]
+    return "\n\n".join(
+        (
+            _markdown_table(
+                ("Field", "Value"),
+                [
+                    ("Source primary run", _code(status.get("source_primary_run_id"))),
+                    ("Primary-claim allowed", _code(status.get("primary_claim_allowed"))),
+                    ("Forecast rows", _code(status.get("forecast_rows"))),
+                    ("Metric rows", _code(status.get("metric_rows"))),
+                    ("Status", _code(status.get("status"))),
+                ],
+            ),
+            _markdown_table(("Sensitivity family", "Rows / classifications"), rows),
+            (
+                "- The primary design compares pre-specified point-in-time forecast "
+                "specifications. Configuration sensitivity is appendix robustness "
+                "evidence and is not used to select primary selections.\n"
+                "- LGBM rows vary only capacity settings; EWMA reports the primary "
+                "lambda 0.94 plus 0.90 and 0.97; POT threshold rows use forecastable "
+                "0.90/0.925 settings and mark 0.95 as a boundary diagnostic at the "
+                "95% VaR level.\n"
+                "- Robustness classes describe conclusion stability versus the "
+                "registered primary specification. They do not feed DM/MCS gates, "
+                "promoted-model logic, or selected-model figures."
+            ),
+        )
+    )
+
+
+def _sensitivity_metric_summary(path: Path) -> str:
+    frame = _read_parquet_optional(path)
+    if frame.is_empty():
+        return "not generated"
+    if "robustness_classification" not in frame.columns:
+        return f"{frame.height} rows"
+    grouped = (
+        frame.group_by("robustness_classification")
+        .agg(pl.len().alias("rows"))
+        .sort("robustness_classification")
+    )
+    parts = [
+        f"{row['robustness_classification']}={row['rows']}" for row in grouped.iter_rows(named=True)
+    ]
+    return f"{frame.height} rows ({', '.join(parts)})"
 
 
 def _feature_coverage_table(frame: pl.DataFrame) -> str:

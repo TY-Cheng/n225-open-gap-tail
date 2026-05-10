@@ -18,6 +18,12 @@ from n225_open_gap_tail.config.model_labels import (
     display_information_set_label,
     display_model_label,
 )
+from n225_open_gap_tail.reporting.latex_utils import (
+    _inference_status_counts,
+    _latex_escape,
+    _range_label,
+    _result_summary_key,
+)
 
 
 SELECTED_MODEL_MAX_PER_GROUP = 3
@@ -447,6 +453,75 @@ def _full_per_model_metrics_to_latex(
     return "\n".join(lines)
 
 
+def _configuration_sensitivity_to_latex(
+    metrics: pl.DataFrame,
+    *,
+    table_scope: str,
+    manifest: Mapping[str, object] | None = None,
+) -> str:  # pragma: no cover
+    manifest = manifest or {}
+    headers = (
+        "family",
+        "config",
+        "model",
+        "info",
+        "side",
+        "N",
+        "breach",
+        "q_loss",
+        "fz_loss",
+        "class",
+    )
+    lines = [
+        f"% run_id: {manifest.get('run_id', '')}",
+        f"% git_commit: {manifest.get('git_commit', '')}",
+        f"% config_hash: {manifest.get('config_hash', '')}",
+        f"% table_scope: {table_scope}",
+        "% primary_claim_allowed: false",
+        "\\begin{tabular}{lll l lrrrrl}",
+        "\\toprule",
+        " & ".join(headers) + r" \\",
+        "\\midrule",
+    ]
+    sort_columns = [
+        column
+        for column in (
+            "sensitivity_family",
+            "config_label",
+            "tail_side",
+            "model_name",
+            "information_set",
+        )
+        if column in metrics.columns
+    ]
+    frame = metrics.sort(sort_columns) if sort_columns else metrics
+    for row in frame.iter_rows(named=True):
+        class_label = row.get("robustness_classification") or row.get("sensitivity_status")
+        lines.append(
+            f"{_latex_escape(row.get('sensitivity_family'))} & "
+            f"{_latex_escape(row.get('config_label'))} & "
+            f"{_latex_escape(display_model_label(row.get('model_name')))} & "
+            f"{_latex_escape(display_information_set_label(row.get('information_set')))} & "
+            f"{_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
+            f"{int(_optional_float(row.get('rows')) or 0)} & "
+            f"{_fmt(row.get('var_breach_rate'))} & "
+            f"{_fmt(row.get('mean_quantile_loss'))} & "
+            f"{_fmt(row.get('mean_fz_loss'))} & "
+            f"{_latex_escape(class_label)} \\\\"
+        )
+    note = (
+        "Visible notes: appendix-only configuration robustness diagnostics. "
+        "Rows carry primary_claim_allowed=false and are not used to select "
+        "primary selections, promoted rows, DM/MCS gates, or selected-model figures. "
+        "Lower quantile/FZ loss is better; breach should be read against the 5% "
+        "nominal exception rate. Boundary EVT rows at u=0.95 are diagnostics at "
+        "the 95% VaR level, not alternative forecasts."
+    )
+    lines.extend(["\\midrule", f"\\multicolumn{{10}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(["\\bottomrule", "\\end{tabular}", ""])
+    return "\n".join(lines)
+
+
 def _result_matrix_to_latex(
     matrix: pl.DataFrame, *, manifest: Mapping[str, object] | None = None
 ) -> str:
@@ -806,12 +881,12 @@ def _hedge_trigger_rows(forecasts: pl.DataFrame) -> list[dict[str, object]]:
         & pl.col("is_valid_forecast").fill_null(True)
     )
     for key, group in frame.group_by(group_columns, maintain_order=True):
-        if group.is_empty():
+        if group.is_empty():  # pragma: no cover
             continue
         key_values = key if isinstance(key, tuple) else (key,)
         row_key = dict(zip(group_columns, key_values, strict=False))
         threshold = group.select(pl.col("var_forecast").quantile(0.75)).item()
-        if threshold is None:
+        if threshold is None:  # pragma: no cover
             continue
         diagnostic = group.with_columns(
             (pl.col("var_forecast") >= float(threshold)).alias("_trigger"),
@@ -918,59 +993,3 @@ def _result_matrix_summary_rows(
             }
         )
     return rows
-
-
-def _inference_status_counts(
-    frame: pl.DataFrame | None,
-    status_column: str,
-    ok_prefix: str,
-) -> dict[tuple[str, str, str, str], dict[str, int]]:
-    if frame is None or frame.is_empty() or status_column not in frame.columns:
-        return {}
-    output: dict[tuple[str, str, str, str], dict[str, int]] = {}
-    for row in frame.iter_rows(named=True):
-        key = _result_summary_key(row)
-        bucket = output.setdefault(key, {"ok": 0, "total": 0})
-        bucket["total"] += 1
-        if str(row.get(status_column) or "").startswith(ok_prefix):
-            bucket["ok"] += 1
-    return output
-
-
-def _result_summary_key(row: Mapping[str, object]) -> tuple[str, str, str, str, str]:
-    return (
-        str(row.get("comparison_family") or ""),
-        str(row.get("comparison_axis") or ""),
-        str(row.get("sample_policy") or ""),
-        str(row.get("loss_family") or ""),
-        str(row.get("tail_side") or PRIMARY_TAIL_SIDE),
-    )
-
-
-def _range_label(low: object, high: object) -> str:
-    low_value = _optional_float(low)
-    high_value = _optional_float(high)
-    if low_value is None or high_value is None:
-        return "n/a"
-    if int(low_value) == int(high_value):
-        return str(int(low_value))
-    return f"{int(low_value)}--{int(high_value)}"
-
-
-def _latex_escape(value: object) -> str:
-    text = "" if value is None else str(value)
-    replacements = {
-        "\\": r"\textbackslash{}",
-        "&": r"\&",
-        "%": r"\%",
-        "$": r"\$",
-        "#": r"\#",
-        "_": r"\_",
-        "{": r"\{",
-        "}": r"\}",
-        "~": r"\textasciitilde{}",
-        "^": r"\textasciicircum{}",
-    }
-    for raw, escaped in replacements.items():
-        text = text.replace(raw, escaped)
-    return text

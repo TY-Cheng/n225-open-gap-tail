@@ -23,6 +23,7 @@ import n225_open_gap_tail.forecasting as paper_evaluation
 import n225_open_gap_tail.forecasting as paper_module
 import n225_open_gap_tail.forecasting._benchmark_suite as benchmark_suite
 import n225_open_gap_tail.forecasting._ml_tail_suite as ml_tail_suite
+import n225_open_gap_tail.forecasting.evaluation as evaluation_dispatch
 import n225_open_gap_tail.inference as paper_inference
 import n225_open_gap_tail.metrics.stat_utils as stat_utils
 import n225_open_gap_tail.models.benchmark_advanced as benchmark_advanced
@@ -3357,8 +3358,56 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
     )
     assert reporting_latex._promoted_dm_row(None, promoted_spec, "var_quantile_loss") is None
     assert reporting_latex._promoted_dm_row(pl.DataFrame({"x": [1]}), promoted_spec, "x") is None
+    assert (
+        reporting_latex._promoted_dm_row(
+            pl.DataFrame(
+                {
+                    "tail_side": ["other_tail"],
+                    "information_set": [promoted_spec["information_set"]],
+                    "candidate_entity": [promoted_spec["model_name"]],
+                    "baseline_entity": [paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL],
+                    "loss_family": ["var_quantile_loss"],
+                }
+            ),
+            promoted_spec,
+            "var_quantile_loss",
+        )
+        is None
+    )
     assert reporting_latex._promoted_mcs_row(None, promoted_spec, "var_quantile_loss") is None
     assert reporting_latex._promoted_mcs_row(pl.DataFrame({"x": [1]}), promoted_spec, "x") is None
+    assert (
+        reporting_latex._promoted_mcs_row(
+            pl.DataFrame(
+                {
+                    "tail_side": ["other_tail"],
+                    "information_set": [promoted_spec["information_set"]],
+                    "model_name": [promoted_spec["model_name"]],
+                    "loss_family": ["var_quantile_loss"],
+                }
+            ),
+            promoted_spec,
+            "var_quantile_loss",
+        )
+        is None
+    )
+    assert (
+        reporting_latex._selection_candidates(
+            pl.DataFrame(
+                {
+                    "model_name": ["m"],
+                    "tail_side": ["left_tail"],
+                    "rows": [100],
+                    "var_breach_rate": [None],
+                    "expected_breach_rate": [0.05],
+                    "mean_quantile_loss": [0.1],
+                    "mean_fz_loss": [-0.5],
+                }
+            ),
+            suite_group="demo",
+        )
+        == []
+    )
     assert "rej10" in reporting_latex._dm_cell(promoted_rows[0]["dm_quantile"])
     assert reporting_latex._dm_cell(promoted_rows[0]["dm_fz"]) == "unavailable"
     assert reporting_latex._dm_cell(None) == "n/a"
@@ -3487,6 +3536,43 @@ def test_locked_run_refuses_config_mismatch_without_force(tmp_path: Path) -> Non
 
     with pytest.raises(paper_module.PipelineRunError, match="Unknown evaluation suite"):
         evaluate_suite(run_dir=run_dir, workers=1, suite="advanced", force=True)
+
+
+def test_evaluate_suite_dispatches_registered_suite_names(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_dispatch(name: str) -> object:
+        def _dispatch(**kwargs: object) -> paper_module.EvaluationResult:
+            calls.append((name, kwargs))
+            return paper_module.EvaluationResult(
+                run_id=name,
+                run_dir=cast(Path, kwargs["run_dir"]),
+                forecast_rows=1,
+                metric_rows=1,
+                status=name,
+            )
+
+        return _dispatch
+
+    monkeypatch.setattr(evaluation_dispatch, "evaluate_benchmark_suite", fake_dispatch("benchmark"))
+    monkeypatch.setattr(evaluation_dispatch, "evaluate_ml_tail_suite", fake_dispatch("ml_tail"))
+    monkeypatch.setattr(
+        evaluation_dispatch, "evaluate_sensitivity_suite", fake_dispatch("sensitivity")
+    )
+
+    assert (
+        evaluation_dispatch.evaluate_suite(run_dir=tmp_path, suite="benchmark").status
+        == "benchmark"
+    )
+    assert evaluation_dispatch.evaluate_suite(run_dir=tmp_path, suite="ml-tail").status == "ml_tail"
+    assert (
+        evaluation_dispatch.evaluate_suite(run_dir=tmp_path, suite="sensitivity").status
+        == "sensitivity"
+    )
+    assert [name for name, _ in calls] == ["benchmark", "ml_tail", "sensitivity"]
 
 
 def test_benchmark_and_ml_tail_require_current_leakage_summary(tmp_path: Path) -> None:

@@ -13,6 +13,7 @@ from n225_open_gap_tail.forecasting._benchmark_suite import (
     evaluate_benchmark_suite,
 )
 from n225_open_gap_tail.forecasting._ml_tail_suite import evaluate_ml_tail_suite
+from n225_open_gap_tail.forecasting.sensitivity import evaluate_sensitivity_suite
 
 
 def evaluate_suite(
@@ -40,5 +41,12 @@ def evaluate_suite(
             force=force,
             tail_side=tail_side,
             resume=resume,
+        )
+    if normalized_suite == "sensitivity":
+        return evaluate_sensitivity_suite(
+            run_dir=run_dir,
+            workers=workers,
+            force=force,
+            tail_side=tail_side,
         )
     raise PipelineRunError(f"Unknown evaluation suite: {suite}")

@@ -61,6 +61,8 @@ def _evaluate_benchmark_shard(payload: dict[str, object]) -> dict[str, list[dict
     tail_side = normalize_tail_side(payload.get("tail_side"))
     tail_level = _required_float(payload["tail_level"])
     models = cast(tuple[str, ...], payload["models"])
+    ewma_lambda = _optional_float(payload.get("ewma_lambda"))
+    evt_threshold_quantile = _optional_float(payload.get("evt_threshold_quantile"))
     panel_columns = pl.scan_parquet(panel_path).collect_schema().names()
     selected_columns = ["forecast_date", "realized_loss"]
     if "gap_t" in panel_columns:
@@ -118,6 +120,8 @@ def _evaluate_benchmark_shard(payload: dict[str, object]) -> dict[str, list[dict
             tail_side=tail_side,
             tail_level=tail_level,
             oos_start=oos_start,
+            ewma_lambda=ewma_lambda,
+            evt_threshold_quantile=evt_threshold_quantile,
         )
         forecasts.extend(model_rows)
         diagnostics.extend(model_diag)
@@ -132,6 +136,8 @@ def _forecast_model_sequence(
     tail_side: str,
     tail_level: float,
     oos_start: str,
+    ewma_lambda: float | None = None,
+    evt_threshold_quantile: float | None = None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
     forecasts: list[dict[str, object]] = []
     diagnostics: list[dict[str, object]] = []
@@ -149,7 +155,16 @@ def _forecast_model_sequence(
         if train.size < DEFAULT_MIN_TRAIN_ROWS:
             continue
         try:
-            forecast = _forecast_one(train=train, model_name=model_name, tail_level=tail_level)
+            if ewma_lambda is None and evt_threshold_quantile is None:
+                forecast = _forecast_one(train=train, model_name=model_name, tail_level=tail_level)
+            else:
+                forecast = _forecast_one(
+                    train=train,
+                    model_name=model_name,
+                    tail_level=tail_level,
+                    ewma_lambda=ewma_lambda,
+                    evt_threshold_quantile=evt_threshold_quantile,
+                )
             realized_loss = _required_float(row["realized_loss"])
             var_forecast = _required_float(forecast["var_forecast"])
             es_forecast = _required_float(forecast["es_forecast"])
@@ -268,6 +283,8 @@ def _forecast_one(
     train: np.ndarray,
     model_name: str,
     tail_level: float,
+    ewma_lambda: float | None = None,
+    evt_threshold_quantile: float | None = None,
 ) -> dict[str, object]:
     if model_name == "historical_quantile":
         var_forecast = float(np.quantile(train, tail_level))
@@ -289,9 +306,18 @@ def _forecast_one(
             "convergence_code": 0,
         }
     if model_name == "ewma_vol_scaled":
-        return _ewma_forecast(train=train, tail_level=tail_level, lambda_=EWMA_MAIN_LAMBDA)
+        return _ewma_forecast(
+            train=train,
+            tail_level=tail_level,
+            lambda_=EWMA_MAIN_LAMBDA if ewma_lambda is None else float(ewma_lambda),
+        )
     if model_name in {"garch_t", "gjr_garch_t", "gjr_garch_evt"}:
-        return _arch_forecast(train=train, tail_level=tail_level, model_name=model_name)
+        return _arch_forecast(
+            train=train,
+            tail_level=tail_level,
+            model_name=model_name,
+            evt_threshold_quantile=evt_threshold_quantile,
+        )
     raise PipelineRunError(f"Unknown Benchmark model: {model_name}")
 
 
@@ -319,6 +345,7 @@ def _arch_forecast(  # pragma: no cover - numeric optimizer exercised in real Be
     train: np.ndarray,
     tail_level: float,
     model_name: str,
+    evt_threshold_quantile: float | None = None,
 ) -> dict[str, object]:
     try:
         from arch import arch_model
@@ -357,6 +384,9 @@ def _arch_forecast(  # pragma: no cover - numeric optimizer exercised in real Be
         evt_tail = _pot_gpd_standardized_tail(
             standardized_losses=standardized_losses,
             tail_level=tail_level,
+            threshold_quantile=EVT_THRESHOLD_QUANTILE
+            if evt_threshold_quantile is None
+            else float(evt_threshold_quantile),
         )
         var_forecast = -mean_return_forecast + scale_forecast * _required_float(
             evt_tail["standardized_var"]

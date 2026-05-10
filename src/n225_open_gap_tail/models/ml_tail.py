@@ -83,6 +83,8 @@ def _evaluate_ml_tail_shard(payload: dict[str, object]) -> dict[str, list[dict[s
     information_set = str(payload["information_set"])
     model_name = str(payload["model_name"])
     refit_frequency = str(payload.get("refit_frequency") or ML_TAIL_REFIT_FREQUENCY)
+    lgbm_params = cast(Mapping[str, object] | None, payload.get("lgbm_params"))
+    evt_threshold_quantile = _optional_float(payload.get("evt_threshold_quantile"))
     coverage_rows = pl.read_parquet(coverage_path).to_dicts()
     candidate_features = ml_tail_feature_columns_for_information_set(
         coverage_rows,
@@ -131,6 +133,8 @@ def _evaluate_ml_tail_shard(payload: dict[str, object]) -> dict[str, list[dict[s
         tail_side=tail_side,
         tail_level=tail_level,
         oos_start=oos_start,
+        lgbm_params=lgbm_params,
+        evt_threshold_quantile=evt_threshold_quantile,
     )
 
 
@@ -212,6 +216,22 @@ def _history_feature_values(
     return values
 
 
+def _lgbm_training_params(overrides: Mapping[str, object] | None = None) -> dict[str, object]:
+    params: dict[str, object] = {
+        "n_estimators": 80,
+        "learning_rate": 0.05,
+        "num_leaves": 15,
+        "min_child_samples": 20,
+        "subsample": 0.9,
+        "colsample_bytree": 0.9,
+    }
+    if overrides:
+        for key in tuple(params):
+            if key in overrides:
+                params[key] = overrides[key]
+    return params
+
+
 def _forecast_ml_tail_lightgbm_sequence(
     *,
     rows: list[dict[str, object]],
@@ -221,6 +241,8 @@ def _forecast_ml_tail_lightgbm_sequence(
     tail_level: float,
     oos_start: str,
     tail_side: str = PRIMARY_TAIL_SIDE,
+    lgbm_params: Mapping[str, object] | None = None,
+    evt_threshold_quantile: float | None = None,
 ) -> dict[str, list[dict[str, object]]]:
     try:
         import lightgbm as lgb
@@ -271,6 +293,8 @@ def _forecast_ml_tail_lightgbm_sequence(
             tail_side=tail_side,
             oos_start=oos_start,
             lgb=lgb,
+            lgbm_params=lgbm_params,
+            evt_threshold_quantile=evt_threshold_quantile,
         )
     clean = [
         row
@@ -317,12 +341,7 @@ def _forecast_ml_tail_lightgbm_sequence(
                 model = lgb.LGBMRegressor(
                     objective="quantile",
                     alpha=tail_level,
-                    n_estimators=80,
-                    learning_rate=0.05,
-                    num_leaves=15,
-                    min_child_samples=20,
-                    subsample=0.9,
-                    colsample_bytree=0.9,
+                    **_lgbm_training_params(lgbm_params),
                     random_state=int(tail_level * 10_000) + len(information_set),
                     num_threads=1,
                     verbosity=-1,
@@ -484,6 +503,8 @@ def _forecast_ml_tail_location_scale_sequence(
     oos_start: str,
     lgb: Any,
     tail_side: str = PRIMARY_TAIL_SIDE,
+    lgbm_params: Mapping[str, object] | None = None,
+    evt_threshold_quantile: float | None = None,
 ) -> dict[str, list[dict[str, object]]]:
     clean = [
         row
@@ -517,6 +538,8 @@ def _forecast_ml_tail_location_scale_sequence(
                     information_set=information_set,
                     tail_level=tail_level,
                     lgb=lgb,
+                    lgbm_params=lgbm_params,
+                    evt_threshold_quantile=evt_threshold_quantile,
                 )
                 diagnostics.append(
                     _ml_tail_location_scale_diagnostic(
@@ -625,6 +648,8 @@ def _fit_ml_tail_location_scale_bundle(
     information_set: str,
     tail_level: float,
     lgb: Any,
+    lgbm_params: Mapping[str, object] | None = None,
+    evt_threshold_quantile: float | None = None,
 ) -> dict[str, object]:
     if (
         model_name in ML_TAIL_MEDIAN_MAD_POT_GPD_MODEL_NAMES
@@ -637,6 +662,8 @@ def _fit_ml_tail_location_scale_bundle(
             information_set=information_set,
             tail_level=tail_level,
             lgb=lgb,
+            lgbm_params=lgbm_params,
+            evt_threshold_quantile=evt_threshold_quantile,
         )
     oof = _ml_tail_oof_location_scale(
         train_rows=train_rows,
@@ -644,6 +671,7 @@ def _fit_ml_tail_location_scale_bundle(
         information_set=information_set,
         tail_level=tail_level,
         lgb=lgb,
+        lgbm_params=lgbm_params,
     )
     z_oof = cast(np.ndarray, oof["standardized_losses"])
     z_oof = z_oof[np.isfinite(z_oof)]
@@ -670,12 +698,18 @@ def _fit_ml_tail_location_scale_bundle(
             min_exceedances=min_es_exceedances,
         )
     elif model_name in ML_TAIL_POT_GPD_MODEL_NAMES:
-        if tail_level <= EVT_THRESHOLD_QUANTILE:
+        threshold_quantile = (
+            EVT_THRESHOLD_QUANTILE
+            if evt_threshold_quantile is None
+            else float(evt_threshold_quantile)
+        )
+        if tail_level <= threshold_quantile:
             raise PipelineRunError("unavailable_evt_tail_not_above_threshold")
         try:
             evt_tail = _pot_gpd_standardized_tail(
                 standardized_losses=z_oof,
                 tail_level=tail_level,
+                threshold_quantile=threshold_quantile,
                 require_finite_gpd_es=True,
                 min_standardized_losses=min(EVT_MIN_STANDARDIZED_LOSSES_95, DEFAULT_MIN_TRAIN_ROWS),
                 min_exceedances=min(EVT_MIN_EXCEEDANCES_95, DEFAULT_MIN_TRAIN_EXCEEDANCES),
@@ -712,6 +746,7 @@ def _fit_ml_tail_location_scale_bundle(
         candidate_features=candidate_features,
         objective="regression_l2",
         random_state=location_seed,
+        lgbm_params=lgbm_params,
     )
     log_abs_resid_oof = cast(np.ndarray, oof["log_abs_resid_oof"])
     scale_indices = [index for index, value in enumerate(log_abs_resid_oof) if math.isfinite(value)]
@@ -728,6 +763,7 @@ def _fit_ml_tail_location_scale_bundle(
         candidate_features=candidate_features,
         objective="regression_l2",
         random_state=scale_seed,
+        lgbm_params=lgbm_params,
     )
     return {
         "fit_status": "ok",
@@ -829,6 +865,8 @@ def _fit_ml_tail_robust_location_scale_bundle(
     information_set: str,
     tail_level: float,
     lgb: Any,
+    lgbm_params: Mapping[str, object] | None = None,
+    evt_threshold_quantile: float | None = None,
 ) -> dict[str, object]:
     route = "median_iqr" if model_name in ML_TAIL_MEDIAN_IQR_POT_GPD_MODEL_NAMES else "median_mad"
     if route == "median_iqr":
@@ -838,6 +876,7 @@ def _fit_ml_tail_robust_location_scale_bundle(
             information_set=information_set,
             tail_level=tail_level,
             lgb=lgb,
+            lgbm_params=lgbm_params,
         )
         scale_method = "conditional_iqr_q25_q75"
         standardization_method = "blocked_expanding_oof_conditional_median_iqr"
@@ -848,6 +887,7 @@ def _fit_ml_tail_robust_location_scale_bundle(
             information_set=information_set,
             tail_level=tail_level,
             lgb=lgb,
+            lgbm_params=lgbm_params,
         )
         scale_method = "conditional_median_abs_residual_l1"
         standardization_method = "blocked_expanding_oof_conditional_median_mad"
@@ -858,6 +898,9 @@ def _fit_ml_tail_robust_location_scale_bundle(
     evt_tail = _pot_gpd_standardized_tail(
         standardized_losses=z_oof,
         tail_level=tail_level,
+        threshold_quantile=EVT_THRESHOLD_QUANTILE
+        if evt_threshold_quantile is None
+        else float(evt_threshold_quantile),
         require_finite_gpd_es=True,
         min_standardized_losses=min(EVT_MIN_STANDARDIZED_LOSSES_95, DEFAULT_MIN_TRAIN_ROWS),
         min_exceedances=min(EVT_MIN_EXCEEDANCES_95, DEFAULT_MIN_TRAIN_EXCEEDANCES),
@@ -879,6 +922,7 @@ def _fit_ml_tail_robust_location_scale_bundle(
             objective="quantile",
             alpha=0.25,
             random_state=_ml_tail_seed(backbone_key, "q25_final"),
+            lgbm_params=lgbm_params,
         )
         q50_model, q50_gate, q50_active = _fit_lgb_regression_model(
             lgb=lgb,
@@ -888,6 +932,7 @@ def _fit_ml_tail_robust_location_scale_bundle(
             objective="quantile",
             alpha=0.50,
             random_state=_ml_tail_seed(backbone_key, "q50_final"),
+            lgbm_params=lgbm_params,
         )
         q75_model, q75_gate, q75_active = _fit_lgb_regression_model(
             lgb=lgb,
@@ -897,6 +942,7 @@ def _fit_ml_tail_robust_location_scale_bundle(
             objective="quantile",
             alpha=0.75,
             random_state=_ml_tail_seed(backbone_key, "q75_final"),
+            lgbm_params=lgbm_params,
         )
         active_features = list(dict.fromkeys((*q25_active, *q50_active, *q75_active)))
         scale_active_features = list(dict.fromkeys((*q25_active, *q75_active)))
@@ -919,6 +965,7 @@ def _fit_ml_tail_robust_location_scale_bundle(
             objective="quantile",
             alpha=0.50,
             random_state=_ml_tail_seed(backbone_key, "median_final"),
+            lgbm_params=lgbm_params,
         )
         scale_target_oof = cast(np.ndarray, oof["scale_target_oof"])
         scale_indices = [
@@ -935,6 +982,7 @@ def _fit_ml_tail_robust_location_scale_bundle(
             candidate_features=candidate_features,
             objective="regression_l1",
             random_state=_ml_tail_seed(backbone_key, "mad_final"),
+            lgbm_params=lgbm_params,
         )
         model_payload = {"location_model": location_model, "scale_model": scale_model}
     return {

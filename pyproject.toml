@@ -61,3 +61,11 @@ warn_redundant_casts = true
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-q --cov=n225_open_gap_tail --cov-report=term-missing --cov-fail-under=95"
+markers = [
+    "unit: fast deterministic unit tests.",
+    "schema: schema and artifact-contract tests.",
+    "smoke: lightweight source/client smoke tests with mocked or bounded inputs.",
+    "vendor: tests that touch licensed or network vendor services; excluded from default CI.",
+    "realdata: tests requiring local licensed real market data; excluded from default CI.",
+    "slow: long-running local validation tests.",
+]

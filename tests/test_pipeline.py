@@ -3819,6 +3819,14 @@ def test_build_panel_with_synthetic_vendor_rows(
     assert result.panel_path == gold_panel
 
 
+def test_default_end_date_resolves_to_most_recent_completed_friday() -> None:
+    assert paper_core.resolve_default_end_date(date(2026, 5, 9)) == "2026-05-08"
+    assert paper_core.resolve_default_end_date(date(2026, 5, 10)) == "2026-05-08"
+    assert paper_core.resolve_default_end_date(date(2026, 5, 11)) == "2026-05-08"
+    assert paper_core.resolve_default_end_date(date(2026, 5, 14)) == "2026-05-08"
+    assert paper_core.resolve_default_end_date(date(2026, 5, 15)) == "2026-05-08"
+
+
 def test_private_pipeline_helpers_cover_defensive_edges(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -125,7 +125,7 @@ def build_panel(
     end: str | None = None,
 ) -> PanelBuildResult:
     run_ts = datetime.now(UTC)
-    end_date = end or date.today().isoformat()
+    end_date = end or resolve_default_end_date()
     _pipeline_log(f"start window={start}..{end_date}")
     removed_tmp_files = cleanup_orphan_tmp_files(
         settings.data_dir,
@@ -593,6 +593,15 @@ def build_panel(
         rows=len(panel),
         clean_rows=clean_rows,
     )
+
+
+def resolve_default_end_date(today: date | None = None) -> str:
+    """Return the most recent completed Friday before the run date."""
+    run_date = today or date.today()
+    days_since_friday = (run_date.weekday() - 4) % 7
+    if days_since_friday == 0:
+        days_since_friday = 7
+    return (run_date - timedelta(days=days_since_friday)).isoformat()
 
 
 def build_modeling_panel_records(

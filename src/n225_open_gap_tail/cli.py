@@ -265,7 +265,10 @@ def snapshot(
 @app.command("build-panel")
 def build_panel_command(
     start: str = typer.Option(MAIN_SAMPLE_START, help="Start date in YYYY-MM-DD."),
-    end: str = typer.Option("", help="End date in YYYY-MM-DD. Defaults to today."),
+    end: str = typer.Option(
+        "",
+        help="End date in YYYY-MM-DD. Defaults to the most recent completed Friday.",
+    ),
 ) -> None:
     """Build the cache-first modeling panel and durable gold artifacts."""
     settings = load_settings()
@@ -345,7 +348,10 @@ def sensitivity_command(
 @app.command("run")
 def run_command(
     start: str = typer.Option(MAIN_SAMPLE_START, help="Start date in YYYY-MM-DD."),
-    end: str = typer.Option("", help="End date in YYYY-MM-DD. Defaults to today."),
+    end: str = typer.Option(
+        "",
+        help="End date in YYYY-MM-DD. Defaults to the most recent completed Friday.",
+    ),
     workers: int = typer.Option(0, help="Joblib workers. Defaults to bounded local workers."),
     suite: str = typer.Option(
         "all",

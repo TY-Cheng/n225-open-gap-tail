@@ -96,10 +96,10 @@ FRED uses current historical values with conservative availability semantics and
 The current paper-facing evidence map is generated from:
 
 ```text
-run_id = tailrisk_20160719_20260429_20260508T053721Z_commit_14205f41
-requested window = 2016-07-19 to 2026-04-29
-clean forecast sample = 2018-06-20 to 2026-04-28
-clean forecast observations = 1,660
+run_id = tailrisk_20160719_20260508_20260511T024616Z_commit_1388d920
+requested window = 2016-07-19 to 2026-05-08
+clean forecast sample = 2018-06-20 to 2026-05-01
+clean forecast observations = 1,661
 ```
 
 The clean sample begins after all required target fields, Massive core fields,

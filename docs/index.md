@@ -17,8 +17,8 @@ hide:
   limitations.
 - [Development Audit Prompt](development_audit_prompt.md): implementation review prompt for
   checking code, data, timing, tests, and reporting against the research design.
-- [Manuscript Audit Prompt](manuscript_audit_prompt.md): paper-facing review prompt for
-  checking draft claims against available evidence.
+- [Manuscript Audit Prompt](manuscript_audit_prompt.md): JFM/Wiley-facing review prompt
+  for checking draft claims, evidence locks, and submission-style build readiness.
 - [Future Work](future_work.md): deferred extensions that should not dilute the current
   paper.
 

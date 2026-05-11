@@ -6,6 +6,7 @@ from typer.testing import CliRunner
 import n225_open_gap_tail.cli as cli
 from n225_open_gap_tail.cli import app
 from n225_open_gap_tail.config.research import CORE_FRED_SERIES, CORE_MASSIVE_TICKERS
+from n225_open_gap_tail.diagnostics.feature_audit import FeatureAuditResult
 from n225_open_gap_tail.diagnostics.snapshot import SnapshotResult
 from n225_open_gap_tail.forecasting import (
     EvaluationResult,
@@ -32,6 +33,7 @@ def test_pipeline_commands_expose_help() -> None:
         "build-panel",
         "evaluate",
         "export-tables",
+        "feature-audit",
         "leakage-check",
         "sensitivity",
         "source-probe",
@@ -633,6 +635,42 @@ def test_export_tables_command_reports_summary(
     assert result.exit_code == 0
     assert "run id: tailrisk_latest" in result.output
     assert "tables: 1" in result.output
+
+
+def test_feature_audit_command_reports_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "reports" / "runs" / "tailrisk_latest"
+    output_path = run_dir / "audits" / "feature_audit.json"
+
+    def fake_resolve_run_dir(settings: object, run_id: str) -> Path:
+        assert run_id == ""
+        return run_dir
+
+    def fake_write_feature_audit(**kwargs: object) -> FeatureAuditResult:
+        assert kwargs["run_dir"] == run_dir
+        assert kwargs["baseline_run_dir"] is None
+        return FeatureAuditResult(
+            run_id="tailrisk_latest",
+            run_dir=run_dir,
+            output_path=output_path,
+            feature_count=12,
+            block_count=4,
+            warning_count=1,
+        )
+
+    monkeypatch.setattr(cli, "resolve_run_dir", fake_resolve_run_dir)
+    monkeypatch.setattr(cli, "write_feature_audit", fake_write_feature_audit)
+
+    result = CliRunner().invoke(app, ["feature-audit", "--run-id", "latest"])
+
+    assert result.exit_code == 0
+    assert "run id: tailrisk_latest" in result.output
+    assert f"feature audit: {output_path}" in result.output
+    assert "features: 12" in result.output
+    assert "source blocks: 4" in result.output
+    assert "warnings: 1" in result.output
 
 
 def test_leakage_check_command_reports_summary(

@@ -11,7 +11,7 @@ This page is the canonical source for source roles, source status, target formul
 
 | Source | Role | Project status | Timing interpretation |
 | --- | --- | --- | --- |
-| J-Quants Futures OHLC | OSE Nikkei 225 Futures target source and contract metadata source | Premium futures access is configured locally for historical audits | Ex-post historical research target source, not a live pre-open feed. |
+| J-Quants Futures OHLC | OSE Nikkei 225 Futures target source and contract metadata source | Premium futures access is configured locally for historical audits | Ex-post historical research target source, not an operational pre-open feed. |
 | Massive.com | U.S. close-side ETF, equity, sector, dollar ETF proxy, Japan proxy, Asia proxy, and index predictors | Configured licensed API | Predictor source with UTC timestamps converted explicitly to ET. Massive is not the canonical USD/JPY source in the current run. |
 | NYSE calendar | U.S. regular close, holiday, and early-close cutoff logic | Core public timing source | Determines the U.S. cash close used for the forecast origin. |
 | JPX calendar and trading-hour rules | OSE business-day, day/night session, holiday-trading, roll/SQ context | Core official timing source | Determines OSE target eligibility and holiday/session flags. |
@@ -310,10 +310,10 @@ Every modeling row must state a forecast origin and model cutoff.
 | Forecast origin | Nominal timestamp | Known information | Target open | Main use |
 | --- | ---: | --- | --- | --- |
 | `US_CASH_CLOSE` | Official U.S. cash close, normally 16:00 ET and adjusted for early closes | U.S. ETF, index, sector, FX, VIX, rates, and other predictor fields available by the U.S. close cutoff | Next eligible OSE day open at 08:45 JST | Main pre-open risk forecast origin. |
-| `OSE_NIGHT_CLOSE` | 06:00 JST | OSE night close if available as an audited historical field or live licensed feed | Same OSE day open at 08:45 JST | Night-session absorption robustness and residual decomposition. |
+| `OSE_NIGHT_CLOSE` | 06:00 JST | OSE night close if available as an audited historical field or licensed intraday reference | Same OSE day open at 08:45 JST | Night-session absorption robustness and residual decomposition. |
 | `PREV_OSE_DAY_CLOSE` | 15:45 JST | Previous OSE day-session close and settlement context | Next eligible OSE day open | Full opening-level risk target. |
 
-J-Quants futures OHLC can support historical reconstruction of targets and residual decompositions after the subscription is available. It should not be described as a live source for the `US_CASH_CLOSE` or `OSE_NIGHT_CLOSE` production information set.
+J-Quants futures OHLC can support historical reconstruction of targets and residual decompositions after the subscription is available. It should not be described as an operational source for the `US_CASH_CLOSE` or `OSE_NIGHT_CLOSE` information set.
 
 The phrase "U.S. close information" is a cutoff definition, not a claim that
 all U.S. after-close or overnight events are observed. A predictor can enter the
@@ -495,7 +495,7 @@ Licensed-data extension:
 | --- | --- | --- |
 | `DaySessionOpen` | Target open for all full-gap and residual targets | Must be present and traceable to raw contract rows. |
 | `DaySessionClose` | Reference for `full_gap_close_to_open` and lagged Japanese controls | Must refer to the same contract convention used in target construction. |
-| `NightSessionClose` | Reference for `residual_nightclose_to_day_open` and night-session absorption controls | Historical residual source only unless a live licensed feed exists. |
+| `NightSessionClose` | Reference for `residual_nightclose_to_day_open` and night-session absorption controls | Historical residual source only unless a licensed operational feed exists. |
 | `SettlementPrice` | Main reference for `full_gap_settle_to_open` | Must be matched to the prior eligible contract/session. |
 | `Volume` | Lagged turnover/activity proxy and data-sanity field | Session-specific volume is used only if available and verified; it is not interpreted as order-book depth. |
 | `OpenInterest` | Contract-state, participation, and roll diagnostics | Used with roll/SQ controls; it is not a direct liquidity-depth measure. |

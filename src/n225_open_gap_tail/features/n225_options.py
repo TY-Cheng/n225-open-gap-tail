@@ -17,15 +17,31 @@ from n225_open_gap_tail.config.runtime import (
 
 N225_OPTION_FEATURES = (
     "n225_option_atm_iv_lag_1",
+    "n225_option_atm_iv_short_lag_1",
+    "n225_option_atm_iv_medium_lag_1",
+    "n225_option_iv_term_slope_lag_1",
     "n225_option_atm_put_call_iv_skew_lag_1",
+    "n225_option_otm_put_iv_lag_1",
+    "n225_option_otm_call_iv_lag_1",
+    "n225_option_risk_reversal_lag_1",
     "n225_option_base_volatility_lag_1",
+    "n225_option_base_iv_spread_lag_1",
     "n225_option_iv_oi_weighted_lag_1",
     "n225_option_put_call_oi_ratio_lag_1",
     "n225_option_put_call_volume_ratio_lag_1",
+    "n225_option_put_oi_share_lag_1",
+    "n225_option_put_volume_share_lag_1",
     "n225_option_total_open_interest_log1p_lag_1",
     "n225_option_total_volume_log1p_lag_1",
+    "n225_option_oi_log_change_lag_1",
+    "n225_option_volume_log_change_lag_1",
     "n225_option_valid_contract_count_lag_1",
+    "n225_option_short_valid_contract_count_lag_1",
+    "n225_option_medium_valid_contract_count_lag_1",
     "n225_option_days_to_sq_lag_1",
+    "n225_option_atm_iv_zscore_20_lag_1",
+    "n225_option_atm_iv_change_20_lag_1",
+    "n225_option_atm_iv_percentile_60_lag_1",
     "n225_option_night_atm_close_lag_1",
     "n225_option_night_atm_return_lag_1",
     "n225_option_night_atm_range_lag_1",
@@ -78,7 +94,9 @@ def build_n225_option_feature_records(
         if trading_date:
             grouped.setdefault(trading_date, []).append(row)
     output = [_daily_option_summary(date_key, rows) for date_key, rows in sorted(grouped.items())]
-    return [row for row in output if row is not None]
+    summaries = [row for row in output if row is not None]
+    _stamp_rolling_option_state(summaries)
+    return summaries
 
 
 def add_n225_option_features(
@@ -109,6 +127,9 @@ def add_n225_option_features(
             enriched[f"{feature}__source_date"] = (
                 None if latest is None else latest.get("trading_date")
             )
+            enriched[f"{feature}__fill_method"] = "prior_n225_option_state"
+            if latest is not None and latest.get("vendor_available_ts_utc") is not None:
+                enriched[f"{feature}__available_ts_utc"] = latest.get("vendor_available_ts_utc")
         output.append(enriched)
     return output
 
@@ -117,6 +138,7 @@ def _daily_option_summary(
     trading_date: str,
     rows: list[dict[str, object]],
 ) -> dict[str, object] | None:
+    policy = PIPELINE_CONFIG.feature_engineering
     valid = [
         row
         for row in rows
@@ -129,8 +151,18 @@ def _daily_option_summary(
     central = [row for row in valid if row.get("central_contract_month_flag") is True]
     dte_scoped = _configured_dte_scope(trading_date, central or valid)
     scoped = dte_scoped or central or valid
+    short_rows = _dte_bucket_rows(trading_date, valid, policy.options_dte_short_bucket)
+    medium_rows = _dte_bucket_rows(trading_date, valid, policy.options_dte_medium_bucket)
     atm_rows = _atm_rows(scoped)
+    short_atm_rows = _atm_rows(short_rows)
+    medium_atm_rows = _atm_rows(medium_rows)
     atm_iv = _safe_median([_optional_float(row.get("implied_volatility")) for row in atm_rows])
+    short_atm_iv = _safe_median(
+        [_optional_float(row.get("implied_volatility")) for row in short_atm_rows]
+    )
+    medium_atm_iv = _safe_median(
+        [_optional_float(row.get("implied_volatility")) for row in medium_atm_rows]
+    )
     put_atm = _safe_median(
         [
             _optional_float(row.get("implied_volatility"))
@@ -163,6 +195,23 @@ def _daily_option_summary(
     call_volume = sum(
         _optional_float(row.get("volume")) or 0.0 for row in scoped if row.get("put_call") == "call"
     )
+    otm_put_iv = _safe_median(
+        [
+            _optional_float(row.get("implied_volatility"))
+            for row in scoped
+            if row.get("put_call") == "put"
+            and _moneyness_in_band(row, policy.options_otm_put_moneyness_band)
+        ]
+    )
+    otm_call_iv = _safe_median(
+        [
+            _optional_float(row.get("implied_volatility"))
+            for row in scoped
+            if row.get("put_call") == "call"
+            and _moneyness_in_band(row, policy.options_otm_call_moneyness_band)
+        ]
+    )
+    base_volatility = _safe_median([_optional_float(row.get("base_volatility")) for row in scoped])
     night_atm_rows = [row for row in atm_rows if _has_valid_night_ohlc(row)]
     night_atm_close = _safe_median(
         [_optional_float(row.get("night_session_close")) for row in night_atm_rows]
@@ -185,25 +234,92 @@ def _daily_option_summary(
             row.get("vendor_available_ts_utc") for row in scoped
         ),
         "atm_iv": atm_iv,
+        "atm_iv_short": short_atm_iv,
+        "atm_iv_medium": medium_atm_iv,
+        "iv_term_slope": None
+        if short_atm_iv is None or medium_atm_iv is None
+        else medium_atm_iv - short_atm_iv,
         "atm_put_call_iv_skew": None if put_atm is None or call_atm is None else put_atm - call_atm,
-        "base_volatility": _safe_median(
-            [_optional_float(row.get("base_volatility")) for row in scoped]
-        ),
+        "otm_put_iv": otm_put_iv,
+        "otm_call_iv": otm_call_iv,
+        "risk_reversal": None
+        if otm_put_iv is None or otm_call_iv is None
+        else otm_put_iv - otm_call_iv,
+        "base_volatility": base_volatility,
+        "base_iv_spread": None
+        if base_volatility is None or atm_iv is None
+        else base_volatility - atm_iv,
         "iv_oi_weighted": _weighted_mean(
             values=[_optional_float(row.get("implied_volatility")) for row in scoped],
             weights=[_optional_float(row.get("open_interest")) for row in scoped],
         ),
         "put_call_oi_ratio": put_oi / call_oi if call_oi > 0 else None,
         "put_call_volume_ratio": put_volume / call_volume if call_volume > 0 else None,
+        "put_oi_share": put_oi / total_oi if total_oi > 0 else None,
+        "put_volume_share": put_volume / total_volume if total_volume > 0 else None,
         "total_open_interest_log1p": math.log1p(total_oi) if total_oi >= 0 else None,
         "total_volume_log1p": math.log1p(total_volume) if total_volume >= 0 else None,
         "valid_contract_count": float(len(scoped)),
+        "short_valid_contract_count": float(len(short_rows)),
+        "medium_valid_contract_count": float(len(medium_rows)),
         "days_to_sq": _safe_median(_days_to_sq(trading_date, row) for row in scoped),
         "night_atm_close": night_atm_close,
         "night_atm_return": night_atm_return,
         "night_atm_range": night_atm_range,
         "night_valid_contract_count": float(len(night_atm_rows)),
     }
+
+
+def _stamp_rolling_option_state(summaries: list[dict[str, object]]) -> None:
+    policy = PIPELINE_CONFIG.feature_engineering
+    prior: list[dict[str, object]] = []
+    for row in summaries:
+        atm_iv = _optional_float(row.get("atm_iv"))
+        open_interest = _optional_float(row.get("total_open_interest_log1p"))
+        volume = _optional_float(row.get("total_volume_log1p"))
+        previous = prior[-1] if prior else None
+        previous_open_interest = (
+            None if previous is None else _optional_float(previous.get("total_open_interest_log1p"))
+        )
+        previous_volume = (
+            None if previous is None else _optional_float(previous.get("total_volume_log1p"))
+        )
+        change_values = [
+            _optional_float(item.get("atm_iv"))
+            for item in prior[-policy.options_iv_change_window :]
+        ]
+        zscore_values = [
+            _optional_float(item.get("atm_iv"))
+            for item in prior[-policy.options_iv_zscore_window :]
+        ]
+        percentile_values = [
+            _optional_float(item.get("atm_iv"))
+            for item in prior[-policy.options_iv_percentile_window :]
+        ]
+        row["oi_log_change"] = (
+            None
+            if open_interest is None or previous_open_interest is None
+            else open_interest - previous_open_interest
+        )
+        row["volume_log_change"] = (
+            None if volume is None or previous_volume is None else volume - previous_volume
+        )
+        row["atm_iv_change_20"] = _level_minus_prior_mean(
+            atm_iv,
+            change_values,
+            min_periods=policy.options_iv_rolling_min_periods,
+        )
+        row["atm_iv_zscore_20"] = _level_vs_prior_zscore(
+            atm_iv,
+            zscore_values,
+            min_periods=policy.options_iv_rolling_min_periods,
+        )
+        row["atm_iv_percentile_60"] = _level_vs_prior_percentile(
+            atm_iv,
+            percentile_values,
+            min_periods=policy.options_iv_rolling_min_periods,
+        )
+        prior.append(row)
 
 
 def _atm_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -217,6 +333,30 @@ def _atm_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
         return []
     min_distance = min(distance for distance, _ in distances)
     return [row for distance, row in distances if distance == min_distance]
+
+
+def _dte_bucket_rows(
+    trading_date: str,
+    rows: list[dict[str, object]],
+    bucket: tuple[int, int],
+) -> list[dict[str, object]]:
+    lower, upper = bucket
+    return [
+        row
+        for row in rows
+        if (days_to_sq := _days_to_sq(trading_date, row)) is not None
+        and lower <= days_to_sq <= upper
+    ]
+
+
+def _moneyness_in_band(row: dict[str, object], band: tuple[float, float]) -> bool:
+    strike = _optional_float(row.get("strike_price"))
+    underlying = _optional_float(row.get("underlying_price"))
+    if strike is None or underlying is None or underlying <= 0:
+        return False
+    lower, upper = band
+    moneyness = strike / underlying
+    return lower <= moneyness <= upper
 
 
 def _days_to_sq(trading_date: str, row: dict[str, object]) -> float | None:
@@ -317,3 +457,46 @@ def _weighted_mean(values: list[float | None], weights: list[float | None]) -> f
     if total_weight <= 0:
         return None
     return sum(value * weight for value, weight in pairs) / total_weight
+
+
+def _finite_values(values: list[float | None]) -> list[float]:
+    return [float(value) for value in values if value is not None and math.isfinite(value)]
+
+
+def _level_minus_prior_mean(
+    value: float | None,
+    prior_values: list[float | None],
+    *,
+    min_periods: int,
+) -> float | None:
+    prior = _finite_values(prior_values)
+    if value is None or len(prior) < min_periods:
+        return None
+    return value - float(np.mean(prior))
+
+
+def _level_vs_prior_zscore(
+    value: float | None,
+    prior_values: list[float | None],
+    *,
+    min_periods: int,
+) -> float | None:
+    prior = _finite_values(prior_values)
+    if value is None or len(prior) < min_periods:
+        return None
+    std = float(np.std(prior, ddof=1))
+    if std == 0.0:
+        return None
+    return (value - float(np.mean(prior))) / std
+
+
+def _level_vs_prior_percentile(
+    value: float | None,
+    prior_values: list[float | None],
+    *,
+    min_periods: int,
+) -> float | None:
+    prior = _finite_values(prior_values)
+    if value is None or len(prior) < min_periods:
+        return None
+    return sum(1 for item in prior if item <= value) / len(prior)

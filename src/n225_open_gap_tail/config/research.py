@@ -186,12 +186,23 @@ class FeatureEngineeringPolicy:
     ml_options_feature_max_training_missingness: float = 0.30
     options_dte_short_bucket: tuple[int, int] = (7, 30)
     options_dte_medium_bucket: tuple[int, int] = (31, 90)
+    options_otm_put_moneyness_band: tuple[float, float] = (0.92, 0.97)
+    options_otm_call_moneyness_band: tuple[float, float] = (1.03, 1.08)
+    options_iv_change_window: int = 20
+    options_iv_zscore_window: int = 20
+    options_iv_percentile_window: int = 60
+    options_iv_rolling_min_periods: int = 20
     options_primary_feature_cap: int = 45
     options_atm_policy: str = "delta_neutral_preferred_else_closest_to_spot_or_forward"
     options_adr_aggregation_policy: str = "median_and_20pct_trimmed_mean_primary"
     options_historical_source_policy: str = (
         "disabled_until_historical_iv_greeks_oi_entitlement_verified"
     )
+    n225_extended_rolling_windows: tuple[int, ...] = (5, 10, 60)
+    n225_extended_long_window_min_periods: int = 20
+    n225_tail_hit_threshold_window: int = 252
+    n225_tail_hit_windows: tuple[int, ...] = (20, 60)
+    n225_tail_hit_quantile: float = 0.95
     winsorization_policy: str = "none_raw_estimators_no_full_sample_winsorization"
 
 

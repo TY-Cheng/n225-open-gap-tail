@@ -1,0 +1,418 @@
+event_date,event_type,event_name,affects_session,release_ts_utc,known_ts_utc,source_note
+2016-07-08,nfp,June 2016 Employment Situation,us,2016-07-08T12:30:00+00:00,2015-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2016-07-15,cpi,June 2016 Consumer Price Index,us,2016-07-15T12:30:00+00:00,2015-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2016-07-27,fomc,FOMC July 26-27 Meeting - 2016,us,2016-07-27T18:00:00+00:00,2015-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2016-07-29,boj,"BOJ July 28 (Thurs.), 29 (Fri.) [PDF 67KB] Monetary Policy Meeting",ose,2016-07-29T03:00:00+00:00,2015-07-31T00:00:00+00:00,boj_mpm_schedule
+2016-08-05,nfp,July 2016 Employment Situation,us,2016-08-05T12:30:00+00:00,2015-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2016-08-16,cpi,July 2016 Consumer Price Index,us,2016-08-16T12:30:00+00:00,2015-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2016-09-02,nfp,August 2016 Employment Situation,us,2016-09-02T12:30:00+00:00,2015-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2016-09-16,cpi,August 2016 Consumer Price Index,us,2016-09-16T12:30:00+00:00,2015-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2016-09-21,boj,"BOJ Sep. 20 (Tues.), 21 (Wed.) [PDF 44KB] Monetary Policy Meeting",ose,2016-09-21T03:00:00+00:00,2015-07-31T00:00:00+00:00,boj_mpm_schedule
+2016-09-21,fomc,FOMC September 20-21 Meeting - 2016,us,2016-09-21T18:00:00+00:00,2015-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2016-10-07,nfp,September 2016 Employment Situation,us,2016-10-07T12:30:00+00:00,2015-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2016-10-18,cpi,September 2016 Consumer Price Index,us,2016-10-18T12:30:00+00:00,2015-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2016-11-01,boj,"BOJ Oct. 31 (Mon.), Nov. 1 (Tues.) [PDF 57KB] Monetary Policy Meeting",ose,2016-11-01T03:00:00+00:00,2015-07-31T00:00:00+00:00,boj_mpm_schedule
+2016-11-02,fomc,FOMC November 1-2 Meeting - 2016,us,2016-11-02T18:00:00+00:00,2015-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2016-11-04,nfp,October 2016 Employment Situation,us,2016-11-04T12:30:00+00:00,2015-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2016-11-17,cpi,October 2016 Consumer Price Index,us,2016-11-17T13:30:00+00:00,2015-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2016-12-02,nfp,November 2016 Employment Situation,us,2016-12-02T13:30:00+00:00,2015-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2016-12-14,fomc,FOMC December 13-14 Meeting - 2016,us,2016-12-14T19:00:00+00:00,2015-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2016-12-15,cpi,November 2016 Consumer Price Index,us,2016-12-15T13:30:00+00:00,2015-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2016-12-20,boj,"BOJ Dec. 19 (Mon.), 20 (Tues.) [PDF 20KB] Monetary Policy Meeting",ose,2016-12-20T03:00:00+00:00,2015-07-31T00:00:00+00:00,boj_mpm_schedule
+2017-01-06,nfp,December 2016 Employment Situation,us,2017-01-06T13:30:00+00:00,2016-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2017-01-18,cpi,December 2016 Consumer Price Index,us,2017-01-18T13:30:00+00:00,2016-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2017-01-31,boj,"BOJ Jan. 30 (Mon.), 31 (Tues.) [PDF 63KB] Monetary Policy Meeting",ose,2017-01-31T03:00:00+00:00,2016-07-31T00:00:00+00:00,boj_mpm_schedule
+2017-02-01,fomc,FOMC Jan/Feb 31-1 Meeting - 2017,us,2017-02-01T19:00:00+00:00,2016-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2017-02-03,nfp,January 2017 Employment Situation,us,2017-02-03T13:30:00+00:00,2016-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2017-02-15,cpi,January 2017 Consumer Price Index,us,2017-02-15T13:30:00+00:00,2016-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2017-03-10,nfp,February 2017 Employment Situation,us,2017-03-10T13:30:00+00:00,2016-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2017-03-15,cpi,February 2017 Consumer Price Index,us,2017-03-15T12:30:00+00:00,2016-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2017-03-15,fomc,FOMC March 14-15 Meeting - 2017,us,2017-03-15T18:00:00+00:00,2016-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2017-03-16,boj,"BOJ Mar. 15 (Wed.), 16 (Thurs.) [PDF 25KB] Monetary Policy Meeting",ose,2017-03-16T03:00:00+00:00,2016-07-31T00:00:00+00:00,boj_mpm_schedule
+2017-04-07,nfp,March 2017 Employment Situation,us,2017-04-07T12:30:00+00:00,2016-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2017-04-14,cpi,March 2017 Consumer Price Index,us,2017-04-14T12:30:00+00:00,2016-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2017-04-27,boj,"BOJ Apr. 26 (Wed.), 27 (Thurs.) [PDF 85KB] Monetary Policy Meeting",ose,2017-04-27T03:00:00+00:00,2016-07-31T00:00:00+00:00,boj_mpm_schedule
+2017-05-03,fomc,FOMC May 2-3 Meeting - 2017,us,2017-05-03T18:00:00+00:00,2016-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2017-05-05,nfp,April 2017 Employment Situation,us,2017-05-05T12:30:00+00:00,2016-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2017-05-12,cpi,April 2017 Consumer Price Index,us,2017-05-12T12:30:00+00:00,2016-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2017-06-02,nfp,May 2017 Employment Situation,us,2017-06-02T12:30:00+00:00,2016-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2017-06-14,cpi,May 2017 Consumer Price Index,us,2017-06-14T12:30:00+00:00,2016-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2017-06-14,fomc,FOMC June 13-14 Meeting - 2017,us,2017-06-14T18:00:00+00:00,2016-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2017-06-16,boj,"BOJ June 15 (Thurs.), 16 (Fri.) [PDF 25KB] Monetary Policy Meeting",ose,2017-06-16T03:00:00+00:00,2016-07-31T00:00:00+00:00,boj_mpm_schedule
+2017-07-07,nfp,June 2017 Employment Situation,us,2017-07-07T12:30:00+00:00,2016-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2017-07-14,cpi,June 2017 Consumer Price Index,us,2017-07-14T12:30:00+00:00,2016-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2017-07-20,boj,"BOJ July 19 (Wed.), 20 (Thurs.) [PDF 84KB] Monetary Policy Meeting",ose,2017-07-20T03:00:00+00:00,2016-07-31T00:00:00+00:00,boj_mpm_schedule
+2017-07-26,fomc,FOMC July 25-26 Meeting - 2017,us,2017-07-26T18:00:00+00:00,2016-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2017-08-04,nfp,July 2017 Employment Situation,us,2017-08-04T12:30:00+00:00,2016-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2017-08-11,cpi,July 2017 Consumer Price Index,us,2017-08-11T12:30:00+00:00,2016-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2017-09-01,nfp,August 2017 Employment Situation,us,2017-09-01T12:30:00+00:00,2016-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2017-09-14,cpi,August 2017 Consumer Price Index,us,2017-09-14T12:30:00+00:00,2016-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2017-09-20,fomc,FOMC September 19-20 Meeting - 2017,us,2017-09-20T18:00:00+00:00,2016-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2017-09-21,boj,"BOJ Sep. 20 (Wed.), 21 (Thurs.) [PDF 22KB] Monetary Policy Meeting",ose,2017-09-21T03:00:00+00:00,2016-07-31T00:00:00+00:00,boj_mpm_schedule
+2017-10-06,nfp,September 2017 Employment Situation,us,2017-10-06T12:30:00+00:00,2016-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2017-10-13,cpi,September 2017 Consumer Price Index,us,2017-10-13T12:30:00+00:00,2016-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2017-10-31,boj,"BOJ Oct. 30 (Mon.), 31 (Tues.) [PDF 84KB] Monetary Policy Meeting",ose,2017-10-31T03:00:00+00:00,2016-07-31T00:00:00+00:00,boj_mpm_schedule
+2017-11-01,fomc,FOMC Oct/Nov 31-1 Meeting - 2017,us,2017-11-01T18:00:00+00:00,2016-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2017-11-03,nfp,October 2017 Employment Situation,us,2017-11-03T12:30:00+00:00,2016-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2017-11-15,cpi,October 2017 Consumer Price Index,us,2017-11-15T13:30:00+00:00,2016-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2017-12-08,nfp,November 2017 Employment Situation,us,2017-12-08T13:30:00+00:00,2016-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2017-12-13,cpi,November 2017 Consumer Price Index,us,2017-12-13T13:30:00+00:00,2016-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2017-12-13,fomc,FOMC December 12-13 Meeting - 2017,us,2017-12-13T19:00:00+00:00,2016-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2017-12-21,boj,"BOJ Dec. 20 (Wed.), 21 (Thurs.) [PDF 24KB] Monetary Policy Meeting",ose,2017-12-21T03:00:00+00:00,2016-07-31T00:00:00+00:00,boj_mpm_schedule
+2018-01-05,nfp,December 2017 Employment Situation,us,2018-01-05T13:30:00+00:00,2017-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2018-01-12,cpi,December 2017 Consumer Price Index,us,2018-01-12T13:30:00+00:00,2017-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2018-01-23,boj,"BOJ Jan. 22 (Mon.), 23 (Tues.) [PDF 84KB] | HTML Monetary Policy Meeting",ose,2018-01-23T03:00:00+00:00,2017-07-31T00:00:00+00:00,boj_mpm_schedule
+2018-01-31,fomc,FOMC January 30-31 Meeting - 2018,us,2018-01-31T19:00:00+00:00,2017-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2018-02-02,nfp,January 2018 Employment Situation,us,2018-02-02T13:30:00+00:00,2017-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2018-02-14,cpi,January 2018 Consumer Price Index,us,2018-02-14T13:30:00+00:00,2017-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2018-03-09,boj,"BOJ Mar. 8 (Thurs.), 9 (Fri.) [PDF 21KB] | HTML Monetary Policy Meeting",ose,2018-03-09T03:00:00+00:00,2017-07-31T00:00:00+00:00,boj_mpm_schedule
+2018-03-09,nfp,February 2018 Employment Situation,us,2018-03-09T13:30:00+00:00,2017-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2018-03-13,cpi,February 2018 Consumer Price Index,us,2018-03-13T12:30:00+00:00,2017-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2018-03-21,fomc,FOMC March 20-21 Meeting - 2018,us,2018-03-21T18:00:00+00:00,2017-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2018-04-06,nfp,March 2018 Employment Situation,us,2018-04-06T12:30:00+00:00,2017-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2018-04-11,cpi,March 2018 Consumer Price Index,us,2018-04-11T12:30:00+00:00,2017-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2018-04-27,boj,"BOJ Apr. 26 (Thurs.), 27 (Fri.) [PDF 86KB] | HTML Monetary Policy Meeting",ose,2018-04-27T03:00:00+00:00,2017-07-31T00:00:00+00:00,boj_mpm_schedule
+2018-05-02,fomc,FOMC May 1-2 Meeting - 2018,us,2018-05-02T18:00:00+00:00,2017-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2018-05-04,nfp,April 2018 Employment Situation,us,2018-05-04T12:30:00+00:00,2017-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2018-05-10,cpi,April 2018 Consumer Price Index,us,2018-05-10T12:30:00+00:00,2017-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2018-06-01,nfp,May 2018 Employment Situation,us,2018-06-01T12:30:00+00:00,2017-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2018-06-12,cpi,May 2018 Consumer Price Index,us,2018-06-12T12:30:00+00:00,2017-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2018-06-13,fomc,FOMC June 12-13 Meeting - 2018,us,2018-06-13T18:00:00+00:00,2017-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2018-06-15,boj,"BOJ June 14 (Thurs.), 15 (Fri.) [PDF 22KB] | HTML Monetary Policy Meeting",ose,2018-06-15T03:00:00+00:00,2017-07-31T00:00:00+00:00,boj_mpm_schedule
+2018-07-06,nfp,June 2018 Employment Situation,us,2018-07-06T12:30:00+00:00,2017-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2018-07-12,cpi,June 2018 Consumer Price Index,us,2018-07-12T12:30:00+00:00,2017-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2018-07-31,boj,"BOJ July 30 (Mon.), 31 (Tues.) [PDF 92KB] | HTML Monetary Policy Meeting",ose,2018-07-31T03:00:00+00:00,2017-07-31T00:00:00+00:00,boj_mpm_schedule
+2018-08-01,fomc,FOMC Jul/Aug 31-1 Meeting - 2018,us,2018-08-01T18:00:00+00:00,2017-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2018-08-03,nfp,July 2018 Employment Situation,us,2018-08-03T12:30:00+00:00,2017-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2018-08-10,cpi,July 2018 Consumer Price Index,us,2018-08-10T12:30:00+00:00,2017-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2018-09-07,nfp,August 2018 Employment Situation,us,2018-09-07T12:30:00+00:00,2017-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2018-09-13,cpi,August 2018 Consumer Price Index,us,2018-09-13T12:30:00+00:00,2017-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2018-09-19,boj,"BOJ Sept. 18 (Tues.), 19 (Wed.) [PDF 23KB] | HTML Monetary Policy Meeting",ose,2018-09-19T03:00:00+00:00,2017-07-31T00:00:00+00:00,boj_mpm_schedule
+2018-09-26,fomc,FOMC September 25-26 Meeting - 2018,us,2018-09-26T18:00:00+00:00,2017-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2018-10-05,nfp,September 2018 Employment Situation,us,2018-10-05T12:30:00+00:00,2017-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2018-10-11,cpi,September 2018 Consumer Price Index,us,2018-10-11T12:30:00+00:00,2017-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2018-10-31,boj,"BOJ Oct. 30 (Tues.), 31 (Wed.) [PDF 89KB] | HTML Monetary Policy Meeting",ose,2018-10-31T03:00:00+00:00,2017-07-31T00:00:00+00:00,boj_mpm_schedule
+2018-11-02,nfp,October 2018 Employment Situation,us,2018-11-02T12:30:00+00:00,2017-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2018-11-08,fomc,FOMC November 7-8 Meeting - 2018,us,2018-11-08T19:00:00+00:00,2017-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2018-11-14,cpi,October 2018 Consumer Price Index,us,2018-11-14T13:30:00+00:00,2017-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2018-12-07,nfp,November 2018 Employment Situation,us,2018-12-07T13:30:00+00:00,2017-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2018-12-12,cpi,November 2018 Consumer Price Index,us,2018-12-12T13:30:00+00:00,2017-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2018-12-19,fomc,FOMC December 18-19 Meeting - 2018,us,2018-12-19T19:00:00+00:00,2017-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2018-12-20,boj,"BOJ Dec. 19 (Wed.), 20 (Thurs.) [PDF 23KB] | HTML Monetary Policy Meeting",ose,2018-12-20T03:00:00+00:00,2017-07-31T00:00:00+00:00,boj_mpm_schedule
+2019-01-04,nfp,December 2018 Employment Situation,us,2019-01-04T13:30:00+00:00,2018-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2019-01-11,cpi,December 2018 Consumer Price Index,us,2019-01-11T13:30:00+00:00,2018-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2019-01-23,boj,"BOJ Jan. 22 (Tues.), 23 (Wed.) [PDF 22KB] | HTML Monetary Policy Meeting",ose,2019-01-23T03:00:00+00:00,2018-07-31T00:00:00+00:00,boj_mpm_schedule
+2019-01-30,fomc,FOMC January 29-30 Meeting - 2019,us,2019-01-30T19:00:00+00:00,2018-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2019-02-01,nfp,January 2019 Employment Situation,us,2019-02-01T13:30:00+00:00,2018-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2019-02-13,cpi,January 2019 Consumer Price Index,us,2019-02-13T13:30:00+00:00,2018-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2019-03-08,nfp,February 2019 Employment Situation,us,2019-03-08T13:30:00+00:00,2018-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2019-03-12,cpi,February 2019 Consumer Price Index,us,2019-03-12T12:30:00+00:00,2018-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2019-03-15,boj,"BOJ Mar. 14 (Thurs.), 15 (Fri.) [PDF 24KB] | HTML Monetary Policy Meeting",ose,2019-03-15T03:00:00+00:00,2018-07-31T00:00:00+00:00,boj_mpm_schedule
+2019-03-20,fomc,FOMC March 19-20 Meeting - 2019,us,2019-03-20T18:00:00+00:00,2018-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2019-04-05,nfp,March 2019 Employment Situation,us,2019-04-05T12:30:00+00:00,2018-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2019-04-10,cpi,March 2019 Consumer Price Index,us,2019-04-10T12:30:00+00:00,2018-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2019-04-25,boj,"BOJ Apr. 24 (Wed.), 25 (Thurs.) [PDF 30KB] | HTML Monetary Policy Meeting",ose,2019-04-25T03:00:00+00:00,2018-07-31T00:00:00+00:00,boj_mpm_schedule
+2019-05-01,fomc,FOMC April/May 30-1 Meeting - 2019,us,2019-05-01T18:00:00+00:00,2018-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2019-05-03,nfp,April 2019 Employment Situation,us,2019-05-03T12:30:00+00:00,2018-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2019-05-10,cpi,April 2019 Consumer Price Index,us,2019-05-10T12:30:00+00:00,2018-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2019-06-07,nfp,May 2019 Employment Situation,us,2019-06-07T12:30:00+00:00,2018-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2019-06-12,cpi,May 2019 Consumer Price Index,us,2019-06-12T12:30:00+00:00,2018-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2019-06-19,fomc,FOMC June 18-19 Meeting - 2019,us,2019-06-19T18:00:00+00:00,2018-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2019-06-20,boj,"BOJ June 19 (Wed.), 20 (Thurs.) [PDF 24KB] | HTML Monetary Policy Meeting",ose,2019-06-20T03:00:00+00:00,2018-07-31T00:00:00+00:00,boj_mpm_schedule
+2019-07-05,nfp,June 2019 Employment Situation,us,2019-07-05T12:30:00+00:00,2018-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2019-07-11,cpi,June 2019 Consumer Price Index,us,2019-07-11T12:30:00+00:00,2018-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2019-07-30,boj,"BOJ July 29 (Mon.), 30 (Tues.) [PDF 20KB] | HTML Monetary Policy Meeting",ose,2019-07-30T03:00:00+00:00,2018-07-31T00:00:00+00:00,boj_mpm_schedule
+2019-07-31,fomc,FOMC July 30-31 Meeting - 2019,us,2019-07-31T18:00:00+00:00,2018-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2019-08-02,nfp,July 2019 Employment Situation,us,2019-08-02T12:30:00+00:00,2018-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2019-08-13,cpi,July 2019 Consumer Price Index,us,2019-08-13T12:30:00+00:00,2018-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2019-09-06,nfp,August 2019 Employment Situation,us,2019-09-06T12:30:00+00:00,2018-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2019-09-12,cpi,August 2019 Consumer Price Index,us,2019-09-12T12:30:00+00:00,2018-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2019-09-18,fomc,FOMC September 17-18 Meeting - 2019,us,2019-09-18T18:00:00+00:00,2018-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2019-09-19,boj,"BOJ Sept. 18 (Wed.), 19 (Thurs.) [PDF 25KB] | HTML Monetary Policy Meeting",ose,2019-09-19T03:00:00+00:00,2018-07-31T00:00:00+00:00,boj_mpm_schedule
+2019-10-04,nfp,September 2019 Employment Situation,us,2019-10-04T12:30:00+00:00,2018-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2019-10-10,cpi,September 2019 Consumer Price Index,us,2019-10-10T12:30:00+00:00,2018-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2019-10-30,fomc,FOMC October 29-30 Meeting - 2019,us,2019-10-30T18:00:00+00:00,2018-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2019-10-31,boj,"BOJ Oct. 30 (Wed.), 31 (Thurs.) [PDF 31KB] | HTML Monetary Policy Meeting",ose,2019-10-31T03:00:00+00:00,2018-07-31T00:00:00+00:00,boj_mpm_schedule
+2019-11-01,nfp,October 2019 Employment Situation,us,2019-11-01T12:30:00+00:00,2018-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2019-11-13,cpi,October 2019 Consumer Price Index,us,2019-11-13T13:30:00+00:00,2018-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2019-12-06,nfp,November 2019 Employment Situation,us,2019-12-06T13:30:00+00:00,2018-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2019-12-11,cpi,November 2019 Consumer Price Index,us,2019-12-11T13:30:00+00:00,2018-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2019-12-11,fomc,FOMC December 10-11 Meeting - 2019,us,2019-12-11T19:00:00+00:00,2018-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2019-12-19,boj,"BOJ Dec. 18 (Wed.), 19 (Thurs.) [PDF 25KB] | HTML Monetary Policy Meeting",ose,2019-12-19T03:00:00+00:00,2018-07-31T00:00:00+00:00,boj_mpm_schedule
+2020-01-10,nfp,December 2019 Employment Situation,us,2020-01-10T13:30:00+00:00,2019-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2020-01-14,cpi,December 2019 Consumer Price Index,us,2020-01-14T13:30:00+00:00,2019-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2020-01-21,boj,"BOJ Jan. 20 (Mon.), 21 (Tues.) [PDF 20KB] | HTML Monetary Policy Meeting",ose,2020-01-21T03:00:00+00:00,2019-07-31T00:00:00+00:00,boj_mpm_schedule
+2020-01-29,fomc,FOMC January 28-29 Meeting - 2020,us,2020-01-29T19:00:00+00:00,2019-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2020-02-07,nfp,January 2020 Employment Situation,us,2020-02-07T13:30:00+00:00,2019-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2020-02-13,cpi,January 2020 Consumer Price Index,us,2020-02-13T13:30:00+00:00,2019-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2020-03-06,nfp,February 2020 Employment Situation,us,2020-03-06T13:30:00+00:00,2019-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2020-03-11,cpi,February 2020 Consumer Price Index,us,2020-03-11T12:30:00+00:00,2019-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2020-03-16,boj,BOJ Mar. 16 (Mon.) [PDF 31KB] | HTML Monetary Policy Meeting,ose,2020-03-16T03:00:00+00:00,2019-07-31T00:00:00+00:00,boj_mpm_schedule
+2020-04-03,nfp,March 2020 Employment Situation,us,2020-04-03T12:30:00+00:00,2019-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2020-04-10,cpi,March 2020 Consumer Price Index,us,2020-04-10T12:30:00+00:00,2019-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2020-04-27,boj,BOJ Apr. 27 (Mon.) [PDF 34KB] | HTML Monetary Policy Meeting,ose,2020-04-27T03:00:00+00:00,2019-07-31T00:00:00+00:00,boj_mpm_schedule
+2020-04-29,fomc,FOMC April 28-29 Meeting - 2020,us,2020-04-29T18:00:00+00:00,2019-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2020-05-08,nfp,April 2020 Employment Situation,us,2020-05-08T12:30:00+00:00,2019-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2020-05-12,cpi,April 2020 Consumer Price Index,us,2020-05-12T12:30:00+00:00,2019-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2020-05-22,boj,BOJ May 22 (Fri.) [PDF 17KB] | HTML Monetary Policy Meeting,ose,2020-05-22T03:00:00+00:00,2019-07-31T00:00:00+00:00,boj_mpm_schedule
+2020-06-05,nfp,May 2020 Employment Situation,us,2020-06-05T12:30:00+00:00,2019-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2020-06-10,cpi,May 2020 Consumer Price Index,us,2020-06-10T12:30:00+00:00,2019-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2020-06-10,fomc,FOMC June 9-10 Meeting - 2020,us,2020-06-10T18:00:00+00:00,2019-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2020-06-16,boj,"BOJ June 15 (Mon.), 16 (Tues.) [PDF 226KB] | HTML Monetary Policy Meeting",ose,2020-06-16T03:00:00+00:00,2019-07-31T00:00:00+00:00,boj_mpm_schedule
+2020-07-02,nfp,June 2020 Employment Situation,us,2020-07-02T12:30:00+00:00,2019-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2020-07-14,cpi,June 2020 Consumer Price Index,us,2020-07-14T12:30:00+00:00,2019-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2020-07-15,boj,"BOJ July 14 (Tues.), 15 (Wed.) [PDF 215KB] | HTML Monetary Policy Meeting",ose,2020-07-15T03:00:00+00:00,2019-07-31T00:00:00+00:00,boj_mpm_schedule
+2020-07-29,fomc,FOMC July 28-29 Meeting - 2020,us,2020-07-29T18:00:00+00:00,2019-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2020-08-07,nfp,July 2020 Employment Situation,us,2020-08-07T12:30:00+00:00,2019-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2020-08-12,cpi,July 2020 Consumer Price Index,us,2020-08-12T12:30:00+00:00,2019-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2020-09-04,nfp,August 2020 Employment Situation,us,2020-09-04T12:30:00+00:00,2019-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2020-09-11,cpi,August 2020 Consumer Price Index,us,2020-09-11T12:30:00+00:00,2019-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2020-09-16,fomc,FOMC September 15-16 Meeting - 2020,us,2020-09-16T18:00:00+00:00,2019-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2020-09-17,boj,"BOJ Sept. 16 (Wed.), 17 (Thurs.) [PDF 218KB] | HTML Monetary Policy Meeting",ose,2020-09-17T03:00:00+00:00,2019-07-31T00:00:00+00:00,boj_mpm_schedule
+2020-10-02,nfp,September 2020 Employment Situation,us,2020-10-02T12:30:00+00:00,2019-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2020-10-13,cpi,September 2020 Consumer Price Index,us,2020-10-13T12:30:00+00:00,2019-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2020-10-29,boj,"BOJ Oct. 28 (Wed.), 29 (Thurs.) [PDF 215KB] | HTML Monetary Policy Meeting",ose,2020-10-29T03:00:00+00:00,2019-07-31T00:00:00+00:00,boj_mpm_schedule
+2020-11-05,fomc,FOMC November 4-5 Meeting - 2020,us,2020-11-05T19:00:00+00:00,2019-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2020-11-06,nfp,October 2020 Employment Situation,us,2020-11-06T13:30:00+00:00,2019-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2020-11-12,cpi,October 2020 Consumer Price Index,us,2020-11-12T13:30:00+00:00,2019-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2020-12-04,nfp,November 2020 Employment Situation,us,2020-12-04T13:30:00+00:00,2019-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2020-12-10,cpi,November 2020 Consumer Price Index,us,2020-12-10T13:30:00+00:00,2019-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2020-12-16,fomc,FOMC December 15-16 Meeting - 2020,us,2020-12-16T19:00:00+00:00,2019-06-30T00:00:00+00:00,federal_reserve_fomc_historical
+2020-12-18,boj,"BOJ Dec. 17 (Thurs.), 18 (Fri.) [PDF 215KB] | HTML Monetary Policy Meeting",ose,2020-12-18T03:00:00+00:00,2019-07-31T00:00:00+00:00,boj_mpm_schedule
+2021-01-08,nfp,December 2020 Employment Situation,us,2021-01-08T13:30:00+00:00,2020-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2021-01-13,cpi,December 2020 Consumer Price Index,us,2021-01-13T13:30:00+00:00,2020-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2021-01-21,boj,"BOJ Jan. 20 (Wed.), 21 (Thurs.) [PDF 216KB] Monetary Policy Meeting",ose,2021-01-21T03:00:00+00:00,2020-07-31T00:00:00+00:00,boj_mpm_schedule
+2021-01-27,fomc,FOMC January 26-27 FOMC Meeting - 2021,us,2021-01-27T19:00:00+00:00,2020-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2021-02-05,nfp,January 2021 Employment Situation,us,2021-02-05T13:30:00+00:00,2020-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2021-02-10,cpi,January 2021 Consumer Price Index,us,2021-02-10T13:30:00+00:00,2020-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2021-03-05,nfp,February 2021 Employment Situation,us,2021-03-05T13:30:00+00:00,2020-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2021-03-10,cpi,February 2021 Consumer Price Index,us,2021-03-10T13:30:00+00:00,2020-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2021-03-17,fomc,FOMC March 16-17 FOMC Meeting - 2021,us,2021-03-17T18:00:00+00:00,2020-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2021-03-19,boj,"BOJ Mar. 18 (Thurs.), 19 (Fri.) [PDF 360KB] Monetary Policy Meeting",ose,2021-03-19T03:00:00+00:00,2020-07-31T00:00:00+00:00,boj_mpm_schedule
+2021-04-02,nfp,March 2021 Employment Situation,us,2021-04-02T12:30:00+00:00,2020-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2021-04-13,cpi,March 2021 Consumer Price Index,us,2021-04-13T12:30:00+00:00,2020-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2021-04-27,boj,"BOJ Apr. 26 (Mon.), 27 (Tues.) [PDF 197KB] Monetary Policy Meeting",ose,2021-04-27T03:00:00+00:00,2020-07-31T00:00:00+00:00,boj_mpm_schedule
+2021-04-28,fomc,FOMC April 27-28 FOMC Meeting - 2021,us,2021-04-28T18:00:00+00:00,2020-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2021-05-07,nfp,April 2021 Employment Situation,us,2021-05-07T12:30:00+00:00,2020-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2021-05-12,cpi,April 2021 Consumer Price Index,us,2021-05-12T12:30:00+00:00,2020-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2021-06-04,nfp,May 2021 Employment Situation,us,2021-06-04T12:30:00+00:00,2020-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2021-06-10,cpi,May 2021 Consumer Price Index,us,2021-06-10T12:30:00+00:00,2020-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2021-06-16,fomc,FOMC June 15-16 FOMC Meeting - 2021,us,2021-06-16T18:00:00+00:00,2020-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2021-06-18,boj,"BOJ June 17 (Thurs.), 18 (Fri.) [PDF 221KB] Monetary Policy Meeting",ose,2021-06-18T03:00:00+00:00,2020-07-31T00:00:00+00:00,boj_mpm_schedule
+2021-07-02,nfp,June 2021 Employment Situation,us,2021-07-02T12:30:00+00:00,2020-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2021-07-13,cpi,June 2021 Consumer Price Index,us,2021-07-13T12:30:00+00:00,2020-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2021-07-16,boj,"BOJ July 15 (Thurs.), 16 (Fri.) [PDF 238KB] Monetary Policy Meeting",ose,2021-07-16T03:00:00+00:00,2020-07-31T00:00:00+00:00,boj_mpm_schedule
+2021-07-28,fomc,FOMC July 27-28 FOMC Meeting - 2021,us,2021-07-28T18:00:00+00:00,2020-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2021-08-06,nfp,July 2021 Employment Situation,us,2021-08-06T12:30:00+00:00,2020-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2021-08-11,cpi,July 2021 Consumer Price Index,us,2021-08-11T12:30:00+00:00,2020-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2021-09-03,nfp,August 2021 Employment Situation,us,2021-09-03T12:30:00+00:00,2020-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2021-09-14,cpi,August 2021 Consumer Price Index,us,2021-09-14T12:30:00+00:00,2020-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2021-09-22,boj,"BOJ Sept. 21 (Tues.), 22 (Wed.) [PDF 217KB] Monetary Policy Meeting",ose,2021-09-22T03:00:00+00:00,2020-07-31T00:00:00+00:00,boj_mpm_schedule
+2021-09-22,fomc,FOMC September 21-22 FOMC Meeting - 2021,us,2021-09-22T18:00:00+00:00,2020-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2021-10-08,nfp,September 2021 Employment Situation,us,2021-10-08T12:30:00+00:00,2020-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2021-10-13,cpi,September 2021 Consumer Price Index,us,2021-10-13T12:30:00+00:00,2020-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2021-10-28,boj,"BOJ Oct. 27 (Wed.), 28 (Thurs.) [PDF 210KB] Monetary Policy Meeting",ose,2021-10-28T03:00:00+00:00,2020-07-31T00:00:00+00:00,boj_mpm_schedule
+2021-11-03,fomc,FOMC November 2-3 FOMC Meeting - 2021,us,2021-11-03T18:00:00+00:00,2020-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2021-11-05,nfp,October 2021 Employment Situation,us,2021-11-05T12:30:00+00:00,2020-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2021-11-10,cpi,October 2021 Consumer Price Index,us,2021-11-10T13:30:00+00:00,2020-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2021-12-03,nfp,November 2021 Employment Situation,us,2021-12-03T13:30:00+00:00,2020-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2021-12-10,cpi,November 2021 Consumer Price Index,us,2021-12-10T13:30:00+00:00,2020-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2021-12-15,fomc,FOMC December 14-15 FOMC Meeting - 2021,us,2021-12-15T19:00:00+00:00,2020-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2021-12-17,boj,"BOJ Dec. 16 (Thurs.), 17 (Fri.) [PDF 223KB] Monetary Policy Meeting",ose,2021-12-17T03:00:00+00:00,2020-07-31T00:00:00+00:00,boj_mpm_schedule
+2022-01-07,nfp,December 2021 Employment Situation,us,2022-01-07T13:30:00+00:00,2021-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2022-01-12,cpi,December 2021 Consumer Price Index,us,2022-01-12T13:30:00+00:00,2021-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2022-01-18,boj,"BOJ Jan. 17 (Mon.), 18 (Tues.) [PDF 210KB] Monetary Policy Meeting",ose,2022-01-18T03:00:00+00:00,2021-07-31T00:00:00+00:00,boj_mpm_schedule
+2022-01-26,fomc,FOMC January 25-26 FOMC Meeting - 2022,us,2022-01-26T19:00:00+00:00,2021-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2022-02-04,nfp,January 2022 Employment Situation,us,2022-02-04T13:30:00+00:00,2021-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2022-02-10,cpi,January 2022 Consumer Price Index,us,2022-02-10T13:30:00+00:00,2021-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2022-03-04,nfp,February 2022 Employment Situation,us,2022-03-04T13:30:00+00:00,2021-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2022-03-10,cpi,February 2022 Consumer Price Index,us,2022-03-10T13:30:00+00:00,2021-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2022-03-16,fomc,FOMC March 15-16 FOMC Meeting - 2022,us,2022-03-16T18:00:00+00:00,2021-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2022-03-18,boj,"BOJ Mar. 17 (Thurs.), 18 (Fri.) [PDF 222KB] Monetary Policy Meeting",ose,2022-03-18T03:00:00+00:00,2021-07-31T00:00:00+00:00,boj_mpm_schedule
+2022-04-01,nfp,March 2022 Employment Situation,us,2022-04-01T12:30:00+00:00,2021-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2022-04-12,cpi,March 2022 Consumer Price Index,us,2022-04-12T12:30:00+00:00,2021-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2022-04-28,boj,"BOJ Apr. 27 (Wed.), 28 (Thurs.) [PDF 211KB] Monetary Policy Meeting",ose,2022-04-28T03:00:00+00:00,2021-07-31T00:00:00+00:00,boj_mpm_schedule
+2022-05-04,fomc,FOMC May 3-4 FOMC Meeting - 2022,us,2022-05-04T18:00:00+00:00,2021-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2022-05-06,nfp,April 2022 Employment Situation,us,2022-05-06T12:30:00+00:00,2021-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2022-05-11,cpi,April 2022 Consumer Price Index,us,2022-05-11T12:30:00+00:00,2021-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2022-06-03,nfp,May 2022 Employment Situation,us,2022-06-03T12:30:00+00:00,2021-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2022-06-10,cpi,May 2022 Consumer Price Index,us,2022-06-10T12:30:00+00:00,2021-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2022-06-15,fomc,FOMC June 14-15 FOMC Meeting - 2022,us,2022-06-15T18:00:00+00:00,2021-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2022-06-17,boj,"BOJ June 16 (Thurs.), 17 (Fri.) [PDF 320KB] Monetary Policy Meeting",ose,2022-06-17T03:00:00+00:00,2021-07-31T00:00:00+00:00,boj_mpm_schedule
+2022-07-08,nfp,June 2022 Employment Situation,us,2022-07-08T12:30:00+00:00,2021-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2022-07-13,cpi,June 2022 Consumer Price Index,us,2022-07-13T12:30:00+00:00,2021-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2022-07-21,boj,"BOJ July 20 (Wed.), 21 (Thurs.) [PDF 210KB] Monetary Policy Meeting",ose,2022-07-21T03:00:00+00:00,2021-07-31T00:00:00+00:00,boj_mpm_schedule
+2022-07-27,fomc,FOMC July 26-27 FOMC Meeting - 2022,us,2022-07-27T18:00:00+00:00,2021-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2022-08-05,nfp,July 2022 Employment Situation,us,2022-08-05T12:30:00+00:00,2021-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2022-08-10,cpi,July 2022 Consumer Price Index,us,2022-08-10T12:30:00+00:00,2021-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2022-09-02,nfp,August 2022 Employment Situation,us,2022-09-02T12:30:00+00:00,2021-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2022-09-13,cpi,August 2022 Consumer Price Index,us,2022-09-13T12:30:00+00:00,2021-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2022-09-21,fomc,FOMC September 20-21 FOMC Meeting - 2022,us,2022-09-21T18:00:00+00:00,2021-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2022-09-22,boj,"BOJ Sept. 21 (Wed.), 22 (Thurs.) [PDF 217KB] Monetary Policy Meeting",ose,2022-09-22T03:00:00+00:00,2021-07-31T00:00:00+00:00,boj_mpm_schedule
+2022-10-07,nfp,September 2022 Employment Situation,us,2022-10-07T12:30:00+00:00,2021-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2022-10-13,cpi,September 2022 Consumer Price Index,us,2022-10-13T12:30:00+00:00,2021-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2022-10-28,boj,"BOJ Oct. 27 (Thurs.), 28 (Fri.) [PDF 204KB] Monetary Policy Meeting",ose,2022-10-28T03:00:00+00:00,2021-07-31T00:00:00+00:00,boj_mpm_schedule
+2022-11-02,fomc,FOMC November 1-2 FOMC Meeting - 2022,us,2022-11-02T18:00:00+00:00,2021-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2022-11-04,nfp,October 2022 Employment Situation,us,2022-11-04T12:30:00+00:00,2021-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2022-11-10,cpi,October 2022 Consumer Price Index,us,2022-11-10T13:30:00+00:00,2021-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2022-12-02,nfp,November 2022 Employment Situation,us,2022-12-02T13:30:00+00:00,2021-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2022-12-13,cpi,November 2022 Consumer Price Index,us,2022-12-13T13:30:00+00:00,2021-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2022-12-14,fomc,FOMC December 13-14 FOMC Meeting - 2022,us,2022-12-14T19:00:00+00:00,2021-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2022-12-20,boj,"BOJ Dec. 19 (Mon.), 20 (Tues.) [PDF 203KB] Monetary Policy Meeting",ose,2022-12-20T03:00:00+00:00,2021-07-31T00:00:00+00:00,boj_mpm_schedule
+2023-01-06,nfp,December 2022 Employment Situation,us,2023-01-06T13:30:00+00:00,2022-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2023-01-12,cpi,December 2022 Consumer Price Index,us,2023-01-12T13:30:00+00:00,2022-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2023-01-18,boj,"BOJ Jan. 17 (Tues.), 18 (Wed.) [PDF 371KB] Monetary Policy Meeting",ose,2023-01-18T03:00:00+00:00,2022-07-31T00:00:00+00:00,boj_mpm_schedule
+2023-02-01,fomc,FOMC Jan/Feb 31-1 FOMC Meeting - 2023,us,2023-02-01T19:00:00+00:00,2022-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2023-02-03,nfp,January 2023 Employment Situation,us,2023-02-03T13:30:00+00:00,2022-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2023-02-14,cpi,January 2023 Consumer Price Index,us,2023-02-14T13:30:00+00:00,2022-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2023-03-10,boj,"BOJ Mar. 9 (Thurs.), 10 (Fri.) [PDF 372KB] Monetary Policy Meeting",ose,2023-03-10T03:00:00+00:00,2022-07-31T00:00:00+00:00,boj_mpm_schedule
+2023-03-10,nfp,February 2023 Employment Situation,us,2023-03-10T13:30:00+00:00,2022-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2023-03-14,cpi,February 2023 Consumer Price Index,us,2023-03-14T12:30:00+00:00,2022-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2023-03-22,fomc,FOMC March 21-22 FOMC Meeting - 2023,us,2023-03-22T18:00:00+00:00,2022-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2023-04-07,nfp,March 2023 Employment Situation,us,2023-04-07T12:30:00+00:00,2022-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2023-04-12,cpi,March 2023 Consumer Price Index,us,2023-04-12T12:30:00+00:00,2022-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2023-04-28,boj,"BOJ Apr. 27 (Thurs.), 28 (Fri.) [PDF 371KB] Monetary Policy Meeting",ose,2023-04-28T03:00:00+00:00,2022-07-31T00:00:00+00:00,boj_mpm_schedule
+2023-05-03,fomc,FOMC May 2-3 FOMC Meeting - 2023,us,2023-05-03T18:00:00+00:00,2022-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2023-05-05,nfp,April 2023 Employment Situation,us,2023-05-05T12:30:00+00:00,2022-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2023-05-10,cpi,April 2023 Consumer Price Index,us,2023-05-10T12:30:00+00:00,2022-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2023-06-02,nfp,May 2023 Employment Situation,us,2023-06-02T12:30:00+00:00,2022-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2023-06-13,cpi,May 2023 Consumer Price Index,us,2023-06-13T12:30:00+00:00,2022-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2023-06-14,fomc,FOMC June 13-14 FOMC Meeting - 2023,us,2023-06-14T18:00:00+00:00,2022-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2023-06-16,boj,"BOJ June 15 (Thurs.), 16 (Fri.) [PDF 373KB] Monetary Policy Meeting",ose,2023-06-16T03:00:00+00:00,2022-07-31T00:00:00+00:00,boj_mpm_schedule
+2023-07-07,nfp,June 2023 Employment Situation,us,2023-07-07T12:30:00+00:00,2022-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2023-07-12,cpi,June 2023 Consumer Price Index,us,2023-07-12T12:30:00+00:00,2022-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2023-07-26,fomc,FOMC July 25-26 FOMC Meeting - 2023,us,2023-07-26T18:00:00+00:00,2022-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2023-07-28,boj,"BOJ July 27 (Thurs.), 28 (Fri.) [PDF 455KB] Monetary Policy Meeting",ose,2023-07-28T03:00:00+00:00,2022-07-31T00:00:00+00:00,boj_mpm_schedule
+2023-08-04,nfp,July 2023 Employment Situation,us,2023-08-04T12:30:00+00:00,2022-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2023-08-10,cpi,July 2023 Consumer Price Index,us,2023-08-10T12:30:00+00:00,2022-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2023-09-01,nfp,August 2023 Employment Situation,us,2023-09-01T12:30:00+00:00,2022-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2023-09-13,cpi,August 2023 Consumer Price Index,us,2023-09-13T12:30:00+00:00,2022-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2023-09-20,fomc,FOMC September 19-20 FOMC Meeting - 2023,us,2023-09-20T18:00:00+00:00,2022-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2023-09-22,boj,"BOJ Sept. 21 (Thurs.), 22 (Fri.) [PDF 374KB] Monetary Policy Meeting",ose,2023-09-22T03:00:00+00:00,2022-07-31T00:00:00+00:00,boj_mpm_schedule
+2023-10-06,nfp,September 2023 Employment Situation,us,2023-10-06T12:30:00+00:00,2022-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2023-10-12,cpi,September 2023 Consumer Price Index,us,2023-10-12T12:30:00+00:00,2022-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2023-10-31,boj,"BOJ Oct. 30 (Mon.), 31 (Tues.) [PDF 452KB] Monetary Policy Meeting",ose,2023-10-31T03:00:00+00:00,2022-07-31T00:00:00+00:00,boj_mpm_schedule
+2023-11-01,fomc,FOMC Oct/Nov 31-1 FOMC Meeting - 2023,us,2023-11-01T18:00:00+00:00,2022-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2023-11-03,nfp,October 2023 Employment Situation,us,2023-11-03T12:30:00+00:00,2022-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2023-11-14,cpi,October 2023 Consumer Price Index,us,2023-11-14T13:30:00+00:00,2022-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2023-12-08,nfp,November 2023 Employment Situation,us,2023-12-08T13:30:00+00:00,2022-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2023-12-12,cpi,November 2023 Consumer Price Index,us,2023-12-12T13:30:00+00:00,2022-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2023-12-13,fomc,FOMC December 12-13 FOMC Meeting - 2023,us,2023-12-13T19:00:00+00:00,2022-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2023-12-19,boj,"BOJ Dec. 18 (Mon.), 19 (Tues.) [PDF 374KB] Monetary Policy Meeting",ose,2023-12-19T03:00:00+00:00,2022-07-31T00:00:00+00:00,boj_mpm_schedule
+2024-01-05,nfp,December 2023 Employment Situation,us,2024-01-05T13:30:00+00:00,2023-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2024-01-11,cpi,December 2023 Consumer Price Index,us,2024-01-11T13:30:00+00:00,2023-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2024-01-23,boj,"BOJ Jan. 22 (Mon.), 23 (Tues.) [PDF 373KB] Monetary Policy Meeting",ose,2024-01-23T03:00:00+00:00,2023-07-31T00:00:00+00:00,boj_mpm_schedule
+2024-01-31,fomc,FOMC January 30-31 FOMC Meeting - 2024,us,2024-01-31T19:00:00+00:00,2023-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2024-02-02,nfp,January 2024 Employment Situation,us,2024-02-02T13:30:00+00:00,2023-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2024-02-13,cpi,January 2024 Consumer Price Index,us,2024-02-13T13:30:00+00:00,2023-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2024-03-08,nfp,February 2024 Employment Situation,us,2024-03-08T13:30:00+00:00,2023-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2024-03-12,cpi,February 2024 Consumer Price Index,us,2024-03-12T12:30:00+00:00,2023-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2024-03-19,boj,"BOJ Mar. 18 (Mon.), 19 (Tues.) [PDF 464KB] Monetary Policy Meeting",ose,2024-03-19T03:00:00+00:00,2023-07-31T00:00:00+00:00,boj_mpm_schedule
+2024-03-20,fomc,FOMC March 19-20 FOMC Meeting - 2024,us,2024-03-20T18:00:00+00:00,2023-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2024-04-05,nfp,March 2024 Employment Situation,us,2024-04-05T12:30:00+00:00,2023-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2024-04-10,cpi,March 2024 Consumer Price Index,us,2024-04-10T12:30:00+00:00,2023-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2024-04-26,boj,"BOJ Apr. 25 (Thurs.), 26 (Fri.) [PDF 368KB] Monetary Policy Meeting",ose,2024-04-26T03:00:00+00:00,2023-07-31T00:00:00+00:00,boj_mpm_schedule
+2024-05-01,fomc,FOMC Apr/May 30-1 FOMC Meeting - 2024,us,2024-05-01T18:00:00+00:00,2023-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2024-05-03,nfp,April 2024 Employment Situation,us,2024-05-03T12:30:00+00:00,2023-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2024-05-15,cpi,April 2024 Consumer Price Index,us,2024-05-15T12:30:00+00:00,2023-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2024-06-07,nfp,May 2024 Employment Situation,us,2024-06-07T12:30:00+00:00,2023-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2024-06-12,cpi,May 2024 Consumer Price Index,us,2024-06-12T12:30:00+00:00,2023-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2024-06-12,fomc,FOMC June 11-12 FOMC Meeting - 2024,us,2024-06-12T18:00:00+00:00,2023-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2024-06-14,boj,"BOJ June 13 (Thurs.), 14 (Fri.) [PDF 442KB] Monetary Policy Meeting",ose,2024-06-14T03:00:00+00:00,2023-07-31T00:00:00+00:00,boj_mpm_schedule
+2024-07-05,nfp,June 2024 Employment Situation,us,2024-07-05T12:30:00+00:00,2023-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2024-07-11,cpi,June 2024 Consumer Price Index,us,2024-07-11T12:30:00+00:00,2023-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2024-07-31,boj,"BOJ July 30 (Tues.), 31 (Wed.) [PDF 471KB] Monetary Policy Meeting",ose,2024-07-31T03:00:00+00:00,2023-07-31T00:00:00+00:00,boj_mpm_schedule
+2024-07-31,fomc,FOMC July 30-31 FOMC Meeting - 2024,us,2024-07-31T18:00:00+00:00,2023-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2024-08-02,nfp,July 2024 Employment Situation,us,2024-08-02T12:30:00+00:00,2023-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2024-08-14,cpi,July 2024 Consumer Price Index,us,2024-08-14T12:30:00+00:00,2023-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2024-09-06,nfp,August 2024 Employment Situation,us,2024-09-06T12:30:00+00:00,2023-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2024-09-11,cpi,August 2024 Consumer Price Index,us,2024-09-11T12:30:00+00:00,2023-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2024-09-18,fomc,FOMC September 17-18 FOMC Meeting - 2024,us,2024-09-18T18:00:00+00:00,2023-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2024-09-20,boj,"BOJ Sept. 19 (Thurs.), 20 (Fri.) [PDF 437KB] Monetary Policy Meeting",ose,2024-09-20T03:00:00+00:00,2023-07-31T00:00:00+00:00,boj_mpm_schedule
+2024-10-04,nfp,September 2024 Employment Situation,us,2024-10-04T12:30:00+00:00,2023-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2024-10-10,cpi,September 2024 Consumer Price Index,us,2024-10-10T12:30:00+00:00,2023-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2024-10-31,boj,"BOJ Oct. 30 (Wed.), 31 (Thurs.) [PDF 356KB] Monetary Policy Meeting",ose,2024-10-31T03:00:00+00:00,2023-07-31T00:00:00+00:00,boj_mpm_schedule
+2024-11-01,nfp,October 2024 Employment Situation,us,2024-11-01T12:30:00+00:00,2023-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2024-11-07,fomc,FOMC November 6-7 FOMC Meeting - 2024,us,2024-11-07T19:00:00+00:00,2023-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2024-11-13,cpi,October 2024 Consumer Price Index,us,2024-11-13T13:30:00+00:00,2023-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2024-12-06,nfp,November 2024 Employment Situation,us,2024-12-06T13:30:00+00:00,2023-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2024-12-11,cpi,November 2024 Consumer Price Index,us,2024-12-11T13:30:00+00:00,2023-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2024-12-18,fomc,FOMC December 17-18 FOMC Meeting - 2024,us,2024-12-18T19:00:00+00:00,2023-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2024-12-19,boj,"BOJ Dec. 18 (Wed.), 19 (Thurs.) [PDF 444KB] Monetary Policy Meeting",ose,2024-12-19T03:00:00+00:00,2023-07-31T00:00:00+00:00,boj_mpm_schedule
+2025-01-10,nfp,December 2024 Employment Situation,us,2025-01-10T13:30:00+00:00,2024-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2025-01-15,cpi,December 2024 Consumer Price Index,us,2025-01-15T13:30:00+00:00,2024-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2025-01-24,boj,"BOJ Jan. 23 (Thurs.), 24 (Fri.) [PDF 459KB] Monetary Policy Meeting",ose,2025-01-24T03:00:00+00:00,2024-07-31T00:00:00+00:00,boj_mpm_schedule
+2025-01-29,fomc,FOMC January 28-29 FOMC Meeting - 2025,us,2025-01-29T19:00:00+00:00,2024-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2025-02-07,nfp,January 2025 Employment Situation,us,2025-02-07T13:30:00+00:00,2024-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2025-02-12,cpi,January 2025 Consumer Price Index,us,2025-02-12T13:30:00+00:00,2024-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2025-03-07,nfp,February 2025 Employment Situation,us,2025-03-07T13:30:00+00:00,2024-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2025-03-12,cpi,February 2025 Consumer Price Index,us,2025-03-12T12:30:00+00:00,2024-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2025-03-19,boj,"BOJ Mar. 18 (Tues.), 19 (Wed.) [PDF 437KB] Monetary Policy Meeting",ose,2025-03-19T03:00:00+00:00,2024-07-31T00:00:00+00:00,boj_mpm_schedule
+2025-03-19,fomc,FOMC March 18-19 FOMC Meeting - 2025,us,2025-03-19T18:00:00+00:00,2024-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2025-04-04,nfp,March 2025 Employment Situation,us,2025-04-04T12:30:00+00:00,2024-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2025-04-10,cpi,March 2025 Consumer Price Index,us,2025-04-10T12:30:00+00:00,2024-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2025-05-01,boj,"BOJ Apr. 30 (Wed.), May 1 (Thurs.) [PDF 352KB] Monetary Policy Meeting",ose,2025-05-01T03:00:00+00:00,2024-07-31T00:00:00+00:00,boj_mpm_schedule
+2025-05-02,nfp,April 2025 Employment Situation,us,2025-05-02T12:30:00+00:00,2024-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2025-05-07,fomc,FOMC May 6-7 FOMC Meeting - 2025,us,2025-05-07T18:00:00+00:00,2024-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2025-05-13,cpi,April 2025 Consumer Price Index,us,2025-05-13T12:30:00+00:00,2024-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2025-06-06,nfp,May 2025 Employment Situation,us,2025-06-06T12:30:00+00:00,2024-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2025-06-11,cpi,May 2025 Consumer Price Index,us,2025-06-11T12:30:00+00:00,2024-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2025-06-17,boj,"BOJ June 16 (Mon.), 17 (Tues.) [PDF 461KB] Monetary Policy Meeting",ose,2025-06-17T03:00:00+00:00,2024-07-31T00:00:00+00:00,boj_mpm_schedule
+2025-06-18,fomc,FOMC June 17-18 FOMC Meeting - 2025,us,2025-06-18T18:00:00+00:00,2024-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2025-07-03,nfp,June 2025 Employment Situation,us,2025-07-03T12:30:00+00:00,2024-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2025-07-15,cpi,June 2025 Consumer Price Index,us,2025-07-15T12:30:00+00:00,2024-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2025-07-30,fomc,FOMC July 29-30 FOMC Meeting - 2025,us,2025-07-30T18:00:00+00:00,2024-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2025-07-31,boj,"BOJ July 30 (Wed.), 31 (Thurs.) [PDF 255KB] Monetary Policy Meeting",ose,2025-07-31T03:00:00+00:00,2024-07-31T00:00:00+00:00,boj_mpm_schedule
+2025-08-01,nfp,July 2025 Employment Situation,us,2025-08-01T12:30:00+00:00,2024-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2025-08-12,cpi,July 2025 Consumer Price Index,us,2025-08-12T12:30:00+00:00,2024-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2025-09-05,nfp,August 2025 Employment Situation,us,2025-09-05T12:30:00+00:00,2024-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2025-09-11,cpi,August 2025 Consumer Price Index,us,2025-09-11T12:30:00+00:00,2024-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2025-09-17,fomc,FOMC September 16-17 FOMC Meeting - 2025,us,2025-09-17T18:00:00+00:00,2024-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2025-09-19,boj,"BOJ Sept. 18 (Thurs.), 19 (Fri.) [PDF 227KB] Monetary Policy Meeting",ose,2025-09-19T03:00:00+00:00,2024-07-31T00:00:00+00:00,boj_mpm_schedule
+2025-10-24,cpi,September 2025 Consumer Price Index,us,2025-10-24T12:30:00+00:00,2024-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2025-10-29,fomc,FOMC October 28-29 FOMC Meeting - 2025,us,2025-10-29T18:00:00+00:00,2024-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2025-10-30,boj,"BOJ Oct. 29 (Wed.), 30 (Thurs.) [PDF 169KB] Monetary Policy Meeting",ose,2025-10-30T03:00:00+00:00,2024-07-31T00:00:00+00:00,boj_mpm_schedule
+2025-11-20,nfp,September 2025 Employment Situation,us,2025-11-20T13:30:00+00:00,2024-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2025-12-10,fomc,FOMC December 9-10 FOMC Meeting - 2025,us,2025-12-10T19:00:00+00:00,2024-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2025-12-16,nfp,November 2025 Employment Situation,us,2025-12-16T13:30:00+00:00,2024-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2025-12-18,cpi,November 2025 Consumer Price Index,us,2025-12-18T13:30:00+00:00,2024-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2025-12-19,boj,"BOJ Dec. 18 (Thurs.), 19 (Fri.) [PDF 223KB] Monetary Policy Meeting",ose,2025-12-19T03:00:00+00:00,2024-07-31T00:00:00+00:00,boj_mpm_schedule
+2026-01-09,nfp,December 2025 Employment Situation,us,2026-01-09T13:30:00+00:00,2025-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2026-01-13,cpi,December 2025 Consumer Price Index,us,2026-01-13T13:30:00+00:00,2025-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2026-01-23,boj,"BOJ Jan. 22 (Thurs.), 23 (Fri.) [PDF 171KB] Monetary Policy Meeting",ose,2026-01-23T03:00:00+00:00,2025-07-31T00:00:00+00:00,boj_mpm_schedule
+2026-01-28,fomc,FOMC January 27-28 FOMC Meeting - 2026,us,2026-01-28T19:00:00+00:00,2025-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2026-02-11,nfp,January 2026 Employment Situation,us,2026-02-11T13:30:00+00:00,2025-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2026-02-13,cpi,January 2026 Consumer Price Index,us,2026-02-13T13:30:00+00:00,2025-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2026-03-06,nfp,February 2026 Employment Situation,us,2026-03-06T13:30:00+00:00,2025-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2026-03-11,cpi,February 2026 Consumer Price Index,us,2026-03-11T12:30:00+00:00,2025-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2026-03-18,fomc,FOMC March 17-18 FOMC Meeting - 2026,us,2026-03-18T18:00:00+00:00,2025-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2026-03-19,boj,"BOJ Mar. 18 (Wed.), 19 (Thurs.) [PDF 134KB] Monetary Policy Meeting",ose,2026-03-19T03:00:00+00:00,2025-07-31T00:00:00+00:00,boj_mpm_schedule
+2026-04-03,nfp,March 2026 Employment Situation,us,2026-04-03T12:30:00+00:00,2025-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2026-04-10,cpi,March 2026 Consumer Price Index,us,2026-04-10T12:30:00+00:00,2025-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2026-04-28,boj,"BOJ Apr. 27 (Mon.), 28 (Tues.) [PDF 92KB] Monetary Policy Meeting",ose,2026-04-28T03:00:00+00:00,2025-07-31T00:00:00+00:00,boj_mpm_schedule
+2026-04-29,fomc,FOMC April 28-29 FOMC Meeting - 2026,us,2026-04-29T18:00:00+00:00,2025-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2026-05-08,nfp,April 2026 Employment Situation,us,2026-05-08T12:30:00+00:00,2025-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2026-06-05,nfp,May 2026 Employment Situation,us,2026-06-05T12:30:00+00:00,2025-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2026-06-10,cpi,May 2026 Consumer Price Index,us,2026-06-10T12:30:00+00:00,2025-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2026-06-16,boj,"BOJ June 15 (Mon.), 16 (Tues.) Monetary Policy Meeting",ose,2026-06-16T03:00:00+00:00,2025-07-31T00:00:00+00:00,boj_mpm_schedule
+2026-06-17,fomc,FOMC June 16-17 FOMC Meeting - 2026,us,2026-06-17T18:00:00+00:00,2025-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2026-07-02,nfp,June 2026 Employment Situation,us,2026-07-02T12:30:00+00:00,2025-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2026-07-14,cpi,June 2026 Consumer Price Index,us,2026-07-14T12:30:00+00:00,2025-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2026-07-29,fomc,FOMC July 28-29 FOMC Meeting - 2026,us,2026-07-29T18:00:00+00:00,2025-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2026-07-31,boj,"BOJ July 30 (Thurs.), 31 (Fri.) Monetary Policy Meeting",ose,2026-07-31T03:00:00+00:00,2025-07-31T00:00:00+00:00,boj_mpm_schedule
+2026-08-07,nfp,July 2026 Employment Situation,us,2026-08-07T12:30:00+00:00,2025-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2026-08-12,cpi,July 2026 Consumer Price Index,us,2026-08-12T12:30:00+00:00,2025-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2026-09-04,nfp,August 2026 Employment Situation,us,2026-09-04T12:30:00+00:00,2025-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2026-09-11,cpi,August 2026 Consumer Price Index,us,2026-09-11T12:30:00+00:00,2025-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2026-09-16,fomc,FOMC September 15-16 FOMC Meeting - 2026,us,2026-09-16T18:00:00+00:00,2025-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2026-09-18,boj,"BOJ Sept. 17 (Thurs.), 18 (Fri.) Monetary Policy Meeting",ose,2026-09-18T03:00:00+00:00,2025-07-31T00:00:00+00:00,boj_mpm_schedule
+2026-10-02,nfp,September 2026 Employment Situation,us,2026-10-02T12:30:00+00:00,2025-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2026-10-14,cpi,September 2026 Consumer Price Index,us,2026-10-14T12:30:00+00:00,2025-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2026-10-28,fomc,FOMC October 27-28 FOMC Meeting - 2026,us,2026-10-28T18:00:00+00:00,2025-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2026-10-30,boj,"BOJ Oct. 29 (Thurs.), 30 (Fri.) Monetary Policy Meeting",ose,2026-10-30T03:00:00+00:00,2025-07-31T00:00:00+00:00,boj_mpm_schedule
+2026-11-06,nfp,October 2026 Employment Situation,us,2026-11-06T13:30:00+00:00,2025-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2026-11-10,cpi,October 2026 Consumer Price Index,us,2026-11-10T13:30:00+00:00,2025-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2026-12-04,nfp,November 2026 Employment Situation,us,2026-12-04T13:30:00+00:00,2025-12-31T00:00:00+00:00,bls_employment_archive_or_schedule
+2026-12-09,fomc,FOMC December 8-9 FOMC Meeting - 2026,us,2026-12-09T19:00:00+00:00,2025-06-30T00:00:00+00:00,federal_reserve_fomc_calendar
+2026-12-10,cpi,November 2026 Consumer Price Index,us,2026-12-10T13:30:00+00:00,2025-12-31T00:00:00+00:00,bls_cpi_archive_or_schedule
+2026-12-18,boj,"BOJ Dec. 17 (Thurs.), 18 (Fri.) Monetary Policy Meeting",ose,2026-12-18T03:00:00+00:00,2025-07-31T00:00:00+00:00,boj_mpm_schedule

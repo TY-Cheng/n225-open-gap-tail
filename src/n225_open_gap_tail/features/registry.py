@@ -19,6 +19,8 @@ def _feature_dictionary_includes(field: str) -> bool:
         return False
     return (
         field.startswith("n225_")
+        or field.startswith("event_")
+        or field.startswith("xmarket_")
         or field.startswith("option_")
         or field.endswith("_return")
         or field.endswith("_range")
@@ -39,6 +41,10 @@ def _feature_dictionary_includes(field: str) -> bool:
 
 
 def _feature_source_family(field: str) -> str:
+    if field.startswith("event_"):
+        return "event_calendar"
+    if field.startswith("xmarket_"):
+        return "cross_market_derived"
     if field.startswith("n225_option_"):
         return "jquants_nikkei_options"
     if field.startswith("n225_"):
@@ -74,6 +80,16 @@ def _feature_source_family(field: str) -> str:
 
 
 def _feature_source_block(field: str) -> str:
+    if field.startswith("event_"):
+        return "calendar_controls"
+    if field.startswith("xmarket_us_"):
+        return "us_core"
+    if field.startswith("xmarket_vix_"):
+        return "fred_core"
+    if field.startswith("xmarket_japan_proxy_"):
+        return "japan_proxy"
+    if field.startswith("xmarket_asia_proxy_"):
+        return "asia_proxy"
     if field.startswith("n225_option_"):
         return "japan_only"
     if field.startswith("n225_"):

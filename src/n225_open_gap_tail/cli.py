@@ -5,6 +5,7 @@ import typer
 
 from n225_open_gap_tail.config import load_settings, split_csv
 from n225_open_gap_tail.data_lake import MAIN_SAMPLE_START
+from n225_open_gap_tail.diagnostics.feature_audit import write_feature_audit
 from n225_open_gap_tail.diagnostics.snapshot import write_results_snapshot_from_run
 from n225_open_gap_tail.forecasting import (
     build_panel,
@@ -260,6 +261,29 @@ def snapshot(
     typer.echo(f"docs results snapshot: {result.docs_results_path}")
     typer.echo(f"gold panel rows: {result.target_rows}")
     typer.echo(f"model status: {result.model_status}")
+
+
+@app.command("feature-audit")
+def feature_audit(
+    run_id: str = typer.Option("latest", help="Run id. Defaults to the latest tail-risk run."),
+    baseline_run_id: str = typer.Option("", help="Optional baseline run id for feature deltas."),
+) -> None:
+    """Summarize feature coverage, ML-tail gates, and optional feature deltas."""
+    settings = load_settings()
+    run_dir = resolve_run_dir(settings, "" if run_id == "latest" else run_id)
+    baseline_run_dir = (
+        None
+        if not baseline_run_id
+        else resolve_run_dir(settings, "" if baseline_run_id == "latest" else baseline_run_id)
+    )
+    result = write_feature_audit(run_dir=run_dir, baseline_run_dir=baseline_run_dir)
+
+    typer.echo(f"run id: {result.run_id}")
+    typer.echo(f"run dir: {result.run_dir}")
+    typer.echo(f"feature audit: {result.output_path}")
+    typer.echo(f"features: {result.feature_count}")
+    typer.echo(f"source blocks: {result.block_count}")
+    typer.echo(f"warnings: {result.warning_count}")
 
 
 @app.command("build-panel")

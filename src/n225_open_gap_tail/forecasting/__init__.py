@@ -67,6 +67,8 @@ from n225_open_gap_tail.features.registry import (
     _feature_source_family as _feature_source_family,
 )
 from n225_open_gap_tail.features.n225_options import *
+from n225_open_gap_tail.features.event_calendar import *
+from n225_open_gap_tail.features.cross_market import *
 from n225_open_gap_tail.features.us_options import *
 from n225_open_gap_tail.sources.jquants_options import *
 from n225_open_gap_tail.panel.leakage import *

@@ -591,6 +591,7 @@ flowchart LR
 - The generated results snapshot is the evidence map; this paper plan is the manuscript design.
 - Data source details are maintained in `docs/data.md`.
 - Current result tables and figure provenance are maintained in `docs/results_snapshot.md`.
-- The canonical run artifacts live under `reports/runs/<run_id>/`.
-- Paper-facing tables and figures are emitted under `reports/runs/<run_id>/latex/`.
+- The canonical run artifacts live under `REPORTS_DIR/runs/<run_id>/`.
+- Paper-facing tables and figures are emitted under `REPORTS_DIR/runs/<run_id>/latex/`.
+- The local data root should be an absolute external-storage path, not a cloud-synced repo directory or repo-local symlink. `REPORTS_DIR` can remain local because generated reporting artifacts are comparatively small.
 - `table_manifest.json` and `figure_manifest.json` provide source-artifact and claim-scope traceability for the generated paper-facing outputs.

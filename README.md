@@ -121,6 +121,11 @@ This repo uses `uv` and `just`. The local virtual environment is controlled by `
 UV_PROJECT_ENVIRONMENT="${HOME}/.venvs/n225-open-gap-tail"
 ```
 
+Mutable research storage is also controlled by `.env`. On local machines, keep
+`DATA_DIR` as an absolute external path outside cloud-synced checkouts; do not
+use a repo-local `data/` symlink. `REPORTS_DIR` can remain `reports` because run
+summaries, figures, and tables are much smaller than the data lake.
+
 Typical local checks:
 
 ```bash
@@ -148,7 +153,7 @@ just full
 ```
 
 It runs checks, builds the point-in-time panel, evaluates benchmark and ML-tail suites,
-exports LaTeX tables and figures, and writes run outputs under ignored `reports/runs/`.
+exports LaTeX tables and figures, and writes run outputs under `REPORTS_DIR/runs/`.
 When the `end` argument is omitted, the workflow uses the most recent completed
 Friday as the data cutoff rather than the run date. Pass an explicit
 `YYYY-MM-DD` end date to override that paper-freeze default.
@@ -175,23 +180,28 @@ primary/promoted results:
 just sensitivity latest
 ```
 
-Useful lower-level commands are available for debugging:
+The visible `just` surface is intentionally small:
 
 ```bash
-just _build-panel
-just _evaluate <run_id> 4 benchmark false both
-just _evaluate <run_id> 4 ml-tail false both
-just _export-tables <run_id>
+just status
+just source-probe
+just check
+just fix
+just full
+just snapshot latest
+just sensitivity latest
+just docs
 ```
 
 ## Outputs
 
 - `docs/results_snapshot.md`: generated evidence map for the latest completed run.
-- `reports/runs/<run_id>/latex/tables/`: paper-facing LaTeX tables.
-- `reports/runs/<run_id>/latex/figures/`: paper-facing figures.
-- `reports/runs/<run_id>/latex/table_manifest.json`: table provenance.
-- `reports/runs/<run_id>/latex/figure_manifest.json`: figure provenance.
-- `data/` and `reports/`: local data and model outputs, ignored by git.
+- `REPORTS_DIR/runs/<run_id>/latex/tables/`: paper-facing LaTeX tables.
+- `REPORTS_DIR/runs/<run_id>/latex/figures/`: paper-facing figures.
+- `REPORTS_DIR/runs/<run_id>/latex/table_manifest.json`: table provenance.
+- `REPORTS_DIR/runs/<run_id>/latex/figure_manifest.json`: figure provenance.
+- `DATA_DIR`: local mutable data lake, ignored by git and kept outside the repo.
+- `REPORTS_DIR`: local run summaries and generated reporting artifacts, ignored by git and usually kept at `reports`.
 
 ## Claim Boundaries
 

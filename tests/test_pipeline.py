@@ -34,6 +34,8 @@ import n225_open_gap_tail.reporting.figures as reporting_figures
 import n225_open_gap_tail.reporting.latex as reporting_latex
 from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.data_lake import VendorErrorClass
+from n225_open_gap_tail.diagnostics.feature_audit import write_feature_audit
+from n225_open_gap_tail.features.cross_market import add_cross_market_features
 from n225_open_gap_tail.features.descriptions import (
     _optional_float as _description_optional_float,
 )
@@ -42,6 +44,11 @@ from n225_open_gap_tail.features.descriptions import (
 )
 from n225_open_gap_tail.features.descriptions import (
     _required_float as _description_required_float,
+)
+from n225_open_gap_tail.features.event_calendar import (
+    EventCalendarRecord,
+    add_event_calendar_features,
+    load_event_calendar,
 )
 from n225_open_gap_tail.features.n225_history import (
     _contract_month_number,
@@ -583,10 +590,14 @@ def test_ml_tail_information_sets_select_nested_feature_blocks() -> None:
         {"feature": "ewh_return", "source_block": "asia_proxy"},
         {"feature": "option_us_core_spy_atm_iv_short", "source_block": "us_core"},
         {"feature": "option_us_sector_median_atm_iv_short", "source_block": "us_core"},
+        {"feature": "xmarket_us_core_return_mean_1d", "source_block": "us_core"},
+        {"feature": "xmarket_vix_shock_20d", "source_block": "fred_core"},
         {"feature": "option_japan_etf_ewj_atm_iv_short", "source_block": "japan_proxy"},
         {"feature": "option_japan_adr_median_atm_iv_short", "source_block": "japan_proxy"},
         {"feature": "japan_adr_median_return", "source_block": "japan_proxy"},
+        {"feature": "xmarket_japan_proxy_ewj_spy_spread_1d", "source_block": "japan_proxy"},
         {"feature": "option_asia_proxy_median_atm_iv_short", "source_block": "asia_proxy"},
+        {"feature": "xmarket_asia_proxy_return_dispersion_1d", "source_block": "asia_proxy"},
         {"feature": "fred_bamlh0a0hym2_level", "source_block": "fred_credit_enriched"},
     ]
 
@@ -608,11 +619,16 @@ def test_ml_tail_information_sets_select_nested_feature_blocks() -> None:
     )
     assert "loss_lag_1" in japan_only
     assert "n225_day_range_lag_1" in japan_only
+    assert "event_nfp_same_us_session" in japan_only
+    assert "xmarket_us_core_return_mean_1d" not in japan_only
     assert "spy_return" not in japan_only
     assert "spy_late_30m_return" in us_core
     assert "qqq_late_30m_return" in us_core
     assert "option_us_core_spy_atm_iv_short" in us_core
     assert "option_us_sector_median_atm_iv_short" in us_core
+    assert "xmarket_us_core_return_mean_1d" in us_core
+    assert "xmarket_vix_shock_20d" in us_core
+    assert "xmarket_japan_proxy_ewj_spy_spread_1d" not in us_core
     assert "option_japan_etf_ewj_atm_iv_short" not in us_core
     assert "option_asia_proxy_median_atm_iv_short" not in us_core
     assert "ewj_late_30m_return" not in us_core
@@ -626,12 +642,15 @@ def test_ml_tail_information_sets_select_nested_feature_blocks() -> None:
     assert "option_japan_etf_ewj_atm_iv_short" in japan_proxy
     assert "option_japan_adr_median_atm_iv_short" in japan_proxy
     assert "japan_adr_median_return" in japan_proxy
+    assert "xmarket_japan_proxy_ewj_spy_spread_1d" in japan_proxy
+    assert "xmarket_asia_proxy_return_dispersion_1d" not in japan_proxy
     assert "option_asia_proxy_median_atm_iv_short" not in japan_proxy
     assert "ewh_return" in asia_proxy
     assert "ewh_late_30m_return" in asia_proxy
     assert "option_us_core_spy_atm_iv_short" in asia_proxy
     assert "option_japan_adr_median_atm_iv_short" in asia_proxy
     assert "option_asia_proxy_median_atm_iv_short" in asia_proxy
+    assert "xmarket_asia_proxy_return_dispersion_1d" in asia_proxy
     assert paper_core._feature_source_block("ewj_late_30m_return") == "japan_proxy"
     assert paper_core._feature_source_block("ewh_late_30m_return") == "asia_proxy"
     assert paper_core._feature_source_block("spy_late_30m_return") == "us_late_session"
@@ -643,6 +662,15 @@ def test_ml_tail_information_sets_select_nested_feature_blocks() -> None:
     assert paper_core._feature_source_block("japan_adr_median_return") == "japan_proxy"
     assert paper_core._feature_source_block("option_asia_proxy_median_atm_iv_short") == (
         "asia_proxy"
+    )
+    assert paper_core._feature_source_block("event_nfp_same_us_session") == "calendar_controls"
+    assert paper_core._feature_source_block("xmarket_us_core_return_mean_1d") == "us_core"
+    assert paper_core._feature_source_block("xmarket_vix_shock_20d") == "fred_core"
+    assert (
+        paper_core._feature_source_block("xmarket_japan_proxy_ewj_spy_spread_1d") == "japan_proxy"
+    )
+    assert (
+        paper_core._feature_source_block("xmarket_asia_proxy_return_dispersion_1d") == "asia_proxy"
     )
     with pytest.raises(paper_module.PipelineRunError):
         ml_tail_feature_columns_for_information_set(
@@ -880,6 +908,77 @@ def test_n225_option_features_normalize_compact_v2_fields_and_write_silver(
     assert same_date_panel[0]["n225_option_night_atm_return_lag_1"] is None
 
 
+def test_n225_option_surface_buckets_risk_reversal_and_metadata() -> None:
+    available = datetime(2026, 1, 6, 3, tzinfo=UTC)
+    option_rows = [
+        {
+            "trading_date": "2026-01-05",
+            "strike_price": strike,
+            "underlying_price": 100.0,
+            "implied_volatility": iv,
+            "base_volatility": base_vol,
+            "open_interest": oi,
+            "volume": volume,
+            "put_call": put_call,
+            "central_contract_month_flag": False,
+            "special_quotation_day": sq,
+            "vendor_available_ts_utc": available,
+        }
+        for strike, iv, base_vol, oi, volume, put_call, sq in (
+            (100.0, 0.20, 0.24, 100.0, 10.0, "call", "2026-01-20"),
+            (100.0, 0.22, 0.24, 300.0, 30.0, "put", "2026-01-20"),
+            (100.0, 0.30, 0.34, 200.0, 20.0, "call", "2026-03-01"),
+            (100.0, 0.32, 0.34, 200.0, 20.0, "put", "2026-03-01"),
+            (95.0, 0.36, 0.34, 50.0, 5.0, "put", "2026-03-01"),
+            (105.0, 0.25, 0.34, 50.0, 5.0, "call", "2026-03-01"),
+        )
+    ]
+    features = paper_core.build_n225_option_feature_records(option_rows)
+    panel = paper_core.add_n225_option_features(
+        [
+            {
+                "forecast_date": "2026-01-07",
+                "model_cutoff_ts_utc": datetime(2026, 1, 6, 21, tzinfo=UTC),
+            }
+        ],
+        features,
+    )
+    row = panel[0]
+
+    assert features[0]["atm_iv_short"] == pytest.approx(0.21)
+    assert features[0]["atm_iv_medium"] == pytest.approx(0.31)
+    assert row["n225_option_iv_term_slope_lag_1"] == pytest.approx(0.10)
+    assert row["n225_option_risk_reversal_lag_1"] == pytest.approx(0.11)
+    assert row["n225_option_put_oi_share_lag_1"] == pytest.approx(550.0 / 900.0)
+    assert row["n225_option_short_valid_contract_count_lag_1"] == pytest.approx(2.0)
+    assert row["n225_option_medium_valid_contract_count_lag_1"] == pytest.approx(4.0)
+    assert row["n225_option_atm_iv_lag_1__source_date"] == "2026-01-05"
+    assert row["n225_option_atm_iv_lag_1__available_ts_utc"] == available
+
+
+def test_n225_option_medium_only_bucket_leaves_term_slope_null() -> None:
+    features = paper_core.build_n225_option_feature_records(
+        [
+            {
+                "trading_date": "2026-01-05",
+                "strike_price": 100.0,
+                "underlying_price": 100.0,
+                "implied_volatility": 0.30,
+                "open_interest": 1.0,
+                "volume": 1.0,
+                "put_call": "call",
+                "central_contract_month_flag": True,
+                "special_quotation_day": "2026-03-01",
+                "vendor_available_ts_utc": datetime(2026, 1, 6, 3, tzinfo=UTC),
+            }
+        ]
+    )
+
+    assert features[0]["atm_iv_short"] is None
+    assert features[0]["atm_iv_medium"] == pytest.approx(0.30)
+    assert features[0]["iv_term_slope"] is None
+
+
 def test_n225_option_normalization_handles_invalid_optional_fields() -> None:
     rows = paper_core.normalize_jquants_nikkei225_option_rows(
         [
@@ -1021,9 +1120,16 @@ def test_n225_history_features_compute_rolling_moments_and_controls() -> None:
     target = enriched[-1]
 
     assert target["n225_session_range_mean_20"] is not None
+    assert target["n225_session_range_mean_5"] is not None
+    assert target["n225_session_range_mean_10"] is not None
+    assert target["n225_session_range_mean_60"] is not None
     assert target["n225_session_parkinson_var_mean_20"] is not None
+    assert target["n225_session_parkinson_var_mean_60"] is not None
+    assert target["n225_session_up_semivar_5"] is not None
     assert target["n225_session_up_semivar_20"] is not None
+    assert target["n225_session_up_semivar_60"] is not None
     assert target["n225_session_down_semivar_20"] is not None
+    assert target["n225_session_down_semivar_60"] is not None
     assert target["n225_session_skew_120"] is not None
     assert target["n225_session_excess_kurtosis_120"] is not None
     assert target["n225_volume_zscore_60"] is not None
@@ -1032,6 +1138,36 @@ def test_n225_history_features_compute_rolling_moments_and_controls() -> None:
     assert target["n225_open_interest_log_change_lag_1"] is not None
     assert target["n225_volume_oi_ratio_lag_1"] is not None
     assert target["n225_days_to_sq"] == float((date(2025, 3, 13) - date(2025, 5, 4)).days)
+
+
+def test_n225_history_tail_hit_counts_use_prior_rolling_threshold() -> None:
+    rows = []
+    start = date(2025, 1, 1)
+    for index in range(253):
+        current = start + timedelta(days=index)
+        rows.append(
+            {
+                "forecast_date": current.isoformat(),
+                "clean_sample": True,
+                "realized_loss": float(index),
+                "gap_t": float(index),
+                "jquants_vendor_available_ts_utc": datetime.combine(
+                    current,
+                    datetime.min.time(),
+                    tzinfo=UTC,
+                )
+                + timedelta(hours=18),
+            }
+        )
+
+    enriched = add_n225_history_features(rows)
+    target = enriched[-1]
+
+    assert enriched[251]["n225_left_tail_hit_count_20"] is None
+    assert target["n225_left_tail_hit_count_20"] == pytest.approx(13.0)
+    assert target["n225_left_tail_hit_count_60"] == pytest.approx(13.0)
+    assert target["n225_right_tail_hit_count_20"] == pytest.approx(13.0)
+    assert target["n225_right_tail_hit_count_60"] == pytest.approx(13.0)
 
 
 def test_n225_history_features_null_invalid_ohlc_and_bad_dates() -> None:
@@ -1121,6 +1257,348 @@ def test_n225_history_features_respect_current_model_cutoff() -> None:
         2025, 1, 6, 18, tzinfo=UTC
     )
     assert enriched[2]["n225_day_return_lag_1"] == pytest.approx(math.log(101.0 / 100.0))
+
+
+def test_event_calendar_features_respect_known_and_release_timestamps() -> None:
+    records = [
+        EventCalendarRecord(
+            event_date=date(2026, 1, 2),
+            event_type="nfp",
+            event_name="NFP",
+            affects_session="us",
+            release_ts_utc=datetime(2026, 1, 2, 13, 30, tzinfo=UTC),
+            known_ts_utc=datetime(2025, 12, 1, tzinfo=UTC),
+            source_note="test",
+        ),
+        EventCalendarRecord(
+            event_date=date(2026, 1, 3),
+            event_type="cpi",
+            event_name="CPI",
+            affects_session="us",
+            release_ts_utc=datetime(2026, 1, 3, 13, 30, tzinfo=UTC),
+            known_ts_utc=datetime(2026, 1, 2, 22, tzinfo=UTC),
+            source_note="test",
+        ),
+        EventCalendarRecord(
+            event_date=date(2026, 1, 5),
+            event_type="boj",
+            event_name="BOJ",
+            affects_session="ose",
+            release_ts_utc=datetime(2026, 1, 5, 3, tzinfo=UTC),
+            known_ts_utc=datetime(2025, 12, 1, tzinfo=UTC),
+            source_note="test",
+        ),
+    ]
+    panel = [
+        {
+            "forecast_date": "2026-01-02",
+            "us_calendar_date": "2026-01-02",
+            "model_cutoff_ts_utc": datetime(2026, 1, 2, 21, tzinfo=UTC),
+        },
+        {
+            "forecast_date": "2026-01-05",
+            "us_calendar_date": "2026-01-02",
+            "model_cutoff_ts_utc": datetime(2026, 1, 5, 21, tzinfo=UTC),
+        },
+    ]
+
+    enriched = add_event_calendar_features(panel, event_records=records)
+
+    assert enriched[0]["event_nfp_same_us_session"] == 1
+    assert enriched[0]["event_cpi_same_us_session"] == 0
+    assert enriched[0]["event_cpi_same_us_session__available_ts_utc"] == datetime(
+        2026, 1, 2, 21, tzinfo=UTC
+    )
+    assert enriched[0]["event_major_count_next_3d"] == 2
+    assert enriched[0]["event_days_to_next_major"] == 0
+    assert enriched[0]["event_nfp_same_us_session__available_ts_utc"] == datetime(
+        2026, 1, 2, 13, 30, tzinfo=UTC
+    )
+    assert enriched[1]["event_boj_same_ose_session"] == 1
+    assert enriched[1]["event_days_since_previous_major"] == 2
+
+
+def test_event_calendar_loader_validation_and_missing_dates(tmp_path: Path) -> None:
+    assert load_event_calendar(tmp_path / "missing.csv") == []
+    good_path = tmp_path / "events.csv"
+    good_path.write_text(
+        "\n".join(
+            [
+                "event_date,event_type,event_name,affects_session,release_ts_utc,known_ts_utc,source_note",
+                "2026-01-02,nfp,NFP,us,2026-01-02T13:30:00,2025-12-31T00:00:00,manual",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    loaded = load_event_calendar(good_path)
+    assert loaded[0].known_ts_utc == datetime(2025, 12, 31, tzinfo=UTC)
+
+    missing_column_path = tmp_path / "missing_column.csv"
+    missing_column_path.write_text("event_date,event_type\n2026-01-02,nfp\n", encoding="utf-8")
+    with pytest.raises(paper_module.PipelineRunError, match="missing columns"):
+        load_event_calendar(missing_column_path)
+
+    bad_rows = {
+        "bad_date": (
+            "bad-date,nfp,NFP,us,2026-01-02T13:30:00+00:00,2025-12-31T00:00:00+00:00,manual"
+        ),
+        "bad_type": (
+            "2026-01-02,bad,NFP,us,2026-01-02T13:30:00+00:00,2025-12-31T00:00:00+00:00,manual"
+        ),
+        "bad_session": (
+            "2026-01-02,nfp,NFP,bad,2026-01-02T13:30:00+00:00,2025-12-31T00:00:00+00:00,manual"
+        ),
+        "bad_timestamp": "2026-01-02,nfp,NFP,us,not-a-time,2025-12-31T00:00:00+00:00,manual",
+    }
+    for name, row_text in bad_rows.items():
+        bad_path = tmp_path / f"{name}.csv"
+        bad_path.write_text(
+            "event_date,event_type,event_name,affects_session,release_ts_utc,known_ts_utc,source_note\n"
+            f"{row_text}\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(paper_module.PipelineRunError):
+            load_event_calendar(bad_path)
+
+    enriched = add_event_calendar_features(
+        [
+            {
+                "forecast_date": "bad-date",
+                "us_calendar_date": date(2026, 1, 2),
+                "model_cutoff_ts_utc": datetime(2026, 1, 2, 21),
+            }
+        ],
+        event_records=loaded,
+    )
+    assert enriched[0]["event_major_count_next_3d"] is None
+    assert enriched[0]["event_days_to_next_major"] is None
+    assert enriched[0]["event_nfp_same_us_session"] == 1
+
+
+def test_cross_market_features_use_partial_aggregation_and_metadata() -> None:
+    enough_components = {
+        "forecast_date": "2026-01-05",
+        "clean_sample": True,
+        "spy_return": 0.01,
+        "qqq_return": 0.02,
+        "dia_return": 0.00,
+        "iwm_return": None,
+        "xlk_return": 0.01,
+        "xlf_return": 0.02,
+        "xle_return": 0.03,
+        "xlv_return": 0.04,
+        "xli_return": 0.05,
+        "xly_return": 0.06,
+        "xlp_return": None,
+        "xlb_return": None,
+        "xlu_return": None,
+        "xlc_return": None,
+        "ewj_return": 0.015,
+        "dxj_return": 0.004,
+        "eem_return": 0.01,
+        "fxi_return": -0.01,
+        "ewy_return": 0.02,
+        "ewt_return": None,
+        "ewh_return": None,
+        "cboe_vix_close": 20.0,
+        "spy_return__available_ts_utc": datetime(2026, 1, 2, 21, tzinfo=UTC),
+        "qqq_return__available_ts_utc": datetime(2026, 1, 2, 21, 5, tzinfo=UTC),
+        "dia_return__available_ts_utc": datetime(2026, 1, 2, 21, 10, tzinfo=UTC),
+        "spy_return__source_date": "2026-01-02",
+        "qqq_return__source_date": "2026-01-02",
+        "dia_return__source_date": "2026-01-02",
+    }
+    insufficient_components = {
+        **enough_components,
+        "forecast_date": "2026-01-06",
+        "spy_return": 0.01,
+        "qqq_return": None,
+        "dia_return": None,
+        "iwm_return": None,
+        "xle_return": None,
+        "xlv_return": None,
+        "xli_return": None,
+        "xly_return": None,
+        "eem_return": 0.01,
+        "fxi_return": None,
+        "ewy_return": None,
+    }
+
+    enriched = add_cross_market_features([enough_components, insufficient_components])
+
+    assert enriched[0]["xmarket_us_core_return_mean_1d"] == pytest.approx(0.01)
+    assert enriched[0]["xmarket_us_sector_return_dispersion_1d"] is not None
+    assert enriched[0]["xmarket_japan_proxy_ewj_spy_spread_1d"] == pytest.approx(0.005)
+    assert enriched[0]["xmarket_asia_proxy_return_dispersion_1d"] is not None
+    assert enriched[0]["xmarket_us_core_return_mean_1d__fill_method"] == ("derived_panel_aggregate")
+    assert enriched[0]["xmarket_us_core_return_mean_1d__available_ts_utc"] == datetime(
+        2026, 1, 2, 21, 10, tzinfo=UTC
+    )
+    assert enriched[1]["xmarket_us_core_return_mean_1d"] is None
+    assert enriched[1]["xmarket_asia_proxy_return_dispersion_1d"] is None
+
+
+def test_feature_audit_reports_coverage_gate_and_baseline_delta(tmp_path: Path) -> None:
+    run_dir = tmp_path / "reports" / "runs" / "tailrisk_current"
+    baseline_dir = tmp_path / "reports" / "runs" / "tailrisk_baseline"
+    (run_dir / "panel").mkdir(parents=True)
+    (run_dir / "forecasts").mkdir(parents=True)
+    (baseline_dir / "panel").mkdir(parents=True)
+    pl.DataFrame(
+        [
+            {
+                "feature": "event_nfp_same_us_session",
+                "source_family": "event_calendar",
+                "source_block": "calendar_controls",
+                "missingness_rate": 0.0,
+                "non_missing_rows": 10,
+            },
+            {
+                "feature": "xmarket_us_core_return_mean_1d",
+                "source_family": "cross_market_derived",
+                "source_block": "us_core",
+                "missingness_rate": 0.2,
+                "non_missing_rows": 8,
+            },
+        ]
+    ).write_parquet(run_dir / "panel" / "feature_coverage.parquet")
+    pl.DataFrame(
+        [
+            {
+                "information_set": "japan_only",
+                "candidate_feature_hash": "candidate-a",
+                "active_feature_hash": "active-a",
+                "dropped_features_json": json.dumps(
+                    [
+                        {
+                            "feature": "xmarket_us_core_return_mean_1d",
+                            "drop_reason": "high_training_missingness",
+                        }
+                    ]
+                ),
+            }
+        ]
+    ).write_parquet(run_dir / "forecasts" / "ml_tail_fit_diagnostics.parquet")
+    pl.DataFrame(
+        [
+            {
+                "feature": "n225_day_range_lag_1",
+                "source_family": "japan_history",
+                "source_block": "japan_only",
+                "missingness_rate": 0.0,
+                "non_missing_rows": 10,
+            }
+        ]
+    ).write_parquet(baseline_dir / "panel" / "feature_coverage.parquet")
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"window": ["2026-01-01", "2026-01-31"]}),
+        encoding="utf-8",
+    )
+    (baseline_dir / "manifest.json").write_text(
+        json.dumps({"window": ["2025-01-01", "2025-01-31"]}),
+        encoding="utf-8",
+    )
+
+    result = write_feature_audit(run_dir=run_dir, baseline_run_dir=baseline_dir)
+    payload = json.loads(result.output_path.read_text(encoding="utf-8"))
+
+    assert result.feature_count == 2
+    assert result.block_count == 2
+    assert result.warning_count == 1
+    assert "date range mismatch" in payload["warnings"][0]
+    assert payload["feature_delta_summary"]["added_features"] == [
+        "event_nfp_same_us_session",
+        "xmarket_us_core_return_mean_1d",
+    ]
+    assert payload["ml_tail_gate_summary"]["dropped_feature_count"] == 1
+
+
+def test_feature_audit_fails_clearly_when_coverage_is_missing(tmp_path: Path) -> None:
+    with pytest.raises(paper_module.PipelineRunError, match="Missing feature coverage artifact"):
+        write_feature_audit(run_dir=tmp_path / "empty_run")
+
+
+def test_feature_audit_handles_empty_coverage_file(tmp_path: Path) -> None:
+    run_dir = tmp_path / "reports" / "runs" / "tailrisk_empty"
+    (run_dir / "panel").mkdir(parents=True)
+    (run_dir / "forecasts").mkdir(parents=True)
+    pl.DataFrame(schema={"feature": pl.String}).write_parquet(
+        run_dir / "panel" / "feature_coverage.parquet"
+    )
+    pl.DataFrame(
+        schema={
+            "information_set": pl.String,
+            "candidate_feature_hash": pl.String,
+            "active_feature_hash": pl.String,
+            "dropped_features_json": pl.String,
+        }
+    ).write_parquet(run_dir / "forecasts" / "ml_tail_fit_diagnostics.parquet")
+
+    result = write_feature_audit(run_dir=run_dir)
+    payload = json.loads(result.output_path.read_text(encoding="utf-8"))
+
+    assert result.feature_count == 0
+    assert result.block_count == 0
+    assert payload["block_summary"] == []
+
+
+def test_feature_audit_handles_bad_optional_artifacts(tmp_path: Path) -> None:
+    run_dir = tmp_path / "reports" / "runs" / "tailrisk_current"
+    baseline_dir = tmp_path / "reports" / "runs" / "tailrisk_baseline"
+    (run_dir / "panel").mkdir(parents=True)
+    (run_dir / "forecasts").mkdir(parents=True)
+    (baseline_dir / "panel").mkdir(parents=True)
+    coverage = pl.DataFrame(
+        [
+            {
+                "feature": "event_nfp_same_us_session",
+                "source_family": "event_calendar",
+                "source_block": "calendar_controls",
+                "missingness_rate": 0.0,
+                "non_missing_rows": 10,
+            }
+        ]
+    )
+    coverage.write_parquet(run_dir / "panel" / "feature_coverage.parquet")
+    coverage.write_parquet(baseline_dir / "panel" / "feature_coverage.parquet")
+    pl.DataFrame(
+        [
+            {
+                "information_set": "japan_only",
+                "candidate_feature_hash": "candidate-a",
+                "active_feature_hash": "active-a",
+                "dropped_features_json": "not-json",
+            },
+            {
+                "information_set": "japan_only",
+                "candidate_feature_hash": "candidate-a",
+                "active_feature_hash": "active-a",
+                "dropped_features_json": json.dumps({"not": "a-list"}),
+            },
+            {
+                "information_set": "japan_only",
+                "candidate_feature_hash": "candidate-a",
+                "active_feature_hash": "active-a",
+                "dropped_features_json": json.dumps([{"feature": "ok"}, "bad"]),
+            },
+        ]
+    ).write_parquet(run_dir / "forecasts" / "ml_tail_fit_diagnostics.parquet")
+    (run_dir / "manifest.json").write_text("{bad-json", encoding="utf-8")
+    (baseline_dir / "manifest.json").write_text(json.dumps({"window": "bad"}), encoding="utf-8")
+
+    result = write_feature_audit(run_dir=run_dir, baseline_run_dir=baseline_dir)
+    payload = json.loads(result.output_path.read_text(encoding="utf-8"))
+
+    assert result.warning_count == 0
+    assert payload["ml_tail_gate_summary"]["dropped_feature_count"] == 1
+    assert payload["feature_delta_summary"]["available"] is True
+
+    missing_baseline = tmp_path / "reports" / "runs" / "tailrisk_missing_baseline"
+    result = write_feature_audit(run_dir=run_dir, baseline_run_dir=missing_baseline)
+    payload = json.loads(result.output_path.read_text(encoding="utf-8"))
+    assert result.warning_count == 1
+    assert payload["feature_delta_summary"]["reason"] == "missing_baseline_feature_coverage"
 
 
 def test_worker_payload_rejects_dataframe_objects() -> None:
@@ -2192,6 +2670,8 @@ def test_low_level_feature_and_bronze_helpers_cover_edge_cases() -> None:
     assert paper_core._feature_source_family("uup_return") == "massive_optional"
     assert paper_core._feature_source_family("c_usdjpy_return") == "massive_daily"
     assert paper_core._feature_source_family("n225_session_skew_120") == "japan_history"
+    assert paper_core._feature_source_family("event_fomc_same_us_session") == "event_calendar"
+    assert paper_core._feature_source_family("xmarket_vix_shock_20d") == "cross_market_derived"
     assert paper_core._feature_source_family("qqq_late_60m_realized_var") == "massive_minute"
     assert paper_core._feature_source_family("option_us_core_spy_atm_iv_short") == (
         "us_core_options"
@@ -2228,6 +2708,15 @@ def test_low_level_feature_and_bronze_helpers_cover_edge_cases() -> None:
         "asia_proxy"
     )
     assert paper_core._feature_source_block("n225_session_skew_120") == "japan_only"
+    assert paper_core._feature_source_block("event_fomc_same_us_session") == "calendar_controls"
+    assert paper_core._feature_source_block("xmarket_us_core_return_mean_1d") == "us_core"
+    assert paper_core._feature_source_block("xmarket_vix_shock_20d") == "fred_core"
+    assert paper_core._feature_source_block("xmarket_japan_proxy_dxj_spy_spread_1d") == (
+        "japan_proxy"
+    )
+    assert paper_core._feature_source_block("xmarket_asia_proxy_return_dispersion_1d") == (
+        "asia_proxy"
+    )
     assert paper_core._panel_join_miss_reason({}, "") == "calendar_desync"
     assert (
         paper_core._panel_join_miss_reason(

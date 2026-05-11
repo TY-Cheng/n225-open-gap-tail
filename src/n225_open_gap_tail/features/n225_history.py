@@ -19,12 +19,26 @@ N225_HISTORY_FEATURES = (
     "n225_night_range_lag_1",
     "n225_day_parkinson_var_lag_1",
     "n225_night_parkinson_var_lag_1",
+    "n225_session_range_mean_5",
+    "n225_session_range_mean_10",
     "n225_session_range_mean_20",
+    "n225_session_range_mean_60",
+    "n225_session_parkinson_var_mean_5",
+    "n225_session_parkinson_var_mean_10",
     "n225_session_parkinson_var_mean_20",
+    "n225_session_parkinson_var_mean_60",
+    "n225_session_up_semivar_5",
     "n225_session_up_semivar_20",
+    "n225_session_up_semivar_60",
+    "n225_session_down_semivar_5",
     "n225_session_down_semivar_20",
+    "n225_session_down_semivar_60",
     "n225_session_skew_120",
     "n225_session_excess_kurtosis_120",
+    "n225_left_tail_hit_count_20",
+    "n225_left_tail_hit_count_60",
+    "n225_right_tail_hit_count_20",
+    "n225_right_tail_hit_count_60",
     "n225_volume_log1p_lag_1",
     "n225_open_interest_log1p_lag_1",
     "n225_volume_log_change_lag_1",
@@ -62,6 +76,7 @@ def add_n225_history_features(panel_rows: list[dict[str, object]]) -> list[dict[
             ),
             latest_prior=latest_prior,
         )
+        _stamp_tail_hit_features(enriched, usable_summaries)
         _stamp_volume_oi_features(enriched, usable_summaries)
         _stamp_contract_calendar_features(enriched, forecast_date)
         output.append(enriched)
@@ -134,48 +149,48 @@ def _stamp_rolling_session_features(
     latest_prior: dict[str, object] | None,
 ) -> None:
     policy = PIPELINE_CONFIG.feature_engineering
-    range_values = prior_session_ranges[-policy.n225_range_window :]
-    parkinson_values = prior_session_parkinson_vars[-policy.n225_range_window :]
-    semivar_values = prior_session_returns[-policy.n225_semivariance_window :]
     moment_values = prior_session_returns[-policy.n225_higher_moment_window :]
     source_date = None if latest_prior is None else str(latest_prior.get("forecast_date"))
     available_ts = None if latest_prior is None else latest_prior.get("vendor_available_ts_utc")
-    _stamp_feature(
-        row,
-        "n225_session_range_mean_20",
-        _mean_if_enough(range_values, policy.n225_range_min_periods),
-        source_date=source_date,
-        available_ts=available_ts,
+    windows = tuple(
+        dict.fromkeys((*policy.n225_extended_rolling_windows, policy.n225_range_window))
     )
-    _stamp_feature(
-        row,
-        "n225_session_parkinson_var_mean_20",
-        _mean_if_enough(parkinson_values, policy.n225_range_min_periods),
-        source_date=source_date,
-        available_ts=available_ts,
-    )
-    _stamp_feature(
-        row,
-        "n225_session_up_semivar_20",
-        _semivar_if_enough(
-            semivar_values,
-            min_periods=policy.n225_semivariance_min_periods,
-            positive=True,
-        ),
-        source_date=source_date,
-        available_ts=available_ts,
-    )
-    _stamp_feature(
-        row,
-        "n225_session_down_semivar_20",
-        _semivar_if_enough(
-            semivar_values,
-            min_periods=policy.n225_semivariance_min_periods,
-            positive=False,
-        ),
-        source_date=source_date,
-        available_ts=available_ts,
-    )
+    for window in sorted(windows):
+        min_periods = _rolling_min_periods(window)
+        range_values = prior_session_ranges[-window:]
+        parkinson_values = prior_session_parkinson_vars[-window:]
+        _stamp_feature(
+            row,
+            f"n225_session_range_mean_{window}",
+            _mean_if_enough(range_values, min_periods),
+            source_date=source_date,
+            available_ts=available_ts,
+        )
+        _stamp_feature(
+            row,
+            f"n225_session_parkinson_var_mean_{window}",
+            _mean_if_enough(parkinson_values, min_periods),
+            source_date=source_date,
+            available_ts=available_ts,
+        )
+    semivar_windows = tuple(dict.fromkeys((5, policy.n225_semivariance_window, 60)))
+    for window in sorted(semivar_windows):
+        min_periods = _rolling_min_periods(window)
+        semivar_values = prior_session_returns[-window:]
+        _stamp_feature(
+            row,
+            f"n225_session_up_semivar_{window}",
+            _semivar_if_enough(semivar_values, min_periods=min_periods, positive=True),
+            source_date=source_date,
+            available_ts=available_ts,
+        )
+        _stamp_feature(
+            row,
+            f"n225_session_down_semivar_{window}",
+            _semivar_if_enough(semivar_values, min_periods=min_periods, positive=False),
+            source_date=source_date,
+            available_ts=available_ts,
+        )
     _stamp_feature(
         row,
         "n225_session_skew_120",
@@ -193,6 +208,13 @@ def _stamp_rolling_session_features(
         source_date=source_date,
         available_ts=available_ts,
     )
+
+
+def _rolling_min_periods(window: int) -> int:
+    policy = PIPELINE_CONFIG.feature_engineering
+    if window >= policy.n225_extended_long_window_min_periods:
+        return policy.n225_extended_long_window_min_periods
+    return window
 
 
 def _stamp_volume_oi_features(
@@ -239,6 +261,53 @@ def _stamp_volume_oi_features(
         source_date=source_date,
         available_ts=available_ts,
     )
+
+
+def _stamp_tail_hit_features(
+    row: dict[str, object],
+    prior_summaries: list[dict[str, object]],
+) -> None:
+    policy = PIPELINE_CONFIG.feature_engineering
+    latest_prior = prior_summaries[-1] if prior_summaries else None
+    source_date = None if latest_prior is None else str(latest_prior.get("forecast_date"))
+    available_ts = None if latest_prior is None else latest_prior.get("vendor_available_ts_utc")
+    left_threshold = _rolling_tail_threshold(
+        prior_summaries,
+        key="realized_loss",
+        window=policy.n225_tail_hit_threshold_window,
+        quantile=policy.n225_tail_hit_quantile,
+    )
+    right_threshold = _rolling_tail_threshold(
+        prior_summaries,
+        key="gap_t",
+        window=policy.n225_tail_hit_threshold_window,
+        quantile=policy.n225_tail_hit_quantile,
+    )
+    for window in policy.n225_tail_hit_windows:
+        _stamp_feature(
+            row,
+            f"n225_left_tail_hit_count_{window}",
+            _tail_hit_count(
+                prior_summaries,
+                key="realized_loss",
+                threshold=left_threshold,
+                window=window,
+            ),
+            source_date=source_date,
+            available_ts=available_ts,
+        )
+        _stamp_feature(
+            row,
+            f"n225_right_tail_hit_count_{window}",
+            _tail_hit_count(
+                prior_summaries,
+                key="gap_t",
+                threshold=right_threshold,
+                window=window,
+            ),
+            source_date=source_date,
+            available_ts=available_ts,
+        )
 
 
 def _stamp_contract_calendar_features(
@@ -300,6 +369,8 @@ def _row_summary(row: dict[str, object]) -> dict[str, object]:
         "volume_oi_ratio": None
         if volume is None or open_interest is None or open_interest <= 0
         else volume / open_interest,
+        "realized_loss": _optional_float(row.get("realized_loss")),
+        "gap_t": _optional_float(row.get("gap_t")),
     }
 
 
@@ -400,6 +471,36 @@ def _difference(
     if latest is None or previous is None:
         return None
     return latest - previous
+
+
+def _rolling_tail_threshold(
+    summaries: list[dict[str, object]],
+    *,
+    key: str,
+    window: int,
+    quantile: float,
+) -> float | None:
+    values = [_optional_float(summary.get(key)) for summary in summaries[-window:]]
+    valid = [float(value) for value in values if value is not None and math.isfinite(value)]
+    if len(valid) < window:
+        return None
+    return float(np.quantile(valid, quantile))
+
+
+def _tail_hit_count(
+    summaries: list[dict[str, object]],
+    *,
+    key: str,
+    threshold: float | None,
+    window: int,
+) -> float | None:
+    if threshold is None or len(summaries) < window:
+        return None
+    values = [_optional_float(summary.get(key)) for summary in summaries[-window:]]
+    valid = [float(value) for value in values if value is not None and math.isfinite(value)]
+    if len(valid) < window:
+        return None
+    return float(sum(1 for value in valid if value > threshold))
 
 
 def _stamp_feature(

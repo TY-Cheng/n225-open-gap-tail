@@ -57,7 +57,7 @@ Evidence boundary:
   40fad66944bb426302efb67293330c82a62555a268a0009d95b109271bd0e8e4
 - The primary panel signature must be:
   f0981ad53852565aec7396a3be258835587df1eadb2c0b0445683029aa32a209
-- The claim level is research_candidate, not production/live-deployment evidence.
+- The claim level is research_candidate, not deployment evidence.
 - May 10 runs must not be used for manuscript claims.
 - The May 11 sensitivity run may be used only as secondary diagnostic evidence:
   tailrisk_20160719_20260508_20260511T024616Z_commit_1388d920
@@ -122,8 +122,7 @@ Model and evaluation checks:
 - Are VaR coverage, exception counts, ES diagnostics, Fissler-Ziegel joint
   VaR-ES loss, CPA diagnostics, Murphy diagrams, and trigger/severity diagnostics
   reported without substituting generic accuracy metrics?
-- Is the 95% VaR/ES scope respected, with no claim about extreme-tail performance
-  beyond the locked evidence?
+- Is the 95% VaR/ES scope respected without adding unsupported tail claims?
 
 Main table and figure checks:
 
@@ -185,10 +184,9 @@ Forbidden claims:
 - trading alpha;
 - hedge PnL;
 - profitable trading strategy;
-- live deployment or real-time production readiness;
+- deployment or operational readiness;
 - universal best model;
 - dominance or superiority across all model families;
-- extreme-tail performance beyond the locked 95% VaR design;
 - FRED real-time vintage safety.
 
 Required promoted-row wording:

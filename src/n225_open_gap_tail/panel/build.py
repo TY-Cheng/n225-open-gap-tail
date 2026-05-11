@@ -87,6 +87,8 @@ from n225_open_gap_tail.features.asof import (
     _options_feature_map,
 )
 from n225_open_gap_tail.features.descriptions import _feature_description, _safe_name
+from n225_open_gap_tail.features.cross_market import add_cross_market_features
+from n225_open_gap_tail.features.event_calendar import add_event_calendar_features
 from n225_open_gap_tail.features.n225_history import add_n225_history_features
 from n225_open_gap_tail.features.n225_options import add_n225_option_features
 from n225_open_gap_tail.features.registry import (
@@ -743,7 +745,9 @@ def build_modeling_panel_records(
         panel.append(record)
     panel.sort(key=lambda row: str(row["forecast_date"]))
     panel = add_n225_history_features(panel)
-    return add_n225_option_features(panel, n225_option_records or [])
+    panel = add_n225_option_features(panel, n225_option_records or [])
+    panel = add_event_calendar_features(panel)
+    return add_cross_market_features(panel)
 
 
 def apply_combined_clean_start(

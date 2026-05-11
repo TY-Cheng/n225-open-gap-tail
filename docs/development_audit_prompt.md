@@ -46,7 +46,7 @@ Audit checklist before adding features:
 - Do vendor-source, calendar, and contract-metadata outputs remain smoke or schema
   artifacts rather than empirical validation claims?
 - Is the OSE futures target clearly labeled as historical licensed research data
-  rather than live pre-open production data?
+  rather than operational data?
 - Are local state, credentials, raw data, caches, generated reports, and build outputs
   excluded from version control?
 - Does the documented verification workflow pass before claims are promoted?
@@ -125,12 +125,9 @@ EVT gates:
   checks.
 - Additional automated EVT threshold-selection procedures are not current-paper
   requirements. Revisit them only if EVT threshold selection becomes a primary
-  contribution or if author review promotes extreme-tail extrapolation beyond the
-  current sample gates.
+  contribution.
 - Enforce a minimum exceedance count before reporting an alpha level.
 - Report empirical levels separately from extrapolated levels.
-- Do not claim very-extreme-tail performance unless the sample size supports meaningful
-  evaluation.
 - Evaluate VaR and ES separately and jointly.
 
 Evaluation and manuscript gates:

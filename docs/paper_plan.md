@@ -76,8 +76,7 @@ appendix material.
 - Current clean evaluation window: `2018-06-20` to `2026-05-01`.
 - Current forecast-sample size: `1661` trading-day observations.
 - The current clean run is a research-candidate evidence set, not a final manuscript freeze.
-- The current primary level is 95% VaR/ES only.
-- A 97.5% level is deferred until common-sample size, exception counts, and EVT diagnostics are sufficient for a separate specification.
+- The current primary level is 95% VaR/ES.
 
 ### 2.2 Target Contract
 
@@ -541,19 +540,18 @@ flowchart LR
 - Conclusion:
     - summarize the predictive evidence;
     - state limitations from coverage drift, FRED vintages, EVT sample size, and missing U.S.-close Nikkei futures marks;
-    - define the next empirical extension, including 97.5% tails only after sufficient exception-count evidence.
+    - define the next empirical extension only where it sharpens interpretation of the current OSE pre-open tail-risk design.
 
 ## 7. Claim Boundaries
 
 - No structural causal spillover claim.
 - No price-discovery claim.
 - No claim that left-tail and right-tail mechanisms are identical.
-- No live deployment claim from historical OHLC data.
+- No deployment claim from historical OHLC data.
 - No `residual_usclosemark_to_open` claim without licensed timestamped intraday Nikkei futures marks.
 - No claim that LightGBM-EVT is a new ML algorithm.
 - No options-risk primary claim unless historical options entitlement, timestamp safety, and liquidity gates pass.
 - No model-family ranking claim from restricted short samples.
-- No extreme-tail claim without sufficient exceptions and rolling out-of-sample diagnostics.
 - Risk-trigger diagnostics are monitoring diagnostics; they are not VaR
   calibration tests, hedge PnL, transaction-cost, trading-alpha, or execution
   performance evidence.

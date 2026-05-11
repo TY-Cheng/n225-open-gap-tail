@@ -213,9 +213,8 @@ just docs
 - Trigger diagnostics are risk-monitoring summaries, not trading-strategy evidence.
 - The U.S.-close-mark target is deferred until licensed intraday Nikkei futures marks are
   available.
-- EVT results should first be judged at 95% VaR on common out-of-sample dates. Promotion
-  of 97.5% results requires sufficient common-sample size, exception counts, and stable
-  POT-GPD diagnostics.
+- EVT results are judged within the registered 95% VaR/ES design and its common
+  out-of-sample dates.
 
 ## More Detail
 

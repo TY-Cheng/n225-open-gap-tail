@@ -41,6 +41,14 @@ def _safe_name(value: str) -> str:
 
 
 def _feature_description(field: str) -> str:
+    if field.startswith("n225_option_"):
+        return (
+            "lagged J-Quants Nikkei 225 option-state feature available before the forecast cutoff"
+        )
+    if field.startswith("event_"):
+        return "scheduled macro or policy event calendar control with timestamp-safe availability"
+    if field.startswith("xmarket_"):
+        return "derived cross-market panel feature built from already timestamped source predictors"
     if field.startswith("n225_"):
         return "lagged Nikkei 225 futures history feature built only from prior clean rows"
     if field.startswith("option_"):

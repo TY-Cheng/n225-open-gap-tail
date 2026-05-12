@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,7 +36,6 @@ from n225_open_gap_tail.diagnostics.snapshot_formatting import (
     _markdown_table,
     _optional_float,
     _panel_bounds,
-    _result_matrix_display_value,
     _unique_values,
 )
 from n225_open_gap_tail.diagnostics.snapshot_paths import (
@@ -45,6 +45,24 @@ from n225_open_gap_tail.diagnostics.snapshot_qa import (
     advanced_benchmark_qa_text as _advanced_benchmark_qa_text,
 )
 from n225_open_gap_tail.diagnostics.snapshot_qa import discussion_qa_markdown as _discussion_qa
+from n225_open_gap_tail.diagnostics.snapshot_tables import (
+    _artifact_table as _artifact_table,
+)
+from n225_open_gap_tail.diagnostics.snapshot_tables import (
+    _benchmark_layer_table as _benchmark_layer_table,
+)
+from n225_open_gap_tail.diagnostics.snapshot_tables import (
+    _claim_scope_markdown_table as _claim_scope_markdown_table,
+)
+from n225_open_gap_tail.diagnostics.snapshot_tables import (
+    _coverage_review_sentence as _coverage_review_sentence,
+)
+from n225_open_gap_tail.diagnostics.snapshot_tables import (
+    _metric_artifact_relationship_table as _metric_artifact_relationship_table,
+)
+from n225_open_gap_tail.diagnostics.snapshot_tables import (
+    _result_matrix_summary_table as _result_matrix_summary_table,
+)
 from n225_open_gap_tail.diagnostics.target_distribution import (
     opening_gap_scale_text as _opening_gap_scale_text,
 )
@@ -67,6 +85,21 @@ class SnapshotError(RuntimeError):
     """Raised when a snapshot gate cannot be satisfied."""
 
 
+_REQUIRED_SNAPSHOT_ARTIFACT_KEYS = (
+    "modeling_panel",
+    "target_audit",
+    "calendar_map",
+    "feature_coverage",
+    "leakage_summary",
+    "benchmark_status",
+    "benchmark_metrics",
+    "ml_tail_status",
+    "ml_tail_metrics",
+    "table_manifest",
+    "figure_manifest",
+)
+
+
 def write_results_snapshot_from_run(
     *,
     settings: Settings,
@@ -77,6 +110,7 @@ def write_results_snapshot_from_run(
     manifest = _read_json_dict(run_dir / "manifest.json")
     resolved_run_id = str(manifest.get("run_id") or run_dir.name)
     paths = _full_run_snapshot_paths(settings=settings, run_dir=run_dir, manifest=manifest)
+    _validate_snapshot_artifacts(paths)
     panel = _read_parquet_optional(paths["modeling_panel"])
     docs_path = Path("docs/results_snapshot.md")
     discussion_path = Path("docs/discussion_qa.md")
@@ -151,7 +185,9 @@ def _resolve_snapshot_run_dir(*, settings: Settings, run_id: str | None) -> Path
 
 def _is_completed_full_run(run_dir: Path) -> bool:
     manifest = _read_json_dict(run_dir / "manifest.json")
-    return bool(manifest.get("benchmark_eval_status") and manifest.get("ml_tail_eval_status"))
+    benchmark_status = str(manifest.get("benchmark_eval_status") or "")
+    ml_tail_status = str(manifest.get("ml_tail_eval_status") or "")
+    return benchmark_status == "completed" and ml_tail_status.startswith("completed")
 
 
 def _read_json_dict(path: Path) -> dict[str, object]:
@@ -164,6 +200,19 @@ def _read_parquet_optional(path: Path) -> pl.DataFrame:
     if not path.exists():
         return pl.DataFrame()
     return pl.read_parquet(path)
+
+
+def _validate_snapshot_artifacts(paths: Mapping[str, Path]) -> None:
+    missing = [
+        f"{key}={paths[key]}"
+        for key in _REQUIRED_SNAPSHOT_ARTIFACT_KEYS
+        if key not in paths or not paths[key].exists()
+    ]
+    if missing:
+        joined = ", ".join(missing)
+        raise SnapshotError(
+            f"Snapshot source run is incomplete; missing required artifacts: {joined}"
+        )
 
 
 def _filter_current_ml_tail_models(frame: pl.DataFrame) -> pl.DataFrame:
@@ -185,7 +234,8 @@ def _full_run_discussion_qa_markdown(
         advanced_implementation_bullet,
         advanced_bottom_line_bullet,
     ) = _advanced_benchmark_qa_text(
-        int(_optional_float(benchmark_status.get("benchmark_advanced_forecast_rows")) or 0)
+        int(_optional_float(benchmark_status.get("benchmark_advanced_forecast_rows")) or 0),
+        int(_optional_float(benchmark_status.get("benchmark_advanced_failures")) or 0),
     )
     return _discussion_qa(
         advanced_implementation_text=advanced_implementation_text,
@@ -349,7 +399,9 @@ def _full_run_results_markdown(
         or benchmark_status.get("common_sample_status")
         or "unknown"
     )
-    ml_tail_components = _join_model_list(ML_TAIL_MODEL_NAMES)
+    ml_tail_components = _join_model_list(
+        ml_tail_status.get("implemented_components") or ML_TAIL_MODEL_NAMES
+    )
     ml_tail_status_label = display_status_label(ml_tail_status.get("status"))
     stress_table = _markdown_table(
         ("Suite", "Rows", "Window labels"),
@@ -512,7 +564,7 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 
 {ml_primary_table}
 
-- This primary ML table remains strict and reports only ML-tail rows that pass the registered common-sample and coverage gates.
+- This primary ML table remains strict and reports only ML-tail rows that pass the registered common-sample and forecast-validity gates; coverage is reviewed separately.
 - Location-scale empirical and plain POT-GPD are primary candidates only after their valid OOS coverage, standardized-loss, exceedance, and ES-validity gates pass.
 - Differences across information blocks are candidate forecast evidence only after the common-sample, coverage, and inference diagnostics are reviewed.
 - {ml_coverage_review}
@@ -522,7 +574,7 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 {promoted_tail_model_table}
 
 - This paper-facing bridge promotes side-specific ML-tail candidates only after the N/coverage gate and restricted common-sample inference are visible.
-- In the current run the left-tail promoted row is median/IQR POT-GPD, while the right-tail promoted row is location-scale empirical.
+- The current run's promoted rows are exactly the rows shown above; read them as side-specific paper candidates, not as a universal family ranking.
 - This is not a universal model-family ranking and does not replace the strict primary nested-information-set table above.
 
 #### ML-tail artifact relationship
@@ -814,185 +866,3 @@ def _snapshot_mcs_cell(row: object) -> str:
     if row.get("included_in_mcs") is False and status == "ok":
         return "out"
     return status
-
-
-def _benchmark_layer_table(status: dict[str, object]) -> str:
-    advanced_rows = int(_optional_float(status.get("benchmark_advanced_forecast_rows")) or 0)
-    advanced_note = (
-        "Implemented nonblocking advanced econometric benchmark forecasts; review with common-sample gates."
-        if advanced_rows > 0
-        else "Nonblocking registry diagnostics unless valid advanced forecast rows are present."
-    )
-    return _markdown_table(
-        (
-            "Benchmark layer",
-            "Status",
-            "Forecast rows",
-            "Diagnostic rows",
-            "Failures",
-            "How to read it",
-        ),
-        [
-            (
-                "baseline",
-                _code(status.get("benchmark_baseline_status") or status.get("status") or "unknown"),
-                _code(
-                    status.get("benchmark_baseline_forecast_rows") or status.get("forecast_rows")
-                ),
-                _code(status.get("benchmark_baseline_metric_rows") or status.get("metric_rows")),
-                _code(status.get("benchmark_baseline_failures") or 0),
-                "Implemented evidence for target-history and econometric baseline benchmark models.",
-            ),
-            (
-                "advanced econometric",
-                _code(status.get("benchmark_advanced_status") or "not_reported"),
-                _code(status.get("benchmark_advanced_forecast_rows") or 0),
-                _code(status.get("benchmark_advanced_diagnostic_rows") or 0),
-                _code(status.get("benchmark_advanced_failures") or 0),
-                advanced_note,
-            ),
-        ],
-    )
-
-
-def _result_matrix_summary_table(frame: pl.DataFrame) -> str:
-    columns = {"comparison_family", "comparison_axis", "sample_policy", "loss_family"}
-    if frame.is_empty() or not columns.issubset(frame.columns):
-        return _markdown_table(
-            ("Family", "Axis", "Loss", "Rows", "Common N", "Date range", "Joint exceptions"),
-            [("missing", "", "", "0", "n/a", "n/a", "n/a")],
-        )
-    grouped = (
-        frame.group_by(["comparison_family", "comparison_axis", "sample_policy", "loss_family"])
-        .agg(
-            pl.len().alias("rows"),
-            pl.min("common_n").alias("min_n"),
-            pl.max("common_n").alias("max_n"),
-            pl.min("date_start").alias("start"),
-            pl.max("date_end").alias("end"),
-            pl.min("joint_exception_count").alias("min_joint_exceptions"),
-            pl.max("joint_exception_count").alias("max_joint_exceptions"),
-        )
-        .sort(["comparison_family", "comparison_axis", "loss_family"])
-    )
-    rows = [
-        (
-            _result_matrix_display_value(row["comparison_family"]),
-            row["comparison_axis"],
-            row["loss_family"],
-            row["rows"],
-            f"{row['min_n']} to {row['max_n']}",
-            f"{row['start']} to {row['end']}",
-            f"{row['min_joint_exceptions']} to {row['max_joint_exceptions']}",
-        )
-        for row in grouped.iter_rows(named=True)
-    ]
-    return _markdown_table(
-        ("Family", "Axis", "Loss", "Rows", "Common N", "Date range", "Joint exceptions"),
-        rows,
-    )
-
-
-def _claim_scope_markdown_table() -> str:
-    return _markdown_table(
-        ("Evidence layer", "Can support primary claim?", "How to read it"),
-        [
-            (
-                "Benchmark common-sample table",
-                "Yes, after review",
-                "External target-history/econometric baseline benchmark on a shared sample.",
-            ),
-            (
-                "ML-tail nested information sets",
-                "Yes, after review",
-                "Strict nested-information-set comparison; currently direct quantile survived the gate.",
-            ),
-            (
-                "ML-tail per-model rows",
-                "No",
-                "Model-specific OOS diagnostics; samples need not match across model families.",
-            ),
-            (
-                "Restricted result matrix",
-                "No primary claim",
-                "Matched-date comparison for model families and within-model increments.",
-            ),
-            (
-                "DST, stress, Murphy, hedge-trigger diagnostics",
-                "Diagnostic only",
-                "Useful for interpretation and risk monitoring, not automatic model-selection evidence.",
-            ),
-        ],
-    )
-
-
-def _metric_artifact_relationship_table(
-    *,
-    ml_tail_metrics: pl.DataFrame,
-    ml_tail_metrics_per_model: pl.DataFrame,
-    result_matrix: pl.DataFrame,
-) -> str:
-    return _markdown_table(
-        ("Artifact", "Rows", "Role", "Claim boundary"),
-        [
-            (
-                "`ml_tail_metrics.parquet`",
-                str(ml_tail_metrics.height),
-                "Primary ML nested-information-set comparison",
-                "Eligible for primary discussion after author review.",
-            ),
-            (
-                "`ml_tail_metrics_per_model.parquet`",
-                str(ml_tail_metrics_per_model.height),
-                "Per-model diagnostics on each model's own valid OOS rows",
-                "Not a cross-model comparison and not a replacement primary ML table.",
-            ),
-            (
-                "`ml_tail_result_matrix.parquet`",
-                str(result_matrix.height),
-                "Restricted common-sample VaR-only and VaR-ES comparisons",
-                "Restricted evidence; direct quantile rows here are comparison anchors.",
-            ),
-        ],
-    )
-
-
-def _coverage_review_sentence(frame: pl.DataFrame) -> str:
-    required = {"var_breach_rate", "expected_breach_rate"}
-    if frame.is_empty() or not required.issubset(frame.columns):
-        return (
-            "Coverage review status is unavailable in this snapshot; quantile and FZ loss "
-            "differences cannot establish improvement without VaR exception diagnostics."
-        )
-    review_threshold = 0.025
-    rows = []
-    for row in frame.iter_rows(named=True):
-        breach = _optional_float(row.get("var_breach_rate"))
-        expected = _optional_float(row.get("expected_breach_rate"))
-        if breach is None or expected is None:
-            continue
-        rows.append(abs(breach - expected) > review_threshold)
-    if not rows:
-        return (
-            "Coverage review status is unavailable in this snapshot; quantile and FZ loss "
-            "differences cannot establish improvement without VaR exception diagnostics."
-        )
-    flagged = sum(1 for value in rows if value)
-    if flagged:
-        return (
-            f"Coverage review: `{flagged}/{len(rows)}` primary ML rows differ from the "
-            "expected breach rate by more than 2.5 percentage points, so quantile/FZ loss "
-            "differences alone must not be read as forecast improvement."
-        )
-    return (
-        "Coverage review: primary ML breach rates are within the 2.5 percentage-point "
-        "snapshot review band, but final claims still require author review of inference "
-        "and exception diagnostics."
-    )
-
-
-def _artifact_table(paths: dict[str, Path]) -> str:
-    rows = [
-        (name, f"`{path}`", "yes" if path.exists() else "missing") for name, path in paths.items()
-    ]
-    return _markdown_table(("Artifact", "Path", "Exists"), rows)

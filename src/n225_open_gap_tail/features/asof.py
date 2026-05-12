@@ -35,7 +35,7 @@ def _features_asof(
     cutoff: datetime | None = None,
     fill_method: str,
 ) -> dict[str, object]:
-    if not date_key:
+    if not date_key or cutoff is None:
         return {}
     try:
         target_date = date.fromisoformat(date_key)
@@ -54,7 +54,16 @@ def _features_asof(
         ).days > PIPELINE_CONFIG.leakage_policy.max_forward_fill_us_close_days:
             continue
         output = dict(features_by_date[selected_key])
-        if cutoff is not None and not _feature_record_available_by_cutoff(output, cutoff):
+        if not _feature_record_available_by_cutoff(output, cutoff):
+            if selected_key == date_key and _null_feature_record_available_by_cutoff(
+                output,
+                cutoff,
+            ):
+                selected_fill_method = "direct"
+                for feature_name in _feature_value_names(output):
+                    output[f"{feature_name}__fill_method"] = selected_fill_method
+                    output[f"{feature_name}__source_date"] = selected_key
+                return output
             continue
         selected_fill_method = "direct" if selected_key == date_key else fill_method
         for feature_name in _feature_value_names(output):
@@ -234,6 +243,22 @@ def _feature_record_available_by_cutoff(
     return evaluable
 
 
+def _null_feature_record_available_by_cutoff(
+    record: Mapping[str, object],
+    cutoff: datetime,
+) -> bool:
+    value_names = _feature_value_names(record)
+    if not value_names:
+        return False
+    if any(record.get(feature_name) is not None for feature_name in value_names):
+        return False
+    for feature_name in value_names:
+        available_ts = _coerce_datetime(record.get(f"{feature_name}__available_ts_utc"))
+        if available_ts is None or available_ts > cutoff:
+            return False
+    return True
+
+
 def _feature_value_names(record: Mapping[str, object]) -> list[str]:
     return sorted(
         key
@@ -241,6 +266,7 @@ def _feature_value_names(record: Mapping[str, object]) -> list[str]:
         if "__" not in key
         and (
             key.startswith("n225_")
+            or key.startswith("cboe_")
             or key.startswith("option_")
             or key.endswith("_return")
             or key.endswith("_range")
@@ -253,6 +279,7 @@ def _feature_value_names(record: Mapping[str, object]) -> list[str]:
             or key.endswith("_kurtosis")
             or key.endswith("_volume_surge")
             or key.endswith("_window_momentum")
+            or key.endswith("_count")
             or "_zscore_" in key
             or "_percentile_" in key
         )

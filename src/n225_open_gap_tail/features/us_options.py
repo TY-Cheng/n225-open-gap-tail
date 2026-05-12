@@ -32,7 +32,10 @@ from n225_open_gap_tail.sources.massive_flatfiles import (
     parse_opra_option_ticker as parse_opra_option_ticker,
 )
 
-US_OPTIONS_IV_METHOD = "black_scholes_european_dgs2_zero_dividend_from_day_aggs_close"
+US_OPTIONS_RTH_CLOSE_BUFFER_MINUTES = 15
+US_OPTIONS_IV_METHOD = (
+    "black_scholes_european_dgs2_zero_dividend_from_day_aggs_close_options_rth_1615"
+)
 US_OPTIONS_RISK_FREE_SOURCE = "fred_dgs2_latest_timestamp_safe"
 US_OPTIONS_PRIMARY_FEATURES: tuple[str, ...] = (
     "option_us_core_spy_atm_iv_short",
@@ -112,7 +115,8 @@ def build_us_options_atm_iv_feature_records(
         if official_close is None:
             continue
         available_ts = official_close + timedelta(
-            minutes=PIPELINE_CONFIG.leakage_policy.massive_vendor_lag_minutes
+            minutes=US_OPTIONS_RTH_CLOSE_BUFFER_MINUTES
+            + PIPELINE_CONFIG.leakage_policy.massive_vendor_lag_minutes
         )
         risk_free_rate = _risk_free_rate_for_date(
             fred_features,

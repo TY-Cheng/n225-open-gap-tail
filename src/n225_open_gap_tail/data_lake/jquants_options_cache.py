@@ -31,6 +31,7 @@ def _fetch_jquants_nikkei_option_rows(
     end: str,
     calendar_records: list[dict[str, object]],
     run_start_utc: datetime | None = None,
+    force_refresh: bool = False,
 ) -> list[dict[str, Any]]:  # pragma: no cover - vendor path
     if not settings.jquants_nikkei225_options_enabled:
         _pipeline_log("J-Quants Nikkei 225 options disabled by runtime config")
@@ -67,7 +68,7 @@ def _fetch_jquants_nikkei_option_rows(
                 year=year,
                 month=month,
             )
-            if path.exists() and _cache_covers_dates(path, trading_dates):
+            if not force_refresh and path.exists() and _cache_covers_dates(path, trading_dates):
                 cached_records = _filter_records_by_dates(
                     _read_parquet_records(path),
                     allowed_dates=trading_dates,
@@ -104,6 +105,7 @@ def _fetch_jquants_nikkei_option_rows(
                     "product_category": settings.jquants_nikkei225_options_category,
                     "contract_flag": settings.jquants_nikkei225_options_contract_flag,
                     "requested_dates": trading_dates,
+                    "completed_dates": trading_dates,
                     "pull_started_at_utc": pull_started.isoformat(),
                     "pull_completed_at_utc": datetime.now(UTC).isoformat(),
                 },
@@ -209,7 +211,9 @@ def _read_parquet_records(path: object) -> list[dict[str, Any]]:  # pragma: no c
 
 def _cache_covers_dates(path: object, required_dates: list[str]) -> bool:  # pragma: no cover
     metadata = read_verified_parquet_metadata(path)
-    raw_dates = metadata.get("requested_dates")
+    raw_dates = metadata.get("completed_dates")
+    if raw_dates is None:
+        raw_dates = metadata.get("requested_dates")
     if not isinstance(raw_dates, list):
         return False
     available = {str(value) for value in raw_dates}

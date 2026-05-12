@@ -2,18 +2,26 @@
 from __future__ import annotations
 
 
-def advanced_benchmark_qa_text(advanced_forecast_rows: int) -> tuple[str, str, str]:
+def advanced_benchmark_qa_text(
+    advanced_forecast_rows: int,
+    advanced_failures: int = 0,
+) -> tuple[str, str, str]:
+    failure_phrase = (
+        "zero recorded advanced-forecast failures"
+        if advanced_failures <= 0
+        else f"{advanced_failures} recorded advanced-forecast failures"
+    )
     if advanced_forecast_rows > 0:
         return (
             "The baseline benchmarks, advanced econometric benchmarks, and ML-tail suite are implemented and have completed artifacts in this run.",
             (
-                "Advanced econometric benchmark families such as CAViaR, CARE/expectile, Taylor ALD, "
-                "direct FZ-loss, and GAS produce nonblocking empirical forecast rows; "
+                "Advanced econometric benchmark families such as CAViaR, CARE/expectile, "
+                "Taylor ALD/FZ0 joint VaR-ES, and GAS produce nonblocking empirical forecast rows; "
                 "their interpretation still follows the benchmark and restricted-sample gates."
             ),
             (
-                "baseline benchmark, advanced econometric benchmark, and ML-tail suites completed with zero "
-                "recorded forecast failures; advanced rows are implemented evidence but remain "
+                "baseline benchmark, advanced econometric benchmark, and ML-tail suites completed with "
+                f"{failure_phrase}; advanced rows are implemented evidence but remain "
                 "nonblocking until author-reviewed against the same sample and inference gates."
             ),
         )
@@ -23,13 +31,14 @@ def advanced_benchmark_qa_text(advanced_forecast_rows: int) -> tuple[str, str, s
             "The advanced econometric benchmark layer is registered as nonblocking, but this run has not produced empirical advanced-model forecast rows."
         ),
         (
-            "Advanced econometric benchmark families such as CAViaR, CARE/expectile, Taylor ALD, "
-            "direct FZ-loss, and GAS should be read as unavailable diagnostics when "
+            "Advanced econometric benchmark families such as CAViaR, CARE/expectile, "
+            "Taylor ALD/FZ0 joint VaR-ES, and GAS should be read as unavailable diagnostics when "
             "their optimizers produce no valid forecast rows."
         ),
         (
-            "baseline benchmark and ML-tail suites both completed with zero recorded forecast "
-            "failures; advanced econometric benchmark rows are nonblocking diagnostics in this run."
+            "baseline benchmark and ML-tail suites completed; "
+            f"the advanced benchmark layer reports {failure_phrase}, and its rows are "
+            "nonblocking diagnostics in this run."
         ),
     )
 

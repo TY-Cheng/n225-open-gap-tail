@@ -46,6 +46,7 @@ def _build_result_matrix_group(
     entity_rows = cast(dict[str, dict[str, dict[str, object]]], group["entity_rows"])
     common_n = len(common_dates)
     joint_exception_count = _joint_exception_count(entity_rows, entities, common_dates)
+    missing_entities = cast(list[str], group.get("missing_entities") or [])
     audit = _result_matrix_sample_audit_record(
         group=group,
         comparison_family=comparison_family,
@@ -55,6 +56,24 @@ def _build_result_matrix_group(
         joint_exception_count=joint_exception_count,
     )
     records: list[dict[str, object]] = []
+    if missing_entities:
+        for entity in entities:
+            records.append(
+                _result_matrix_unavailable_row(
+                    group=group,
+                    entity=entity,
+                    entity_field=entity_field,
+                    comparison_family=comparison_family,
+                    comparison_axis=comparison_axis,
+                    loss_family=loss_family,
+                    common_n=common_n,
+                    joint_exception_count=joint_exception_count,
+                    status="unavailable_missing_registered_model",
+                    claim_scope=claim_scope,
+                    primary_claim_allowed=primary_claim_allowed,
+                )
+            )
+        return records, audit
     if common_n < RESULT_MATRIX_MIN_METRIC_ROWS:
         for entity in entities:
             records.append(
@@ -104,6 +123,14 @@ def _result_matrix_sample_audit_record(
 ) -> dict[str, object]:
     common_dates = cast(list[str], group["common_dates"])
     tail_level = _required_float(group["tail_level"])
+    missing_entities = cast(list[str], group.get("missing_entities") or [])
+    metric_status = (
+        "unavailable_missing_registered_model"
+        if missing_entities
+        else "ok"
+        if common_n >= RESULT_MATRIX_MIN_METRIC_ROWS
+        else "unavailable_insufficient_common_rows_for_metrics"
+    )
     return {
         "comparison_family": comparison_family,
         "comparison_axis": comparison_axis,
@@ -118,20 +145,23 @@ def _result_matrix_sample_audit_record(
         "tail_level": tail_level,
         "refit_frequency": group.get("refit_frequency"),
         "entities_json": json.dumps(cast(list[str], group["entities"]), sort_keys=True),
+        "missing_entities_json": json.dumps(missing_entities, sort_keys=True),
         "common_n": common_n,
         "date_start": common_dates[0] if common_dates else None,
         "date_end": common_dates[-1] if common_dates else None,
         "joint_exception_count": joint_exception_count,
         "joint_exception_rate": joint_exception_count / common_n if common_n else None,
-        "metric_status": "ok"
-        if common_n >= RESULT_MATRIX_MIN_METRIC_ROWS
-        else "unavailable_insufficient_common_rows_for_metrics",
+        "metric_status": metric_status,
         "dm_gate_status": _result_matrix_dm_gate_status(
             loss_family, common_n, joint_exception_count
-        ),
+        )
+        if not missing_entities
+        else "unavailable_missing_registered_model",
         "mcs_gate_status": _result_matrix_mcs_gate_status(
             loss_family, common_n, joint_exception_count
-        ),
+        )
+        if not missing_entities
+        else "unavailable_missing_registered_model",
         "minimum_common_rows_for_metrics": RESULT_MATRIX_MIN_METRIC_ROWS,
         "minimum_common_rows_for_dm": RESULT_MATRIX_MIN_DM_ROWS,
         "minimum_joint_exceptions_for_dm": RESULT_MATRIX_MIN_DM_EXCEPTIONS,
@@ -309,7 +339,6 @@ def _build_result_matrix_dm_records(
             [baseline_entity, candidate],
             common_dates,
         )
-        gate_status = _result_matrix_dm_gate_status(loss_family, common_n, joint_exception_count)
         baseline_losses = _result_matrix_loss_values(
             [entity_rows[baseline_entity][forecast_date] for forecast_date in common_dates],
             loss_family=loss_family,
@@ -320,6 +349,8 @@ def _build_result_matrix_dm_records(
         )
         diffs = candidate_losses - baseline_losses
         diffs = diffs[np.isfinite(diffs)]
+        paired_n = int(diffs.size)
+        gate_status = _result_matrix_dm_gate_status(loss_family, paired_n, joint_exception_count)
         mean_diff = _safe_mean(diffs)
         block_length = max(5, round(len(diffs) ** (1.0 / 3.0))) if len(diffs) else None
         pvalue = (
@@ -387,7 +418,18 @@ def _build_result_matrix_mcs_records(
     entity_rows = cast(dict[str, dict[str, dict[str, object]]], group["entity_rows"])
     common_n = len(common_dates)
     joint_exception_count = _joint_exception_count(entity_rows, entities, common_dates)
-    gate_status = _result_matrix_mcs_gate_status(loss_family, common_n, joint_exception_count)
+    losses_by_entity = {
+        entity: _result_matrix_loss_values(
+            [entity_rows[entity][forecast_date] for forecast_date in common_dates],
+            loss_family=loss_family,
+        )
+        for entity in entities
+    }
+    finite_mask = np.ones(common_n, dtype=bool)
+    for values in losses_by_entity.values():
+        finite_mask &= np.isfinite(values)
+    effective_n = int(np.sum(finite_mask))
+    gate_status = _result_matrix_mcs_gate_status(loss_family, effective_n, joint_exception_count)
     if gate_status != "ok_hln_tmax_mcs":
         return [
             {
@@ -403,7 +445,7 @@ def _build_result_matrix_mcs_records(
                 "model_name": entity,
                 "tail_level": group.get("tail_level"),
                 "refit_frequency": group.get("refit_frequency"),
-                "rows": common_n,
+                "rows": effective_n,
                 "joint_exception_count": joint_exception_count,
                 "mean_loss": None,
                 "included_in_mcs": False,
@@ -415,16 +457,37 @@ def _build_result_matrix_mcs_records(
             }
             for entity in entities
         ]
-    block_length = max(5, round(common_n ** (1.0 / 3.0)))
-    losses_by_entity = {
-        entity: _result_matrix_loss_values(
-            [entity_rows[entity][forecast_date] for forecast_date in common_dates],
-            loss_family=loss_family,
-        )
-        for entity in entities
-    }
-    active = set(entities)
+    block_length = max(5, round(effective_n ** (1.0 / 3.0)))
+    losses_by_entity = {entity: values[finite_mask] for entity, values in losses_by_entity.items()}
     mean_losses = {entity: _safe_mean(values) for entity, values in losses_by_entity.items()}
+    active = {entity for entity, value in mean_losses.items() if value is not None}
+    if len(active) < 2:
+        return [
+            {
+                "comparison_family": comparison_family,
+                "comparison_axis": comparison_axis,
+                "sample_policy": "restricted_tail_model_common_sample",
+                "loss_family": loss_family,
+                "claim_scope": "restricted_model_comparison_not_primary",
+                "primary_claim_allowed": False,
+                "target_family": group.get("target_family"),
+                "tail_side": group.get("tail_side") or PRIMARY_TAIL_SIDE,
+                "information_set": group.get("information_set"),
+                "model_name": entity,
+                "tail_level": group.get("tail_level"),
+                "refit_frequency": group.get("refit_frequency"),
+                "rows": effective_n,
+                "joint_exception_count": joint_exception_count,
+                "mean_loss": mean_losses[entity],
+                "included_in_mcs": False,
+                "mcs_status": "unavailable_insufficient_finite_loss_models",
+                "method_note": None,
+                "block_length": None,
+                "bootstrap_reps": BOOTSTRAP_REPS,
+                "bootstrap_seed": INFERENCE_RANDOM_SEED,
+            }
+            for entity in entities
+        ]
     rng = np.random.default_rng(INFERENCE_RANDOM_SEED)
     eliminated: set[str] = set()
     while len(active) > 1:
@@ -439,7 +502,8 @@ def _build_result_matrix_mcs_records(
         pvalue = _optional_float(result["pvalue"])
         if pvalue is None or pvalue > MCS_ALPHA:
             break
-        worst = max(active, key=lambda entity: (cast(float, mean_losses[entity]), entity))
+        t_values = cast(np.ndarray, result["t_values"])
+        worst = ordered[int(np.nanargmax(t_values))]
         active.remove(worst)
         eliminated.add(worst)
     return [
@@ -456,7 +520,7 @@ def _build_result_matrix_mcs_records(
             "model_name": entity,
             "tail_level": group.get("tail_level"),
             "refit_frequency": group.get("refit_frequency"),
-            "rows": common_n,
+            "rows": effective_n,
             "joint_exception_count": joint_exception_count,
             "mean_loss": mean_losses[entity],
             "included_in_mcs": entity in active,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import gzip
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import cast
 
 import polars as pl
@@ -184,6 +184,7 @@ def test_us_options_feature_builder_computes_atm_iv_and_adr_aggregate() -> None:
     assert row["option_asia_proxy_median_atm_iv_short"] == pytest.approx(0.20, abs=1e-6)
     assert row["option_asia_proxy_valid_underlying_count_short"] == pytest.approx(1.0)
     assert row["option_japan_adr_valid_underlying_count_short"] == pytest.approx(1.0)
+    assert row["feature_available_ts_utc"] == close_ts + timedelta(minutes=30)
     assert len(result.liquidity_records) >= 6
 
 
@@ -259,6 +260,29 @@ def test_options_asof_respects_cutoff_metadata() -> None:
     )
     assert selected["option_us_core_spy_atm_iv_short"] == pytest.approx(0.2)
     assert selected["option_us_core_spy_atm_iv_short__fill_method"] == "direct"
+
+    null_exact = _options_feature_map(
+        [
+            {
+                "bar_date_et": "2026-01-02",
+                "feature_available_ts_utc": datetime(2026, 1, 2, 21, 20, tzinfo=UTC),
+                "option_us_core_spy_atm_iv_short": 0.19,
+            },
+            {
+                "bar_date_et": "2026-01-05",
+                "feature_available_ts_utc": datetime(2026, 1, 5, 21, 20, tzinfo=UTC),
+                "option_us_core_spy_atm_iv_short": None,
+            },
+        ]
+    )
+    selected_null = _features_asof(
+        null_exact,
+        "2026-01-05",
+        cutoff=datetime(2026, 1, 5, 21, 30, tzinfo=UTC),
+        fill_method="forward_fill_us_holiday",
+    )
+    assert selected_null["option_us_core_spy_atm_iv_short"] is None
+    assert selected_null["option_us_core_spy_atm_iv_short__fill_method"] == "direct"
 
 
 def test_options_missingness_gate_is_separate_from_core_features() -> None:
@@ -357,29 +381,38 @@ def test_japanese_adr_spot_aggregate_routes_without_single_name_features() -> No
 
 
 def test_calendar_mapping_status_edges_for_options_features() -> None:
-    assert _calendar_mapping_status(target={}, alignment={}, calendar_row={}) == (
+    assert _calendar_mapping_status(
+        target={},
+        alignment={},
+        us_calendar_row={},
+        jpx_calendar_row={},
+    ) == (
         "unmapped",
         "missing_time_alignment",
     )
     assert _calendar_mapping_status(
         target={},
         alignment={"alignment_status": "missing_us_close"},
-        calendar_row={},
+        us_calendar_row={},
+        jpx_calendar_row={},
     ) == ("us_holiday", "no_us_close_before_target_open")
     assert _calendar_mapping_status(
         target={"missing_reason": "holiday_trading_no_day_open"},
         alignment={"alignment_status": "ok"},
-        calendar_row={},
+        us_calendar_row={},
+        jpx_calendar_row={},
     ) == ("ose_holiday_trading", "ose_holiday_trading_no_day_open")
     assert _calendar_mapping_status(
         target={},
         alignment={"alignment_status": "ok"},
-        calendar_row={"is_jpx_trading_day": False, "is_us_trading_day": True},
+        us_calendar_row={"is_us_trading_day": True},
+        jpx_calendar_row={"is_jpx_trading_day": False},
     ) == ("us_jp_desync", "us_open_jpx_closed")
     assert _calendar_mapping_status(
         target={},
         alignment={"alignment_status": "ok", "alignment_pass": False, "alignment_reason": "lag"},
-        calendar_row={},
+        us_calendar_row={},
+        jpx_calendar_row={},
     ) == ("us_jp_desync", "lag")
 
 

@@ -12,6 +12,7 @@ from n225_open_gap_tail.config.runtime import (
     np,
     PIPELINE_CONFIG,
     Settings,
+    UTC,
     _optional_float,
 )
 
@@ -93,7 +94,10 @@ def build_n225_option_feature_records(
         trading_date = str(row.get("trading_date") or "")
         if trading_date:
             grouped.setdefault(trading_date, []).append(row)
-    output = [_daily_option_summary(date_key, rows) for date_key, rows in sorted(grouped.items())]
+    output = [
+        _daily_option_summary(date_key, _deduplicate_option_rows(rows))
+        for date_key, rows in sorted(grouped.items())
+    ]
     summaries = [row for row in output if row is not None]
     _stamp_rolling_option_state(summaries)
     return summaries
@@ -119,6 +123,7 @@ def add_n225_option_features(
             for summary in option_summaries
             if str(summary.get("trading_date") or "") < forecast_date
             and _available_by_cutoff(summary, cutoff)
+            and _within_option_state_max_age(summary, forecast_date)
         ]
         latest = candidates[-1] if candidates else None
         for feature in N225_OPTION_FEATURES:
@@ -147,10 +152,14 @@ def _daily_option_summary(
         and _optional_float(row.get("implied_volatility")) is not None
     ]
     if not valid:
-        return None
+        return _empty_daily_option_summary(trading_date, rows)
     central = [row for row in valid if row.get("central_contract_month_flag") is True]
-    dte_scoped = _configured_dte_scope(trading_date, central or valid)
-    scoped = dte_scoped or central or valid
+    scoped = _configured_dte_scope(trading_date, central) or _configured_dte_scope(
+        trading_date,
+        valid,
+    )
+    if not scoped:
+        return _empty_daily_option_summary(trading_date, valid)
     short_rows = _dte_bucket_rows(trading_date, valid, policy.options_dte_short_bucket)
     medium_rows = _dte_bucket_rows(trading_date, valid, policy.options_dte_medium_bucket)
     atm_rows = _atm_rows(scoped)
@@ -267,6 +276,60 @@ def _daily_option_summary(
         "night_atm_return": night_atm_return,
         "night_atm_range": night_atm_range,
         "night_valid_contract_count": float(len(night_atm_rows)),
+    }
+
+
+def _deduplicate_option_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    keyed_rows: dict[tuple[str, str, str], dict[str, object]] = {}
+    unkeyed: list[dict[str, object]] = []
+    for row in rows:
+        option_code = str(row.get("option_code") or "")
+        if not option_code:
+            unkeyed.append(row)
+            continue
+        key = (
+            str(row.get("trading_date") or ""),
+            option_code,
+            str(row.get("emergency_margin_trigger_division") or ""),
+        )
+        keyed_rows[key] = row
+    return [*unkeyed, *keyed_rows.values()]
+
+
+def _empty_daily_option_summary(
+    trading_date: str,
+    rows: list[dict[str, object]],
+) -> dict[str, object]:
+    return {
+        "trading_date": trading_date,
+        "vendor_available_ts_utc": _max_datetime(
+            row.get("vendor_available_ts_utc") for row in rows
+        ),
+        "atm_iv": None,
+        "atm_iv_short": None,
+        "atm_iv_medium": None,
+        "iv_term_slope": None,
+        "atm_put_call_iv_skew": None,
+        "otm_put_iv": None,
+        "otm_call_iv": None,
+        "risk_reversal": None,
+        "base_volatility": None,
+        "base_iv_spread": None,
+        "iv_oi_weighted": None,
+        "put_call_oi_ratio": None,
+        "put_call_volume_ratio": None,
+        "put_oi_share": None,
+        "put_volume_share": None,
+        "total_open_interest_log1p": None,
+        "total_volume_log1p": None,
+        "valid_contract_count": 0.0,
+        "short_valid_contract_count": 0.0,
+        "medium_valid_contract_count": 0.0,
+        "days_to_sq": None,
+        "night_atm_close": None,
+        "night_atm_return": None,
+        "night_atm_range": None,
+        "night_valid_contract_count": 0.0,
     }
 
 
@@ -422,19 +485,35 @@ def _safe_log_range(high_value: object, low_value: object) -> float | None:
 
 def _available_by_cutoff(row: dict[str, object], cutoff: datetime | None) -> bool:
     if cutoff is None:
-        return True
+        return False
     available = _coerce_datetime(row.get("vendor_available_ts_utc"))
     return available is not None and available <= cutoff
 
 
+def _within_option_state_max_age(row: dict[str, object], forecast_date: str) -> bool:
+    try:
+        forecast = date.fromisoformat(forecast_date)
+        source = date.fromisoformat(str(row.get("trading_date") or ""))
+    except ValueError:
+        return False
+    age_days = (forecast - source).days
+    return 0 < age_days <= PIPELINE_CONFIG.leakage_policy.max_forward_fill_us_close_days
+
+
 def _coerce_datetime(value: object) -> datetime | None:
     if isinstance(value, datetime):
-        return value
+        return value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)
+    if isinstance(value, str) and value:
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed.astimezone(UTC) if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     return None
 
 
 def _max_datetime(values: object) -> datetime | None:
-    parsed = [value for value in values if isinstance(value, datetime)]
+    parsed = [parsed for value in values if (parsed := _coerce_datetime(value)) is not None]
     return max(parsed) if parsed else None
 
 

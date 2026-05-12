@@ -57,7 +57,7 @@ from n225_open_gap_tail.panel.build import *
 from n225_open_gap_tail.panel.information_sets import (
     ml_tail_feature_columns_for_information_set as ml_tail_feature_columns_for_information_set,
 )
-from n225_open_gap_tail.panel.build import (
+from n225_open_gap_tail.panel.build_helpers import (
     _forecast_sample_exclusion_reason as _forecast_sample_exclusion_reason,
     _max_date_strings as _max_date_strings,
     _panel_join_miss_reason as _panel_join_miss_reason,
@@ -147,16 +147,18 @@ from n225_open_gap_tail.features.session_features import (
     _write_jquants_silver_cache as _write_jquants_silver_cache,
 )
 from n225_open_gap_tail.data_lake.cache_ops import *
-from n225_open_gap_tail.data_lake.cache_ops import (
+from n225_open_gap_tail.data_lake.cache_metadata import (
     _cache_covers_dates as _cache_covers_dates,
     _cache_covers_range as _cache_covers_range,
+    _metadata_covers_range as _metadata_covers_range,
+)
+from n225_open_gap_tail.data_lake.cache_ops import (
     _fetch_cboe_predictors as _fetch_cboe_predictors,
     _fetch_fred_predictors as _fetch_fred_predictors,
     _fetch_jquants_futures_rows as _fetch_jquants_futures_rows,
     _fetch_massive_predictors as _fetch_massive_predictors,
     _filter_records_by_dates as _filter_records_by_dates,
     _filter_records_by_range as _filter_records_by_range,
-    _metadata_covers_range as _metadata_covers_range,
     _payload_results as _payload_results,
     _unavailable_marker_covers as _unavailable_marker_covers,
     _write_unavailable_marker as _write_unavailable_marker,

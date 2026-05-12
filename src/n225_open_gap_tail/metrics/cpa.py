@@ -10,6 +10,7 @@ from n225_open_gap_tail.config.runtime import (
     ML_TAIL_LOCATION_SCALE_MODEL,
     ML_TAIL_POT_GPD_MODEL_NAMES,
     ML_TAIL_REFIT_FREQUENCY,
+    ML_TAIL_ROBUST_POT_GPD_MODEL_NAMES,
     np,
     PIPELINE_CONFIG,
     PipelineRunError,
@@ -36,6 +37,7 @@ CPA_INSTRUMENT_CANDIDATES = (
 CPA_FZ_ML_TAIL_MODELS = (
     ML_TAIL_LOCATION_SCALE_MODEL,
     *ML_TAIL_POT_GPD_MODEL_NAMES,
+    *ML_TAIL_ROBUST_POT_GPD_MODEL_NAMES,
 )
 
 
@@ -114,6 +116,7 @@ def _build_information_set_cpa_records(
         for row in forecasts
         if str(row.get("model_name") or "") == model_name
         and str(row.get("tail_side") or PRIMARY_TAIL_SIDE) in TAIL_SIDES
+        and _cpa_forecast_row_eligible(row)
         and _cpa_row_loss(row, loss_family) is not None
     ]
     grouped: dict[tuple[str, str, float, str], dict[str, dict[str, dict[str, object]]]] = {}
@@ -167,6 +170,7 @@ def _build_cross_model_cpa_records(
             row
             for row in ml_tail_forecasts
             if str(row.get("model_name") or "") in candidate_models
+            and _cpa_forecast_row_eligible(row)
             and _cpa_row_loss(row, loss_family) is not None
         ],
         include_information_set=True,
@@ -175,7 +179,8 @@ def _build_cross_model_cpa_records(
         [
             row
             for row in benchmark_forecasts
-            if _cpa_row_loss(row, loss_family, require_primary_fz_pair=True) is not None
+            if _cpa_forecast_row_eligible(row)
+            and _cpa_row_loss(row, loss_family, require_primary_fz_pair=True) is not None
         ],
         include_information_set=False,
     )
@@ -377,6 +382,10 @@ def _cpa_row_loss(
     return None
 
 
+def _cpa_forecast_row_eligible(row: Mapping[str, object]) -> bool:
+    return row.get("fit_status") == "ok" and row.get("is_valid_forecast") is True
+
+
 def _cpa_quantile_loss(row: Mapping[str, object]) -> float | None:
     recorded = _optional_float(row.get("quantile_loss"))
     if recorded is not None:
@@ -470,6 +479,8 @@ def _fit_cpa_hac_regression(
         else:
             columns.append(np.array([_required_float(row[name]) for row in rows], dtype=float))
     x = np.column_stack(columns)
+    if np.linalg.matrix_rank(x) < x.shape[1]:
+        return None
     xtx_inv = np.linalg.pinv(x.T @ x)
     beta = xtx_inv @ x.T @ y
     resid = y - x @ beta
@@ -477,6 +488,8 @@ def _fit_cpa_hac_regression(
     meat = _newey_west_meat(x, resid, hac_lags)
     cov = xtx_inv @ meat @ xtx_inv
     if not np.all(np.isfinite(cov)):
+        return None
+    if np.linalg.matrix_rank(cov) < len(instruments):
         return None
     cov_inv = np.linalg.pinv(cov)
     wald_stat = float(beta.T @ cov_inv @ beta)

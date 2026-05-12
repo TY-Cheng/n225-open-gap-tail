@@ -52,7 +52,7 @@ def _evaluate_benchmark_advanced_shard(
         pl.scan_parquet(panel_path)
         .filter(pl.col("clean_sample") == True)  # noqa: E712
         .select(selected_columns)
-        .drop_nulls()
+        .drop_nulls(subset=["forecast_date", "realized_loss"])
         .sort("forecast_date")
         .collect()
     )

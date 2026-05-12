@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import math
-from datetime import date, timedelta
+from datetime import date
+
+
+class TargetAuditError(ValueError):
+    """Raised when normalized target inputs violate uniqueness assumptions."""
 
 
 def build_target_audit_records(
@@ -10,9 +14,19 @@ def build_target_audit_records(
     calendar_records: list[dict[str, object]],
     roll_days_before_last_trade: int,
 ) -> list[dict[str, object]]:
+    _assert_unique_rows(
+        normalized_rows,
+        key_fields=("trading_date", "contract_code"),
+        context="normalized J-Quants futures rows",
+    )
     central_rows = [
         row for row in normalized_rows if row.get("central_contract_month_flag") is True
     ]
+    _assert_unique_rows(
+        central_rows,
+        key_fields=("trading_date",),
+        context="central-contract target rows",
+    )
     all_by_contract: dict[str, list[dict[str, object]]] = {}
     for row in normalized_rows:
         code = str(row.get("contract_code") or "")
@@ -32,9 +46,18 @@ def build_target_audit_records(
     for row in sorted(central_rows, key=lambda item: str(item["trading_date"])):
         trading_date = date.fromisoformat(str(row["trading_date"]))
         contract_code = str(row.get("contract_code") or "")
-        prior_row = _previous_same_contract_row(
+        raw_prior_row = _previous_same_contract_row(
             all_by_contract.get(contract_code, []),
             trading_date,
+        )
+        previous_jpx_session = _previous_jpx_session(jpx_sessions, trading_date)
+        prior_row = _validated_previous_same_contract_row(
+            raw_prior_row,
+            expected_trading_date=previous_jpx_session,
+        )
+        roll_metadata_missing = (
+            _optional_date(row.get("last_trading_day")) is None
+            or _optional_date(row.get("special_quotation_day")) is None
         )
         roll_window = _is_roll_sq_window(
             trading_date=trading_date,
@@ -48,7 +71,10 @@ def build_target_audit_records(
             target_row=row,
             prior_row=prior_row,
             roll_window=roll_window,
+            roll_metadata_missing=roll_metadata_missing,
             previous_central=previous_central,
+            raw_prior_row=raw_prior_row,
+            expected_previous_jpx_session=previous_jpx_session,
         )
         full_gap_settle = _log_gap(
             row.get("day_session_open"), _value(prior_row, "settlement_price")
@@ -102,15 +128,25 @@ def _target_missing_reasons(
     target_row: dict[str, object],
     prior_row: dict[str, object] | None,
     roll_window: bool,
+    roll_metadata_missing: bool,
     previous_central: dict[str, object] | None,
+    raw_prior_row: dict[str, object] | None,
+    expected_previous_jpx_session: date | None,
 ) -> list[str]:
     reasons: list[str] = []
     if target_row.get("day_session_open") is None:
         reasons.append("holiday_trading_no_day_open")
     if prior_row is None:
-        reasons.append("cross_contract_excluded" if previous_central else "missing_reference_price")
+        if raw_prior_row is not None and expected_previous_jpx_session is not None:
+            reasons.append("missing_previous_jpx_session")
+        else:
+            reasons.append(
+                "cross_contract_excluded" if previous_central else "missing_reference_price"
+            )
     if prior_row is not None and prior_row.get("settlement_price") is None:
         reasons.append("missing_reference_price")
+    if roll_metadata_missing:
+        reasons.append("missing_roll_sq_metadata")
     if roll_window:
         reasons.append("roll_sq_excluded")
     return reasons
@@ -126,6 +162,22 @@ def _previous_same_contract_row(
     return candidates[-1] if candidates else None
 
 
+def _previous_jpx_session(jpx_sessions: list[date], trading_date: date) -> date | None:
+    candidates = [session for session in jpx_sessions if session < trading_date]
+    return candidates[-1] if candidates else None
+
+
+def _validated_previous_same_contract_row(
+    prior_row: dict[str, object] | None,
+    *,
+    expected_trading_date: date | None,
+) -> dict[str, object] | None:
+    if prior_row is None or expected_trading_date is None:
+        return None
+    prior_trading_date = date.fromisoformat(str(prior_row["trading_date"]))
+    return prior_row if prior_trading_date == expected_trading_date else None
+
+
 def _is_roll_sq_window(
     *,
     trading_date: date,
@@ -136,13 +188,29 @@ def _is_roll_sq_window(
 ) -> bool:
     if last_trading_day is None or special_quotation_day is None:
         return False
-    if last_trading_day in jpx_sessions:
-        index = jpx_sessions.index(last_trading_day)
-        start_index = max(0, index - roll_days_before_last_trade + 1)
-        roll_start = jpx_sessions[start_index]
-    else:
-        roll_start = last_trading_day - timedelta(days=7)
+    effective_last_trade = _effective_last_trade_session(
+        last_trading_day=last_trading_day,
+        special_quotation_day=special_quotation_day,
+        jpx_sessions=jpx_sessions,
+    )
+    if effective_last_trade is None:
+        return True
+    index = jpx_sessions.index(effective_last_trade)
+    start_index = max(0, index - roll_days_before_last_trade + 1)
+    roll_start = jpx_sessions[start_index]
     return roll_start <= trading_date <= special_quotation_day
+
+
+def _effective_last_trade_session(
+    *,
+    last_trading_day: date,
+    special_quotation_day: date,
+    jpx_sessions: list[date],
+) -> date | None:
+    if not jpx_sessions or jpx_sessions[-1] < special_quotation_day:
+        return None
+    candidates = [session for session in jpx_sessions if session <= last_trading_day]
+    return candidates[-1] if candidates else None
 
 
 def _volume_oi_anomaly(row: dict[str, object]) -> str | None:
@@ -183,3 +251,22 @@ def _log_gap(open_price: object, reference_price: object) -> float | None:
 
 def _value(row: dict[str, object] | None, key: str) -> object | None:
     return row.get(key) if row is not None else None
+
+
+def _assert_unique_rows(
+    rows: list[dict[str, object]],
+    *,
+    key_fields: tuple[str, ...],
+    context: str,
+) -> None:
+    seen: set[tuple[object, ...]] = set()
+    duplicates: list[tuple[object, ...]] = []
+    for row in rows:
+        key = tuple(row.get(field) for field in key_fields)
+        if key in seen:
+            duplicates.append(key)
+        else:
+            seen.add(key)
+    if duplicates:
+        preview = ", ".join(str(key) for key in duplicates[:5])
+        raise TargetAuditError(f"Duplicate {context} for key(s): {preview}")

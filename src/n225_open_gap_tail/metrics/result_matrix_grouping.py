@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from n225_open_gap_tail.config.runtime import (
     Mapping,
+    math,
     ML_TAIL_MODEL_NAMES,
     PipelineRunError,
     PRIMARY_TAIL_SIDE,
     RESULT_MATRIX_LOSS_FAMILIES,
     _required_float,
 )
+from n225_open_gap_tail.metrics.stat_utils import fz_loss
 from n225_open_gap_tail.panel.build import registered_ml_tail_information_sets
 
 
@@ -27,20 +29,27 @@ def _result_matrix_tail_model_groups(
         grouped.setdefault(key, {}).setdefault(model_name, {})[str(row["forecast_date"])] = row
     result: list[dict[str, object]] = []
     for key, entity_rows in sorted(grouped.items()):
-        if not all(model_name in entity_rows for model_name in ML_TAIL_MODEL_NAMES):
-            continue
-        common_dates = sorted(
-            set.intersection(*(set(entity_rows[model]) for model in ML_TAIL_MODEL_NAMES))
-        )
-        result.append(
-            _result_matrix_group_payload(
-                key=key,
-                entities=list(ML_TAIL_MODEL_NAMES),
-                entity_field="model_name",
-                entity_rows=entity_rows,
-                common_dates=common_dates,
+        missing_entities = [
+            model_name for model_name in ML_TAIL_MODEL_NAMES if model_name not in entity_rows
+        ]
+        for model_name in missing_entities:
+            entity_rows[model_name] = {}
+        if missing_entities:
+            common_dates = []
+        else:
+            common_dates = sorted(
+                set.intersection(*(set(entity_rows[model]) for model in ML_TAIL_MODEL_NAMES))
             )
+        payload = _result_matrix_group_payload(
+            key=key,
+            entities=list(ML_TAIL_MODEL_NAMES),
+            entity_field="model_name",
+            entity_rows=entity_rows,
+            common_dates=common_dates,
         )
+        if missing_entities:
+            payload["missing_entities"] = missing_entities
+        result.append(payload)
     return result
 
 
@@ -123,9 +132,18 @@ def _result_row_eligible(row: Mapping[str, object], loss_family: str) -> bool:
         return False
     try:
         _required_float(row["realized_loss"])
-        _required_float(row["var_forecast"])
+        loss = _required_float(row["realized_loss"])
+        var_forecast = _required_float(row["var_forecast"])
         if loss_family == "var_es_fz_loss":
-            _required_float(row["es_forecast"])
+            es_forecast = _required_float(row["es_forecast"])
+            realized_fz_loss = fz_loss(
+                loss,
+                var_forecast,
+                es_forecast,
+                _required_float(row["tail_level"]),
+            )
+            if not math.isfinite(realized_fz_loss):
+                return False
     except (KeyError, TypeError, ValueError, PipelineRunError):
         return False
     return loss_family in RESULT_MATRIX_LOSS_FAMILIES

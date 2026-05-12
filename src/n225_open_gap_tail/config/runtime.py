@@ -260,8 +260,6 @@ BENCHMARK_ADVANCED_MODEL_NAMES = (
     "care_expectile_asymmetric_slope",
     "ald_taylor_var_es_sav",
     "ald_taylor_var_es_asymmetric_slope",
-    "direct_fz_loss_sav",
-    "direct_fz_loss_asymmetric_slope",
     "gas_t_location_scale",
     "gas_t_pot_gpd",
 )
@@ -628,6 +626,8 @@ def find_oos_start_diagnostics(
 def validate_forecast_values(var_forecast: float, es_forecast: float) -> tuple[bool, str | None]:
     if not math.isfinite(var_forecast) or not math.isfinite(es_forecast):
         return False, "invalid_nonfinite_forecast"
+    if es_forecast <= 0.0:
+        return False, "invalid_nonpositive_es"
     if es_forecast < var_forecast:
         return False, "invalid_es_below_var"
     return True, None

@@ -178,32 +178,20 @@ def _selected_model_performance_rows(
                 row
                 for row in group
                 if int(_optional_float(row.get("rows")) or 0) >= SELECTED_MODEL_MIN_ROWS
-                and (_optional_float(row.get("coverage_abs_error")) or 1.0)
-                <= SELECTED_MODEL_COVERAGE_TOLERANCE
+                and (coverage_error := _optional_float(row.get("coverage_abs_error"))) is not None
+                and coverage_error <= SELECTED_MODEL_COVERAGE_TOLERANCE
+                and _optional_float(row.get("mean_fz_loss")) is not None
+                and _optional_float(row.get("mean_quantile_loss")) is not None
             ]
-            fallback = sorted(
-                group,
+            ranked = sorted(
+                eligible,
                 key=lambda row: (
-                    _optional_float(row.get("coverage_abs_error")) or float("inf"),
-                    _optional_float(row.get("mean_fz_loss")) or float("inf"),
-                    _optional_float(row.get("mean_quantile_loss")) or float("inf"),
+                    _optional_float(row.get("mean_fz_loss")),
+                    _optional_float(row.get("mean_quantile_loss")),
+                    _optional_float(row.get("coverage_abs_error")),
                     str(row.get("model_name") or ""),
                     str(row.get("information_set") or ""),
                 ),
-            )
-            ranked = (
-                sorted(
-                    eligible,
-                    key=lambda row: (
-                        _optional_float(row.get("mean_fz_loss")) or float("inf"),
-                        _optional_float(row.get("mean_quantile_loss")) or float("inf"),
-                        _optional_float(row.get("coverage_abs_error")) or float("inf"),
-                        str(row.get("model_name") or ""),
-                        str(row.get("information_set") or ""),
-                    ),
-                )
-                if eligible
-                else fallback
             )
             for rank, row in enumerate(ranked[:max_per_group], start=1):
                 selected.append({**row, "selection_rank": rank})
@@ -246,7 +234,12 @@ def _selection_candidates(metrics: pl.DataFrame, *, suite_group: str) -> list[di
 def _metrics_to_latex(
     metrics: pl.DataFrame, *, manifest: Mapping[str, object] | None = None
 ) -> str:
-    headers = ("model", "side", "tail", "rows", "breach", "q_loss", "fz_loss")
+    has_information_set = "information_set" in metrics.columns
+    headers = (
+        ("model", "info", "side", "tail", "rows", "breach", "q_loss", "fz_loss")
+        if has_information_set
+        else ("model", "side", "tail", "rows", "breach", "q_loss", "fz_loss")
+    )
     manifest = manifest or {}
     lines = [
         f"% run_id: {manifest.get('run_id', '')}",
@@ -257,14 +250,20 @@ def _metrics_to_latex(
             "% loss convention: realized_loss is positive loss for selected tail_side; "
             "lower FZ loss is better"
         ),
-        "\\begin{tabular}{llrrrrr}",
+        "\\begin{tabular}{lllrrrrr}" if has_information_set else "\\begin{tabular}{llrrrrr}",
         "\\toprule",
         " & ".join(headers) + r" \\",
         "\\midrule",
     ]
     for row in metrics.iter_rows(named=True):
+        info_cell = (
+            f"{_latex_escape(display_information_set_label(row.get('information_set')))} & "
+            if has_information_set
+            else ""
+        )
         lines.append(
             f"{_latex_escape(display_model_label(row['model_name']))} & "
+            f"{info_cell}"
             f"{_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
             f"{float(row['tail_level']):.3f} & "
             f"{int(row['rows'])} & {_fmt(row['var_breach_rate'])} & "
@@ -275,7 +274,9 @@ def _metrics_to_latex(
         "inference artifacts use block-bootstrap DM and HLN Tmax MCS; "
         "common-sample status is recorded in metrics metadata."
     )
-    lines.extend(["\\midrule", f"\\multicolumn{{7}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(
+        ["\\midrule", f"\\multicolumn{{{len(headers)}}}{{l}}{{\\footnotesize {note}}} \\\\"]
+    )
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
 
@@ -553,12 +554,10 @@ def _result_matrix_to_latex(
     for row in frame.iter_rows(named=True):
         if row.get("metric_status") != "ok":
             continue
-        raw_label = row.get("information_set") or row.get("model_name") or ""
-        label = (
-            display_information_set_label(raw_label)
-            if row.get("information_set")
-            else display_model_label(raw_label)
-        )
+        if row.get("comparison_axis") == "information_set_increment" and row.get("information_set"):
+            label = display_information_set_label(row.get("information_set"))
+        else:
+            label = display_model_label(row.get("model_name") or row.get("information_set") or "")
         lines.append(
             f"{_latex_escape(row.get('comparison_family'))} & "
             f"{_latex_escape(row.get('comparison_axis'))} & "
@@ -975,7 +974,7 @@ def _result_matrix_summary_rows(
         .sort(["comparison_family", "comparison_axis", "loss_family"])
     )
     dm_counts = _inference_status_counts(dm, "inference_status", "ok_block_bootstrap_dm")
-    mcs_counts = _inference_status_counts(mcs, "mcs_status", "ok_hln_tmax_mcs")
+    mcs_counts = _inference_status_counts(mcs, "mcs_status", "ok")
     for row in grouped.iter_rows(named=True):
         key = _result_summary_key(row)
         rows.append(

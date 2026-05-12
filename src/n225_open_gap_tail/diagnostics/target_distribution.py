@@ -14,9 +14,7 @@ from scipy.stats import genpareto, jarque_bera  # type: ignore[import-untyped]
 def opening_gap_scale_text(panel: pl.DataFrame) -> str:
     if panel.is_empty() or "gap_t" not in panel.columns:
         return "- Opening-gap scale is unavailable because the modeling panel is missing `gap_t`."
-    clean = panel.filter(pl.col("gap_t").is_not_null())
-    if "clean_sample" in clean.columns:
-        clean = clean.filter(pl.col("clean_sample"))
+    clean = _target_clean_frame(panel)
     if clean.is_empty():
         return (
             "- Opening-gap scale is unavailable because no clean target rows have finite `gap_t`."
@@ -55,7 +53,10 @@ def opening_gap_scale_text(panel: pl.DataFrame) -> str:
         ),
     ]
     if "residual_nightclose_to_day_open" in clean.columns:
-        residual = clean.filter(pl.col("residual_nightclose_to_day_open").is_not_null())
+        residual = clean.filter(
+            pl.col("residual_nightclose_to_day_open").is_not_null()
+            & pl.col("residual_nightclose_to_day_open").is_finite()
+        )
         if not residual.is_empty():
             residual_stats = residual.select(
                 pl.col("residual_nightclose_to_day_open").min().alias("min"),
@@ -131,7 +132,7 @@ def target_tail_diagnostics_markdown(
 def _target_clean_frame(panel: pl.DataFrame) -> pl.DataFrame:
     if panel.is_empty() or "gap_t" not in panel.columns:
         return pl.DataFrame()
-    clean = panel.filter(pl.col("gap_t").is_not_null())
+    clean = panel.filter(pl.col("gap_t").is_not_null() & pl.col("gap_t").is_finite())
     if "forecast_sample" in clean.columns:
         clean = clean.filter(pl.col("forecast_sample") == True)  # noqa: E712
     elif "clean_sample" in clean.columns:
@@ -199,6 +200,7 @@ def _target_gpd_stability_table(*, series_by_side: dict[str, np.ndarray]) -> str
     rows: list[tuple[object, ...]] = []
     for side, values in series_by_side.items():
         finite = values[np.isfinite(values)]
+        finite = finite[finite > 0.0]
         if finite.size < 80:
             continue
         for probability in (0.90, 0.925, 0.95, 0.975, 0.99):
@@ -240,13 +242,14 @@ def _target_gpd_stability_table(*, series_by_side: dict[str, np.ndarray]) -> str
 def _fit_gpd_excess(excess: np.ndarray) -> tuple[float, float]:
     try:
         shape, _, scale = genpareto.fit(excess, floc=0.0)
-    except Exception:
+    except (ValueError, RuntimeError, FloatingPointError):
         return float("nan"), float("nan")
     return float(shape), float(scale)
 
 
 def _hill_xi(values: np.ndarray, k: int) -> float:
-    finite = np.sort(values[np.isfinite(values)])
+    finite = values[np.isfinite(values)]
+    finite = np.sort(finite[finite > 0.0])
     if finite.size <= k or k < 2:
         return float("nan")
     upper = finite[::-1]

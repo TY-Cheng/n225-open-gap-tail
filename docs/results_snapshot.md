@@ -318,14 +318,12 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 
 | Suite | Model | Information set | Metric rows | OOS N mean+-sd | Breach mean+-sd | Abs cov err mean+-sd | Q loss mean+-sd | FZ loss mean+-sd | ES severity mean+-sd |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| benchmark_advanced | ald_taylor_var_es_asymmetric_slope | Target history | 2 | 661 +/- 0 | 5.825% +/- 0.107% | 0.825% +/- 0.107% | 0.00127576 +/- 8.04588e-05 | -3.7264 +/- 0.0333965 | 0.00869969 +/- 0.000405801 |
-| benchmark_advanced | ald_taylor_var_es_sav | Target history | 2 | 661 +/- 0 | 5.522% +/- 0.535% | 0.522% +/- 0.535% | 0.00128271 +/- 3.8144e-05 | -3.73056 +/- 0.00716924 | 0.00886176 +/- 0.000129554 |
+| benchmark_advanced | Taylor ALD/FZ0 asymmetric slope | Target history | 2 | 661 +/- 0 | 5.825% +/- 0.107% | 0.825% +/- 0.107% | 0.00127576 +/- 8.04588e-05 | -3.7264 +/- 0.0333965 | 0.00869969 +/- 0.000405801 |
+| benchmark_advanced | Taylor ALD/FZ0 SAV | Target history | 2 | 661 +/- 0 | 5.522% +/- 0.535% | 0.522% +/- 0.535% | 0.00128271 +/- 3.8144e-05 | -3.73056 +/- 0.00716924 | 0.00886176 +/- 0.000129554 |
 | benchmark_advanced | care_expectile_asymmetric_slope | Target history | 2 | 661 +/- 0 | 7.867% +/- 1.498% | 2.867% +/- 1.498% | 0.00127718 +/- 8.34e-05 | -3.70044 +/- 0.0127067 | 0.0073354 +/- 0.00110666 |
 | benchmark_advanced | care_expectile_sav | Target history | 2 | 661 +/- 0 | 6.732% +/- 0.749% | 1.732% +/- 0.749% | 0.00129396 +/- 4.30045e-05 | -3.68574 +/- 0.0442191 | 0.00850544 +/- 0.000289762 |
 | benchmark_advanced | caviar_asymmetric_slope | Target history | 2 | 658.5 +/- 0.707107 | 5.922% +/- 0.208% | 0.922% +/- 0.208% | 0.00127214 +/- 7.44272e-05 | -3.74253 +/- 0.0317651 | 0.00850709 +/- 0.000182887 |
 | benchmark_advanced | caviar_sav | Target history | 2 | 660.5 +/- 0.707107 | 5.451% +/- 0.648% | 0.458% +/- 0.637% | 0.001287 +/- 4.0599e-05 | -3.7291 +/- 0.0043629 | 0.00935712 +/- 0.000659042 |
-| benchmark_advanced | direct_fz_loss_asymmetric_slope | Target history | 2 | 661 +/- 0 | 5.825% +/- 0.107% | 0.825% +/- 0.107% | 0.00127576 +/- 8.04588e-05 | -3.7264 +/- 0.0333965 | 0.00869969 +/- 0.000405801 |
-| benchmark_advanced | direct_fz_loss_sav | Target history | 2 | 661 +/- 0 | 5.522% +/- 0.535% | 0.522% +/- 0.535% | 0.00128271 +/- 3.8144e-05 | -3.73056 +/- 0.00716924 | 0.00886176 +/- 0.000129554 |
 | benchmark_advanced | gas_t_location_scale | Target history | 2 | 661 +/- 0 | 5.522% +/- 1.391% | 0.983% +/- 0.738% | 0.00128515 +/- 5.79748e-05 | -3.73231 +/- 0.0419237 | 0.00939352 +/- 0.00130429 |
 | benchmark_advanced | gas_t_pot_gpd | Target history | 2 | 661 +/- 0 | 5.446% +/- 0.000% | 0.446% +/- 0.000% | 0.00128952 +/- 4.66132e-05 | -3.74198 +/- 0.00836893 | 0.00945829 +/- 0.000793522 |
 | benchmark_baseline | ewma_vol_scaled | Target history | 2 | 661 +/- 0 | 4.917% +/- 0.535% | 0.378% +/- 0.118% | 0.00135418 +/- 5.45215e-05 | -3.67522 +/- 0.0299802 | 0.00916441 +/- 0.000276157 |

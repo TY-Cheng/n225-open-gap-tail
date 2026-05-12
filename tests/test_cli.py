@@ -460,6 +460,7 @@ def test_build_panel_command_reports_summary(
     def fake_build_panel(**kwargs: object) -> PanelBuildResult:
         assert kwargs["start"] == "2016-07-19"
         assert kwargs["end"] is None
+        assert kwargs["force"] is False
         return PanelBuildResult(
             run_id="tailrisk_test",
             run_dir=run_dir,
@@ -477,6 +478,31 @@ def test_build_panel_command_reports_summary(
     assert f"run dir: {run_dir}" in result.output
     assert "rows: 100" in result.output
     assert "clean rows: 90" in result.output
+
+
+def test_build_panel_command_passes_force(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "tailrisk_run"
+    seen_force: list[bool] = []
+
+    def fake_build_panel(**kwargs: object) -> PanelBuildResult:
+        seen_force.append(bool(kwargs["force"]))
+        return PanelBuildResult(
+            run_id="tailrisk_test",
+            run_dir=run_dir,
+            panel_path=run_dir / "panel" / "modeling_panel.parquet",
+            rows=100,
+            clean_rows=90,
+        )
+
+    monkeypatch.setattr(cli, "build_panel", fake_build_panel)
+
+    result = CliRunner().invoke(app, ["build-panel", "--force"])
+
+    assert result.exit_code == 0
+    assert seen_force == [True]
 
 
 def test_evaluate_command_reports_summary(
@@ -560,6 +586,7 @@ def test_run_command_runs_panel_eval_and_latex(
     run_dir = tmp_path / "tailrisk_run"
 
     def fake_build_panel(**kwargs: object) -> PanelBuildResult:
+        assert kwargs["force"] is True
         return PanelBuildResult(
             run_id="tailrisk_test",
             run_dir=run_dir,
@@ -570,6 +597,7 @@ def test_run_command_runs_panel_eval_and_latex(
 
     def fake_evaluate_suite(**kwargs: object) -> EvaluationResult:
         assert kwargs["suite"] == "benchmark"
+        assert kwargs["force"] is True
         return EvaluationResult(
             run_id="tailrisk_test",
             run_dir=run_dir,
@@ -600,7 +628,7 @@ def test_run_command_runs_panel_eval_and_latex(
     monkeypatch.setattr(cli, "evaluate_suite", fake_evaluate_suite)
     monkeypatch.setattr(cli, "export_tables", fake_export_tables)
 
-    result = CliRunner().invoke(app, ["run", "--workers", "1", "--suite", "benchmark"])
+    result = CliRunner().invoke(app, ["run", "--workers", "1", "--suite", "benchmark", "--force"])
 
     assert result.exit_code == 0
     assert "panel rows: 100" in result.output

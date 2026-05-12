@@ -247,7 +247,7 @@ def _run_has_locked_outputs(run_dir: Path) -> bool:
 
 
 def _clear_run_outputs_for_force(run_dir: Path) -> None:
-    for name in ("forecasts", "metrics", "latex", "audits"):
+    for name in ("forecasts", "metrics", "latex"):
         path = run_dir / name
         if path.exists():
             shutil.rmtree(path)

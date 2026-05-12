@@ -584,6 +584,9 @@ def _forecast_ml_tail_location_scale_sequence(
                         **_ml_tail_route_failure_metadata(model_name, status),
                     }
                 )
+                cached_bundle = None
+                cached_refit_month = None
+                continue
         if cached_bundle is None or cached_bundle.get("fit_status") != "ok":
             continue
         try:
@@ -895,19 +898,32 @@ def _fit_ml_tail_robust_location_scale_bundle(
     z_oof = z_oof[np.isfinite(z_oof)]
     if z_oof.size < ML_TAIL_MIN_OOF_TRAIN_ROWS:
         raise PipelineRunError(f"unavailable_oof_standardization_insufficient_sample: {z_oof.size}")
-    evt_tail = _pot_gpd_standardized_tail(
-        standardized_losses=z_oof,
-        tail_level=tail_level,
-        threshold_quantile=EVT_THRESHOLD_QUANTILE
-        if evt_threshold_quantile is None
-        else float(evt_threshold_quantile),
-        require_finite_gpd_es=True,
-        min_standardized_losses=min(EVT_MIN_STANDARDIZED_LOSSES_95, DEFAULT_MIN_TRAIN_ROWS),
-        min_exceedances=min(EVT_MIN_EXCEEDANCES_95, DEFAULT_MIN_TRAIN_EXCEEDANCES),
-        evt_variant=_evt_variant_for_ml_tail_model(model_name),
-        shape_cap=EVT_SHAPE_CAP_BASELINE,
-        shape_shrinkage_k=EVT_SHAPE_SHRINKAGE_K,
+    threshold_quantile = (
+        EVT_THRESHOLD_QUANTILE if evt_threshold_quantile is None else float(evt_threshold_quantile)
     )
+    if tail_level <= threshold_quantile:
+        raise PipelineRunError("unavailable_evt_tail_not_above_threshold")
+    try:
+        evt_tail = _pot_gpd_standardized_tail(
+            standardized_losses=z_oof,
+            tail_level=tail_level,
+            threshold_quantile=threshold_quantile,
+            require_finite_gpd_es=True,
+            min_standardized_losses=min(EVT_MIN_STANDARDIZED_LOSSES_95, DEFAULT_MIN_TRAIN_ROWS),
+            min_exceedances=min(EVT_MIN_EXCEEDANCES_95, DEFAULT_MIN_TRAIN_EXCEEDANCES),
+            evt_variant=_evt_variant_for_ml_tail_model(model_name),
+            shape_cap=EVT_SHAPE_CAP_BASELINE,
+            shape_shrinkage_k=EVT_SHAPE_SHRINKAGE_K,
+        )
+    except PipelineRunError as exc:
+        message = str(exc)
+        if "insufficient exceedances" in message:
+            raise PipelineRunError(f"unavailable_evt_insufficient_exceedances: {message}") from exc
+        if "shape >= 1" in message or "infinite ES" in message:
+            raise PipelineRunError(f"unavailable_evt_shape_es_infinite: {message}") from exc
+        if "unavailable_evt_unibm" in message:
+            raise PipelineRunError(f"unavailable_evt_unibm: {message}") from exc
+        raise PipelineRunError(f"unavailable_evt_calibration_failed: {message}") from exc
     evt_tail = {**evt_tail, "gpd_fit_status": "ok", "gpd_es_status": "ok"}
     standardized_var = _required_float(evt_tail["standardized_var"])
     standardized_es = _required_float(evt_tail["standardized_es"])

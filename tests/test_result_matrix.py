@@ -221,6 +221,23 @@ def test_ml_tail_result_matrix_gates_sparse_tail_events_and_var_es_eligibility()
         "var_coverage",
     }
 
+    nonpositive_es = _ml_tail_result_matrix_forecasts(dates=dates)
+    for row in nonpositive_es:
+        if row["model_name"] == paper_module.ML_TAIL_LOCATION_SCALE_MODEL:
+            row["es_forecast"] = 0.0
+    filtered = paper_module.build_ml_tail_result_matrix_artifacts(nonpositive_es)
+    filtered_matrix = cast(list[dict[str, object]], filtered["matrix"])
+    loc_scale_fz_rows = [
+        row
+        for row in filtered_matrix
+        if row["loss_family"] == "var_es_fz_loss"
+        and row["model_name"] == paper_module.ML_TAIL_LOCATION_SCALE_MODEL
+    ]
+    assert loc_scale_fz_rows
+    assert all(
+        row["metric_status"] == "unavailable_missing_registered_model" for row in loc_scale_fz_rows
+    )
+
 
 def test_ml_tail_result_matrix_marks_short_common_samples_unavailable() -> None:
     dates = [
@@ -251,6 +268,30 @@ def test_ml_tail_result_matrix_marks_short_common_samples_unavailable() -> None:
         for row in audit
         if row["loss_family"] != "var_coverage"
     )
+
+
+def test_ml_tail_result_matrix_audits_missing_registered_family_model() -> None:
+    dates = [
+        (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=index)).date().isoformat()
+        for index in range(130)
+    ]
+    forecasts = [
+        row
+        for row in _ml_tail_result_matrix_forecasts(dates=dates, information_sets=("japan_only",))
+        if row["model_name"] != paper_module.ML_TAIL_MEDIAN_IQR_POT_GPD_UNIBM_MODEL
+    ]
+
+    artifacts = paper_module.build_ml_tail_result_matrix_artifacts(forecasts)
+    audit = cast(list[dict[str, object]], artifacts["sample_audit"])
+    matrix = cast(list[dict[str, object]], artifacts["matrix"])
+
+    assert any(
+        row["metric_status"] == "unavailable_missing_registered_model"
+        and paper_module.ML_TAIL_MEDIAN_IQR_POT_GPD_UNIBM_MODEL
+        in json.loads(str(row["missing_entities_json"]))
+        for row in audit
+    )
+    assert any(row["metric_status"] == "unavailable_missing_registered_model" for row in matrix)
 
 
 def test_ml_tail_result_matrix_runs_registered_mcs_when_gates_pass(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from n225_open_gap_tail.config.runtime import (
+    BENCHMARK_BASELINE_MODEL_NAMES,
     CLAIMS_LEVEL,
     ML_TAIL_DIRECT_QUANTILE_MODEL,
     Path,
@@ -44,7 +45,9 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
         metrics_path = run_dir / "metrics" / f"{suite}_metrics.parquet"
         if not metrics_path.exists():
             continue
-        metrics = pl.read_parquet(metrics_path)
+        metrics = _paper_metric_rows(pl.read_parquet(metrics_path))
+        if metrics.is_empty():
+            continue
         tex = _metrics_to_latex(metrics, manifest=manifest)
         table_path = latex_dir / f"{suite}_metrics_table.tex"
         table_path.write_text(tex, encoding="utf-8")
@@ -272,9 +275,25 @@ def export_sensitivity_tables(*, run_dir: Path) -> TableExportResult:  # pragma:
 
 
 def _remove_stale_tail_table_names(latex_dir: Path) -> None:
-    for pattern in ("*_left_primary_table.tex", "*_right_robustness_table.tex"):
-        for path in latex_dir.glob(pattern):
-            path.unlink(missing_ok=True)
+    for path in latex_dir.glob("*.tex"):
+        path.unlink(missing_ok=True)
+
+
+def _paper_metric_rows(frame: pl.DataFrame) -> pl.DataFrame:
+    if frame.is_empty():
+        return frame
+    if not {"sample_policy", "common_sample_status"}.issubset(frame.columns):
+        return pl.DataFrame()
+    filtered = frame
+    filtered = filtered.filter(
+        (pl.col("sample_policy") == "primary_common_sample")
+        & (pl.col("common_sample_status") == "ok")
+    )
+    if "fit_status" in filtered.columns:
+        filtered = filtered.filter(pl.col("fit_status") == "ok")
+    if "is_valid_forecast" in filtered.columns:
+        filtered = filtered.filter(pl.col("is_valid_forecast") == True)  # noqa: E712
+    return filtered
 
 
 def _read_existing_table_manifest(path: Path) -> dict[str, object]:  # pragma: no cover
@@ -526,20 +545,24 @@ def _combined_severity_metrics(run_dir: Path) -> pl.DataFrame:
     frames: list[pl.DataFrame] = []
     benchmark_path = run_dir / "metrics" / "benchmark_metrics.parquet"
     if benchmark_path.exists():
-        frames.append(
-            pl.read_parquet(benchmark_path).with_columns(
-                pl.lit("benchmark").alias("suite"),
-                pl.lit("primary").alias("claim_scope"),
+        benchmark_metrics = _paper_metric_rows(pl.read_parquet(benchmark_path))
+        if not benchmark_metrics.is_empty():
+            frames.append(
+                benchmark_metrics.with_columns(
+                    pl.lit("benchmark").alias("suite"),
+                    pl.lit("primary").alias("claim_scope"),
+                )
             )
-        )
     ml_primary_path = run_dir / "metrics" / "ml_tail_metrics.parquet"
     if ml_primary_path.exists():
-        frames.append(
-            pl.read_parquet(ml_primary_path).with_columns(
-                pl.lit("ml_tail").alias("suite"),
-                pl.lit("primary").alias("claim_scope"),
+        ml_primary = _paper_metric_rows(pl.read_parquet(ml_primary_path))
+        if not ml_primary.is_empty():
+            frames.append(
+                ml_primary.with_columns(
+                    pl.lit("ml_tail").alias("suite"),
+                    pl.lit("primary").alias("claim_scope"),
+                )
             )
-        )
     ml_per_model_path = run_dir / "metrics" / "ml_tail_metrics_per_model.parquet"
     if ml_per_model_path.exists():
         per_model = pl.read_parquet(ml_per_model_path)
@@ -560,12 +583,33 @@ def _combined_forecasts(run_dir: Path) -> pl.DataFrame:
     frames: list[pl.DataFrame] = []
     benchmark_path = run_dir / "forecasts" / "benchmark_forecasts.parquet"
     if benchmark_path.exists():
-        frames.append(
-            pl.read_parquet(benchmark_path).with_columns(pl.lit("benchmark").alias("suite"))
-        )
+        benchmark = pl.read_parquet(benchmark_path)
+        if "model_name" in benchmark.columns:
+            benchmark = benchmark.filter(
+                pl.col("model_name").is_in(list(BENCHMARK_BASELINE_MODEL_NAMES))
+            )
+        benchmark = _valid_forecast_rows(benchmark)
+        if not benchmark.is_empty():
+            frames.append(benchmark.with_columns(pl.lit("benchmark").alias("suite")))
     ml_tail_path = run_dir / "forecasts" / "ml_tail_forecasts.parquet"
     if ml_tail_path.exists():
-        frames.append(pl.read_parquet(ml_tail_path).with_columns(pl.lit("ml_tail").alias("suite")))
+        ml_tail = pl.read_parquet(ml_tail_path)
+        if "model_name" in ml_tail.columns:
+            ml_tail = ml_tail.filter(pl.col("model_name") == ML_TAIL_DIRECT_QUANTILE_MODEL)
+        ml_tail = _valid_forecast_rows(ml_tail)
+        if not ml_tail.is_empty():
+            frames.append(ml_tail.with_columns(pl.lit("ml_tail").alias("suite")))
     if not frames:
         return pl.DataFrame()
     return pl.concat(frames, how="diagonal_relaxed")
+
+
+def _valid_forecast_rows(frame: pl.DataFrame) -> pl.DataFrame:
+    if frame.is_empty():
+        return frame
+    filtered = frame
+    if "fit_status" in filtered.columns:
+        filtered = filtered.filter(pl.col("fit_status") == "ok")
+    if "is_valid_forecast" in filtered.columns:
+        filtered = filtered.filter(pl.col("is_valid_forecast") == True)  # noqa: E712
+    return filtered

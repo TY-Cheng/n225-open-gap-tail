@@ -27,7 +27,7 @@ def sync_snapshot_figure_assets(
         if not source_path.is_absolute():
             source_path = run_dir / source_path
         if not source_path.exists():
-            continue
+            raise FileNotFoundError(f"Figure manifest references missing PNG: {source_path}")
         shutil.copy2(source_path, target_dir / source_path.name)
 
 
@@ -120,6 +120,11 @@ def figure_gallery_markdown(*, figure_manifest: dict[str, object], run_id: str) 
                 ]
             )
         sections.append("\n".join(parts))
+    if not sections:
+        return (
+            "### Figures\n\n"
+            "- Figure manifest entries are present, but none match the registered paper figure families."
+        )
     return "\n\n".join(sections)
 
 

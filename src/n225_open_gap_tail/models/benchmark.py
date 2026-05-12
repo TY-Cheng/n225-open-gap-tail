@@ -71,7 +71,7 @@ def _evaluate_benchmark_shard(payload: dict[str, object]) -> dict[str, list[dict
         pl.scan_parquet(panel_path)
         .filter(pl.col("clean_sample") == True)  # noqa: E712
         .select(selected_columns)
-        .drop_nulls()
+        .drop_nulls(subset=["forecast_date", "realized_loss"])
         .sort("forecast_date")
         .collect()
     )
@@ -387,6 +387,7 @@ def _arch_forecast(  # pragma: no cover - numeric optimizer exercised in real Be
             threshold_quantile=EVT_THRESHOLD_QUANTILE
             if evt_threshold_quantile is None
             else float(evt_threshold_quantile),
+            require_finite_gpd_es=True,
         )
         var_forecast = -mean_return_forecast + scale_forecast * _required_float(
             evt_tail["standardized_var"]

@@ -28,13 +28,12 @@ from n225_open_gap_tail.config.runtime import (
     FeatureSetVersion,
     FETCH_FRED_SERIES_FOR_PIPELINE,
     FETCH_MASSIVE_TICKERS_FOR_PIPELINE,
-    ForecastExclusionReason,
     FRED_CACHE_SCHEMA,
     FRED_CACHE_TTL_DAYS,
     FRED_H10_RELEASE_AGE_CAP_DAYS,
     FX_FRED_SERIES_FOR_PIPELINE,
     JAPAN_PROXY_MASSIVE_TICKERS_FOR_PIPELINE,
-    JoinMissReason,
+    ForecastExclusionReason,
     JQUANTS_BRONZE_SCHEMA,
     JQUANTS_OPTIONS_SILVER_SCHEMA,
     JQUANTS_SILVER_SCHEMA,
@@ -51,7 +50,6 @@ from n225_open_gap_tail.config.runtime import (
     MASSIVE_OPTIONS_CORE_UNDERLYINGS_FOR_PIPELINE,
     MASSIVE_OPTIONS_JAPAN_ETF_UNDERLYINGS_FOR_PIPELINE,
     MASSIVE_OPTIONS_UNDERLYINGS_FOR_PIPELINE,
-    Mapping,
     MappingStatus,
     OPTIONAL_MASSIVE_TICKERS_FOR_PIPELINE,
     PanelBuildResult as PanelBuildResult,
@@ -101,6 +99,14 @@ from n225_open_gap_tail.panel.information_sets import (
     registered_ml_tail_information_sets,
 )
 from n225_open_gap_tail.panel.calendar_map import build_calendar_map_records
+from n225_open_gap_tail.panel.build_helpers import (
+    _assert_unique_record_keys as _assert_unique_record_keys,
+    _forecast_sample_exclusion_reason as _forecast_sample_exclusion_reason,
+    _max_date_strings as _max_date_strings,
+    _panel_join_miss_reason as _panel_join_miss_reason,
+    resolve_default_end_date as resolve_default_end_date,
+    target_audit_calendar_records as target_audit_calendar_records,
+)
 from n225_open_gap_tail.panel.jquants_options import prepare_n225_option_features
 from n225_open_gap_tail.panel.us_options import prepare_us_options_atm_iv_features
 from n225_open_gap_tail.panel.options_audit import (
@@ -125,6 +131,7 @@ def build_panel(
     settings: Settings,
     start: str = MAIN_SAMPLE_START,
     end: str | None = None,
+    force: bool = False,
 ) -> PanelBuildResult:
     run_ts = datetime.now(UTC)
     end_date = end or resolve_default_end_date()
@@ -170,6 +177,7 @@ def build_panel(
         end=end_date,
         calendar_records=calendar_records,
         run_start_utc=run_ts,
+        force_refresh=force,
     )
     _pipeline_log(f"J-Quants bronze rows available: {len(raw_jquants)}")
     schema_probe = build_jquants_schema_probe(raw_jquants)
@@ -189,6 +197,7 @@ def build_panel(
         calendar_records=calendar_records,
         run_start_utc=run_ts,
         downloaded_at_utc=jquants_pull_ts,
+        force_refresh=force,
     )
     fields_coverage = build_fields_coverage_audit_records(
         normalized,
@@ -198,9 +207,16 @@ def build_panel(
         fields_coverage,
         fallback=MAIN_SAMPLE_START,
     )
+    target_calendar_records = target_audit_calendar_records(
+        settings=settings,
+        base_calendar_records=calendar_records,
+        normalized_rows=normalized,
+        start=start,
+        end=end_date,
+    )
     targets = build_target_audit_records(
         normalized,
-        calendar_records=calendar_records,
+        calendar_records=target_calendar_records,
         roll_days_before_last_trade=settings.nikkei_contract_roll_days_before_last_trade,
     )
     clean_targets = sum(1 for row in targets if row.get("clean_sample") is True)
@@ -215,6 +231,7 @@ def build_panel(
         end=end_date,
         downloaded_at_utc=massive_pull_ts,
         calendar_records=calendar_records,
+        force_refresh=force,
     )
     _pipeline_log(
         f"Massive predictors available: daily_rows={len(massive_daily)}, "
@@ -228,6 +245,7 @@ def build_panel(
         end=end_date,
         downloaded_at_utc=fred_pull_ts,
         run_start_utc=run_ts,
+        force_refresh=force,
     )
     _pipeline_log(f"FRED predictor rows available: {len(fred_rows)}")
     _pipeline_log("Massive options computed ATM-IV feature build start")
@@ -239,6 +257,7 @@ def build_panel(
         massive_daily_records=massive_daily,
         fred_records=fred_rows,
         downloaded_at_utc=massive_pull_ts,
+        force_refresh=force,
     )
     us_options_features = us_options_build.feature_records
     us_options_liquidity = us_options_build.liquidity_records
@@ -255,6 +274,7 @@ def build_panel(
         start=predictor_start,
         end=end_date,
         downloaded_at_utc=cboe_pull_ts,
+        force_refresh=force,
     )
     vix_consistency = build_vix_consistency_records(
         cboe_records=cboe_rows,
@@ -269,6 +289,7 @@ def build_panel(
         calendar_records=calendar_records,
         minute_feature_records=minute_features,
         vendor_lag_minutes=PIPELINE_CONFIG.leakage_policy.massive_vendor_lag_minutes,
+        us_timezone=settings.project_timezone_us,
     )
     _pipeline_log(f"time alignment rows built: {len(alignment)}")
     calendar_map = build_calendar_map_records(
@@ -597,15 +618,6 @@ def build_panel(
     )
 
 
-def resolve_default_end_date(today: date | None = None) -> str:
-    """Return the most recent completed Friday before the run date."""
-    run_date = today or date.today()
-    days_since_friday = (run_date.weekday() - 4) % 7
-    if days_since_friday == 0:
-        days_since_friday = 7
-    return (run_date - timedelta(days=days_since_friday)).isoformat()
-
-
 def build_modeling_panel_records(
     *,
     target_rows: list[dict[str, object]],
@@ -619,6 +631,21 @@ def build_modeling_panel_records(
     calendar_map_records: list[dict[str, object]] | None = None,
     n225_option_records: list[dict[str, object]] | None = None,
 ) -> list[dict[str, object]]:
+    _assert_unique_record_keys(
+        target_rows,
+        key_field="trading_date",
+        context="target rows",
+    )
+    _assert_unique_record_keys(
+        alignment_records,
+        key_field="trading_date",
+        context="time-alignment rows",
+    )
+    _assert_unique_record_keys(
+        calendar_map_records or [],
+        key_field="ose_trading_date",
+        context="calendar-map rows",
+    )
     alignment_by_target = {str(row["trading_date"]): row for row in alignment_records}
     calendar_map_by_target = {
         str(row["ose_trading_date"]): row for row in (calendar_map_records or [])
@@ -897,11 +924,6 @@ def build_effective_predictor_start(
     return {family: max(values) if values else None for family, values in grouped.items()}
 
 
-def _max_date_strings(*values: str | None) -> str | None:
-    valid = [value for value in values if isinstance(value, str) and value]
-    return max(valid) if valid else None
-
-
 def build_fields_coverage_audit_records(
     rows: list[dict[str, object]],
     *,
@@ -954,36 +976,3 @@ def build_feature_dictionary(panel: list[dict[str, object]]) -> dict[str, str]:
         for field in sorted(set().union(*(row.keys() for row in panel)) if panel else set())
         if _feature_dictionary_includes(field)
     }
-
-
-def _panel_join_miss_reason(alignment: Mapping[str, object], us_date: str) -> str | None:
-    if not alignment:
-        return JoinMissReason.CALENDAR_DESYNC.value
-    if alignment.get("alignment_status") == "missing_us_close":
-        return JoinMissReason.US_MARKET_CLOSED.value
-    if not us_date:
-        return JoinMissReason.CALENDAR_DESYNC.value
-    if alignment.get("alignment_pass") is False:
-        return JoinMissReason.US_EARLY_CLOSE_BEYOND_VENDOR_LAG.value
-    return None
-
-
-def _forecast_sample_exclusion_reason(
-    *,
-    target_clean: bool,
-    mapping_status: str,
-    join_miss_reason: str | None,
-    cutoff: datetime | None,
-    target_open: datetime | None,
-) -> str | None:
-    if not target_clean:
-        return ForecastExclusionReason.TARGET_NOT_CLEAN.value
-    if mapping_status != MappingStatus.NORMAL_TRADING.value:
-        return ForecastExclusionReason.MAPPING_NOT_NORMAL.value
-    if join_miss_reason:
-        return ForecastExclusionReason.JOIN_MISS.value
-    if cutoff is None or target_open is None:
-        return ForecastExclusionReason.MISSING_CUTOFF_OR_TARGET_OPEN.value
-    if cutoff >= target_open:
-        return ForecastExclusionReason.CUTOFF_AFTER_TARGET_OPEN.value
-    return None

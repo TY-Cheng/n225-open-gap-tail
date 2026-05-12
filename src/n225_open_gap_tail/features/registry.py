@@ -33,6 +33,7 @@ def _feature_dictionary_includes(field: str) -> bool:
         or field.endswith("_volume_surge")
         or field.endswith("_window_momentum")
         or field.endswith("_count")
+        or field.startswith("fx_")
         or "_zscore_" in field
         or "_percentile_" in field
         or field.startswith("fred_")
@@ -57,7 +58,7 @@ def _feature_source_family(field: str) -> str:
         return "asia_proxy_options"
     if field.startswith("japan_adr_"):
         return "japan_proxy"
-    if field.startswith("fx_usdjpy_"):
+    if field.startswith("fx_"):
         return "fx_core"
     if field.startswith("fred_"):
         if field.startswith("fred_baml"):
@@ -102,7 +103,7 @@ def _feature_source_block(field: str) -> str:
         return "asia_proxy"
     if field.startswith("japan_adr_"):
         return "japan_proxy"
-    if field.startswith("fx_usdjpy_"):
+    if field.startswith("fx_"):
         return "fx_core"
     if field.startswith("fred_"):
         if field.startswith("fred_baml"):

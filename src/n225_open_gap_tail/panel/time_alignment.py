@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 
 class TimeAlignmentError(ValueError):
@@ -13,8 +14,10 @@ def build_time_alignment_records(
     calendar_records: list[dict[str, object]],
     minute_feature_records: list[dict[str, object]],
     vendor_lag_minutes: int = 5,
+    us_timezone: str = "America/New_York",
 ) -> list[dict[str, object]]:
     reference_ticker = "SPY"
+    us_tz = ZoneInfo(us_timezone)
     us_closes = [row for row in calendar_records if row.get("us_close_ts_utc") is not None]
     us_closes.sort(key=lambda row: _as_datetime(row["us_close_ts_utc"]))
     minute_by_date: dict[str, list[dict[str, object]]] = {}
@@ -28,12 +31,14 @@ def build_time_alignment_records(
     alignment: list[dict[str, object]] = []
     for target in target_rows:
         target_open = _as_datetime(target["target_open_ts_utc"])
+        target_us_calendar_date = target_open.astimezone(us_tz).date().isoformat()
         close_row = _latest_us_close_before(us_closes, target_open)
         if close_row is None:
             alignment.append(
                 {
                     "trading_date": target["trading_date"],
                     "target_open_ts_utc": target_open,
+                    "target_us_calendar_date": target_us_calendar_date,
                     "minute_reference_ticker": reference_ticker,
                     "alignment_status": "missing_us_close",
                     "alignment_pass": False,
@@ -57,6 +62,7 @@ def build_time_alignment_records(
             {
                 "trading_date": target["trading_date"],
                 "us_calendar_date": close_row["calendar_date"],
+                "target_us_calendar_date": target_us_calendar_date,
                 "dst_regime": close_row.get("dst_regime"),
                 "absorption_regime": close_row.get("absorption_regime"),
                 "is_us_early_close": close_row.get("is_us_early_close"),

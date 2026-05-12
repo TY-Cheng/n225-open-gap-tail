@@ -225,8 +225,7 @@ appendix material.
     - CAViaR;
     - CARE and expectile-based tail models;
     - Generalized Autoregressive Score (GAS) models;
-    - Taylor-style asymmetric-Laplace VaR-ES specifications;
-    - joint VaR-ES estimation through Fissler-Ziegel scoring-function minimization.
+    - Taylor-style asymmetric-Laplace/FZ0 joint VaR-ES specifications.
 - These rows are claim-gated.
 - Numerical convergence and common-sample availability determine how they are used in the paper.
 

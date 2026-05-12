@@ -72,6 +72,98 @@ def test_jquants_client_raises_for_required_endpoint_without_leaking_key() -> No
     assert "secret" not in str(exc_info.value)
 
 
+def test_jquants_client_retries_network_timeouts_without_exposing_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+    sleeps: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise httpx.ReadTimeout("simulated timeout", request=request)
+        return httpx.Response(200, json={"data": [{"Date": "2026-01-05"}]}, request=request)
+
+    monkeypatch.setattr("n225_open_gap_tail.sources.jquants.time_module.sleep", sleeps.append)
+    with JQuantsV2Client(
+        api_key="jquants-secret",
+        base_url="https://example.test/v2",
+        max_retries=1,
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        rows = client.get_nikkei225_options_daily_bars(trading_date="2026-01-05")
+
+    assert rows == [{"Date": "2026-01-05"}]
+    assert attempts == 2
+    assert sleeps == [1.0]
+
+
+def test_jquants_client_reports_exhausted_network_timeout_without_exposing_key() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("simulated timeout", request=request)
+
+    with JQuantsV2Client(
+        api_key="jquants-secret",
+        base_url="https://example.test/v2",
+        max_retries=0,
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        status_code, payload = client.request_json(
+            "/derivatives/bars/daily/options/225",
+            {"date": "2026-01-05"},
+            raise_for_status=False,
+        )
+
+    assert status_code == 0
+    assert payload["error_class"] == "network_error"
+    assert "ReadTimeout" in str(payload["message"])
+    assert "jquants-secret" not in str(payload)
+
+    with (
+        JQuantsV2Client(
+            api_key="jquants-secret",
+            base_url="https://example.test/v2",
+            max_retries=0,
+            transport=httpx.MockTransport(handler),
+        ) as client,
+        pytest.raises(JQuantsApiError) as exc_info,
+    ):
+        client.request_json(
+            "/derivatives/bars/daily/options/225",
+            {"date": "2026-01-05"},
+        )
+
+    assert exc_info.value.status_code == 0
+    assert "ReadTimeout" in str(exc_info.value)
+    assert "jquants-secret" not in str(exc_info.value)
+
+
+def test_jquants_client_retries_server_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    statuses = [500, 200]
+    sleeps: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        status = statuses.pop(0)
+        return httpx.Response(
+            status,
+            json={"data": [{"Date": "2026-01-05"}]},
+            request=request,
+        )
+
+    monkeypatch.setattr("n225_open_gap_tail.sources.jquants.time_module.sleep", sleeps.append)
+    with JQuantsV2Client(
+        api_key="jquants-secret",
+        base_url="https://example.test/v2",
+        max_retries=1,
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        rows = client.get_futures_daily_bars(trading_date="2026-01-05")
+
+    assert rows == [{"Date": "2026-01-05"}]
+    assert sleeps == [1.0]
+
+
 def test_jquants_client_context_manager_closes() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": []})

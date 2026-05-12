@@ -140,6 +140,36 @@ def test_normalize_jquants_rows_localizes_jst_and_invalidates_zero_prices() -> N
     assert records[1]["night_session_close"] is None
 
 
+def test_normalize_jquants_rows_keeps_settlement_calculation_on_emergency_margin_day() -> None:
+    records = normalize_jquants_futures_rows(
+        [
+            _raw_row(
+                "2016-08-02",
+                "2016-09",
+                "161090018",
+                ac=16340,
+                ec=16460,
+                settle=16340,
+            ),
+            {
+                **_raw_row(
+                    "2016-08-02",
+                    "2016-09",
+                    "161090018",
+                    ac=16340,
+                    ec=16460,
+                    settle=16490,
+                ),
+                "EmMrgnTrgDiv": "001",
+            },
+        ],
+        downloaded_at_utc=datetime(2026, 3, 11, tzinfo=UTC),
+    )
+
+    assert len(records) == 1
+    assert records[0]["settlement_price"] == 16340.0
+
+
 def test_target_audit_keeps_full_gap_when_night_close_missing_and_excludes_roll() -> None:
     downloaded = datetime(2026, 3, 11, tzinfo=UTC)
     raw_rows = [
@@ -1569,6 +1599,7 @@ def _raw_row(
         "Code": code,
         "CM": contract_month,
         "CCMFlag": 1,
+        "EmMrgnTrgDiv": "002",
         "AO": ao,
         "AH": ah,
         "AL": al,

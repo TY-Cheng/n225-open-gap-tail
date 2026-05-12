@@ -40,6 +40,7 @@ def test_atomic_parquet_write_validates_and_records_hash(tmp_path: Path) -> None
                 "CCMFlag": "1",
                 "LTD": "2026-03-12",
                 "SQD": "2026-03-13",
+                "EmMrgnTrgDiv": "002",
                 "AO": 100.0,
                 "AH": 101.0,
                 "AL": 99.0,

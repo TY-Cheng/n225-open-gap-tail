@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time as time_module
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -50,12 +51,14 @@ class JQuantsV2Client:
         api_key: str,
         base_url: str = "https://api.jquants.com/v2",
         timeout_seconds: int = 30,
+        max_retries: int = 2,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         if not api_key:
             raise JQuantsApiError("J-Quants API key is required")
         self._base_url = base_url.rstrip("/")
         self._client = httpx.Client(timeout=timeout_seconds, transport=transport)
+        self._max_retries = max(0, max_retries)
         self._headers = {
             "x-api-key": api_key,
             "User-Agent": "n225-open-gap-tail-jquants-v2",
@@ -77,11 +80,33 @@ class JQuantsV2Client:
         *,
         raise_for_status: bool = True,
     ) -> tuple[int, dict[str, Any]]:
-        response = self._client.get(
-            f"{self._base_url}{path}",
-            params=params or {},
-            headers=self._headers,
-        )
+        attempt = 0
+        while True:
+            try:
+                response = self._client.get(
+                    f"{self._base_url}{path}",
+                    params=params or {},
+                    headers=self._headers,
+                )
+            except httpx.RequestError as exc:
+                if attempt >= self._max_retries:
+                    message = f"J-Quants request failed: {type(exc).__name__}"
+                    if raise_for_status:
+                        raise JQuantsApiError(message, status_code=0) from exc
+                    return 0, {
+                        "status": "NETWORK_ERROR",
+                        "error_class": "network_error",
+                        "message": message,
+                    }
+                attempt += 1
+                time_module.sleep(min(5.0, attempt))
+                continue
+            if response.status_code != 429 and response.status_code < 500:
+                break
+            if attempt >= self._max_retries:
+                break
+            attempt += 1
+            time_module.sleep(min(5.0, attempt))
         payload = self._decode_payload(response)
         if raise_for_status and response.status_code >= 400:
             message = payload.get("message", "J-Quants request failed")

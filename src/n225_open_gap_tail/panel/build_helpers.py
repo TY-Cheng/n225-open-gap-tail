@@ -49,7 +49,8 @@ def _target_audit_calendar_horizon(
     fallback: str,
 ) -> str:
     dates = [date.fromisoformat(fallback)]
-    for row in normalized_rows:
+    target_rows = [row for row in normalized_rows if row.get("central_contract_month_flag") is True]
+    for row in target_rows:
         for field in ("last_trading_day", "special_quotation_day"):
             value = row.get(field)
             if isinstance(value, str) and value:

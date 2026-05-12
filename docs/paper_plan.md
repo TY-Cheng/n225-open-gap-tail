@@ -131,7 +131,7 @@ appendix material.
     - late-session range;
     - final-window momentum;
     - volume pressure and volume-surge variables.
-- Massive OPRA day aggregates are used only for historical option-feature reconstruction when enabled:
+- Massive OPRA day aggregates are used only for opt-in historical option-feature reconstruction and are excluded from the canonical full-history run by default:
     - core U.S. options enter the U.S. core block;
     - sector and semiconductor options enter as aggregate U.S. market-state variables;
     - Japan ETF and Japanese ADR option aggregates enter the Japan proxy block;
@@ -163,7 +163,10 @@ appendix material.
     - gold: modeling panel and evaluation artifacts.
 - Contract rolls and calendar joins are audited before model evaluation.
 - Missingness, duplicate rows, source coverage, and calendar alignment are recorded in run artifacts.
-- Event flags such as FOMC, CPI, payrolls, and BOJ are candidate/planned controls unless a clean run explicitly includes their feature artifacts.
+- The current clean run includes a narrow timestamp-safe event-calendar layer:
+  BOJ same-OSE-session information in the Japan-only set, and FOMC, CPI,
+  NFP/payroll, plus simple major-event intensity controls from the U.S. close
+  core set onward. Broader Japan macro-event expansion remains candidate work.
 
 ### 2.7 Feature Engineering And Nested Information Sets
 
@@ -309,6 +312,10 @@ appendix material.
 - Joint VaR-ES evaluation:
     - Fissler-Ziegel joint loss for valid VaR-ES pairs;
     - ES exceedance severity, interpreted conditional on a VaR exception.
+- Terminology is fixed as follows:
+    - `FZ loss` means the Fissler-Ziegel joint VaR-ES evaluation score;
+    - `Taylor ALD/FZ0` means the advanced benchmark training objective/working-likelihood interpretation;
+    - the paper should not report a separate `ALD loss` metric.
 - Scoring-function diagnostics:
     - Murphy diagrams for baseline benchmarks and ML-tail information sets.
 - Model comparison:
@@ -375,16 +382,14 @@ flowchart LR
     subgraph Models["Forecast models"]
         BF["Baseline benchmarks"]
         AB["Advanced econometric benchmarks"]
-        LQ["LightGBM direct quantile"]
-        LS["LightGBM body filters"]
-        EVT["POT-GPD tail extrapolation"]
+        LGBM["LightGBM (+EVT) families<br/>direct quantile; location-scale empirical;<br/>standardized/robust body filters; POT-GPD"]
     end
 
     subgraph Evaluation["Evaluation"]
-        CAL["Coverage and exceptions"]
-        LOSS["Quantile and FZ loss"]
-        INF["DM, MCS, CPA"]
-        DIAG["Murphy, DST, ES severity, triggers"]
+        CAL["VaR calibration<br/>breach rate, exceptions,<br/>Kupiec/Christoffersen"]
+        LOSS["Forecast scores<br/>quantile loss;<br/>FZ joint VaR-ES loss"]
+        INF["Loss comparison<br/>DM, MCS, CPA"]
+        DIAG["Forecast diagnostics<br/>Murphy, DST attenuation,<br/>ES severity, triggers, stress windows"]
     end
 
     J --> A
@@ -395,21 +400,30 @@ flowchart LR
     C --> D
     A --> BF
     A --> AB
-    A --> LQ
-    B --> LQ
-    C --> LQ
-    D --> LQ
-    LQ --> CAL
-    LQ --> LOSS
-    LS --> EVT
-    EVT --> CAL
-    EVT --> LOSS
+    A --> LGBM
+    B --> LGBM
+    C --> LGBM
+    D --> LGBM
     BF --> CAL
+    BF --> LOSS
+    BF --> DIAG
     AB --> CAL
+    AB --> LOSS
+    AB --> DIAG
+    LGBM --> CAL
+    LGBM --> LOSS
+    LGBM --> DIAG
     CAL --> INF
     LOSS --> INF
-    INF --> DIAG
 ```
+
+- The LightGBM block represents the implemented ML-tail registry: direct
+  quantile, location-scale empirical, standardized-loss POT-GPD, and robust
+  median/MAD or median/IQR POT-GPD variants. All use the same registered nested
+  information sets where the model family is eligible.
+- Forecast diagnostics are computed from forecasts, realized losses, timing
+  regimes, and scoring outputs. They are not downstream products of DM, MCS, or
+  CPA.
 
 ## 5. Expected Outputs
 

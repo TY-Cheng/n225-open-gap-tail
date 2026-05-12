@@ -158,10 +158,10 @@ When the `end` argument is omitted, the workflow uses the most recent completed
 Friday as the data cutoff rather than the run date. Pass an explicit
 `YYYY-MM-DD` end date to override that paper-freeze default.
 The default is cache-first (`force=false`); use force only for intentional schema/cache
-invalidation. By default, `just full` also enables bounded U.S. options features
-(`options=true`): it uses Massive OPRA `day_aggs_v1` flat files to compute ATM-IV
-proxies and routes them by economic exposure into the B/C information sets. To run
-without U.S. options features, use:
+invalidation. By default, `just full` excludes Massive OPRA U.S. options features
+(`options=false`) so the canonical full-history run is not driven by the shorter
+OPRA entitlement window. To build those features only for appendix or recent-window
+diagnostics, opt in explicitly:
 
 ```bash
 just full 2016-07-19 "" 6 false false

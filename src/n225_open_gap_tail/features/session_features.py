@@ -410,6 +410,7 @@ def _jquants_bronze_row(
         "CCMFlag": _optional_text(row.get("CCMFlag")),
         "LTD": _optional_text(row.get("LTD")),
         "SQD": _optional_text(row.get("SQD")),
+        "EmMrgnTrgDiv": _optional_text(row.get("EmMrgnTrgDiv")),
         "source_endpoint": source_endpoint,
         "requested_date": requested_date,
         "research_download_ts_utc": downloaded_at_utc,

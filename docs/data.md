@@ -17,10 +17,11 @@ This page is the canonical source for source roles, source status, target formul
 | JPX calendar and trading-hour rules | OSE business-day, day/night session, holiday-trading, roll/SQ context | Core official timing source | Determines OSE target eligibility and holiday/session flags. |
 | FRED | Treasury yields, selected rates proxies, and public macro series | Configured public API | Historical control source; vintage-safe work requires ALFRED-style handling where needed. |
 | Cboe VIX historical data | U.S. volatility and risk proxy | Core public fallback/check | Daily VIX close is core; high, low, and range are included only when source support is audited. |
-| Nikkei Indexes spot OHLC | Spot-market controls or robustness | Optional public or licensed source | Not the futures target source. |
 | CME/SGX/OSE intraday Nikkei marks | U.S.-close residual reference and cross-venue robustness | Optional licensed extension | Required before using `residual_usclosemark_to_open` or making intraday cross-venue claims. |
 
 Core variable definitions should be transparent enough for reader evaluation. Public fallback checks should be provided where feasible, but the documentation should not claim that all core results are reproducible without the licensed target and predictor sources.
+Target and residual-reference prices are futures-contract prices. Cash-index OHLC
+is not part of the target-data plan for this paper.
 
 ## Current Environment Contract
 

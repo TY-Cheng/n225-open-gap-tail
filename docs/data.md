@@ -96,7 +96,7 @@ FRED uses current historical values with conservative availability semantics and
 The current paper-facing evidence map is generated from:
 
 ```text
-run_id = tailrisk_20160719_20260508_20260511T024616Z_commit_1388d920
+run_id = tailrisk_20160719_20260508_20260511T152225Z_commit_2b473c4e
 requested window = 2016-07-19 to 2026-05-08
 clean forecast sample = 2018-06-20 to 2026-05-01
 clean forecast observations = 1,661
@@ -105,7 +105,7 @@ clean forecast observations = 1,661
 The clean sample begins after all required target fields, Massive core fields,
 FRED core fields, and the canonical FRED H.10 USD/JPY control satisfy the
 registered coverage and timing requirements. The gold modeling panel contains
-2,393 target-date rows before the clean-sample filter.
+2,395 target-date rows before the clean-sample filter.
 
 ### Active Target and Calendar Inputs
 

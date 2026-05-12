@@ -47,22 +47,22 @@ results from memory or from file names alone.
 
 Evidence boundary:
 
-- Primary manuscript evidence must remain locked to:
-  tailrisk_20160719_20260429_20260508T053721Z_commit_14205f41
+- Primary manuscript evidence must remain locked to the current clean committed run:
+  tailrisk_20160719_20260508_20260511T152225Z_commit_2b473c4e
 - The primary git commit must be:
-  14205f41a281d98c439eda19b12912cb0ef72ae9
+  2b473c4e177fb9776ba0710411bf990513cd701d
 - The primary config hash must be:
-  651260f28037df38c88bf86d43c16fe247afa812576d05060183dc72d399a36a
+  185d7a164462eecacd189001ec2815e2ff9f5fff0051ad922d4c346b7f97d584
 - The primary cache key must be:
-  40fad66944bb426302efb67293330c82a62555a268a0009d95b109271bd0e8e4
+  f45fadd6303d9b50e4356b421024bfffda9766558cfd0464a6628cba7758427b
 - The primary panel signature must be:
-  f0981ad53852565aec7396a3be258835587df1eadb2c0b0445683029aa32a209
+  63ea2acb4baad92e9cb757fc661e47e8852e1f9b7ef78714a2a8eb564417da13
 - The claim level is research_candidate, not deployment evidence.
-- May 10 runs must not be used for manuscript claims.
-- The May 11 sensitivity run may be used only as secondary diagnostic evidence:
-  tailrisk_20160719_20260508_20260511T024616Z_commit_1388d920
-- The sensitivity run must not replace the primary evidence lock, relabel promoted
-  candidates, or create a new headline table.
+- Older May 8, May 10, and dirty May 11 runs must not be used for manuscript claims.
+- Appendix configuration-robustness evidence must come from the same locked run and
+  may be used only as secondary diagnostic evidence.
+- Sensitivity artifacts must not relabel promoted candidates or create a new headline
+  table.
 
 Core JFM-fit checks:
 

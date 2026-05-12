@@ -5,6 +5,8 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 PRODUCT_CATEGORY = "NK225F"
+EMERGENCY_MARGIN_TRIGGERED_DIVISION = "001"
+SETTLEMENT_PRICE_CALCULATION_DIVISION = "002"
 
 PRICE_FIELDS = {
     "day_session_open": "AO",
@@ -24,6 +26,7 @@ FIELD_MAPPING = {
     "contract_month": "CM",
     "contract_code": "Code",
     "central_contract_month_flag": "CCMFlag",
+    "emergency_margin_trigger_division": "EmMrgnTrgDiv",
     "last_trading_day": "LTD",
     "special_quotation_day": "SQD",
     "product_category": "ProdCat",
@@ -46,6 +49,7 @@ REQUIRED_SCHEMA_FIELDS = {
     "OI",
     "CM",
     "CCMFlag",
+    "EmMrgnTrgDiv",
     "LTD",
     "SQD",
 }
@@ -64,6 +68,8 @@ def normalize_jquants_futures_rows(
     jst = ZoneInfo("Asia/Tokyo")
     for row in rows:
         if str(row.get("ProdCat", "")) != PRODUCT_CATEGORY:
+            continue
+        if _emergency_margin_trigger_division(row) == EMERGENCY_MARGIN_TRIGGERED_DIVISION:
             continue
         trading_date = _parse_date(row.get("Date"))
         target_open_ts_jst = datetime.combine(trading_date, time(8, 45), tzinfo=jst)
@@ -104,6 +110,10 @@ def normalize_jquants_futures_rows(
         )
     normalized.sort(key=lambda item: (str(item["trading_date"]), str(item["contract_code"])))
     return normalized
+
+
+def _emergency_margin_trigger_division(row: dict[str, Any]) -> str | None:
+    return _optional_str(row.get("EmMrgnTrgDiv"))
 
 
 def build_jquants_schema_probe(rows: list[dict[str, Any]]) -> dict[str, object]:

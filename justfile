@@ -30,7 +30,7 @@ fix: _require-external-uv-env
     uv run ruff format src tests
     uv run ruff check --fix src tests
 
-full start="2016-07-19" end="" workers="6" force="false" options="true": _require-external-data-paths
+full start="2016-07-19" end="" workers="6" force="false" options="false": _require-external-data-paths
     @[[ "{{ options }}" == "true" || "{{ options }}" == "false" ]] || (echo 'error: options must be "true" or "false"' >&2; exit 1)
     just check
     MASSIVE_OPTIONS_HISTORICAL_ENABLED="{{ options }}" MASSIVE_OPTIONS_FLAT_FILES_ENABLED="{{ options }}" MASSIVE_OPTIONS_UNDERLYINGS="${MASSIVE_OPTIONS_UNDERLYINGS:-SPY,QQQ,DIA,IWM,XLK,XLF,XLE,XLV,XLI,XLY,XLP,XLB,XLU,XLC,SMH,EWJ,DXJ,EEM,FXI,EWY,EWT,EWH,TM,SONY,MUFG,SMFG,MFG}" just _run "{{ start }}" "{{ end }}" "{{ workers }}" all "{{ force }}"

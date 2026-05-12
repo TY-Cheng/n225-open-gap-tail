@@ -72,7 +72,7 @@ class AtomicWriteResult:
 
 JQUANTS_BRONZE_SCHEMA = ParquetSchema(
     name="jquants_futures_daily_bronze",
-    version=DEFAULT_SCHEMA_VERSION,
+    version=2,
     columns=(
         ("Date", pl.Utf8),
         ("ProdCat", pl.Utf8),
@@ -81,6 +81,7 @@ JQUANTS_BRONZE_SCHEMA = ParquetSchema(
         ("CCMFlag", pl.Utf8),
         ("LTD", pl.Utf8),
         ("SQD", pl.Utf8),
+        ("EmMrgnTrgDiv", pl.Utf8),
         ("AO", pl.Float64),
         ("AH", pl.Float64),
         ("AL", pl.Float64),
@@ -96,7 +97,14 @@ JQUANTS_BRONZE_SCHEMA = ParquetSchema(
         ("requested_date", pl.Utf8),
         ("research_download_ts_utc", pl.Datetime("us", "UTC")),
     ),
-    required_columns=("Date", "ProdCat", "Code", "requested_date", "research_download_ts_utc"),
+    required_columns=(
+        "Date",
+        "ProdCat",
+        "Code",
+        "EmMrgnTrgDiv",
+        "requested_date",
+        "research_download_ts_utc",
+    ),
 )
 
 JQUANTS_SILVER_SCHEMA = ParquetSchema(

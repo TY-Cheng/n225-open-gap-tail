@@ -31,6 +31,7 @@ import n225_open_gap_tail.metrics.stat_utils as stat_utils
 import n225_open_gap_tail.models.benchmark_advanced as benchmark_advanced
 import n225_open_gap_tail.panel as paper_leakage
 import n225_open_gap_tail.panel as paper_panel
+import n225_open_gap_tail.panel.build_helpers as panel_build_helpers
 import n225_open_gap_tail.reporting as paper_reporting
 import n225_open_gap_tail.reporting.figures as reporting_figures
 import n225_open_gap_tail.reporting.latex as reporting_latex
@@ -2063,6 +2064,38 @@ def test_target_audit_rejects_duplicate_target_keys() -> None:
         )
 
 
+def test_target_audit_calendar_horizon_ignores_far_noncentral_contracts() -> None:
+    base_calendar = _jpx_calendar_records("2026-05-08")
+    rows = [
+        {
+            **_normalized_target_row("2026-05-08", day_open=100.0, settle=99.0),
+            "last_trading_day": "2026-05-08",
+            "special_quotation_day": "2026-05-08",
+        },
+        {
+            **_normalized_target_row(
+                "2026-05-08",
+                day_open=100.0,
+                settle=99.0,
+                contract_code="far-contract",
+            ),
+            "central_contract_month_flag": False,
+            "last_trading_day": "2033-12-08",
+            "special_quotation_day": "2033-12-09",
+        },
+    ]
+
+    calendar = panel_build_helpers.target_audit_calendar_records(
+        settings=Settings(),
+        base_calendar_records=base_calendar,
+        normalized_rows=rows,
+        start="2026-05-08",
+        end="2026-05-08",
+    )
+
+    assert calendar == base_calendar
+
+
 def test_spy_minute_features_use_official_early_close_and_exclude_after_hours() -> None:
     official_close = datetime(2026, 11, 27, 18, 0, tzinfo=UTC)
     records = []
@@ -3105,12 +3138,19 @@ def test_low_level_feature_and_bronze_helpers_cover_edge_cases() -> None:
     assert paper_core._rows_return([{"close": 0.0}, {"close": 1.0}]) is None
 
     row = paper_core._jquants_bronze_row(
-        {"Date": "", "ProdCat": "NK225F", "AO": "bad", "Settle": "100"},
+        {
+            "Date": "",
+            "ProdCat": "NK225F",
+            "EmMrgnTrgDiv": "002",
+            "AO": "bad",
+            "Settle": "100",
+        },
         requested_date="2026-01-05",
         source_endpoint="/endpoint",
         downloaded_at_utc=datetime(2026, 1, 5, tzinfo=UTC),
     )
     assert row["Date"] == "2026-01-05"
+    assert row["EmMrgnTrgDiv"] == "002"
     assert row["AO"] is None
     assert row["Settle"] == 100.0
 
@@ -5403,6 +5443,7 @@ def _raw_futures_row(
         "Code": "161030018",
         "CM": "2026-03",
         "CCMFlag": True,
+        "EmMrgnTrgDiv": "002",
         "AO": ao,
         "AH": ah,
         "AL": al,

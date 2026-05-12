@@ -13,8 +13,8 @@ from n225_open_gap_tail.config.runtime import (
     MASSIVE_OPTIONS_SECTOR_UNDERLYINGS_FOR_PIPELINE,
     _pipeline_log,
 )
+from n225_open_gap_tail.data_lake.cache_metadata import _cache_covers_dates
 from n225_open_gap_tail.data_lake.cache_ops import (
-    _cache_covers_dates,
     _filter_records_by_dates,
     _read_parquet_records,
     _safe_name,
@@ -38,6 +38,7 @@ def fetch_massive_options_day_agg_rows(
     end: str,
     calendar_records: list[dict[str, object]],
     downloaded_at_utc: datetime,
+    force_refresh: bool = False,
 ) -> list[dict[str, object]]:  # pragma: no cover - vendor path
     if not (
         settings.massive_options_historical_enabled
@@ -72,7 +73,7 @@ def fetch_massive_options_day_agg_rows(
             month=month,
             extra_partitions={"underlyings": safe_underlyings},
         )
-        if path.exists() and _cache_covers_dates(path, month_dates):
+        if not force_refresh and path.exists() and _cache_covers_dates(path, month_dates):
             cached = _filter_records_by_dates(
                 _read_parquet_records(path),
                 allowed_dates=month_dates,
@@ -85,6 +86,8 @@ def fetch_massive_options_day_agg_rows(
             continue
 
         month_rows: list[dict[str, object]] = []
+        completed_dates: list[str] = []
+        failed_dates: list[str] = []
         for day in month_dates:
             gz_path = bronze_root / f"year={year:04d}" / f"month={month:02d}" / f"{day}.csv.gz"
             try:
@@ -98,6 +101,7 @@ def fetch_massive_options_day_agg_rows(
                     "Massive options day-aggs unavailable "
                     f"date={day} error={type(exc).__name__}: {str(exc)[:160]}"
                 )
+                failed_dates.append(day)
                 continue
             with gzip.open(gz_path, mode="rt", encoding="utf-8", newline="") as handle:
                 raw_rows = list(csv.DictReader(handle))
@@ -109,6 +113,7 @@ def fetch_massive_options_day_agg_rows(
                     downloaded_at_utc=downloaded_at_utc,
                 )
             )
+            completed_dates.append(day)
         result = atomic_write_parquet(
             path,
             month_rows,
@@ -117,6 +122,8 @@ def fetch_massive_options_day_agg_rows(
                 "source": "massive_flatfiles",
                 "dataset": "us_options_opra/day_aggs_v1",
                 "requested_dates": month_dates,
+                "completed_dates": completed_dates,
+                "failed_dates": failed_dates,
                 "underlyings": list(underlyings),
                 "iv_greeks_oi_source": "not_direct_fields_day_aggs_price_volume_only",
             },

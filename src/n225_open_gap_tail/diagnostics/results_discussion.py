@@ -9,7 +9,11 @@ from typing import Any, cast
 import polars as pl
 
 from n225_open_gap_tail.config.model_labels import display_model_label
-from n225_open_gap_tail.config.runtime import ML_TAIL_MODEL_NAMES
+from n225_open_gap_tail.config.runtime import (
+    BENCHMARK_BASELINE_MODEL_NAMES,
+    ML_TAIL_DIRECT_QUANTILE_MODEL,
+    ML_TAIL_MODEL_NAMES,
+)
 
 
 def generate_results_discussion(
@@ -498,6 +502,8 @@ def _coverage_test_discussion_sentence(frame: pl.DataFrame) -> str:
     wide = 0
     kupiec_flags = 0
     christoffersen_flags = 0
+    kupiec_reported = 0
+    christoffersen_reported = 0
     for row in frame.iter_rows(named=True):
         breach = _optional_float(row.get("var_breach_rate"))
         expected = _optional_float(row.get("expected_breach_rate"))
@@ -507,6 +513,8 @@ def _coverage_test_discussion_sentence(frame: pl.DataFrame) -> str:
         wide += int(abs(breach - expected) > 0.025)
         kupiec = _optional_float(row.get("kupiec_pvalue"))
         christoffersen = _optional_float(row.get("christoffersen_pvalue"))
+        kupiec_reported += int(kupiec is not None)
+        christoffersen_reported += int(christoffersen is not None)
         kupiec_flags += int(kupiec is not None and kupiec < 0.05)
         christoffersen_flags += int(christoffersen is not None and christoffersen < 0.05)
     if total == 0:
@@ -516,7 +524,7 @@ def _coverage_test_discussion_sentence(frame: pl.DataFrame) -> str:
         )
     return (
         f"Coverage review flags `{wide}/{total}` primary ML rows with breach rates more than 2.5 percentage points from nominal coverage; "
-        f"Kupiec p-values fall below 0.05 in `{kupiec_flags}/{total}` rows and Christoffersen p-values fall below 0.05 in `{christoffersen_flags}/{total}` rows where reported."
+        f"Kupiec p-values fall below 0.05 in `{kupiec_flags}/{kupiec_reported}` reported rows and Christoffersen p-values fall below 0.05 in `{christoffersen_flags}/{christoffersen_reported}` reported rows."
     )
 
 
@@ -653,9 +661,19 @@ def _combine_forecasts_for_snapshot(
 ) -> pl.DataFrame:
     frames: list[pl.DataFrame] = []
     if not benchmark_forecasts.is_empty():
-        frames.append(benchmark_forecasts.with_columns(pl.lit("benchmark").alias("suite")))
+        benchmark = benchmark_forecasts
+        if "model_name" in benchmark.columns:
+            benchmark = benchmark.filter(
+                pl.col("model_name").is_in(list(BENCHMARK_BASELINE_MODEL_NAMES))
+            )
+        if not benchmark.is_empty():
+            frames.append(benchmark.with_columns(pl.lit("benchmark").alias("suite")))
     if not ml_tail_forecasts.is_empty():
-        frames.append(ml_tail_forecasts.with_columns(pl.lit("ml_tail").alias("suite")))
+        ml_tail = ml_tail_forecasts
+        if "model_name" in ml_tail.columns:
+            ml_tail = ml_tail.filter(pl.col("model_name") == ML_TAIL_DIRECT_QUANTILE_MODEL)
+        if not ml_tail.is_empty():
+            frames.append(ml_tail.with_columns(pl.lit("ml_tail").alias("suite")))
     if not frames:
         return pl.DataFrame()
     return pl.concat(frames, how="diagonal_relaxed")
@@ -665,11 +683,10 @@ def _trigger_discussion_sentence(forecasts: pl.DataFrame) -> str:
     required = {"model_name", "information_set", "tail_level", "var_forecast", "realized_loss"}
     if forecasts.is_empty() or not required.issubset(forecasts.columns):
         return "The hedge-trigger diagnostic has not yet been performed for this run; it would be descriptive trigger evidence only."
-    valid = forecasts.filter(
-        pl.col("var_forecast").is_not_null()
-        & pl.col("realized_loss").is_not_null()
-        & pl.col("is_valid_forecast").fill_null(True)
-    )
+    valid_expr = pl.col("var_forecast").is_not_null() & pl.col("realized_loss").is_not_null()
+    if "is_valid_forecast" in forecasts.columns:
+        valid_expr = valid_expr & pl.col("is_valid_forecast").fill_null(True)
+    valid = forecasts.filter(valid_expr)
     if valid.is_empty():
         return "The hedge-trigger diagnostic has no valid forecast rows; it remains descriptive trigger evidence only."
     group_columns = [
@@ -833,11 +850,19 @@ def _information_set_saturation_note(ml_tail_metrics: pl.DataFrame) -> str | Non
         or "tail_side" not in ml_tail_metrics.columns
     ):
         return None
-    sides = ml_tail_metrics["tail_side"].drop_nulls().unique().to_list()
-    saturated_sides: list[str] = []
-    for side in sides:
-        subset = ml_tail_metrics.filter(pl.col("tail_side") == side).sort("information_set")
-        losses = [_optional_float(v) for v in subset["mean_quantile_loss"].to_list()]
+    group_columns = [
+        column
+        for column in ("tail_side", "model_name", "tail_level", "target_family", "refit_frequency")
+        if column in ml_tail_metrics.columns
+    ]
+    saturated_contexts: list[str] = []
+    for _key, subset in ml_tail_metrics.group_by(group_columns, maintain_order=True):
+        ladder = (
+            subset.group_by("information_set")
+            .agg(pl.mean("mean_quantile_loss").alias("mean_quantile_loss"))
+            .sort("information_set")
+        )
+        losses = [_optional_float(v) for v in ladder["mean_quantile_loss"].to_list()]
         losses_clean = [v for v in losses if v is not None]
         if len(losses_clean) < 3:
             continue
@@ -846,16 +871,33 @@ def _information_set_saturation_note(ml_tail_metrics: pl.DataFrame) -> str | Non
             abs(losses_clean[i] - losses_clean[i - 1]) for i in range(2, len(losses_clean))
         ]
         if later_steps and first_step > 0 and max(later_steps) < first_step * 0.25:
-            saturated_sides.append(str(side))
-    if not saturated_sides:
+            saturated_contexts.append(_information_saturation_context(subset, group_columns))
+    if not saturated_contexts:
         return None
-    sides_text = ", ".join(f"`{s}`" for s in sorted(saturated_sides))
+    contexts_text = ", ".join(f"`{s}`" for s in sorted(set(saturated_contexts)))
     return (
-        f"On {sides_text}, the largest quantile-loss change occurs at the first information-set augmentation "
+        f"For {contexts_text}, the largest quantile-loss change occurs at the first information-set augmentation "
         "(adding U.S. close core); subsequent additions of Japan proxy and Asia proxy ETFs contribute "
         "diminishing incremental loss changes. This saturation pattern is descriptive and does not "
         "automatically reduce the value of the broader information set."
     )
+
+
+def _information_saturation_context(
+    subset: pl.DataFrame,
+    group_columns: Sequence[str],
+) -> str:
+    if subset.is_empty():
+        return "unknown"
+    row = subset.row(0, named=True)
+    parts = [str(row.get("tail_side") or "unknown_side")]
+    if "model_name" in group_columns:
+        parts.append(display_model_label(row.get("model_name")))
+    if "tail_level" in group_columns:
+        tail_level = _optional_float(row.get("tail_level"))
+        if tail_level is not None:
+            parts.append(f"tail={tail_level:.3f}")
+    return " / ".join(parts)
 
 
 def _restricted_short_sample_warning(result_matrix: pl.DataFrame) -> str | None:

@@ -32,11 +32,12 @@ def _recursive_var_path(
     params: np.ndarray,
     variant: str,
     has_gap: bool,
+    tail_level: float = 0.95,
 ) -> tuple[np.ndarray, float]:
     finite = train[np.isfinite(train)]
     if finite.size == 0:
         raise PipelineRunError("recursive advanced model has no finite training losses")
-    q = max(float(np.quantile(finite, 0.95)), 1e-12)
+    q = max(float(np.quantile(finite, tail_level)), 1e-12)
     forecasts: list[float] = []
     for y in finite:
         forecasts.append(float(q))
@@ -132,8 +133,9 @@ def _coarse_initialization_score(
         params=params,
         variant=variant,
         has_gap=_uses_positive_gap(model_name),
+        tail_level=tail_level,
     )
-    if objective_kind in {"fz", "ald"}:
+    if objective_kind == "ald_fz0":
         return _fz_objective(
             train,
             var_path,
@@ -404,9 +406,11 @@ def _fz_objective(
     es_path: np.ndarray,
     tail_level: float,
 ) -> float:
+    if train.size != var_path.size or train.size != es_path.size:
+        return 1e12
     losses = [
         _fz_loss_one(float(y), float(var), float(es), tail_level)
-        for y, var, es in zip(train, var_path, es_path, strict=False)
+        for y, var, es in zip(train, var_path, es_path, strict=True)
     ]
     finite = np.asarray([value for value in losses if math.isfinite(value)], dtype=float)
     if finite.size == 0:
@@ -439,14 +443,17 @@ def _objective_kind(model_name: str) -> str:
     if model_name.startswith("care_expectile_"):
         return "expectile"
     if model_name.startswith("ald_taylor_"):
-        return "ald"
+        return "ald_fz0"
     if model_name.startswith("direct_fz_loss_"):
-        return "fz"
+        raise PipelineRunError(
+            "direct_fz_loss_* is a retired alias; use ald_taylor_var_es_* "
+            "for the Taylor ALD/FZ0 joint VaR-ES benchmark"
+        )
     return "quantile"
 
 
 def _uses_positive_gap(model_name: str) -> bool:
-    return model_name.startswith("ald_taylor_") or model_name.startswith("direct_fz_loss_")
+    return model_name.startswith("ald_taylor_")
 
 
 def _recursive_variant(model_name: str) -> str:
@@ -489,7 +496,7 @@ def _failure_status_for_model(model_name: str) -> str:
     if model_name.startswith("care_expectile_"):
         return "unavailable_care_expectile_calibration_failed"
     if model_name.startswith("direct_fz_loss_"):
-        return "unavailable_direct_fz_optimizer_failed"
+        return "unavailable_retired_direct_fz_alias"
     return "unavailable_advanced_optimizer_failed"
 
 

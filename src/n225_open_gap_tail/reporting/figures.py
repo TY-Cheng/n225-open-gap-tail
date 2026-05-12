@@ -150,6 +150,7 @@ def _target_distribution_figures(*, run_dir: Path, figure_dir: Path) -> list[dic
         )
 
     fig, ax = plt.subplots(figsize=(8.4, 5.4))
+    plotted = False
     for label, values, color in (
         ("left loss", left_loss, "#dc2626"),
         ("right loss", right_loss, "#2563eb"),
@@ -158,29 +159,34 @@ def _target_distribution_figures(*, run_dir: Path, figure_dir: Path) -> list[dic
         x, survival = _survival_curve(values)
         if x.size:
             ax.semilogy(x, survival, label=label, color=color, linewidth=1.5)
-    ax.set_title("Log survival diagnostics")
-    ax.set_xlabel("Loss magnitude")
-    ax.set_ylabel("Empirical survival probability, log scale")
-    ax.legend(frameon=False, fontsize=8)
-    _style_axes(ax)
-    entries.extend(
-        _save_figure(
-            fig,
-            run_dir=run_dir,
-            figure_dir=figure_dir,
-            name="target_log_survival",
-            source_artifacts=source_artifacts,
-            tail_side="left_right_target_distribution",
-            caption=(
-                "Empirical log survival curves for raw left loss, right loss, and absolute "
-                "settlement-to-open gap. This motivates tail-risk evaluation and is not a "
-                "forecast-performance claim."
-            ),
-            claim_scope=claim_scope,
+            plotted = True
+    if plotted:
+        ax.set_title("Log survival diagnostics")
+        ax.set_xlabel("Loss magnitude")
+        ax.set_ylabel("Empirical survival probability, log scale")
+        ax.legend(frameon=False, fontsize=8)
+        _style_axes(ax)
+        entries.extend(
+            _save_figure(
+                fig,
+                run_dir=run_dir,
+                figure_dir=figure_dir,
+                name="target_log_survival",
+                source_artifacts=source_artifacts,
+                tail_side="left_right_target_distribution",
+                caption=(
+                    "Empirical log survival curves for raw left loss, right loss, and absolute "
+                    "settlement-to-open gap. This motivates tail-risk evaluation and is not a "
+                    "forecast-performance claim."
+                ),
+                claim_scope=claim_scope,
+            )
         )
-    )
+    else:
+        plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(8.4, 5.4))
+    plotted = False
     for label, values, color in (
         ("left loss", left_loss, "#dc2626"),
         ("right loss", right_loss, "#2563eb"),
@@ -189,29 +195,34 @@ def _target_distribution_figures(*, run_dir: Path, figure_dir: Path) -> list[dic
         thresholds, mean_excess = _mean_excess_curve(values)
         if thresholds.size:
             ax.plot(thresholds, mean_excess, label=label, color=color, linewidth=1.6)
-    ax.set_title("Mean excess diagnostics")
-    ax.set_xlabel("Threshold")
-    ax.set_ylabel("Mean excess over threshold")
-    ax.legend(frameon=False, fontsize=8)
-    _style_axes(ax)
-    entries.extend(
-        _save_figure(
-            fig,
-            run_dir=run_dir,
-            figure_dir=figure_dir,
-            name="target_mean_excess",
-            source_artifacts=source_artifacts,
-            tail_side="left_right_target_distribution",
-            caption=(
-                "Mean excess curves for raw target losses. Near-linear upper-tail patterns "
-                "are tail-shape motivation only; standardized residual-loss EVT diagnostics "
-                "remain required for LightGBM+EVT forecasts."
-            ),
-            claim_scope=claim_scope,
+            plotted = True
+    if plotted:
+        ax.set_title("Mean excess diagnostics")
+        ax.set_xlabel("Threshold")
+        ax.set_ylabel("Mean excess over threshold")
+        ax.legend(frameon=False, fontsize=8)
+        _style_axes(ax)
+        entries.extend(
+            _save_figure(
+                fig,
+                run_dir=run_dir,
+                figure_dir=figure_dir,
+                name="target_mean_excess",
+                source_artifacts=source_artifacts,
+                tail_side="left_right_target_distribution",
+                caption=(
+                    "Mean excess curves for raw target losses. Near-linear upper-tail patterns "
+                    "are tail-shape motivation only; standardized residual-loss EVT diagnostics "
+                    "remain required for LightGBM+EVT forecasts."
+                ),
+                claim_scope=claim_scope,
+            )
         )
-    )
+    else:
+        plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(8.4, 5.4))
+    plotted = False
     for label, values, color in (
         ("left loss", left_loss, "#dc2626"),
         ("right loss", right_loss, "#2563eb"),
@@ -220,26 +231,30 @@ def _target_distribution_figures(*, run_dir: Path, figure_dir: Path) -> list[dic
         ks, xi = _hill_curve(values)
         if ks.size:
             ax.plot(ks, xi, label=label, color=color, linewidth=1.5)
-    ax.set_title("Hill tail-index diagnostics")
-    ax.set_xlabel("Number of upper order statistics, k")
-    ax.set_ylabel("Hill estimate of GPD shape xi")
-    ax.legend(frameon=False, fontsize=8)
-    _style_axes(ax)
-    entries.extend(
-        _save_figure(
-            fig,
-            run_dir=run_dir,
-            figure_dir=figure_dir,
-            name="target_hill_plot",
-            source_artifacts=source_artifacts,
-            tail_side="left_right_target_distribution",
-            caption=(
-                "Hill estimates by k for raw left loss, right loss, and absolute gap. "
-                "The plot is a raw-target tail diagnostic, not a model-comparison result."
-            ),
-            claim_scope=claim_scope,
+            plotted = True
+    if plotted:
+        ax.set_title("Hill tail-index diagnostics")
+        ax.set_xlabel("Number of upper order statistics, k")
+        ax.set_ylabel("Hill estimate of GPD shape xi")
+        ax.legend(frameon=False, fontsize=8)
+        _style_axes(ax)
+        entries.extend(
+            _save_figure(
+                fig,
+                run_dir=run_dir,
+                figure_dir=figure_dir,
+                name="target_hill_plot",
+                source_artifacts=source_artifacts,
+                tail_side="left_right_target_distribution",
+                caption=(
+                    "Hill estimates by k for raw left loss, right loss, and absolute gap. "
+                    "The plot is a raw-target tail diagnostic, not a model-comparison result."
+                ),
+                claim_scope=claim_scope,
+            )
         )
-    )
+    else:
+        plt.close(fig)
     return entries
 
 
@@ -247,8 +262,10 @@ def _target_gap_frame(run_dir: Path) -> pl.DataFrame:
     frame = _read_optional_parquet(run_dir / "panel" / "modeling_panel.parquet")
     if frame.is_empty() or "gap_t" not in frame.columns:
         return pl.DataFrame()
-    clean = frame.filter(pl.col("gap_t").is_not_null())
-    if "clean_sample" in clean.columns:
+    clean = frame.filter(pl.col("gap_t").is_not_null() & pl.col("gap_t").is_finite())
+    if "forecast_sample" in clean.columns:
+        clean = clean.filter(pl.col("forecast_sample") == True)  # noqa: E712
+    elif "clean_sample" in clean.columns:
         clean = clean.filter(pl.col("clean_sample") == True)  # noqa: E712
     if {"forecast_date", "combined_clean_start"}.issubset(clean.columns):
         clean = clean.filter(pl.col("forecast_date") >= pl.col("combined_clean_start"))
@@ -285,7 +302,7 @@ def _gpd_qq_values(
         return None
     try:
         shape, _, scale = genpareto.fit(excess, floc=0.0)
-    except Exception:
+    except (ValueError, RuntimeError, FloatingPointError):
         return None
     if not np.isfinite(shape) or not np.isfinite(scale) or scale <= 0.0:
         return None
@@ -302,13 +319,14 @@ def _survival_curve(values: object) -> tuple[object, object]:
     positive = np.sort(finite[finite > 0.0])
     if positive.size == 0:
         return np.asarray([]), np.asarray([])
-    survival = np.asarray([float(np.mean(finite > value)) for value in positive])
+    survival = np.asarray([float(np.mean(positive > value)) for value in positive])
     return positive, survival
 
 
 def _mean_excess_curve(values: object) -> tuple[object, object]:
     finite = np.asarray(values, dtype=float)
     finite = finite[np.isfinite(finite)]
+    finite = finite[finite > 0.0]
     if finite.size < 50:
         return np.asarray([]), np.asarray([])
     thresholds = np.quantile(finite, np.linspace(0.80, 0.99, 24))
@@ -324,7 +342,8 @@ def _mean_excess_curve(values: object) -> tuple[object, object]:
 
 def _hill_curve(values: object) -> tuple[object, object]:
     finite = np.asarray(values, dtype=float)
-    finite = np.sort(finite[np.isfinite(finite)])
+    finite = finite[np.isfinite(finite)]
+    finite = np.sort(finite[finite > 0.0])
     n = finite.size
     if n < 80:
         return np.asarray([]), np.asarray([])
@@ -884,6 +903,7 @@ def _evt_standardized_residual_figures(
             _evt_qq_figure(
                 z_values,
                 tail_side=tail_side,
+                model_name=anchor_model,
                 run_dir=run_dir,
                 figure_dir=figure_dir,
                 source_artifacts=source_artifacts,
@@ -894,6 +914,7 @@ def _evt_standardized_residual_figures(
             _evt_log_survival_figure(
                 z_values,
                 tail_side=tail_side,
+                model_name=anchor_model,
                 run_dir=run_dir,
                 figure_dir=figure_dir,
                 source_artifacts=source_artifacts,
@@ -904,6 +925,7 @@ def _evt_standardized_residual_figures(
             _evt_mean_excess_figure(
                 z_values,
                 tail_side=tail_side,
+                model_name=anchor_model,
                 run_dir=run_dir,
                 figure_dir=figure_dir,
                 source_artifacts=source_artifacts,
@@ -914,6 +936,7 @@ def _evt_standardized_residual_figures(
             _evt_hill_figure(
                 z_values,
                 tail_side=tail_side,
+                model_name=anchor_model,
                 run_dir=run_dir,
                 figure_dir=figure_dir,
                 source_artifacts=source_artifacts,
@@ -924,6 +947,7 @@ def _evt_standardized_residual_figures(
             _evt_threshold_stability_figure(
                 z_values,
                 tail_side=tail_side,
+                model_name=anchor_model,
                 run_dir=run_dir,
                 figure_dir=figure_dir,
                 source_artifacts=source_artifacts,
@@ -959,6 +983,7 @@ def _evt_qq_figure(
     z_values: np.ndarray,
     *,
     tail_side: str,
+    model_name: str,
     run_dir: Path,
     figure_dir: Path,
     source_artifacts: list[str],
@@ -994,10 +1019,12 @@ def _evt_qq_figure(
         source_artifacts=source_artifacts,
         tail_side=tail_side,
         caption=(
-            f"GPD Q-Q diagnostic for LightGBM location-scale standardized residuals "
-            f"({tail_side}). Excesses above the OOF 90th percentile threshold are "
-            "compared with fitted GPD quantiles. This diagnostic validates the EVT tail "
-            "assumption for the filtered residuals, not a forecast-performance claim."
+            "GPD Q-Q diagnostic for "
+            f"{display_model_label(model_name)} standardized residuals ({tail_side}). "
+            "Excesses above the plotted evaluation-sample 90th percentile threshold are "
+            "compared with fitted GPD quantiles. Residuals are pooled across available "
+            "information sets and tail levels for this diagnostic; this is not a "
+            "forecast-performance claim."
         ),
         claim_scope=claim_scope,
     )
@@ -1007,6 +1034,7 @@ def _evt_log_survival_figure(
     z_values: np.ndarray,
     *,
     tail_side: str,
+    model_name: str,
     run_dir: Path,
     figure_dir: Path,
     source_artifacts: list[str],
@@ -1047,9 +1075,9 @@ def _evt_log_survival_figure(
         source_artifacts=source_artifacts,
         tail_side=tail_side,
         caption=(
-            f"Log survival curve for LightGBM standardized residuals ({tail_side}) "
-            "compared with a normal reference. Departures above the normal curve "
-            "indicate heavier-than-normal tails in the filtered residuals."
+            f"Log survival curve for {display_model_label(model_name)} standardized "
+            f"residuals ({tail_side}) compared with a normal reference. Residuals are "
+            "pooled across available information sets and tail levels for this diagnostic."
         ),
         claim_scope=claim_scope,
     )
@@ -1059,6 +1087,7 @@ def _evt_mean_excess_figure(
     z_values: np.ndarray,
     *,
     tail_side: str,
+    model_name: str,
     run_dir: Path,
     figure_dir: Path,
     source_artifacts: list[str],
@@ -1092,9 +1121,9 @@ def _evt_mean_excess_figure(
         source_artifacts=source_artifacts,
         tail_side=tail_side,
         caption=(
-            f"Mean excess function for LightGBM standardized residuals ({tail_side}). "
-            "A near-linear pattern above the threshold supports GPD modeling. This is "
-            "a tail-assumption diagnostic, not a forecast-validation claim."
+            f"Mean excess function for {display_model_label(model_name)} standardized "
+            f"residuals ({tail_side}). A near-linear upper-tail pattern supports GPD "
+            "modeling for this pooled residual diagnostic; it is not a forecast-validation claim."
         ),
         claim_scope=claim_scope,
     )
@@ -1104,6 +1133,7 @@ def _evt_hill_figure(
     z_values: np.ndarray,
     *,
     tail_side: str,
+    model_name: str,
     run_dir: Path,
     figure_dir: Path,
     source_artifacts: list[str],
@@ -1141,7 +1171,8 @@ def _evt_hill_figure(
         source_artifacts=source_artifacts,
         tail_side=tail_side,
         caption=(
-            f"Hill tail-index estimates for LightGBM standardized residuals ({tail_side}) "
+            f"Hill tail-index estimates for {display_model_label(model_name)} standardized "
+            f"residuals ({tail_side}) "
             "as a function of the number of upper order statistics k. A stable plateau "
             "indicates consistent tail behavior. This is a tail-assumption diagnostic."
         ),
@@ -1153,6 +1184,7 @@ def _evt_threshold_stability_figure(
     z_values: np.ndarray,
     *,
     tail_side: str,
+    model_name: str,
     run_dir: Path,
     figure_dir: Path,
     source_artifacts: list[str],
@@ -1170,7 +1202,7 @@ def _evt_threshold_stability_figure(
             continue
         try:
             shape, _, scale = genpareto.fit(excess, floc=0.0)
-        except Exception:
+        except (ValueError, RuntimeError, FloatingPointError):
             continue
         if not np.isfinite(shape) or not np.isfinite(scale) or scale <= 0.0:
             continue
@@ -1197,8 +1229,9 @@ def _evt_threshold_stability_figure(
         source_artifacts=source_artifacts,
         tail_side=tail_side,
         caption=(
-            f"GPD parameter stability across threshold quantiles for LightGBM standardized "
-            f"residuals ({tail_side}). Stable shape and modified scale across thresholds "
+            f"GPD parameter stability across threshold quantiles for "
+            f"{display_model_label(model_name)} standardized residuals ({tail_side}). "
+            "Stable shape and modified scale across thresholds "
             "support the POT-GPD specification. This diagnostic validates the threshold "
             "choice, not forecast accuracy."
         ),
@@ -1287,26 +1320,28 @@ def _selected_trigger_rows(run_dir: Path) -> list[dict[str, object]]:
     if selected.is_empty() or forecasts.is_empty():
         return []
     selected_keys = {
-        (
-            str(row.get("suite_group") or ""),
-            str(row.get("model_name") or ""),
-            str(row.get("information_set") or ""),
-            str(row.get("tail_side") or PRIMARY_TAIL_SIDE),
-        )
+        _trigger_identity_key(row, suite_key="suite_group")
         for row in selected.iter_rows(named=True)
     }
     rows = _hedge_trigger_rows(forecasts)
-    return [
-        row
-        for row in rows
-        if (
-            str(row.get("suite") or ""),
-            str(row.get("model_name") or ""),
-            str(row.get("information_set") or ""),
-            str(row.get("tail_side") or PRIMARY_TAIL_SIDE),
-        )
-        in selected_keys
-    ]
+    return [row for row in rows if _trigger_identity_key(row, suite_key="suite") in selected_keys]
+
+
+def _trigger_identity_key(
+    row: dict[str, object],
+    *,
+    suite_key: str,
+) -> tuple[str, str, str, str, str, str, str]:
+    tail_level = _optional_float(row.get("tail_level"))
+    return (
+        str(row.get(suite_key) or ""),
+        str(row.get("model_name") or ""),
+        str(row.get("information_set") or ""),
+        str(row.get("tail_side") or PRIMARY_TAIL_SIDE),
+        "" if tail_level is None else f"{tail_level:.6f}",
+        str(row.get("target_family") or ""),
+        str(row.get("refit_frequency") or ""),
+    )
 
 
 def _trigger_plot_rows(frame: pl.DataFrame) -> pl.DataFrame:

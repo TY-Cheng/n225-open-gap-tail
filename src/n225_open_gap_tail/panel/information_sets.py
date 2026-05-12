@@ -6,6 +6,12 @@ from n225_open_gap_tail.config.runtime import (
     PipelineRunError,
 )
 
+JAPAN_ONLY_HISTORY_FEATURES = tuple(
+    feature
+    for feature in ML_TAIL_HISTORY_FEATURES
+    if not feature.startswith("event_") or feature == "event_boj_same_ose_session"
+)
+
 
 def registered_ml_tail_information_sets() -> tuple[str, ...]:
     return (
@@ -27,6 +33,7 @@ def ml_tail_feature_columns_for_information_set(
         blocks = set()
     elif information_set == PIPELINE_CONFIG.feature_sets.ml_tail_model_b_information_set:
         blocks = {
+            "calendar_controls",
             "us_core",
             "us_late_session",
             "fred_core",
@@ -36,6 +43,7 @@ def ml_tail_feature_columns_for_information_set(
         }
     elif information_set == PIPELINE_CONFIG.feature_sets.ml_tail_model_c_information_set:
         blocks = {
+            "calendar_controls",
             "us_core",
             "us_late_session",
             "fred_core",
@@ -46,6 +54,7 @@ def ml_tail_feature_columns_for_information_set(
         }
     elif information_set == PIPELINE_CONFIG.feature_sets.ml_tail_model_d_information_set:
         blocks = {
+            "calendar_controls",
             "us_core",
             "us_late_session",
             "fred_core",
@@ -62,4 +71,4 @@ def ml_tail_feature_columns_for_information_set(
         for row in coverage_rows
         if str(row.get("source_block") or "") in blocks and row.get("feature")
     ]
-    return list(dict.fromkeys((*ML_TAIL_HISTORY_FEATURES, *sorted(block_features))))
+    return list(dict.fromkeys((*JAPAN_ONLY_HISTORY_FEATURES, *sorted(block_features))))

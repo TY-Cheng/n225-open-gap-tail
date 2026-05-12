@@ -10,6 +10,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
+import httpx
 import numpy as np
 import polars as pl
 import pytest
@@ -25,6 +26,7 @@ import n225_open_gap_tail.forecasting._benchmark_suite as benchmark_suite
 import n225_open_gap_tail.forecasting._ml_tail_suite as ml_tail_suite
 import n225_open_gap_tail.forecasting.evaluation as evaluation_dispatch
 import n225_open_gap_tail.inference as paper_inference
+import n225_open_gap_tail.metrics.information as metrics_information
 import n225_open_gap_tail.metrics.stat_utils as stat_utils
 import n225_open_gap_tail.models.benchmark_advanced as benchmark_advanced
 import n225_open_gap_tail.panel as paper_leakage
@@ -112,6 +114,7 @@ from n225_open_gap_tail.forecasting import (
     validate_worker_payload,
     write_leakage_check,
 )
+from n225_open_gap_tail.sources.jquants import JQuantsV2Client
 
 
 def _patch_paper_module(
@@ -308,6 +311,7 @@ def test_pipeline_submodule_surfaces_import(module_name: str) -> None:
 def test_forecast_validity_distinguishes_var_breach_from_invalid_forecast() -> None:
     assert validate_forecast_values(2.0, 2.5) == (True, None)
     assert validate_forecast_values(2.0, 1.9) == (False, "invalid_es_below_var")
+    assert validate_forecast_values(-2.0, -1.0) == (False, "invalid_nonpositive_es")
     assert validate_forecast_values(math.nan, 2.5) == (False, "invalid_nonfinite_forecast")
 
 
@@ -585,7 +589,10 @@ def test_ml_tail_information_sets_select_nested_feature_blocks() -> None:
         {"feature": "fred_vixcls_level", "source_block": "fred_core"},
         {"feature": "fred_rates_staleness_days", "source_block": "fred_core"},
         {"feature": "fx_usdjpy_level", "source_block": "fx_core"},
+        {"feature": "fx_release_age_days", "source_block": "fx_core"},
         {"feature": "uup_return", "source_block": "massive_optional"},
+        {"feature": "event_nfp_same_us_session", "source_block": "calendar_controls"},
+        {"feature": "event_major_count_next_3d", "source_block": "calendar_controls"},
         {"feature": "ewj_return", "source_block": "japan_proxy"},
         {"feature": "ewh_return", "source_block": "asia_proxy"},
         {"feature": "option_us_core_spy_atm_iv_short", "source_block": "us_core"},
@@ -619,7 +626,9 @@ def test_ml_tail_information_sets_select_nested_feature_blocks() -> None:
     )
     assert "loss_lag_1" in japan_only
     assert "n225_day_range_lag_1" in japan_only
-    assert "event_nfp_same_us_session" in japan_only
+    assert "event_boj_same_ose_session" in japan_only
+    assert "event_nfp_same_us_session" not in japan_only
+    assert "event_major_count_next_3d" not in japan_only
     assert "xmarket_us_core_return_mean_1d" not in japan_only
     assert "spy_return" not in japan_only
     assert "spy_late_30m_return" in us_core
@@ -636,6 +645,8 @@ def test_ml_tail_information_sets_select_nested_feature_blocks() -> None:
     assert "fx_usdjpy_level" in us_core
     assert "fred_rates_staleness_days" in us_core
     assert "fred_bamlh0a0hym2_level" in us_core
+    assert "event_nfp_same_us_session" in us_core
+    assert "event_major_count_next_3d" in us_core
     assert "uup_return" in us_core
     assert "ewj_return" in japan_proxy
     assert "ewj_late_30m_return" in japan_proxy
@@ -660,6 +671,7 @@ def test_ml_tail_information_sets_select_nested_feature_blocks() -> None:
         "japan_proxy"
     )
     assert paper_core._feature_source_block("japan_adr_median_return") == "japan_proxy"
+    assert paper_core._feature_source_block("fx_release_age_days") == "fx_core"
     assert paper_core._feature_source_block("option_asia_proxy_median_atm_iv_short") == (
         "asia_proxy"
     )
@@ -887,6 +899,7 @@ def test_n225_option_features_normalize_compact_v2_fields_and_write_silver(
 
     assert silver_path.exists()
     assert option_by_code["P-ATM"]["implied_volatility"] == pytest.approx(0.24)
+    assert option_by_code["P-ATM"]["central_contract_month_flag"] is True
     assert option_by_code["P-ATM"]["interest_rate"] == pytest.approx(0.005)
     assert option_by_code["P-ATM"]["night_session_open"] == pytest.approx(100.0)
     assert option_by_code["P-ATM"]["night_session_close"] == pytest.approx(105.0)
@@ -906,6 +919,23 @@ def test_n225_option_features_normalize_compact_v2_fields_and_write_silver(
     assert too_early_panel[0]["n225_option_night_atm_return_lag_1"] is None
     assert same_date_panel[0]["n225_option_atm_iv_lag_1"] is None
     assert same_date_panel[0]["n225_option_night_atm_return_lag_1"] is None
+
+
+def test_jquants_nikkei225_options_client_uses_date_only_endpoint_params() -> None:
+    seen_query: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_query.append(request.url.query.decode())
+        return httpx.Response(200, json={"data": []})
+
+    with JQuantsV2Client(api_key="test", transport=httpx.MockTransport(handler)) as client:
+        client.get_nikkei225_options_daily_bars(
+            trading_date="2026-01-05",
+            category="NK225E",
+            contract_flag="1",
+        )
+
+    assert seen_query == ["date=2026-01-05"]
 
 
 def test_n225_option_surface_buckets_risk_reversal_and_metadata() -> None:
@@ -977,6 +1007,60 @@ def test_n225_option_medium_only_bucket_leaves_term_slope_null() -> None:
     assert features[0]["atm_iv_short"] is None
     assert features[0]["atm_iv_medium"] == pytest.approx(0.30)
     assert features[0]["iv_term_slope"] is None
+
+
+def test_n225_option_features_fail_closed_on_cutoff_and_dte_scope() -> None:
+    features = paper_core.build_n225_option_feature_records(
+        [
+            {
+                "trading_date": "2026-01-05",
+                "option_code": "OUTSIDE-DTE",
+                "emergency_margin_trigger_division": "0",
+                "strike_price": 100.0,
+                "underlying_price": 100.0,
+                "implied_volatility": 0.30,
+                "open_interest": 1.0,
+                "volume": 1.0,
+                "put_call": "call",
+                "central_contract_month_flag": True,
+                "special_quotation_day": "2026-06-01",
+                "vendor_available_ts_utc": "2026-01-06T03:00:00Z",
+            },
+            {
+                "trading_date": "2026-01-05",
+                "option_code": "OUTSIDE-DTE",
+                "emergency_margin_trigger_division": "0",
+                "strike_price": 100.0,
+                "underlying_price": 100.0,
+                "implied_volatility": 0.30,
+                "open_interest": 1.0,
+                "volume": 1.0,
+                "put_call": "call",
+                "central_contract_month_flag": True,
+                "special_quotation_day": "2026-06-01",
+                "vendor_available_ts_utc": "2026-01-06T03:00:00Z",
+            },
+        ]
+    )
+    no_cutoff_panel = paper_core.add_n225_option_features(
+        [{"forecast_date": "2026-01-06", "model_cutoff_ts_utc": None}],
+        features,
+    )
+    stale_panel = paper_core.add_n225_option_features(
+        [
+            {
+                "forecast_date": "2026-01-20",
+                "model_cutoff_ts_utc": datetime(2026, 1, 19, 21, tzinfo=UTC),
+            }
+        ],
+        features,
+    )
+
+    assert features[0]["atm_iv"] is None
+    assert features[0]["valid_contract_count"] == pytest.approx(0.0)
+    assert features[0]["vendor_available_ts_utc"] == datetime(2026, 1, 6, 3, tzinfo=UTC)
+    assert no_cutoff_panel[0]["n225_option_atm_iv_lag_1"] is None
+    assert stale_panel[0]["n225_option_atm_iv_lag_1"] is None
 
 
 def test_n225_option_normalization_handles_invalid_optional_fields() -> None:
@@ -1063,6 +1147,7 @@ def test_n225_history_features_use_prior_clean_rows_and_insufficient_history() -
             "night_session_close": 100.0 + day,
             "volume": 100.0 + day,
             "open_interest": 1000.0 + day,
+            "model_cutoff_ts_utc": datetime(2026, 1, day, 21, tzinfo=UTC),
             "jquants_vendor_available_ts_utc": datetime(2026, 1, day, 18, tzinfo=UTC),
         }
         for day in range(1, 4)
@@ -1111,6 +1196,12 @@ def test_n225_history_features_compute_rolling_moments_and_controls() -> None:
                 "night_session_close": open_price * 0.995 * (1.0 + night_move),
                 "volume": 1000.0 + index * 3.0,
                 "open_interest": 5000.0 + index * 2.0,
+                "model_cutoff_ts_utc": datetime.combine(
+                    forecast_date,
+                    datetime.min.time(),
+                    tzinfo=UTC,
+                )
+                + timedelta(hours=21),
                 "jquants_vendor_available_ts_utc": datetime(2025, 1, 2, 18, tzinfo=UTC)
                 + timedelta(days=index),
             }
@@ -1151,6 +1242,12 @@ def test_n225_history_tail_hit_counts_use_prior_rolling_threshold() -> None:
                 "clean_sample": True,
                 "realized_loss": float(index),
                 "gap_t": float(index),
+                "model_cutoff_ts_utc": datetime.combine(
+                    current,
+                    datetime.min.time(),
+                    tzinfo=UTC,
+                )
+                + timedelta(hours=21),
                 "jquants_vendor_available_ts_utc": datetime.combine(
                     current,
                     datetime.min.time(),
@@ -1188,6 +1285,7 @@ def test_n225_history_features_null_invalid_ohlc_and_bad_dates() -> None:
             "night_session_close": 100.2,
             "volume": -1.0,
             "open_interest": 0.0,
+            "model_cutoff_ts_utc": datetime(2025, 1, 2, 21, tzinfo=UTC),
             "jquants_vendor_available_ts_utc": datetime(2025, 1, 2, 18, tzinfo=UTC),
         },
         {
@@ -1206,6 +1304,7 @@ def test_n225_history_features_null_invalid_ohlc_and_bad_dates() -> None:
             "night_session_close": 100.2,
             "volume": 1.0,
             "open_interest": 0.0,
+            "model_cutoff_ts_utc": datetime(2025, 1, 3, 21, tzinfo=UTC),
         },
     ]
 
@@ -1257,6 +1356,39 @@ def test_n225_history_features_respect_current_model_cutoff() -> None:
         2025, 1, 6, 18, tzinfo=UTC
     )
     assert enriched[2]["n225_day_return_lag_1"] == pytest.approx(math.log(101.0 / 100.0))
+
+
+def test_n225_history_features_fail_closed_without_model_cutoff() -> None:
+    rows = [
+        {
+            "forecast_date": "2025-01-06",
+            "clean_sample": True,
+            "contract_month": "2025-03",
+            "last_trading_day": "2025-03-12",
+            "special_quotation_day": "2025-03-13",
+            "day_session_open": 100.0,
+            "day_session_high": 102.0,
+            "day_session_low": 99.0,
+            "day_session_close": 101.0,
+            "night_session_open": 100.0,
+            "night_session_high": 101.0,
+            "night_session_low": 99.0,
+            "night_session_close": 100.5,
+            "jquants_vendor_available_ts_utc": datetime(2025, 1, 6, 18, tzinfo=UTC),
+        },
+        {
+            "forecast_date": "2025-01-07",
+            "clean_sample": True,
+            "contract_month": "2025-03",
+            "last_trading_day": "2025-03-12",
+            "special_quotation_day": "2025-03-13",
+        },
+    ]
+
+    enriched = add_n225_history_features(rows)
+
+    assert enriched[1]["n225_day_return_lag_1"] is None
+    assert "n225_days_to_sq__available_ts_utc" not in enriched[1]
 
 
 def test_event_calendar_features_respect_known_and_release_timestamps() -> None:
@@ -1475,6 +1607,18 @@ def test_feature_audit_reports_coverage_gate_and_baseline_delta(tmp_path: Path) 
                             "feature": "xmarket_us_core_return_mean_1d",
                             "drop_reason": "high_training_missingness",
                         }
+                    ]
+                ),
+                "scale_dropped_features_json": json.dumps(
+                    [
+                        {
+                            "feature": "xmarket_us_core_return_mean_1d",
+                            "drop_reason": "high_training_missingness",
+                        },
+                        {
+                            "feature": "None",
+                            "drop_reason": "malformed_optional_row",
+                        },
                     ]
                 ),
             }
@@ -1861,6 +2005,64 @@ def test_fields_coverage_audit_supports_clean_jquants_start() -> None:
     )
 
 
+def test_target_audit_requires_immediate_previous_jpx_session() -> None:
+    rows = [
+        _normalized_target_row("2026-01-05", day_open=100.0, settle=100.0),
+        _normalized_target_row("2026-01-07", day_open=102.0, settle=102.0),
+    ]
+    calendar = _jpx_calendar_records(
+        "2026-01-05",
+        "2026-01-06",
+        "2026-01-07",
+        "2026-03-10",
+        "2026-03-11",
+        "2026-03-12",
+        "2026-03-13",
+    )
+
+    targets = paper_core.build_target_audit_records(
+        rows,
+        calendar_records=calendar,
+        roll_days_before_last_trade=3,
+    )
+
+    assert targets[1]["reference_date"] is None
+    assert targets[1]["full_gap_settle_to_open"] is None
+    assert targets[1]["clean_sample"] is False
+    assert targets[1]["missing_reason"] == "missing_previous_jpx_session"
+
+
+def test_target_audit_fails_closed_when_roll_calendar_is_truncated() -> None:
+    rows = [
+        _normalized_target_row("2026-01-05", day_open=100.0, settle=100.0),
+        _normalized_target_row("2026-01-06", day_open=101.0, settle=101.0),
+    ]
+
+    targets = paper_core.build_target_audit_records(
+        rows,
+        calendar_records=_jpx_calendar_records("2026-01-05", "2026-01-06"),
+        roll_days_before_last_trade=3,
+    )
+
+    assert targets[1]["is_roll_sq_window"] is True
+    assert targets[1]["clean_sample"] is False
+    assert "roll_sq_excluded" in str(targets[1]["missing_reason"])
+
+
+def test_target_audit_rejects_duplicate_target_keys() -> None:
+    rows = [
+        _normalized_target_row("2026-01-05", day_open=100.0, settle=100.0),
+        _normalized_target_row("2026-01-05", day_open=101.0, settle=101.0),
+    ]
+
+    with pytest.raises(ValueError, match="Duplicate"):
+        paper_core.build_target_audit_records(
+            rows,
+            calendar_records=_jpx_calendar_records("2026-01-05", "2026-03-13"),
+            roll_days_before_last_trade=3,
+        )
+
+
 def test_spy_minute_features_use_official_early_close_and_exclude_after_hours() -> None:
     official_close = datetime(2026, 11, 27, 18, 0, tzinfo=UTC)
     records = []
@@ -2108,6 +2310,41 @@ def test_leakage_check_warns_when_missing_feature_has_no_timestamp() -> None:
     assert rows[0]["reason"] == "missing_feature_value_not_evaluable"
 
 
+def test_leakage_check_reports_positive_lead_after_cutoff() -> None:
+    rows = build_leakage_check_records(
+        [
+            {
+                "forecast_date": "2026-01-05",
+                "target_open_ts_utc": datetime(2026, 1, 5, 23, 45, tzinfo=UTC),
+                "model_cutoff_ts_utc": datetime(2026, 1, 5, 21, 15, tzinfo=UTC),
+                "x_return": 0.01,
+                "x_return__available_ts_utc": datetime(2026, 1, 5, 21, 20, tzinfo=UTC),
+            }
+        ]
+    )
+
+    assert rows[0]["status"] == "fail"
+    assert rows[0]["reason"] == "feature_available_after_model_cutoff"
+    assert rows[0]["lag_minutes"] == pytest.approx(5.0)
+
+
+def test_leakage_check_reports_row_cutoff_without_feature_timestamps() -> None:
+    rows = build_leakage_check_records(
+        [
+            {
+                "forecast_date": "2026-01-05",
+                "target_open_ts_utc": datetime(2026, 1, 5, 23, 45, tzinfo=UTC),
+                "model_cutoff_ts_utc": datetime(2026, 1, 6, 0, 0, tzinfo=UTC),
+                "x_return": 0.01,
+            }
+        ]
+    )
+
+    assert rows[0]["feature_name"] == "__row_cutoff_invariant__"
+    assert rows[0]["status"] == "fail"
+    assert rows[0]["reason"] == "model_cutoff_not_before_target_open"
+
+
 def test_modeling_panel_records_calendar_join_miss_reason() -> None:
     panel = build_modeling_panel_records(
         target_rows=[
@@ -2131,6 +2368,30 @@ def test_modeling_panel_records_calendar_join_miss_reason() -> None:
     )
 
     assert panel[0]["join_miss_reason"] == "calendar_desync"
+
+
+def test_modeling_panel_records_reject_duplicate_target_dates() -> None:
+    target = {
+        "trading_date": "2026-01-06",
+        "contract_code": "c1",
+        "contract_month": "2026-03",
+        "clean_sample": True,
+        "same_contract_only": True,
+        "is_roll_sq_window": False,
+        "missing_reason": None,
+        "target_open_ts_utc": datetime(2026, 1, 5, 23, 45, tzinfo=UTC),
+        "full_gap_settle_to_open": -0.01,
+        "loss_settle_to_open": 0.01,
+    }
+
+    with pytest.raises(paper_module.PipelineRunError, match="Duplicate target rows"):
+        build_modeling_panel_records(
+            target_rows=[target, dict(target)],
+            alignment_records=[],
+            massive_daily_records=[],
+            minute_feature_records=[],
+            fred_records=[],
+        )
 
 
 def test_forecast_sample_reason_priority_and_calendar_map_propagation() -> None:
@@ -2408,6 +2669,102 @@ def test_calendar_map_statuses_cover_desync_and_holiday_trading() -> None:
     assert records[1]["mapping_status"] == "us_jp_desync"
 
 
+def test_calendar_map_uses_target_us_date_for_holiday_status() -> None:
+    records = paper_module.build_calendar_map_records(
+        target_rows=[
+            {
+                "trading_date": "2026-01-20",
+                "target_open_ts_utc": datetime(2026, 1, 19, 23, 45, tzinfo=UTC),
+                "missing_reason": None,
+            },
+            {
+                "trading_date": "2026-01-13",
+                "target_open_ts_utc": datetime(2026, 1, 12, 23, 45, tzinfo=UTC),
+                "missing_reason": None,
+            },
+            {
+                "trading_date": "2026-01-26",
+                "target_open_ts_utc": datetime(2026, 1, 25, 23, 45, tzinfo=UTC),
+                "missing_reason": None,
+            },
+        ],
+        calendar_records=[
+            {
+                "calendar_date": "2026-01-16",
+                "is_us_trading_day": True,
+                "is_jpx_trading_day": True,
+                "us_close_ts_utc": datetime(2026, 1, 16, 21, tzinfo=UTC),
+            },
+            {
+                "calendar_date": "2026-01-19",
+                "is_us_trading_day": False,
+                "is_jpx_trading_day": True,
+            },
+            {
+                "calendar_date": "2026-01-20",
+                "is_us_trading_day": True,
+                "is_jpx_trading_day": True,
+            },
+            {
+                "calendar_date": "2026-01-23",
+                "is_us_trading_day": True,
+                "is_jpx_trading_day": True,
+                "us_close_ts_utc": datetime(2026, 1, 23, 21, tzinfo=UTC),
+            },
+            {
+                "calendar_date": "2026-01-25",
+                "weekday": 6,
+                "is_us_trading_day": False,
+                "is_jpx_trading_day": False,
+            },
+            {
+                "calendar_date": "2026-01-26",
+                "is_us_trading_day": True,
+                "is_jpx_trading_day": True,
+            },
+            {
+                "calendar_date": "2026-01-12",
+                "is_us_trading_day": True,
+                "is_jpx_trading_day": False,
+                "us_close_ts_utc": datetime(2026, 1, 12, 21, tzinfo=UTC),
+            },
+            {
+                "calendar_date": "2026-01-13",
+                "is_us_trading_day": True,
+                "is_jpx_trading_day": True,
+            },
+        ],
+        alignment_records=[
+            {
+                "trading_date": "2026-01-20",
+                "us_calendar_date": "2026-01-16",
+                "target_us_calendar_date": "2026-01-19",
+                "alignment_pass": True,
+                "model_cutoff_ts_utc": datetime(2026, 1, 16, 21, 5, tzinfo=UTC),
+            },
+            {
+                "trading_date": "2026-01-13",
+                "us_calendar_date": "2026-01-12",
+                "target_us_calendar_date": "2026-01-12",
+                "alignment_pass": True,
+                "model_cutoff_ts_utc": datetime(2026, 1, 12, 21, 5, tzinfo=UTC),
+            },
+            {
+                "trading_date": "2026-01-26",
+                "us_calendar_date": "2026-01-23",
+                "target_us_calendar_date": "2026-01-25",
+                "alignment_pass": True,
+                "model_cutoff_ts_utc": datetime(2026, 1, 23, 21, 5, tzinfo=UTC),
+            },
+        ],
+    )
+
+    assert records[0]["mapping_status"] == "us_holiday"
+    assert records[0]["mapping_reason"] == "us_closed_jpx_open"
+    assert records[1]["mapping_status"] == "normal_trading"
+    assert records[2]["mapping_status"] == "normal_trading"
+
+
 def test_jquants_silver_flags_and_cache_writer(tmp_path: Path) -> None:
     row = {
         "trading_date": "2026-01-05",
@@ -2580,6 +2937,7 @@ def test_cache_coverage_guards_prevent_partial_month_reuse(tmp_path: Path) -> No
         [{"requested_date": "2026-01-05", "value": 1.0}],
         metadata={
             "requested_dates": ["2026-01-05", "2026-01-06"],
+            "completed_dates": ["2026-01-05"],
             "requested_range": ["2026-01-05", "2026-01-09"],
         },
     )
@@ -2587,7 +2945,20 @@ def test_cache_coverage_guards_prevent_partial_month_reuse(tmp_path: Path) -> No
     assert paper_core._cache_covers_dates(parquet_path, ["2026-01-05"])
     assert not paper_core._cache_covers_dates(
         parquet_path,
-        ["2026-01-05", "2026-01-31"],
+        ["2026-01-05", "2026-01-06"],
+    )
+    legacy_massive_options_path = tmp_path / "legacy_massive_options.parquet"
+    paper_core.atomic_write_parquet(
+        legacy_massive_options_path,
+        [{"bar_date_et": "2026-01-05", "value": 1.0}],
+        metadata={
+            "dataset": "us_options_opra/day_aggs_v1",
+            "requested_dates": ["2026-01-05"],
+        },
+    )
+    assert not paper_core._cache_covers_dates(
+        legacy_massive_options_path,
+        ["2026-01-05"],
     )
     assert paper_core._cache_covers_range(parquet_path, "2026-01-06", "2026-01-08")
     assert not paper_core._cache_covers_range(parquet_path, "2026-01-01", "2026-01-08")
@@ -2665,6 +3036,7 @@ def test_low_level_feature_and_bronze_helpers_cover_edge_cases() -> None:
     assert paper_core._feature_source_family("ewj_return") == "japan_proxy"
     assert paper_core._feature_source_family("ewh_return") == "asia_proxy"
     assert paper_core._feature_source_family("fx_usdjpy_level") == "fx_core"
+    assert paper_core._feature_source_family("fx_release_age_days") == "fx_core"
     assert paper_core._feature_source_family("fred_bamlh0a0hym2_level") == ("fred_credit_enriched")
     assert paper_core._feature_source_family("cboe_vix_close") == "cboe_volatility"
     assert paper_core._feature_source_family("uup_return") == "massive_optional"
@@ -2692,6 +3064,7 @@ def test_low_level_feature_and_bronze_helpers_cover_edge_cases() -> None:
     assert paper_core._feature_source_block("fred_bamlh0a0hym2_level") == ("fred_credit_enriched")
     assert paper_core._feature_source_block("cboe_vix_close") == "fred_core"
     assert paper_core._feature_source_block("uup_return") == "massive_optional"
+    assert paper_core._feature_source_block("fx_observation_age_days") == "fx_core"
     assert paper_core._feature_source_block("qqq_return") == "us_core"
     assert paper_core._feature_source_block("qqq_late_60m_realized_var") == "us_late_session"
     assert paper_core._feature_source_block("dxj_late_30m_return") == "japan_proxy"
@@ -2861,6 +3234,51 @@ def test_common_sample_eviction_and_primary_artifacts() -> None:
     assert {row["window_name"] for row in stress} == {"loss_top_decile", "vix_top_decile"}
 
 
+def test_common_sample_compares_benchmark_models_across_refit_metadata() -> None:
+    dates = [
+        (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=index)).date().isoformat()
+        for index in range(130)
+    ]
+    forecasts = [
+        *_synthetic_forecasts(
+            model_name="historical_quantile",
+            information_set="target_history_only",
+            dates=dates,
+            var_shift=0.0,
+        ),
+        *[
+            {
+                **row,
+                "model_name": "caviar_sav",
+                "refit_frequency": paper_module.BENCHMARK_ADVANCED_REFIT_FREQUENCY,
+                "var_forecast": cast(float, row["var_forecast"]) + 0.01,
+                "es_forecast": cast(float, row["es_forecast"]) + 0.01,
+            }
+            for row in _synthetic_forecasts(
+                model_name="placeholder",
+                information_set="target_history_only",
+                dates=dates,
+                var_shift=0.002,
+            )
+        ],
+    ]
+
+    artifacts = paper_module.build_common_sample_artifacts(
+        forecasts,
+        suite="benchmark",
+        anchor_model="historical_quantile",
+        anchor_information_set="target_history_only",
+    )
+
+    assert artifacts["common_sample_status"] == "ok"
+    primary_models = {
+        row["model_name"] for row in cast(list[dict[str, object]], artifacts["primary_metrics"])
+    }
+    assert {"historical_quantile", "caviar_sav"}.issubset(primary_models)
+    dm = cast(list[dict[str, object]], artifacts["dm_inference"])
+    assert any(row["candidate_model_name"] == "caviar_sav" for row in dm)
+
+
 def test_hln_tmax_mcs_eliminates_worst_model_on_balanced_loss_matrix() -> None:
     loss_matrix: list[dict[str, object]] = []
     for index in range(260):
@@ -2892,6 +3310,66 @@ def test_hln_tmax_mcs_eliminates_worst_model_on_balanced_loss_matrix() -> None:
     assert by_model["worst"]["method_note"] == "hln_tmax_moving_block_bootstrap"
     assert by_model["worst"]["tmax_stat"] is not None
     assert by_model["worst"]["active_model_set"] is not None
+
+
+def test_hln_tmax_mcs_eliminates_largest_studentized_component(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loss_matrix: list[dict[str, object]] = []
+    for index in range(260):
+        forecast_date = (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=index)).date()
+        for model_name, fz in (("raw_mean_worst", 0.30), ("studentized_worst", 0.20)):
+            loss_matrix.append(
+                {
+                    "forecast_date": forecast_date.isoformat(),
+                    "model_name": model_name,
+                    "information_set": "set_a",
+                    "tail_level": 0.95,
+                    "realized_loss": 1.0 if index % 10 == 0 else 0.0,
+                    "var_forecast": 0.5,
+                    "fz_loss": fz,
+                }
+            )
+
+    def fake_mcs_step(matrix: np.ndarray, **_: object) -> dict[str, object]:
+        assert matrix.shape[1] == 2
+        return {
+            "tmax_stat": 10.0,
+            "pvalue": 0.01 if matrix.shape[1] == 2 else 1.0,
+            "t_values": np.array([1.0, 10.0]),
+        }
+
+    monkeypatch.setattr("n225_open_gap_tail.inference.core._hln_tmax_mcs_step", fake_mcs_step)
+
+    records = paper_module.build_mcs_records(loss_matrix, suite="ml_tail", reps=9)
+    by_model = {str(row["model_name"]): row for row in records}
+
+    assert by_model["studentized_worst"]["included_in_mcs"] is False
+    assert by_model["raw_mean_worst"]["included_in_mcs"] is True
+
+
+def test_hln_tmax_mcs_requires_at_least_two_finite_loss_models() -> None:
+    loss_matrix: list[dict[str, object]] = []
+    for index in range(260):
+        forecast_date = (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=index)).date()
+        loss_matrix.append(
+            {
+                "forecast_date": forecast_date.isoformat(),
+                "model_name": "only_finite_model",
+                "information_set": "set_a",
+                "tail_level": 0.95,
+                "realized_loss": 1.0 if index % 10 == 0 else 0.0,
+                "var_forecast": 0.5,
+                "fz_loss": 0.2,
+            }
+        )
+
+    records = paper_module.build_mcs_records(loss_matrix, suite="benchmark", reps=9)
+
+    assert {row["model_name"] for row in records} == {"only_finite_model"}
+    assert all(
+        row["mcs_status"] == "unavailable_insufficient_finite_loss_models" for row in records
+    )
 
 
 def test_primary_dm_and_mcs_gate_on_common_rows_and_tail_events() -> None:
@@ -3113,7 +3591,7 @@ def test_coverage_tests_return_unavailable_for_degenerate_inputs() -> None:
             breaches=np.array([False, False]),
             expected_probability=0.05,
         )["status"]
-        == "unavailable_boundary_exceedance_rate"
+        == "ok"
     )
 
     assert (
@@ -3124,12 +3602,60 @@ def test_coverage_tests_return_unavailable_for_degenerate_inputs() -> None:
         paper_module.christoffersen_independence_test(
             breaches=np.array([False, False, False]),
         )["status"]
-        == "unavailable_boundary_transition_rate"
+        == "ok"
     )
     ok = paper_module.christoffersen_independence_test(
         breaches=np.array([False, True, False, False, True, True, False]),
     )
     assert ok["status"] == "ok"
+
+
+def test_force_clear_preserves_audits_for_leakage_gate(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    for name in ("forecasts", "metrics", "latex", "audits"):
+        directory = run_dir / name
+        directory.mkdir(parents=True)
+        (directory / "sentinel.txt").write_text("x", encoding="utf-8")
+
+    metrics_information._clear_run_outputs_for_force(run_dir)
+
+    assert not (run_dir / "forecasts").exists()
+    assert not (run_dir / "metrics").exists()
+    assert not (run_dir / "latex").exists()
+    assert (run_dir / "audits" / "sentinel.txt").read_text(encoding="utf-8") == "x"
+
+
+def test_force_config_compatibility_preserves_audits_and_updates_manifest(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run"
+    (run_dir / "forecasts").mkdir(parents=True)
+    (run_dir / "forecasts" / "sentinel.txt").write_text("x", encoding="utf-8")
+    (run_dir / "audits").mkdir()
+    (run_dir / "audits" / "leakage_summary.parquet").write_text("x", encoding="utf-8")
+    (run_dir / "manifest.json").write_text('{"config_hash": "stale"}', encoding="utf-8")
+
+    metrics_information._assert_run_config_compatible(run_dir, force=True)
+
+    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["config_hash"] == metrics_information.PIPELINE_CONFIG.config_hash()
+    assert manifest["config_lock_status"] == "locked_after_forecasts_or_metrics"
+    assert not (run_dir / "forecasts").exists()
+    assert (run_dir / "audits" / "leakage_summary.parquet").exists()
+
+
+def test_gold_artifact_path_uses_existing_manifest_path(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    gold = tmp_path / "gold.parquet"
+    fallback = tmp_path / "fallback.parquet"
+    gold.write_text("x", encoding="utf-8")
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"gold_artifacts": {"benchmark_metrics": str(gold)}}),
+        encoding="utf-8",
+    )
+
+    assert metrics_information._gold_artifact_path(run_dir, "benchmark_metrics", fallback) == gold
 
 
 def test_closed_form_benchmark_forecasts_and_unknown_model() -> None:
@@ -3264,14 +3790,15 @@ def test_evaluate_benchmark_suite_and_latex_export_with_synthetic_panel(
     assert (run_dir / "forecasts" / "benchmark_forecasts.parquet").exists()
     assert (run_dir / "s" / "hist_q__sto__L__hist__q0950" / "f.pq").exists()
     assert (run_dir / "metrics" / "benchmark_metrics.parquet").exists()
-    assert latex.tables >= 4
-    assert (latex.latex_dir / "benchmark_metrics_table.tex").exists()
-    assert (latex.latex_dir / "tailrisk_es_severity_table.tex").exists()
+    assert latex.tables >= 3
+    assert not (latex.latex_dir / "benchmark_metrics_table.tex").exists()
+    assert not (latex.latex_dir / "tailrisk_es_severity_table.tex").exists()
     assert (latex.latex_dir / "tailrisk_hedge_trigger_diagnostics_table.tex").exists()
     assert (latex.latex_dir / "tailrisk_claim_scope_table.tex").exists()
-    latex_text = (latex.latex_dir / "benchmark_metrics_table.tex").read_text(encoding="utf-8")
+    latex_text = (latex.latex_dir / "appendix_benchmark_all_models_table.tex").read_text(
+        encoding="utf-8"
+    )
     assert "% config_hash:" in latex_text
-    assert "block-bootstrap DM" in latex_text
     assert "conditional predictive ability" not in latex_text
     assert "instrumented conditional predictive ability" not in latex_text
     trigger_text = (latex.latex_dir / "tailrisk_hedge_trigger_diagnostics_table.tex").read_text(
@@ -3325,12 +3852,49 @@ def test_result_matrix_latex_export_has_restricted_notes(tmp_path: Path) -> None
 
     assert latex.tables == 2
     assert "restricted result matrix" in latex_text
+    assert "LGBM direct quantile" in latex_text
     assert "primary ML table" in latex_text
     assert "block-bootstrap DM" in latex_text
     assert "VaR-only and VaR-ES" in summary_text
     assert "Restricted samples are not primary evidence" in summary_text
     assert "conditional predictive ability" not in latex_text
     assert "instrumented conditional predictive ability" not in latex_text
+
+
+def test_export_tables_clears_stale_tables_when_primary_gate_fails(tmp_path: Path) -> None:
+    run_dir = tmp_path / "reports" / "runs" / "stale_table_gate"
+    metrics_dir = run_dir / "metrics"
+    latex_dir = run_dir / "latex" / "tables"
+    metrics_dir.mkdir(parents=True)
+    latex_dir.mkdir(parents=True)
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"run_id": "stale_table_gate"}),
+        encoding="utf-8",
+    )
+    stale_table = latex_dir / "benchmark_metrics_table.tex"
+    stale_table.write_text("old table", encoding="utf-8")
+    pl.DataFrame(
+        [
+            {
+                "model_name": "historical_quantile",
+                "tail_side": paper_module.TAIL_SIDE_LEFT,
+                "tail_level": 0.95,
+                "sample_policy": "primary_common_sample",
+                "common_sample_status": "unavailable_missing_anchor",
+                "rows": 500,
+                "var_breach_rate": 0.05,
+                "mean_quantile_loss": 0.01,
+                "mean_fz_loss": -1.0,
+            }
+        ]
+    ).write_parquet(metrics_dir / "benchmark_metrics.parquet")
+
+    result = export_tables(run_dir=run_dir)
+    manifest = json.loads((run_dir / "latex" / "table_manifest.json").read_text())
+
+    assert result.tables == 0
+    assert manifest["table_count"] == 0
+    assert not stale_table.exists()
 
 
 def test_dst_attenuation_latex_export_is_descriptive(tmp_path: Path) -> None:
@@ -3406,7 +3970,7 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
                     "refit_frequency": "daily",
                     "sample_policy": "primary_common_sample",
                     "common_sample_status": "ok",
-                    "rows": 20,
+                    "rows": 500,
                     "var_breach_rate": breach,
                     "expected_breach_rate": 0.05,
                     "exceedance_count": 1,
@@ -3439,7 +4003,7 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
                 "refit_frequency": "monthly",
                 "sample_policy": "primary_common_sample",
                 "common_sample_status": "ok",
-                "rows": 20,
+                "rows": 500,
                 "var_breach_rate": breach,
                 "expected_breach_rate": 0.05,
                 "exceedance_count": 2,
@@ -3709,6 +4273,7 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
                 "information_set": "japan_only",
                 "tail_level": 0.95,
                 "sample_policy": "primary_common_sample",
+                "common_sample_status": "ok",
                 "rows": 20,
                 "var_breach_rate": 0.05,
                 "exceedance_count": 1,
@@ -3722,6 +4287,7 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
                 "information_set": "japan_only_plus_us_close_core",
                 "tail_level": 0.95,
                 "sample_policy": "primary_common_sample",
+                "common_sample_status": "ok",
                 "rows": 20,
                 "var_breach_rate": 0.05,
                 "exceedance_count": 1,
@@ -3897,6 +4463,23 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
         )
         == []
     )
+    assert (
+        reporting_latex._selected_model_performance_rows(
+            pl.DataFrame(
+                {
+                    "model_name": ["historical_quantile"],
+                    "tail_side": [paper_module.TAIL_SIDE_LEFT],
+                    "rows": [100],
+                    "var_breach_rate": [0.05],
+                    "expected_breach_rate": [0.05],
+                    "mean_quantile_loss": [0.1],
+                    "mean_fz_loss": [-0.5],
+                }
+            ),
+            pl.DataFrame(),
+        )
+        == []
+    )
     assert "rej10" in reporting_latex._dm_cell(promoted_rows[0]["dm_quantile"])
     assert reporting_latex._dm_cell(promoted_rows[0]["dm_fz"]) == "unavailable"
     assert reporting_latex._dm_cell(None) == "n/a"
@@ -3961,7 +4544,7 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
                 "comparison_axis": "model_family",
                 "sample_policy": "restricted_tail_model_common_sample",
                 "loss_family": "var_quantile_loss",
-                "mcs_status": "ok_hln_tmax_mcs",
+                "mcs_status": "ok",
             },
         ]
     )
@@ -4424,7 +5007,7 @@ def test_private_pipeline_helpers_cover_defensive_edges(
             breaches=np.array([False, False]),
             expected_probability=0.05,
         )["status"]
-        == "unavailable_boundary_exceedance_rate"
+        == "ok"
     )
     assert (
         stat_utils.christoffersen_independence_test(
@@ -4436,7 +5019,7 @@ def test_private_pipeline_helpers_cover_defensive_edges(
         stat_utils.christoffersen_independence_test(
             breaches=np.array([False, False, False]),
         )["status"]
-        == "unavailable_boundary_transition_rate"
+        == "ok"
     )
     assert paper_core._optional_float("bad") is None
     assert (
@@ -4713,6 +5296,16 @@ def test_feature_asof_and_source_maps_cover_edge_branches(
         ]
     )
     assert cboe_features["2026-01-09"]["cboe_vix_close"] == 18.0
+    cboe_features["2026-01-09"]["cboe_vix_range"] = None
+    cboe_asof = paper_core._features_asof(
+        cboe_features,
+        "2026-01-09",
+        cutoff=datetime(2026, 1, 9, 21, 30, tzinfo=UTC),
+        fill_method="forward_fill_us_holiday",
+    )
+    assert cboe_asof["cboe_vix_close"] == pytest.approx(18.0)
+    assert cboe_asof["cboe_vix_range"] is None
+    assert cboe_asof["cboe_vix_close__source_date"] == "2026-01-09"
 
     fx_context = paper_core._canonical_fx_context(
         massive_daily_records=[],
@@ -4746,6 +5339,49 @@ def _fake_completed_process(*args: object, **kwargs: object) -> object:
     command = args[0] if args else []
     stdout = "abc123\n" if "rev-parse" in command else ""
     return type("Completed", (), {"stdout": stdout})()
+
+
+def _normalized_target_row(
+    trading_date: str,
+    *,
+    day_open: float,
+    settle: float,
+    contract_code: str = "161030018",
+) -> dict[str, object]:
+    return {
+        "trading_date": trading_date,
+        "product_category": "NK225F",
+        "contract_code": contract_code,
+        "contract_month": "2026-03",
+        "central_contract_month_flag": True,
+        "last_trading_day": "2026-03-12",
+        "special_quotation_day": "2026-03-13",
+        "day_session_open": day_open,
+        "day_session_high": day_open + 1.0,
+        "day_session_low": day_open - 1.0,
+        "day_session_close": day_open,
+        "night_session_open": settle,
+        "night_session_high": settle + 1.0,
+        "night_session_low": settle - 1.0,
+        "night_session_close": settle,
+        "settlement_price": settle,
+        "volume": 100.0,
+        "open_interest": 1000.0,
+        "target_open_ts_utc": datetime.fromisoformat(f"{trading_date}T00:00:00+00:00"),
+        "target_open_ts_jst": f"{trading_date}T09:00:00+09:00",
+        "vendor_available_ts_utc": datetime.fromisoformat(f"{trading_date}T18:00:00+00:00"),
+    }
+
+
+def _jpx_calendar_records(*dates: str) -> list[dict[str, object]]:
+    return [
+        {
+            "calendar_date": value,
+            "is_jpx_trading_day": True,
+            "is_us_trading_day": True,
+        }
+        for value in dates
+    ]
 
 
 def _raw_futures_row(

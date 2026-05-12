@@ -86,26 +86,33 @@ def _ml_tail_gate_summary(run_dir: Path) -> dict[str, object]:
             "dropped_feature_count": 0,
             "dropped_features_by_reason": [],
         }
+    hash_columns = [
+        column
+        for column in ("information_set", "candidate_feature_hash", "active_feature_hash")
+        if column in diagnostics.columns
+    ]
     candidate_hashes = (
-        diagnostics.select(["information_set", "candidate_feature_hash", "active_feature_hash"])
-        .unique()
-        .sort(["information_set", "candidate_feature_hash"])
-        .to_dicts()
+        diagnostics.select(hash_columns).unique().sort(hash_columns).to_dicts()
+        if hash_columns
+        else []
     )
     dropped_rows: list[dict[str, object]] = []
-    if "dropped_features_json" in diagnostics.columns:
-        for raw in diagnostics.get_column("dropped_features_json").unique().to_list():
+    for drop_column in ("dropped_features_json", "scale_dropped_features_json"):
+        if drop_column not in diagnostics.columns:
+            continue
+        for raw in diagnostics.get_column(drop_column).unique().to_list():
             dropped_rows.extend(_parse_dropped_features(raw))
     dropped_by_reason: dict[str, set[str]] = {}
     for row in dropped_rows:
-        feature = str(row.get("feature") or "")
+        feature = _clean_feature_name(row.get("feature"))
         reason = str(row.get("drop_reason") or "unknown")
         if feature:
             dropped_by_reason.setdefault(reason, set()).add(feature)
+    dropped_features = {feature for features in dropped_by_reason.values() for feature in features}
     return {
         "available": True,
         "candidate_hashes": candidate_hashes,
-        "dropped_feature_count": len({str(row.get("feature")) for row in dropped_rows}),
+        "dropped_feature_count": len(dropped_features),
         "dropped_features_by_reason": [
             {
                 "drop_reason": reason,
@@ -167,7 +174,18 @@ def _parse_dropped_features(value: object) -> list[dict[str, object]]:
         return []
     if not isinstance(parsed, list):
         return []
-    return [row for row in parsed if isinstance(row, dict)]
+    return [
+        row for row in parsed if isinstance(row, dict) and _clean_feature_name(row.get("feature"))
+    ]
+
+
+def _clean_feature_name(value: object) -> str:
+    if value is None:
+        return ""
+    feature = str(value).strip()
+    if not feature or feature.lower() in {"none", "null", "nan"}:
+        return ""
+    return feature
 
 
 def _run_window(run_dir: Path) -> tuple[object, object] | None:

@@ -293,10 +293,11 @@ def build_panel_command(
         "",
         help="End date in YYYY-MM-DD. Defaults to the most recent completed Friday.",
     ),
+    force: bool = typer.Option(False, help="Bypass source caches and refresh panel inputs."),
 ) -> None:
     """Build the cache-first modeling panel and durable gold artifacts."""
     settings = load_settings()
-    result = build_panel(settings=settings, start=start, end=end or None)
+    result = build_panel(settings=settings, start=start, end=end or None, force=force)
 
     typer.echo(f"run id: {result.run_id}")
     typer.echo(f"run dir: {result.run_dir}")
@@ -392,7 +393,7 @@ def run_command(
 ) -> None:
     """Build the panel, run requested evaluation suites, and export tables."""
     settings = load_settings()
-    panel = build_panel(settings=settings, start=start, end=end or None)
+    panel = build_panel(settings=settings, start=start, end=end or None, force=force)
     write_leakage_check(run_dir=panel.run_dir)
     suites = ("benchmark", "ml-tail") if suite == "all" else (suite,)
     evaluation = None

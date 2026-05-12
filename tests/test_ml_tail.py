@@ -31,6 +31,7 @@ import n225_open_gap_tail.metrics.stat_utils as stat_utils
 import n225_open_gap_tail.models.benchmark as benchmark_models
 import n225_open_gap_tail.models.benchmark_advanced as benchmark_advanced
 import n225_open_gap_tail.models.benchmark_advanced_math as advanced_math
+import n225_open_gap_tail.models.ml_tail as ml_tail_models
 import n225_open_gap_tail.panel as paper_leakage
 import n225_open_gap_tail.panel as paper_panel
 import n225_open_gap_tail.reporting as paper_reporting
@@ -399,6 +400,30 @@ def test_ml_tail_standardized_pot_gpd_shape_above_one_is_unavailable(
             information_set="japan_only_plus_us_close_core",
             tail_level=0.95,
             lgb=lgb,
+        )
+
+
+def test_ml_tail_robust_pot_gpd_requires_tail_above_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lightgbm as lgb
+
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 25)
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 1)
+    _patch_paper_module(monkeypatch, "ML_TAIL_MIN_OOF_TRAIN_ROWS", 8)
+
+    with pytest.raises(
+        paper_module.PipelineRunError,
+        match="unavailable_evt_tail_not_above_threshold",
+    ):
+        ml_tail_models._fit_ml_tail_robust_location_scale_bundle(
+            train_rows=_synthetic_ml_tail_location_scale_rows(80),
+            candidate_features=["feature_x", "feature_cycle"],
+            model_name=paper_module.ML_TAIL_MEDIAN_IQR_POT_GPD_PLAIN_MLE_MODEL,
+            information_set="japan_only_plus_us_close_core",
+            tail_level=0.95,
+            lgb=lgb,
+            evt_threshold_quantile=0.95,
         )
 
 
@@ -1093,14 +1118,16 @@ def test_evaluate_ml_tail_suite_writes_lightgbm_ladder_artifacts(
     start = datetime(2026, 1, 1, tzinfo=UTC)
     for day in range(90):
         current = start + timedelta(days=day)
+        loss_magnitude = float(day % 20) / 100.0
+        signed_gap = -loss_magnitude if day % 2 else loss_magnitude
         rows.append(
             _with_panel_signature_fields(
                 {
                     "forecast_date": current.date().isoformat(),
                     "target_family": "full_gap_settle_to_open",
                     "clean_sample": True,
-                    "realized_loss": float(day % 20) / 100.0,
-                    "gap_t": -float(day % 20) / 100.0,
+                    "realized_loss": loss_magnitude,
+                    "gap_t": signed_gap,
                     "dst_regime": "EDT" if day % 2 else "EST",
                     "absorption_regime": "post_us_close_night_absorption"
                     if day % 2

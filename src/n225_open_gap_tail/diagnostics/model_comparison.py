@@ -10,7 +10,11 @@ from n225_open_gap_tail.config.model_labels import (
     display_information_set_label,
     display_model_label,
 )
-from n225_open_gap_tail.config.runtime import ML_TAIL_MODEL_NAMES
+from n225_open_gap_tail.config.runtime import (
+    BENCHMARK_ADVANCED_MODEL_NAMES,
+    BENCHMARK_BASELINE_MODEL_NAMES,
+    ML_TAIL_MODEL_NAMES,
+)
 
 
 def _all_model_comparison_table(
@@ -40,11 +44,6 @@ def _all_model_comparison_table(
         "mean_exceedance_severity",
         "tail_side",
     ]
-    baseline_models = (
-        set(str(value) for value in benchmark_metrics["model_name"].drop_nulls().unique().to_list())
-        if not benchmark_metrics.is_empty() and "model_name" in benchmark_metrics.columns
-        else set()
-    )
     records: list[dict[str, object]] = []
     benchmark_source = (
         benchmark_metrics_per_model
@@ -55,14 +54,19 @@ def _all_model_comparison_table(
         columns = [column for column in metric_columns if column in benchmark_source.columns]
         for row in benchmark_source.select(columns).iter_rows(named=True):
             model_name = str(row["model_name"])
+            suite = (
+                "benchmark_baseline"
+                if model_name in BENCHMARK_BASELINE_MODEL_NAMES
+                else (
+                    "benchmark_advanced"
+                    if model_name in BENCHMARK_ADVANCED_MODEL_NAMES
+                    else "benchmark_unregistered"
+                )
+            )
             records.append(
                 {
                     **row,
-                    "suite": (
-                        "benchmark_baseline"
-                        if not baseline_models or model_name in baseline_models
-                        else "benchmark_advanced"
-                    ),
+                    "suite": suite,
                     "model_label": display_model_label(model_name),
                     "information_set_label": display_information_set_label(
                         row.get("information_set")
@@ -79,13 +83,14 @@ def _all_model_comparison_table(
         ]
         active_ml_models = set(ML_TAIL_MODEL_NAMES)
         for row in ml_tail_metrics_per_model.select(columns).iter_rows(named=True):
-            if str(row["model_name"]) not in active_ml_models:
-                continue
+            model_name = str(row["model_name"])
             records.append(
                 {
                     **row,
-                    "suite": "ml_tail",
-                    "model_label": display_model_label(row["model_name"]),
+                    "suite": "ml_tail"
+                    if model_name in active_ml_models
+                    else "ml_tail_unregistered",
+                    "model_label": display_model_label(model_name),
                     "information_set_label": display_information_set_label(
                         row.get("information_set")
                     ),

@@ -45,29 +45,33 @@ def build_common_sample_artifacts(
     grouped = _group_forecasts_by_key(valid_rows)
     evictions: list[dict[str, object]] = []
     primary_forecasts: list[dict[str, object]] = []
-    status_by_tail: dict[tuple[str, float], str] = {}
-    for target_family, tail_side, tail_level, refit_frequency in sorted(
-        {(key[0], key[5], key[3], key[4]) for key in grouped}
+    status_by_tail: dict[tuple[str, str, float], str] = {}
+    for target_family, tail_side, tail_level in sorted(
+        {(key[0], key[5], key[3]) for key in grouped}
     ):
         keys = sorted(
             key
             for key in grouped
-            if key[0] == target_family
-            and key[5] == tail_side
-            and key[3] == tail_level
-            and key[4] == refit_frequency
+            if key[0] == target_family and key[5] == tail_side and key[3] == tail_level
         )
+        anchor_keys = [
+            key for key in keys if key[1] == anchor_model and key[2] == anchor_information_set
+        ]
         anchor_key = (
-            target_family,
-            anchor_model,
-            anchor_information_set,
-            tail_level,
-            refit_frequency,
-            tail_side,
+            anchor_keys[0]
+            if anchor_keys
+            else (
+                target_family,
+                anchor_model,
+                anchor_information_set,
+                tail_level,
+                "",
+                tail_side,
+            )
         )
-        anchor_dates = set(grouped.get(anchor_key, {}))
+        anchor_dates = set().union(*(set(grouped[key]) for key in anchor_keys))
         if not anchor_dates:
-            status_by_tail[(tail_side, tail_level)] = "unavailable_missing_anchor"
+            status_by_tail[(target_family, tail_side, tail_level)] = "unavailable_missing_anchor"
             for key in keys:
                 evictions.append(
                     _model_eviction_record(
@@ -88,11 +92,12 @@ def build_common_sample_artifacts(
 
         retained_keys: list[tuple[str, str, str, float, str, str]] = []
         pending_rows: list[dict[str, object]] = []
+        comparison_refit_frequency = anchor_key[4] or None
         for key in keys:
             overlap_rows = len(set(grouped[key]).intersection(anchor_dates))
             coverage_ratio = overlap_rows / len(anchor_dates)
             primary_candidate = suite != "ml_tail" or key[1] in ML_TAIL_PRIMARY_MODEL_NAMES
-            retained = key == anchor_key or (
+            retained = key in anchor_keys or (
                 primary_candidate and coverage_ratio >= MODEL_EVICTION_COVERAGE_THRESHOLD
             )
             eviction_reason = None
@@ -129,7 +134,7 @@ def build_common_sample_artifacts(
             tail_status = "common_sample_unstable"
         else:
             tail_status = common_sample_status(common_dates)
-        status_by_tail[(tail_side, tail_level)] = tail_status
+        status_by_tail[(target_family, tail_side, tail_level)] = tail_status
         for row in pending_rows:
             row["common_rows"] = len(common_dates)
             row["common_anchor_coverage"] = common_anchor_coverage
@@ -137,7 +142,13 @@ def build_common_sample_artifacts(
             evictions.append(row)
         for key in retained_keys:
             date_map = grouped[key]
-            primary_forecasts.extend(date_map[forecast_date] for forecast_date in common_dates)
+            primary_forecasts.extend(
+                {
+                    **date_map[forecast_date],
+                    "comparison_refit_frequency": comparison_refit_frequency,
+                }
+                for forecast_date in common_dates
+            )
 
     primary_metrics = build_metric_records(
         primary_forecasts,
@@ -188,7 +199,10 @@ def build_loss_matrix_records(
                 "model_name": row["model_name"],
                 "information_set": row.get("information_set") or "target_history_only",
                 "tail_level": tail_level,
-                "refit_frequency": row.get("refit_frequency"),
+                "refit_frequency": row.get(
+                    "comparison_refit_frequency",
+                    row.get("refit_frequency"),
+                ),
                 "realized_loss": loss,
                 "var_forecast": var_forecast,
                 "es_forecast": es_forecast,
@@ -366,6 +380,25 @@ def build_mcs_records(
         }
         mean_losses = {key: _safe_mean(values) for key, values in losses_by_key.items()}
         active = {key for key, value in mean_losses.items() if value is not None}
+        if len(active) < 2:
+            for key in keys:
+                records.append(
+                    _mcs_record(
+                        suite=suite,
+                        key=key,
+                        rows=len(common_dates),
+                        mean_fz_loss=mean_losses[key],
+                        included=False,
+                        alpha=alpha,
+                        reps=reps,
+                        seed=seed,
+                        block_length=None,
+                        status="unavailable_insufficient_finite_loss_models",
+                        method_note=None,
+                        joint_exception_count=joint_exception_count,
+                    )
+                )
+            continue
         eliminated_step: dict[tuple[str, str, str, float, str, str], int] = {}
         elimination_pvalue: dict[tuple[str, str, str, float, str, str], float | None] = {}
         elimination_tmax: dict[tuple[str, str, str, float, str, str], float | None] = {}
@@ -376,7 +409,6 @@ def build_mcs_records(
         block_length = max(5, round(len(common_dates) ** (1.0 / 3.0)))
         step = 0
         while len(active) > 1:
-            worst_key = max(active, key=lambda key: (cast(float, mean_losses[key]), key[0], key[1]))
             ordered_active = sorted(active)
             active_loss_matrix = np.column_stack([losses_by_key[key] for key in ordered_active])
             result = _hln_tmax_mcs_step(
@@ -395,6 +427,8 @@ def build_mcs_records(
             final_pvalue = pvalue
             if pvalue is None or pvalue > alpha:
                 break
+            worst_index = int(np.nanargmax(t_values))
+            worst_key = ordered_active[worst_index]
             step += 1
             eliminated_step[worst_key] = step
             elimination_pvalue[worst_key] = pvalue
@@ -849,17 +883,10 @@ def kupiec_pof_test(*, breaches: np.ndarray, expected_probability: float) -> dic
     x = int(np.sum(breaches))
     if n == 0 or expected_probability <= 0.0 or expected_probability >= 1.0:
         return {"status": "unavailable_invalid_input", "lr_stat": None, "pvalue": None}
-    observed = x / n
-    if observed in {0.0, 1.0}:
-        return {
-            "status": "unavailable_boundary_exceedance_rate",
-            "lr_stat": None,
-            "pvalue": None,
-        }
     log_likelihood_null = x * math.log(expected_probability) + (n - x) * math.log(
         1.0 - expected_probability
     )
-    log_likelihood_alt = x * math.log(observed) + (n - x) * math.log(1.0 - observed)
+    log_likelihood_alt = _bernoulli_log_likelihood(x, n - x)
     lr_stat = -2.0 * (log_likelihood_null - log_likelihood_alt)
     return {
         "status": "ok",
@@ -882,34 +909,27 @@ def christoffersen_independence_test(*, breaches: np.ndarray) -> dict[str, objec
             n10 += 1
         else:
             n11 += 1
-    if min(n00 + n01, n10 + n11, n00 + n10, n01 + n11) == 0:
-        return {
-            "status": "unavailable_boundary_transition_rate",
-            "lr_stat": None,
-            "pvalue": None,
-        }
-    pi01 = n01 / (n00 + n01)
-    pi11 = n11 / (n10 + n11)
-    pi = (n01 + n11) / (n00 + n01 + n10 + n11)
-    if any(value in {0.0, 1.0} for value in (pi01, pi11, pi)):
-        return {
-            "status": "unavailable_boundary_transition_rate",
-            "lr_stat": None,
-            "pvalue": None,
-        }
-    unrestricted = (
-        n00 * math.log(1.0 - pi01)
-        + n01 * math.log(pi01)
-        + n10 * math.log(1.0 - pi11)
-        + n11 * math.log(pi11)
-    )
-    restricted = (n00 + n10) * math.log(1.0 - pi) + (n01 + n11) * math.log(pi)
+    unrestricted = _bernoulli_log_likelihood(n01, n00) + _bernoulli_log_likelihood(n11, n10)
+    restricted = _bernoulli_log_likelihood(n01 + n11, n00 + n10)
     lr_stat = -2.0 * (restricted - unrestricted)
     return {
         "status": "ok",
         "lr_stat": float(lr_stat),
         "pvalue": float(1.0 - stats.chi2.cdf(lr_stat, 1)),
     }
+
+
+def _bernoulli_log_likelihood(successes: int, failures: int) -> float:
+    total = successes + failures
+    if total == 0:
+        return 0.0
+    probability = successes / total
+    value = 0.0
+    if successes:
+        value += successes * math.log(probability)
+    if failures:
+        value += failures * math.log(1.0 - probability)
+    return float(value)
 
 
 def quantile_loss(loss: float, var_forecast: float, tail_level: float) -> float:

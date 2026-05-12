@@ -34,7 +34,9 @@ def normalize_jquants_nikkei225_option_rows(
                 "trading_date": trading_date.isoformat(),
                 "option_code": _optional_str(row.get("Code")),
                 "contract_month": _optional_str(row.get("CM") or row.get("ContractMonth")),
-                "central_contract_month_flag": _optional_bool(row.get("CentralContractMonthFlag")),
+                "central_contract_month_flag": _optional_bool(
+                    row.get("CCMFlag") or row.get("CentralContractMonthFlag")
+                ),
                 "strike_price": _positive_float(row.get("Strike") or row.get("StrikePrice")),
                 "put_call": _put_call(row.get("PCDiv") or row.get("PutCallDivision")),
                 "night_session_open": _price_or_none(row.get("EO") or row.get("NightSessionOpen")),

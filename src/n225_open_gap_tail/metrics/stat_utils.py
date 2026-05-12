@@ -148,17 +148,10 @@ def kupiec_pof_test(*, breaches: np.ndarray, expected_probability: float) -> dic
     x = int(np.sum(breaches))
     if n == 0 or expected_probability <= 0.0 or expected_probability >= 1.0:
         return {"status": "unavailable_invalid_input", "lr_stat": None, "pvalue": None}
-    observed = x / n
-    if observed in {0.0, 1.0}:
-        return {
-            "status": "unavailable_boundary_exceedance_rate",
-            "lr_stat": None,
-            "pvalue": None,
-        }
     log_likelihood_null = x * math.log(expected_probability) + (n - x) * math.log(
         1.0 - expected_probability
     )
-    log_likelihood_alt = x * math.log(observed) + (n - x) * math.log(1.0 - observed)
+    log_likelihood_alt = _bernoulli_log_likelihood(x, n - x)
     lr_stat = -2.0 * (log_likelihood_null - log_likelihood_alt)
     return {
         "status": "ok",
@@ -181,31 +174,24 @@ def christoffersen_independence_test(*, breaches: np.ndarray) -> dict[str, objec
             n10 += 1
         else:
             n11 += 1
-    if min(n00 + n01, n10 + n11, n00 + n10, n01 + n11) == 0:
-        return {
-            "status": "unavailable_boundary_transition_rate",
-            "lr_stat": None,
-            "pvalue": None,
-        }
-    pi01 = n01 / (n00 + n01)
-    pi11 = n11 / (n10 + n11)
-    pi = (n01 + n11) / (n00 + n01 + n10 + n11)
-    if any(value in {0.0, 1.0} for value in (pi01, pi11, pi)):
-        return {
-            "status": "unavailable_boundary_transition_rate",
-            "lr_stat": None,
-            "pvalue": None,
-        }
-    unrestricted = (
-        n00 * math.log(1.0 - pi01)
-        + n01 * math.log(pi01)
-        + n10 * math.log(1.0 - pi11)
-        + n11 * math.log(pi11)
-    )
-    restricted = (n00 + n10) * math.log(1.0 - pi) + (n01 + n11) * math.log(pi)
+    unrestricted = _bernoulli_log_likelihood(n01, n00) + _bernoulli_log_likelihood(n11, n10)
+    restricted = _bernoulli_log_likelihood(n01 + n11, n00 + n10)
     lr_stat = -2.0 * (restricted - unrestricted)
     return {
         "status": "ok",
         "lr_stat": float(lr_stat),
         "pvalue": float(1.0 - stats.chi2.cdf(lr_stat, 1)),
     }
+
+
+def _bernoulli_log_likelihood(successes: int, failures: int) -> float:
+    total = successes + failures
+    if total == 0:
+        return 0.0
+    probability = successes / total
+    value = 0.0
+    if successes:
+        value += successes * math.log(probability)
+    if failures:
+        value += failures * math.log(1.0 - probability)
+    return float(value)

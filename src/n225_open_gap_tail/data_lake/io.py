@@ -230,6 +230,7 @@ CALENDAR_MAP_SCHEMA = ParquetSchema(
     columns=(
         ("ose_trading_date", pl.Utf8),
         ("us_session_date", pl.Utf8),
+        ("target_us_calendar_date", pl.Utf8),
         ("us_official_close_ts_utc", pl.Datetime("us", "UTC")),
         ("us_early_close_flag", pl.Boolean),
         ("dst_regime", pl.Utf8),

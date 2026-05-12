@@ -54,8 +54,8 @@ snapshot run_id="latest": _require-external-data-paths
 sensitivity run_id="latest" workers="6": _require-external-data-paths
     {{cli}} sensitivity --run-id "{{ run_id }}" --workers "{{ workers }}"
 
-_build-panel start="2016-07-19" end="": _require-external-data-paths
-    {{cli}} build-panel --start "{{ start }}" {{ if end == "" { "" } else { "--end \"" + end + "\"" } }}
+_build-panel start="2016-07-19" end="" force="false": _require-external-data-paths
+    {{cli}} build-panel --start "{{ start }}" {{ if end == "" { "" } else { "--end \"" + end + "\"" } }} {{ if force == "true" { "--force" } else { "" } }}
 
 _evaluate run_id="" workers="" suite="benchmark" force="false" tail_side="both" no_resume="false": _require-external-data-paths
     {{cli}} evaluate {{ if run_id == "" { "" } else { "--run-id \"" + run_id + "\"" } }} {{ if workers == "" { "" } else { "--workers " + workers } }} --suite "{{ suite }}" --tail-side "{{ tail_side }}" {{ if force == "true" { "--force" } else { "" } }} {{ if no_resume == "true" { "--no-resume" } else { "" } }}

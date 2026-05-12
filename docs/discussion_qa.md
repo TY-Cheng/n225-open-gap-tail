@@ -66,7 +66,7 @@ All predictors must be available before the OSE target open under the point-in-t
 The baseline benchmarks, advanced econometric benchmarks, and ML-tail suite are implemented and have completed artifacts in this run.
 
 - Baseline benchmarks include historical quantiles, rolling quantiles, EWMA, GARCH-t, GJR-GARCH-t, and GJR-GARCH-EVT.
-- Advanced econometric benchmark families such as CAViaR, CARE/expectile, Taylor ALD, direct FZ-loss, and GAS produce nonblocking empirical forecast rows; their interpretation still follows the benchmark and restricted-sample gates.
+- Advanced econometric benchmark families such as CAViaR, CARE/expectile, Taylor ALD/FZ0 joint VaR-ES, and GAS produce nonblocking empirical forecast rows; their interpretation still follows the benchmark and restricted-sample gates.
 - The ML suite includes direct LightGBM quantile forecasts, location-scale empirical calibration, standardized-loss POT-GPD variants, and the new research-candidate LightGBM+EVT routes.
 - LightGBM is used as a fixed tabular learner. The paper does not claim a new machine-learning algorithm.
 - Hyperparameters are held fixed across information sets and refit dates.

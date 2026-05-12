@@ -180,6 +180,7 @@ def _forecast_stateful_sequence(
                     "optimizer_status": current_fit.get("optimizer_status"),
                     "convergence_code": current_fit.get("convergence_code"),
                     "objective_value": current_fit.get("objective_value"),
+                    "objective_kind": current_fit.get("objective_kind"),
                     "retry_count": current_fit.get("retry_count"),
                     "restart_count": current_fit.get("restart_count"),
                     "initialization_source": current_fit.get("initialization_source"),
@@ -214,7 +215,22 @@ def _forecast_stateful_sequence(
                     "es_forecast": es_forecast,
                 }
             )
-        _update_advanced_fit_state(current_fit, realized_loss)
+        try:
+            _update_advanced_fit_state(current_fit, realized_loss)
+        except Exception as exc:  # pragma: no cover - defensive state filter guard
+            failures.append(
+                {
+                    "forecast_date": row["forecast_date"],
+                    "model_name": model_name,
+                    "tail_side": tail_side,
+                    "tail_level": tail_level,
+                    "fit_status": "unavailable_state_update_failed",
+                    "failure_reason": str(exc),
+                    "var_forecast": var_forecast,
+                    "es_forecast": es_forecast,
+                }
+            )
+            current_fit = None
     if not forecasts and not diagnostics:
         diagnostics.append(
             _unavailable_diagnostic(
@@ -310,13 +326,25 @@ def _fit_recursive_var_model(
             params=params,
             variant=variant,
             has_gap=_uses_positive_gap(model_name),
+            tail_level=tail_level,
         )
+        objective_train = train[burn_in_rows:]
+        objective_var_path = var_path[burn_in_rows:]
         if objective_kind == "expectile":
-            return _expectile_objective(train, var_path, tau=_required_float(expectile_tau))
-        if objective_kind in {"fz", "ald"}:
+            return _expectile_objective(
+                objective_train,
+                objective_var_path,
+                tau=_required_float(expectile_tau),
+            )
+        if objective_kind == "ald_fz0":
             gap = _positive_gap_from_params(params)
-            return _fz_objective(train, var_path, var_path + gap, tail_level)
-        return _quantile_objective(train, var_path, tail_level)
+            return _fz_objective(
+                objective_train,
+                objective_var_path,
+                objective_var_path + gap,
+                tail_level,
+            )
+        return _quantile_objective(objective_train, objective_var_path, tail_level)
 
     opt = _run_derivative_free_optimizer(
         objective=objective,
@@ -331,6 +359,7 @@ def _fit_recursive_var_model(
         params=params,
         variant=variant,
         has_gap=_uses_positive_gap(model_name),
+        tail_level=tail_level,
     )
     if _uses_positive_gap(model_name):
         gap = _positive_gap_from_params(params)
@@ -339,8 +368,8 @@ def _fit_recursive_var_model(
         fz_interpretation = "joint_var_es_optimized"
     else:
         es_multiplier_info = _empirical_es_multiplier(
-            train_losses=train,
-            train_var_forecasts=var_path,
+            train_losses=train[burn_in_rows:],
+            train_var_forecasts=var_path[burn_in_rows:],
         )
         if es_multiplier_info["status"] != "ok":
             return {
@@ -415,7 +444,7 @@ def _fit_gas_model(
         mu = float(params[3])
         sigma = np.exp(log_sigmas)
         z = (train - mu) / sigma
-        ll = stats.t.logpdf(z, df=nu) - np.log(sigma)
+        ll = (stats.t.logpdf(z, df=nu) - np.log(sigma))[burn_in_rows:]
         finite = ll[np.isfinite(ll)]
         if finite.size == 0:
             return 1e12
@@ -439,6 +468,7 @@ def _fit_gas_model(
         }
     location = float(params[3])
     standardized_losses = (train - location) / np.exp(cast(np.ndarray, path["log_sigmas"]))
+    standardized_losses = standardized_losses[burn_in_rows:]
     tail_info: dict[str, object] = {}
     standardized_var = standardized_es = None
     if model_name == "gas_t_pot_gpd":
@@ -579,6 +609,7 @@ def _fit_diagnostic_row(
         "optimizer_status": fit.get("optimizer_status"),
         "convergence_code": fit.get("convergence_code"),
         "objective_value": fit.get("objective_value"),
+        "objective_kind": fit.get("objective_kind"),
         "retry_count": fit.get("retry_count"),
         "restart_count": fit.get("restart_count"),
         "initialization_source": fit.get("initialization_source"),
@@ -827,11 +858,6 @@ def _advanced_model_metadata(model_name: str) -> dict[str, str]:
         return {
             "model_family": "ald_taylor_var_es",
             "model_variant": model_name.removeprefix("ald_taylor_"),
-        }
-    if model_name.startswith("direct_fz_loss_"):
-        return {
-            "model_family": "direct_fz_loss",
-            "model_variant": model_name.removeprefix("direct_fz_loss_"),
         }
     if model_name.startswith("gas_t_"):
         return {"model_family": "gas_t", "model_variant": model_name.removeprefix("gas_t_")}

@@ -19,6 +19,7 @@ def prepare_us_options_atm_iv_features(
     massive_daily_records: list[dict[str, object]],
     fred_records: list[dict[str, object]],
     downloaded_at_utc: datetime,
+    force_refresh: bool = False,
 ) -> UsOptionsAtmIvBuildResult:
     option_rows = fetch_massive_options_day_agg_rows(
         settings=settings,
@@ -26,6 +27,7 @@ def prepare_us_options_atm_iv_features(
         end=end,
         calendar_records=calendar_records,
         downloaded_at_utc=downloaded_at_utc,
+        force_refresh=force_refresh,
     )
     return build_us_options_atm_iv_feature_records(
         option_rows=option_rows,

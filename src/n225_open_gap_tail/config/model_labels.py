@@ -9,6 +9,8 @@ _MODEL_DISPLAY_LABELS = {
     "lightgbm_median_mad_pot_gpd_unibm": "LGBM median/MAD POT-GPD UniBM block-maxima shape",
     "lightgbm_median_iqr_pot_gpd_plain_mle": "LGBM median/IQR POT-GPD plain MLE",
     "lightgbm_median_iqr_pot_gpd_unibm": ("LGBM median/IQR POT-GPD UniBM block-maxima shape"),
+    "ald_taylor_var_es_sav": "Taylor ALD/FZ0 SAV",
+    "ald_taylor_var_es_asymmetric_slope": "Taylor ALD/FZ0 asymmetric slope",
 }
 
 _STATUS_DISPLAY_LABELS = {

@@ -197,9 +197,11 @@ def build_leakage_check_records(panel_rows: list[dict[str, object]]) -> list[dic
     for row in panel_rows:
         cutoff = _coerce_datetime(row.get("model_cutoff_ts_utc"))
         target_open = _coerce_datetime(row.get("target_open_ts_utc"))
+        saw_feature_timestamp = False
         for key, raw_available in sorted(row.items()):
             if not key.endswith("__available_ts_utc"):
                 continue
+            saw_feature_timestamp = True
             feature_name = key.removesuffix("__available_ts_utc")
             feature_value = row.get(feature_name)
             available = _coerce_datetime(raw_available)
@@ -215,7 +217,7 @@ def build_leakage_check_records(panel_rows: list[dict[str, object]]) -> list[dic
             elif available > cutoff:
                 status = "fail"
                 reason = "feature_available_after_model_cutoff"
-                lag_minutes = (cutoff - available).total_seconds() / 60.0
+                lag_minutes = (available - cutoff).total_seconds() / 60.0
             elif cutoff >= target_open:
                 status = "fail"
                 reason = "model_cutoff_not_before_target_open"
@@ -239,4 +241,42 @@ def build_leakage_check_records(panel_rows: list[dict[str, object]]) -> list[dic
                     "reason": reason,
                 }
             )
+        if not saw_feature_timestamp:
+            row_level = _row_cutoff_invariant_record(
+                row,
+                cutoff=cutoff,
+                target_open=target_open,
+            )
+            if row_level is not None:
+                records.append(row_level)
     return records
+
+
+def _row_cutoff_invariant_record(
+    row: Mapping[str, object],
+    *,
+    cutoff: datetime | None,
+    target_open: datetime | None,
+) -> dict[str, object] | None:
+    if cutoff is None or target_open is None:
+        status = "fail"
+        reason = "missing_row_timestamp_for_leakage_check"
+        lag_minutes = None
+    elif cutoff >= target_open:
+        status = "fail"
+        reason = "model_cutoff_not_before_target_open"
+        lag_minutes = None
+    else:
+        return None
+    return {
+        "forecast_date": row.get("forecast_date"),
+        "feature_name": "__row_cutoff_invariant__",
+        "feature_available_ts_utc": None,
+        "model_cutoff_ts_utc": cutoff,
+        "target_open_ts_utc": target_open,
+        "lag_minutes": lag_minutes,
+        "feature_fill_method": None,
+        "feature_source_date": None,
+        "status": status,
+        "reason": reason,
+    }

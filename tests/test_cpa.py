@@ -140,6 +140,11 @@ def test_ml_tail_cpa_v1_runs_two_sided_direct_quantile_information_ladder() -> N
                 model_name=paper_module.ML_TAIL_LOCATION_SCALE_MODEL,
                 include_es=True,
             ),
+            *_cpa_loss_matrix_rows(
+                count=150,
+                model_name=paper_module.ML_TAIL_MEDIAN_IQR_POT_GPD_PLAIN_MLE_MODEL,
+                include_es=True,
+            ),
         ]
     )
 
@@ -174,6 +179,11 @@ def test_ml_tail_cpa_v1_runs_two_sided_direct_quantile_information_ladder() -> N
     )
     assert fz_record["inference_status"] == "ok_newey_west_hac_wald_cpa"
     assert fz_record["regression_formula"].startswith("candidate_minus_anchor_fz_loss")
+    assert any(
+        row["model_name"] == paper_module.ML_TAIL_MEDIAN_IQR_POT_GPD_PLAIN_MLE_MODEL
+        and row["loss_family"] == "var_es_fz_loss"
+        for row in records
+    )
 
 
 def test_ml_tail_cpa_v1_gates_scope_and_instruments() -> None:
@@ -250,6 +260,29 @@ def test_ml_tail_cpa_defensive_branches_and_forecast_quantile_fallback(tmp_path:
         if row["candidate_information_set"] == "japan_only_plus_us_close_core"
     )
     assert no_instrument_core["inference_status"] == "unavailable_no_nonconstant_instruments"
+
+    invalid_rows = [
+        {
+            **row,
+            "fit_status": "invalid_forecast",
+            "is_valid_forecast": False,
+        }
+        for row in _cpa_loss_matrix_rows(count=150)
+    ]
+    assert paper_module.build_ml_tail_cpa_inference_records(invalid_rows) == []
+
+    rank_deficient_fit = cpa_module._fit_cpa_hac_regression(
+        [
+            {
+                "loss_diff": float(index % 7) / 100.0,
+                "vix_level": float(index),
+                "duplicate_vix": float(index),
+            }
+            for index in range(150)
+        ],
+        ["constant", "vix_level", "duplicate_vix"],
+    )
+    assert rank_deficient_fit is None
 
     stale = tmp_path / "benchmark_right_robustness_table.tex"
     stale.write_text("old", encoding="utf-8")

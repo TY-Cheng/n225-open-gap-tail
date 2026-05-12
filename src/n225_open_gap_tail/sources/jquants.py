@@ -147,11 +147,8 @@ class JQuantsV2Client:
         contract_flag: str = "1",
     ) -> list[dict[str, Any]]:
         """Fetch daily Nikkei 225 large-option bars for one exchange trading date."""
+        _ = (category, contract_flag)
         params = {"date": trading_date}
-        if category:
-            params["category"] = category
-        if contract_flag:
-            params["contract_flag"] = contract_flag
         return self.get_paginated("/derivatives/bars/daily/options/225", params)
 
     def probe_endpoint(

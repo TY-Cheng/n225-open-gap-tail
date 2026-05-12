@@ -19,6 +19,7 @@ def prepare_n225_option_features(
     calendar_records: list[dict[str, object]],
     run_start_utc: datetime,
     downloaded_at_utc: datetime,
+    force_refresh: bool = False,
 ) -> list[dict[str, object]]:
     _pipeline_log("J-Quants Nikkei 225 options bronze fetch/cache start")
     raw_rows = cache_ops._fetch_jquants_nikkei_option_rows(
@@ -27,6 +28,7 @@ def prepare_n225_option_features(
         end=end,
         calendar_records=calendar_records,
         run_start_utc=run_start_utc,
+        force_refresh=force_refresh,
     )
     _pipeline_log(f"J-Quants Nikkei 225 option rows available: {len(raw_rows)}")
     normalized = normalize_jquants_nikkei225_option_rows(

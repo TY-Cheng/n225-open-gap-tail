@@ -8,6 +8,7 @@ from n225_open_gap_tail.config.runtime import (
     math,
     np,
     PIPELINE_CONFIG,
+    timedelta,
     UTC,
     _optional_float,
 )
@@ -90,7 +91,7 @@ def _summaries_available_by_cutoff(
     model_cutoff: datetime | None,
 ) -> list[dict[str, object]]:
     if model_cutoff is None:
-        return summaries
+        return []
     return [
         summary
         for summary in summaries
@@ -316,6 +317,7 @@ def _stamp_contract_calendar_features(
 ) -> None:
     last_trade = _parse_date(row.get("last_trading_day"))
     sq = _parse_date(row.get("special_quotation_day"))
+    available_ts = _contract_calendar_available_ts(row)
     _stamp_feature(
         row,
         "n225_days_to_last_trade",
@@ -323,14 +325,16 @@ def _stamp_contract_calendar_features(
         if forecast_date is None or last_trade is None
         else float((last_trade - forecast_date).days),
         source_date=None if forecast_date is None else forecast_date.isoformat(),
-        available_ts=None,
+        available_ts=available_ts,
+        fill_method="contract_calendar_ex_ante",
     )
     _stamp_feature(
         row,
         "n225_days_to_sq",
         None if forecast_date is None or sq is None else float((sq - forecast_date).days),
         source_date=None if forecast_date is None else forecast_date.isoformat(),
-        available_ts=None,
+        available_ts=available_ts,
+        fill_method="contract_calendar_ex_ante",
     )
     month = _contract_month_number(row.get("contract_month"))
     angle = None if month is None else 2.0 * math.pi * (month - 1) / 12.0
@@ -339,14 +343,25 @@ def _stamp_contract_calendar_features(
         "n225_contract_month_sin",
         None if angle is None else math.sin(angle),
         source_date=None if forecast_date is None else forecast_date.isoformat(),
-        available_ts=None,
+        available_ts=available_ts,
+        fill_method="contract_calendar_ex_ante",
     )
     _stamp_feature(
         row,
         "n225_contract_month_cos",
         None if angle is None else math.cos(angle),
         source_date=None if forecast_date is None else forecast_date.isoformat(),
-        available_ts=None,
+        available_ts=available_ts,
+        fill_method="contract_calendar_ex_ante",
+    )
+
+
+def _contract_calendar_available_ts(row: dict[str, object]) -> datetime | None:
+    cutoff = _coerce_datetime(row.get("model_cutoff_ts_utc"))
+    if cutoff is None:
+        return None
+    return cutoff - timedelta(
+        minutes=PIPELINE_CONFIG.leakage_policy.leakage_warning_min_lag_minutes,
     )
 
 
@@ -510,10 +525,11 @@ def _stamp_feature(
     *,
     source_date: str | None,
     available_ts: object | None,
+    fill_method: str = "prior_clean_history",
 ) -> None:
     row[feature_name] = value if _is_finite_or_none(value) else None
     row[f"{feature_name}__source_date"] = source_date
-    row[f"{feature_name}__fill_method"] = "prior_clean_history"
+    row[f"{feature_name}__fill_method"] = fill_method
     if available_ts is not None:
         row[f"{feature_name}__available_ts_utc"] = _coerce_datetime(available_ts)
 
@@ -548,5 +564,11 @@ def _contract_month_number(value: object) -> int | None:
 
 def _coerce_datetime(value: object) -> datetime | None:
     if isinstance(value, datetime):
-        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        return value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)
+    if isinstance(value, str) and value:
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed.astimezone(UTC) if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     return None

@@ -70,6 +70,28 @@ def test_latest_snapshot_ignores_panel_only_runs(tmp_path: Path) -> None:
     assert resolved == complete
 
 
+def test_snapshot_fails_closed_when_required_artifacts_are_missing(tmp_path: Path) -> None:
+    reports_dir = tmp_path / "reports"
+    run_dir = reports_dir / "runs" / "tailrisk_missing_artifacts"
+    run_dir.mkdir(parents=True)
+    (run_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "tailrisk_missing_artifacts",
+                "benchmark_eval_status": "completed",
+                "ml_tail_eval_status": "completed_lightgbm_ml_tail_models",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(snapshot_module.SnapshotError, match="missing required artifacts"):
+        snapshot_module.write_results_snapshot_from_run(
+            settings=Settings(reports_dir=reports_dir),
+            run_id="tailrisk_missing_artifacts",
+        )
+
+
 def test_schema_probe_maps_jquants_short_fields_and_counts_zero_prices() -> None:
     rows = [
         _raw_row("2026-01-05", "2026-03", "161030018"),
@@ -539,6 +561,10 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
         ),
         encoding="utf-8",
     )
+    figure_dir = run_dir / "latex" / "figures"
+    figure_dir.mkdir(parents=True)
+    (figure_dir / "dst_attenuation_left_tail.png").write_bytes(b"png")
+    (figure_dir / "trigger_diagnostics_right_tail.png").write_bytes(b"png")
 
     result = snapshot_module.write_results_snapshot_from_run(
         settings=Settings(
@@ -885,8 +911,8 @@ def test_results_discussion_private_helpers_cover_fallbacks(tmp_path: Path) -> N
     )
 
     combined = results_discussion_module._combine_forecasts_for_snapshot(
-        benchmark_forecasts=pl.DataFrame([{"model_name": "hist"}]),
-        ml_tail_forecasts=pl.DataFrame([{"model_name": "lgbm"}]),
+        benchmark_forecasts=pl.DataFrame([{"model_name": "historical_quantile"}]),
+        ml_tail_forecasts=pl.DataFrame([{"model_name": "lightgbm_direct_quantile"}]),
     )
     assert combined.height == 2
     assert set(combined["suite"].to_list()) == {"benchmark", "ml_tail"}
@@ -1397,6 +1423,15 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
         figure_manifest={},
         docs_dir=tmp_path / "docs",
     )
+    figures = cast(list[object], manifest["figures"])
+    missing_manifest: dict[str, object] = {"figures": [figures[-1]]}
+    with pytest.raises(FileNotFoundError, match="missing PNG"):
+        snapshot_gallery.sync_snapshot_figure_assets(
+            run_dir=run_dir,
+            figure_manifest=missing_manifest,
+            docs_dir=tmp_path / "docs",
+        )
+    manifest["figures"] = figures[:-1]
     snapshot_gallery.sync_snapshot_figure_assets(
         run_dir=run_dir,
         figure_manifest=manifest,

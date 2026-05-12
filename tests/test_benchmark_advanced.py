@@ -176,7 +176,7 @@ def test_derivative_free_optimizer_runs_bounded_restarts_on_flat_objective() -> 
     result = advanced_math._run_derivative_free_optimizer(
         objective=lambda params: 1.0,
         x0=np.array([1.0, 0.5]),
-        model_name="direct_fz_loss_sav",
+        model_name="ald_taylor_var_es_sav",
         tail_level=0.95,
         forecast_date="2026-01-05",
     )
@@ -326,7 +326,7 @@ def test_stateful_forecast_t_does_not_use_realized_loss_t(
     assert forecasts[0]["es_forecast"] == pytest.approx(mutated_forecasts[0]["es_forecast"])
 
 
-def test_direct_fz_and_gas_pot_validity_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_taylor_ald_fz0_and_gas_pot_validity_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 30)
     _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 3)
     losses = np.array(
@@ -335,7 +335,7 @@ def test_direct_fz_and_gas_pot_validity_helpers(monkeypatch: pytest.MonkeyPatch)
 
     fit = benchmark_advanced._fit_advanced_model(
         train=losses[:60],
-        model_name="direct_fz_loss_sav",
+        model_name="ald_taylor_var_es_sav",
         tail_level=0.95,
         forecast_date="2026-03-02",
         previous_params=None,
@@ -354,6 +354,14 @@ def test_direct_fz_and_gas_pot_validity_helpers(monkeypatch: pytest.MonkeyPatch)
     assert tail["evt_exceedance_count"] >= 3
     assert tail["evt_scale"] > 0
     assert "gpd_unconstrained_loc_hat" in tail
+
+
+def test_advanced_registry_retains_single_taylor_ald_fz0_family() -> None:
+    advanced_models = tuple(pipeline_runtime.BENCHMARK_ADVANCED_MODEL_NAMES)
+    assert "ald_taylor_var_es_sav" in advanced_models
+    assert "ald_taylor_var_es_asymmetric_slope" in advanced_models
+    assert not any(model.startswith("direct_fz_loss_") for model in advanced_models)
+    assert advanced_math._objective_kind("ald_taylor_var_es_sav") == "ald_fz0"
 
 
 def test_advanced_helper_failure_branches_are_explicit(monkeypatch: pytest.MonkeyPatch) -> None:

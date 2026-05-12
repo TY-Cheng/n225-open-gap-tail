@@ -117,8 +117,8 @@ Model and evaluation checks:
   Level 4 stabilized POT-GPD variants as gated robustness candidates?
 - Are LightGBM and EVT described as conditional-learning and tail-calibration
   layers, not as a new algorithmic contribution?
-- Are historical quantiles, GARCH/GJR/GJR-EVT, CAViaR/CARE/GAS/Taylor-style
-  comparators handled honestly as implemented, deferred, or out of scope?
+- Are historical quantiles, GARCH/GJR/GJR-EVT, CAViaR/CARE/GAS/Taylor
+  ALD/FZ0 comparators handled honestly as implemented, deferred, or out of scope?
 - Are VaR coverage, exception counts, ES diagnostics, Fissler-Ziegel joint
   VaR-ES loss, CPA diagnostics, Murphy diagrams, and trigger/severity diagnostics
   reported without substituting generic accuracy metrics?

@@ -50,67 +50,20 @@ from n225_open_gap_tail.config.runtime import (
     _optional_float,
     _pipeline_log,
 )
+from n225_open_gap_tail.data_lake.cache_helpers import (
+    _coerce_datetime as _coerce_datetime,
+    _month_chunks as _month_chunks,
+    _optional_text as _optional_text,
+    _safe_name as _safe_name,
+    _window_range as _window_range,
+    _window_return as _window_return,
+)
+from n225_open_gap_tail.data_lake.cache_metadata import (
+    _cache_covers_dates as _cache_covers_dates,
+    _cache_covers_range as _cache_covers_range,
+    _metadata_covers_range as _metadata_covers_range,
+)
 from n225_open_gap_tail.data_lake.jquants_options_cache import _fetch_jquants_nikkei_option_rows
-
-
-def _safe_name(value: str) -> str:  # pragma: no cover - vendor cache path
-    return "".join(ch.lower() if ch.isalnum() else "_" for ch in value).strip("_")
-
-
-def _optional_text(value: object) -> str | None:  # pragma: no cover - vendor cache path
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
-
-
-def _month_chunks(*, start: str, end: str) -> list[tuple[str, str]]:  # pragma: no cover
-    current = date.fromisoformat(start).replace(day=1)
-    end_date = date.fromisoformat(end)
-    chunks: list[tuple[str, str]] = []
-    while current <= end_date:
-        next_month = (current.replace(day=28) + timedelta(days=4)).replace(day=1)
-        chunk_start = max(date.fromisoformat(start), current)
-        chunk_end = min(end_date, next_month - timedelta(days=1))
-        chunks.append((chunk_start.isoformat(), chunk_end.isoformat()))
-        current = next_month
-    return chunks
-
-
-def _coerce_datetime(value: object) -> datetime | None:  # pragma: no cover - vendor cache path
-    if isinstance(value, datetime):
-        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
-    if isinstance(value, str) and value:
-        try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
-            return None
-        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
-    return None
-
-
-def _window_return(values: list[float], window: int) -> float | None:  # pragma: no cover
-    if len(values) < window or len(values) < 2:
-        return None
-    start = values[-window]
-    end = values[-1]
-    if start <= 0 or end <= 0:
-        return None
-    return math.log(end) - math.log(start)
-
-
-def _window_range(  # pragma: no cover - vendor cache path
-    highs: list[float | None], lows: list[float | None]
-) -> float | None:
-    valid_highs = [value for value in highs if value is not None and value > 0]
-    valid_lows = [value for value in lows if value is not None and value > 0]
-    if not valid_highs or not valid_lows:
-        return None
-    high = max(valid_highs)
-    low = min(valid_lows)
-    if low <= 0:
-        return None
-    return math.log(high) - math.log(low)
 
 
 def _jquants_bronze_row(
@@ -414,28 +367,6 @@ def _read_parquet_records(path: Path) -> list[dict[str, Any]]:
     return pl.read_parquet(path).to_dicts()
 
 
-def _cache_covers_dates(path: Path, required_dates: list[str]) -> bool:
-    metadata = read_verified_parquet_metadata(path)
-    raw_dates = metadata.get("requested_dates")
-    if not isinstance(raw_dates, list):
-        return False
-    available = {str(value) for value in raw_dates}
-    return set(required_dates).issubset(available)
-
-
-def _cache_covers_range(path: Path, start: str, end: str) -> bool:
-    metadata = read_verified_parquet_metadata(path)
-    return _metadata_covers_range(metadata, start, end)
-
-
-def _metadata_covers_range(metadata: Mapping[str, object], start: str, end: str) -> bool:
-    raw_range = metadata.get("requested_range")
-    if not isinstance(raw_range, list) or len(raw_range) != 2:
-        return False
-    cached_start, cached_end = str(raw_range[0]), str(raw_range[1])
-    return cached_start <= start and cached_end >= end
-
-
 def _filter_records_by_range(
     records: list[dict[str, object]],
     *,
@@ -509,12 +440,13 @@ def _fetch_jquants_futures_rows(
     end: str,
     calendar_records: list[dict[str, object]],
     run_start_utc: datetime | None = None,
+    force_refresh: bool = False,
 ) -> list[dict[str, Any]]:  # pragma: no cover - vendor path
     rows: list[dict[str, Any]] = []
     jpx_dates = [
         str(row["calendar_date"])
         for row in calendar_records
-        if start <= str(row["calendar_date"]) <= end and row.get("is_jpx_trading_day") is True
+        if start <= str(row["calendar_date"]) <= end and _request_jquants_futures_date(row)
     ]
     dates_by_month: dict[tuple[int, int], list[str]] = {}
     for trading_date in jpx_dates:
@@ -542,7 +474,7 @@ def _fetch_jquants_futures_rows(
                 year=year,
                 month=month,
             )
-            if path.exists() and _cache_covers_dates(path, trading_dates):
+            if not force_refresh and path.exists() and _cache_covers_dates(path, trading_dates):
                 cached_records = _filter_records_by_dates(
                     _read_parquet_records(path),
                     allowed_dates=trading_dates,
@@ -573,6 +505,7 @@ def _fetch_jquants_futures_rows(
                     "source": "jquants",
                     "endpoint": "/derivatives/bars/daily/futures",
                     "requested_dates": trading_dates,
+                    "completed_dates": trading_dates,
                     "pull_started_at_utc": pull_started.isoformat(),
                     "pull_completed_at_utc": datetime.now(UTC).isoformat(),
                 },
@@ -585,6 +518,21 @@ def _fetch_jquants_futures_rows(
     return rows
 
 
+def _request_jquants_futures_date(row: dict[str, object]) -> bool:
+    if row.get("is_jpx_trading_day") is True:
+        return True
+    date_key = str(row.get("calendar_date") or "")
+    if not date_key:
+        return False
+    weekday = row.get("weekday")
+    if isinstance(weekday, int):
+        return weekday < 5
+    try:
+        return date.fromisoformat(date_key).weekday() < 5
+    except ValueError:
+        return False
+
+
 def _fetch_massive_predictors(
     *,
     settings: Settings,
@@ -592,6 +540,7 @@ def _fetch_massive_predictors(
     end: str,
     downloaded_at_utc: datetime,
     calendar_records: list[dict[str, object]] | None = None,
+    force_refresh: bool = False,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:  # pragma: no cover - vendor path
     daily_records: list[dict[str, object]] = []
     minute_feature_records: list[dict[str, object]] = []
@@ -627,7 +576,11 @@ def _fetch_massive_predictors(
                         extra_partitions={"ticker": safe_ticker},
                     )
                     unavailable_path = path.with_suffix(".unavailable.json")
-                    if path.exists() and _cache_covers_range(path, chunk_start, chunk_end):
+                    if (
+                        not force_refresh
+                        and path.exists()
+                        and _cache_covers_range(path, chunk_start, chunk_end)
+                    ):
                         cached_records = _filter_records_by_range(
                             _read_parquet_records(path),
                             start=chunk_start,
@@ -638,7 +591,9 @@ def _fetch_massive_predictors(
                         _add_stat(year_stats, "cache_hits")
                         _add_stat(year_stats, "rows", len(cached_records))
                         continue
-                    if _unavailable_marker_covers(unavailable_path, chunk_start, chunk_end):
+                    if not force_refresh and _unavailable_marker_covers(
+                        unavailable_path, chunk_start, chunk_end
+                    ):
                         _add_stat(year_stats, "unavailable")
                         continue
                     payload = client.fetch_aggregate_bars(
@@ -709,8 +664,10 @@ def _fetch_massive_predictors(
                         extra_partitions={"ticker": safe_minute_ticker},
                     )
                     unavailable_path = feature_path.with_suffix(".unavailable.json")
-                    if feature_path.exists() and _cache_covers_range(
-                        feature_path, chunk_start, chunk_end
+                    if (
+                        not force_refresh
+                        and feature_path.exists()
+                        and _cache_covers_range(feature_path, chunk_start, chunk_end)
                     ):
                         cached_records = _filter_records_by_range(
                             _read_parquet_records(feature_path),
@@ -722,7 +679,9 @@ def _fetch_massive_predictors(
                         _add_stat(year_stats, "cache_hits")
                         _add_stat(year_stats, "rows", len(cached_records))
                         continue
-                    if _unavailable_marker_covers(unavailable_path, chunk_start, chunk_end):
+                    if not force_refresh and _unavailable_marker_covers(
+                        unavailable_path, chunk_start, chunk_end
+                    ):
                         _add_stat(year_stats, "unavailable")
                         continue
                     payload = client.fetch_aggregate_bars(
@@ -823,6 +782,7 @@ def _fetch_cboe_predictors(
     start: str,
     end: str,
     downloaded_at_utc: datetime,
+    force_refresh: bool = False,
 ) -> list[dict[str, object]]:  # pragma: no cover - vendor path
     symbols = settings.cboe_vol_index_symbol_list()
     if not symbols:
@@ -844,7 +804,7 @@ def _fetch_cboe_predictors(
         / f"symbols={safe_symbols}"
         / "daily.parquet"
     )
-    if silver_path.exists() and _cache_covers_range(silver_path, start, end):
+    if not force_refresh and silver_path.exists() and _cache_covers_range(silver_path, start, end):
         _pipeline_log(f"Cboe volatility cache hit symbols={','.join(symbols)}")
         return _filter_records_by_range(
             _read_parquet_records(silver_path),
@@ -914,6 +874,7 @@ def _fetch_fred_predictors(
     end: str,
     downloaded_at_utc: datetime,
     run_start_utc: datetime | None = None,
+    force_refresh: bool = False,
 ) -> list[dict[str, object]]:  # pragma: no cover - vendor path
     records: list[dict[str, object]] = []
     cache_root = settings.data_dir / "bronze"
@@ -933,6 +894,7 @@ def _fetch_fred_predictors(
             metadata = read_verified_parquet_metadata(path)
             if (
                 path.exists()
+                and not force_refresh
                 and is_fred_cache_fresh_at_run_start(
                     metadata,
                     run_start_utc=ttl_decision_ts,

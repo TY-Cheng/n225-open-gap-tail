@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -120,6 +121,7 @@ def write_results_snapshot_from_run(
         figure_manifest=_read_json_dict(paths["figure_manifest"]),
         docs_dir=docs_path.parent,
     )
+    _sync_snapshot_table_assets(run_dir=run_dir, docs_dir=docs_path.parent)
     discussion_path.write_text(
         _full_run_discussion_qa_markdown(
             run_dir=run_dir,
@@ -145,6 +147,22 @@ def write_results_snapshot_from_run(
             manifest.get("ml_tail_eval_status") or manifest.get("benchmark_eval_status")
         ),
     )
+
+
+def _sync_snapshot_table_assets(*, run_dir: Path, docs_dir: Path) -> None:
+    target_dir = docs_dir / "tables" / run_dir.name
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for stale in target_dir.glob("*.tex"):
+        stale.unlink(missing_ok=True)
+    source_dirs = [
+        run_dir / "latex" / "tables",
+        run_dir / "sensitivity" / "latex" / "tables",
+    ]
+    for source_dir in source_dirs:
+        if not source_dir.exists():
+            continue
+        for source_path in sorted(source_dir.glob("*.tex")):
+            shutil.copy2(source_path, target_dir / source_path.name)
 
 
 def build_snapshot_id(
@@ -439,7 +457,7 @@ hide:
   - navigation
 ---
 
-# Results Snapshot
+# Results And Discussion Snapshot
 
 > **Research-candidate full-run artifact.** This page is generated from `{run_id}`.
 > It summarizes the durable gold modeling sample and run outputs, not the older
@@ -447,11 +465,13 @@ hide:
 > final manuscript claims require a clean committed run and author review of the
 > tables and notes.
 
-## Introduction
+## Results And Discussion Overview
 
-The framing questions have moved to [Discussion Q&A](discussion_qa.md). This snapshot is organized as a paper-facing evidence map: data and target construction first, model and evaluation design second, results third, and paper-facing exports and artifact provenance at the end.
-
-The main result tables are in the Results section. Full table and figure provenance is collected in the Appendix section, including source artifacts and claim scopes for paper-facing outputs.
+This page is the merged results-and-artifact map for the locked run. It keeps
+enough data and method context to make each result auditable, then organizes the
+tables and figures in the order they support the Results and Discussion section.
+Full data-source detail lives in [Data](data.md), and the paper-level research
+design lives in [Paper Plan](paper_plan.md).
 
 ### Evidence Map
 
@@ -463,7 +483,7 @@ The main result tables are in the Results section. Full table and figure provena
 - The middle branch compares baseline benchmarks, advanced econometric benchmarks, and ML-tail forecasts on registered loss units.
 - The right branch separates primary ML nested information sets, diagnostic model-family comparisons, unconditional DM/MCS inference, CPA diagnostics, and supporting figures.
 
-## Materials: Data And Target
+## Results Context: Data, Target, And Timing
 
 ### Run Metadata
 
@@ -509,7 +529,7 @@ The main result tables are in the Results section. Full table and figure provena
 - Warnings are retained because they identify conservative-lag or missing-feature situations that may matter for interpretation.
 - The panel signature is deterministic and binds the leakage check to the current gold panel/config.
 
-## Methods: Model Configuration And Evaluation
+## Results Context: Model Configuration And Evaluation
 
 ### Pipeline Structure
 
@@ -614,36 +634,37 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 
 {results_discussion}
 
-## Appendix: Tables, Figures, And Run Artifacts
+## Results And Discussion: Figures, Tables, And Source Artifacts
 
-The appendix collects generated exports and provenance. The main Results section refers back to these files when a table or figure is suitable for manuscript use.
+This section merges the former figure/table placement page into the results
+snapshot. All generated figures and tables are listed with their intended
+interpretation. The words "supporting" and "diagnostic" describe claim scope;
+they do not mean the artifact is missing from this page.
 
-### Paper-Facing Table And Figure Gallery
-
-#### Appendix Configuration Robustness
+### Configuration Robustness Evidence
 
 {configuration_sensitivity}
 
-#### Table Manifest
+### Generated Table Manifest
 
 {table_manifest_table}
 
 - The table manifest records the generated LaTeX table files, their source artifacts, and their claim scopes.
 - Tables are paper-facing exports; the Markdown tables above are snapshot summaries for browser review.
 
+### Table Interpretation Guide
+
+{_table_interpretation_markdown(run_id)}
+
 {figure_gallery}
 
-### Artifact Index
+### Source Artifact Index
 
 {artifact_table}
 
 - All paths above are local ignored artifacts; they are reproducible outputs, not tracked source files.
 - Forecast/reporting rebuilds should read these artifacts and must not call vendor APIs.
 - If this page is stale, rerun `just snapshot` after a completed `just full` or pass an explicit run id to the CLI snapshot command.
-
-### Technical Infrastructure Note
-
-- Runtime imports are explicit at the module boundary; no dynamic runtime namespace bridge is required to generate this snapshot. This infrastructure note is separate from empirical claim boundaries.
 """
 
 
@@ -652,7 +673,7 @@ def _configuration_sensitivity_markdown(run_dir: Path) -> str:
     metrics_root = run_dir / "sensitivity" / "metrics"
     if not status_path.exists():
         return (
-            "Appendix configuration robustness has not been generated for this run. "
+            "Configuration robustness has not been generated for this run. "
             "Run `just sensitivity latest` after the canonical full run, then rerun "
             "`just snapshot latest`."
         )
@@ -690,7 +711,7 @@ def _configuration_sensitivity_markdown(run_dir: Path) -> str:
             _markdown_table(("Sensitivity family", "Rows / classifications"), rows),
             (
                 "- The primary design compares pre-specified point-in-time forecast "
-                "specifications. Configuration sensitivity is appendix robustness "
+                "specifications. Configuration sensitivity is robustness "
                 "evidence and is not used to select primary selections.\n"
                 "- LGBM rows vary only capacity settings; EWMA reports the primary "
                 "lambda 0.94 plus 0.90 and 0.97; POT threshold rows use forecastable "
@@ -702,6 +723,108 @@ def _configuration_sensitivity_markdown(run_dir: Path) -> str:
             ),
         )
     )
+
+
+def _table_interpretation_markdown(run_id: str) -> str:
+    root = f"tables/{run_id}"
+    rows = [
+        (
+            "Predictor block and coverage",
+            f"[tailrisk_predictor_block_coverage_table.tex]({root}/tailrisk_predictor_block_coverage_table.tex)",
+            "Data/Methods table showing source families, feature counts, examples, missingness, and model role; coverage is not timestamp admissibility.",
+        ),
+        (
+            "Model inventory",
+            f"[tailrisk_model_inventory_table.tex]({root}/tailrisk_model_inventory_table.tex)",
+            "Methods table explaining model families, information sets, VaR construction, ES construction, and role; performance belongs elsewhere.",
+        ),
+        (
+            "Benchmark floor summary",
+            f"[benchmark_metrics_table.tex]({root}/benchmark_metrics_table.tex)",
+            "Results table for target-history and econometric benchmark calibration and loss evidence.",
+        ),
+        (
+            "Benchmark tail-side details",
+            f"[benchmark_left_tail_risk_table.tex]({root}/benchmark_left_tail_risk_table.tex), [benchmark_right_tail_risk_table.tex]({root}/benchmark_right_tail_risk_table.tex)",
+            "Tail-specific benchmark rows for left and right risk surfaces.",
+        ),
+        (
+            "ML information ladder",
+            f"[ml_tail_metrics_table.tex]({root}/ml_tail_metrics_table.tex)",
+            "Core nested-information-set table for direct LightGBM; read loss changes with coverage gates.",
+        ),
+        (
+            "ML tail-side details",
+            f"[ml_tail_left_tail_risk_table.tex]({root}/ml_tail_left_tail_risk_table.tex), [ml_tail_right_tail_risk_table.tex]({root}/ml_tail_right_tail_risk_table.tex)",
+            "Tail-specific direct LightGBM information-set rows.",
+        ),
+        (
+            "Selected model performance",
+            f"[tailrisk_selected_model_performance_table.tex]({root}/tailrisk_selected_model_performance_table.tex)",
+            "Deterministic selected-row summary after sample-size, coverage, FZ-loss, and quantile-loss gates.",
+        ),
+        (
+            "Promoted tail rows",
+            f"[ml_tail_promoted_tail_models_table.tex]({root}/ml_tail_promoted_tail_models_table.tex)",
+            "Locked side-specific promotion-gate rows; not a universal model-family ranking.",
+        ),
+        (
+            "Full benchmark scan",
+            f"[appendix_benchmark_all_models_table.tex]({root}/appendix_benchmark_all_models_table.tex)",
+            "Complete benchmark inventory supporting benchmark breadth.",
+        ),
+        (
+            "Full LGBM scan",
+            f"[appendix_lgbm_all_models_table.tex]({root}/appendix_lgbm_all_models_table.tex)",
+            "Complete per-model LightGBM scan; do not use as a raw leaderboard.",
+        ),
+        (
+            "Restricted result matrix",
+            f"[ml_tail_result_matrix_table.tex]({root}/ml_tail_result_matrix_table.tex), [ml_tail_result_matrix_summary_table.tex]({root}/ml_tail_result_matrix_summary_table.tex)",
+            "Restricted common-sample model-family comparison and summary.",
+        ),
+        (
+            "Compact DM/MCS summary",
+            f"[tailrisk_dm_mcs_summary_table.tex]({root}/tailrisk_dm_mcs_summary_table.tex)",
+            "Headline paired inference table; negative loss differences favor the candidate.",
+        ),
+        (
+            "ES severity",
+            f"[tailrisk_es_severity_table.tex]({root}/tailrisk_es_severity_table.tex)",
+            "Conditional-on-exception severity diagnostic; not standalone model selection.",
+        ),
+        (
+            "Pre-open trigger diagnostics",
+            f"[tailrisk_hedge_trigger_diagnostics_table.tex]({root}/tailrisk_hedge_trigger_diagnostics_table.tex)",
+            "Risk-monitoring diagnostic; not hedge PnL, transaction-cost, alpha, or execution evidence.",
+        ),
+        (
+            "Claim boundary",
+            f"[tailrisk_claim_scope_table.tex]({root}/tailrisk_claim_scope_table.tex)",
+            "Reference table separating headline, restricted, diagnostic, and robustness claims.",
+        ),
+        (
+            "DST attenuation",
+            f"[ml_tail_dst_attenuation_table.tex]({root}/ml_tail_dst_attenuation_table.tex)",
+            "Descriptive timing-regime table; not structural causality.",
+        ),
+        (
+            "LGBM capacity robustness",
+            f"[appendix_lgbm_configuration_sensitivity_table.tex]({root}/appendix_lgbm_configuration_sensitivity_table.tex)",
+            "Configuration robustness only; rows do not select headline models.",
+        ),
+        (
+            "Benchmark robustness",
+            f"[appendix_benchmark_configuration_sensitivity_table.tex]({root}/appendix_benchmark_configuration_sensitivity_table.tex)",
+            "EWMA/benchmark robustness evidence, separate from primary selection.",
+        ),
+        (
+            "EVT threshold robustness",
+            f"[appendix_evt_threshold_sensitivity_table.tex]({root}/appendix_evt_threshold_sensitivity_table.tex)",
+            "POT threshold robustness and boundary diagnostics at the 95% VaR level.",
+        ),
+    ]
+    return _markdown_table(("Results/Discussion role", "Artifact", "How to read it"), rows)
 
 
 def _sensitivity_metric_summary(path: Path) -> str:

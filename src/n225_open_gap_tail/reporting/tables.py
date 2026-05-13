@@ -16,11 +16,14 @@ from n225_open_gap_tail.reporting.figures import export_figures
 from n225_open_gap_tail.reporting.latex import (
     _claim_scope_to_latex,
     _configuration_sensitivity_to_latex,
+    _dm_mcs_summary_to_latex,
     _dst_attenuation_to_latex,
     _es_severity_to_latex,
     _full_per_model_metrics_to_latex,
     _hedge_trigger_to_latex,
+    _model_inventory_to_latex,
     _metrics_to_latex,
+    _predictor_block_coverage_to_latex,
     _promoted_tail_models_to_latex,
     _result_matrix_summary_to_latex,
     _result_matrix_to_latex,
@@ -41,6 +44,18 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
     tables = 0
     table_files: list[str] = []
     manifest = _read_manifest(run_dir)
+    feature_coverage_path = run_dir / "panel" / "feature_coverage.parquet"
+    if feature_coverage_path.exists():
+        table_path = latex_dir / "tailrisk_predictor_block_coverage_table.tex"
+        table_path.write_text(
+            _predictor_block_coverage_to_latex(
+                pl.read_parquet(feature_coverage_path),
+                manifest=manifest,
+            ),
+            encoding="utf-8",
+        )
+        tables += 1
+        table_files.append(table_path.name)
     for suite in ("benchmark", "ml_tail"):
         metrics_path = run_dir / "metrics" / f"{suite}_metrics.parquet"
         if not metrics_path.exists():
@@ -80,6 +95,11 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
         if ml_tail_per_model_path.exists()
         else pl.DataFrame()
     )
+    if not benchmark_per_model.is_empty() or not ml_tail_per_model.is_empty():
+        table_path = latex_dir / "tailrisk_model_inventory_table.tex"
+        table_path.write_text(_model_inventory_to_latex(manifest=manifest), encoding="utf-8")
+        tables += 1
+        table_files.append(table_path.name)
     if not benchmark_per_model.is_empty() and not ml_tail_per_model.is_empty():
         table_path = latex_dir / "tailrisk_selected_model_performance_table.tex"
         table_path.write_text(
@@ -179,6 +199,14 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
         )
         tables += 1
         table_files.append(table_path.name)
+        if (dm is not None and not dm.is_empty()) or (mcs is not None and not mcs.is_empty()):
+            table_path = latex_dir / "tailrisk_dm_mcs_summary_table.tex"
+            table_path.write_text(
+                _dm_mcs_summary_to_latex(dm, mcs, manifest=manifest),
+                encoding="utf-8",
+            )
+            tables += 1
+            table_files.append(table_path.name)
     dst_path = run_dir / "metrics" / "ml_tail_dst_attenuation.parquet"
     if dst_path.exists():
         dst_attenuation = pl.read_parquet(dst_path)
@@ -310,6 +338,22 @@ def _table_manifest_entries(table_files: list[str]) -> list[dict[str, object]]:
 
 def _table_manifest_entry(table_file: str) -> dict[str, object]:
     specs: dict[str, tuple[str, list[str], str, str | None]] = {
+        "tailrisk_predictor_block_coverage_table.tex": (
+            "tailrisk_predictor_block_coverage",
+            ["panel/feature_coverage.parquet"],
+            "main_text_predictor_block_coverage_information_transparency",
+            None,
+        ),
+        "tailrisk_model_inventory_table.tex": (
+            "tailrisk_model_inventory",
+            [
+                "config/research_config.json",
+                "metrics/benchmark_metrics_per_model.parquet",
+                "metrics/ml_tail_metrics_per_model.parquet",
+            ],
+            "main_text_model_inventory_forecast_construction",
+            None,
+        ),
         "benchmark_metrics_table.tex": (
             "benchmark_metrics",
             ["metrics/benchmark_metrics.parquet"],
@@ -415,6 +459,15 @@ def _table_manifest_entry(table_file: str) -> dict[str, object]:
             "restricted_result_matrix_summary_table",
             None,
         ),
+        "tailrisk_dm_mcs_summary_table.tex": (
+            "tailrisk_dm_mcs_summary",
+            [
+                "metrics/ml_tail_result_matrix_dm.parquet",
+                "metrics/ml_tail_result_matrix_mcs.parquet",
+            ],
+            "main_text_compact_dm_mcs_summary",
+            None,
+        ),
         "ml_tail_dst_attenuation_table.tex": (
             "ml_tail_dst_attenuation",
             ["metrics/ml_tail_dst_attenuation.parquet"],
@@ -465,6 +518,10 @@ def _table_manifest_entry(table_file: str) -> dict[str, object]:
 
 def _table_caption(name: str) -> str:
     captions = {
+        "tailrisk_predictor_block_coverage": (
+            "Predictor-block feature count, examples, and coverage summary."
+        ),
+        "tailrisk_model_inventory": "Model-family inventory and VaR/ES construction table.",
         "benchmark_metrics": "Baseline benchmark common-sample metric table.",
         "benchmark_left_tail_risk": "Benchmark downside-risk metric table.",
         "benchmark_right_tail_risk": "Benchmark upside-risk metric table.",
@@ -486,6 +543,7 @@ def _table_caption(name: str) -> str:
         "ml_tail_result_matrix_summary": (
             "Restricted result-matrix inference and gate summary table."
         ),
+        "tailrisk_dm_mcs_summary": "Compact headline DM/MCS paired-inference summary table.",
         "ml_tail_dst_attenuation": "Descriptive DST timing-regime diagnostic table.",
         "appendix_lgbm_configuration_sensitivity": (
             "Appendix LightGBM configuration sensitivity table."

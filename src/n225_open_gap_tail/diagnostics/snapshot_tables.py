@@ -115,7 +115,12 @@ def _claim_scope_markdown_table() -> str:
                 "Matched-date comparison for model families and within-model increments.",
             ),
             (
-                "DST, stress, Murphy, hedge-trigger diagnostics",
+                "Timing, target, information-ladder, coverage figures",
+                "Supporting main-text evidence",
+                "Design/motivation/headline visualization; still read with tables and gates.",
+            ),
+            (
+                "DST, stress, Murphy, DM/MCS heatmaps, hedge-trigger diagnostics",
                 "Diagnostic only",
                 "Useful for interpretation and risk monitoring, not automatic model-selection evidence.",
             ),

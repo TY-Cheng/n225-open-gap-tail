@@ -3,9 +3,13 @@ hide:
   - navigation
 ---
 
-# Data Design and Contract
+# Data Appendix: Sources, Pretreatment, Features, And Source Notes
 
-This page is the canonical source for source roles, source status, target formulas, timestamp policies, contract-roll treatment, and public data lake tiers. The paper plan should reference this page instead of duplicating vendor fields or processing rules.
+This page is written as the data appendix for the paper. It is the canonical
+source for source roles, source status, target formulas, timestamp policies,
+pretreatment rules, contract-roll treatment, feature blocks, source limitations,
+and public data lake tiers. The paper plan should reference this page instead of
+duplicating vendor fields or processing rules.
 
 ## Source Status
 
@@ -109,6 +113,147 @@ The clean sample begins after all required target fields, Massive core fields,
 FRED core fields, and the canonical FRED H.10 USD/JPY control satisfy the
 registered coverage and timing requirements. The gold modeling panel contains
 2,395 target-date rows before the clean-sample filter.
+
+### Run Metadata From The Current Results Snapshot
+
+| Field | Value |
+| --- | --- |
+| Run ID | `tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa` |
+| Claim level | `research_candidate` |
+| Requested window | `2016-07-19` to `2026-05-08` |
+| Combined clean start | `2018-06-20` |
+| Gold panel dates | `2016-07-19` to `2026-05-08` |
+| Forecast sample dates | `2018-06-20` to `2026-05-08` |
+| Forecast sample rows | `1,712` |
+| FRED vintage safe | `False` |
+
+The clean start is a modeling lower bound. Dates before it remain audit history
+rather than forecast evidence. FRED values use conservative release timing but
+are current historical observations rather than ALFRED real-time vintages.
+
+### Target Distribution Summary
+
+These rows are copied from the current results snapshot so the data appendix can
+stand alone when describing the empirical target.
+
+| Measure | Value |
+| --- | --- |
+| Clean forecast observations | `1712` |
+| Date range | `2018-06-20 to 2026-05-08` |
+| Mean gap | `0.000562` log, about `+0.06%` |
+| Standard deviation | `0.011038` log, about `+1.11%` |
+| Skewness | `-0.0660673` |
+| Excess kurtosis | `11.2256` |
+| 1% quantile | `-0.031102` log, about `-3.06%` |
+| 5% quantile | `-0.015645` log, about `-1.55%` |
+| Median | `0.001012` log, about `+0.10%` |
+| 95% quantile | `0.015305` log, about `+1.54%` |
+| 99% quantile | `0.027493` log, about `+2.79%` |
+| Max drawdown gap | `-0.087513` log, about `-8.38%`, on `2020-03-13` |
+| Max upside gap | `0.096937` log, about `+10.18%`, on `2025-04-10` |
+| Jarque-Bera p-value | `0` |
+| Jarque-Bera statistic | `9016.83` |
+
+The target summary is a raw-target diagnostic. It motivates tail-risk modeling
+but does not validate any VaR/ES forecast.
+
+### Raw-Tail EVT Data Diagnostics
+
+| Tail | Threshold probability | Threshold | Exceedances | Mean excess | GPD xi | GPD scale | Hill xi |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| left_tail_loss | `0.900` | `0.0160618` | `78` | `0.0103847` | `0.152593` | `0.00878757` | `0.432871` |
+| left_tail_loss | `0.925` | `0.0195607` | `58` | `0.00995799` | `0.293971` | `0.00712569` | `0.346247` |
+| left_tail_loss | `0.950` | `0.0223549` | `39` | `0.0113879` | `0.237098` | `0.00874323` | `0.354783` |
+| left_tail_loss | `0.975` | `0.029331` | `20` | `0.0127713` | `0.261132` | `0.0095416` | `0.31884` |
+| left_tail_loss | `0.990` | `0.0373472` | `8` | `0.0175314` | `0.211214` | `0.0140966` | `0.342351` |
+| right_tail_loss | `0.900` | `0.0149284` | `91` | `0.00910348` | `0.400284` | `0.00566715` | `0.385744` |
+| right_tail_loss | `0.925` | `0.0169257` | `69` | `0.00974974` | `0.522434` | `0.00526951` | `0.369121` |
+| right_tail_loss | `0.950` | `0.0189177` | `46` | `0.0121576` | `0.322832` | `0.00846784` | `0.414297` |
+| right_tail_loss | `0.975` | `0.0260456` | `23` | `0.0146089` | `0.236968` | `0.0113013` | `0.383413` |
+| right_tail_loss | `0.990` | `0.0370088` | `10` | `0.0171211` | `0.231959` | `0.013441` | `0.352692` |
+| absolute_gap | `0.900` | `0.0155233` | `169` | `0.00965334` | `0.293977` | `0.00689961` | `0.401503` |
+| absolute_gap | `0.925` | `0.0175078` | `127` | `0.0105772` | `0.261802` | `0.00786988` | `0.397782` |
+| absolute_gap | `0.950` | `0.020701` | `85` | `0.0118328` | `0.25315` | `0.00892439` | `0.381347` |
+| absolute_gap | `0.975` | `0.0270259` | `43` | `0.0143999` | `0.167275` | `0.0120367` | `0.372398` |
+| absolute_gap | `0.990` | `0.0372773` | `17` | `0.0182071` | `0.0771593` | `0.0168379` | `0.353301` |
+
+These diagnostics are computed on raw left loss, raw right loss, and absolute
+gap. They are data diagnostics, not forecast-model diagnostics.
+
+### Gold Panel, Target Audit, And Calendar Map
+
+| Measure | Value |
+| --- | --- |
+| Gold modeling rows | `2393` |
+| Gold columns | `1428` |
+| Target-audit rows | `2393` |
+| Clean target rows | `2196` |
+| Forecast-sample rows | `1712` |
+| Rows before combined clean start | `420` |
+| Target-not-clean rows | `197` |
+| Mapping excluded rows | `64` |
+
+| Target audit reason | Rows |
+| --- | --- |
+| None | `2196` |
+| roll_sq_excluded | `195` |
+| missing_previous_jpx_session | `1` |
+| missing_reference_price | `1` |
+
+| Timing-map measure | Value |
+| --- | --- |
+| Normal trading mappings | `2323` |
+| U.S./Japan desync mappings | `1` |
+| NYSE early-close mappings | `32` |
+| EDT rows | `1553` |
+| EST rows | `840` |
+
+Roll/SQ exclusions, missing reference prices, early closes, U.S./Japan
+desynchronization, and DST regimes are stored as auditable row-level state
+rather than applied as hidden filters.
+
+### Feature Coverage From The Current Gold Panel
+
+| Source family | Block | Features | Mean missing | Max missing |
+| --- | --- | --- | --- | --- |
+| Asia proxy | Asia proxy | `10` | `0.000%` | `0.000%` |
+| cboe_volatility | fred_core | `2` | `0.000%` | `0.000%` |
+| cross_market_derived | Asia proxy | `1` | `0.000%` | `0.000%` |
+| cross_market_derived | fred_core | `2` | `0.000%` | `0.000%` |
+| cross_market_derived | JP proxy | `2` | `0.000%` | `0.000%` |
+| cross_market_derived | US core | `2` | `0.000%` | `0.000%` |
+| event_calendar | calendar_controls | `7` | `0.000%` | `0.000%` |
+| fred_core | fred_core | `9` | `0.000%` | `0.000%` |
+| FRED credit enriched | FRED credit enriched | `4` | `62.179%` | `62.208%` |
+| fx_core | fx_core | `4` | `0.000%` | `0.000%` |
+| JP history | JP only | `37` | `0.005%` | `0.058%` |
+| JP proxy | JP proxy | `8` | `0.000%` | `0.000%` |
+| J-Quants N225 options | JP only | `30` | `1.552%` | `14.486%` |
+| massive_daily | US core | `40` | `0.001%` | `0.058%` |
+| massive_minute | Asia proxy | `60` | `0.000%` | `0.000%` |
+| massive_minute | JP proxy | `24` | `0.346%` | `4.147%` |
+| massive_minute | US late session | `84` | `0.000%` | `0.000%` |
+| massive_optional | massive_optional | `2` | `0.000%` | `0.000%` |
+
+Feature coverage is an information-transparency diagnostic. A feature is
+admissible only when the timestamp availability and feature-matrix gates also
+pass.
+
+### Leakage Audit Summary
+
+| Field | Value |
+| --- | --- |
+| Status | `pass_with_warnings` |
+| Rows audited | `780118` |
+| Failures | `0` |
+| Warnings | `609237` |
+| Panel row count | `2393` |
+| Panel signature seed | `42` |
+| Panel signature | `f1ca88ded1c0cf25817205318cce38b3c2bfe6e84c220cfb9b1d16d9dfa4d5cc` |
+
+Zero hard failures means no audited row violated the timestamp invariant. The
+warnings are retained because conservative-lag and missing-feature situations
+can still matter for interpretation.
 
 ### Active Target and Calendar Inputs
 

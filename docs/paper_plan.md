@@ -78,7 +78,16 @@ appendix material.
 - The current clean run is a research-candidate evidence set, not a final manuscript freeze.
 - The current primary level is 95% VaR/ES.
 
-### 2.2 Target Contract
+### 2.2 Market Introduction And Target Contract
+
+- The Osaka Exchange day session opens at 08:45 JST and follows a prior
+  settlement reference for the Nikkei 225 Futures large contract.
+- The OSE night session overlaps the U.S. trading day, so U.S. close
+  information is not simply "overnight" relative to the Japanese futures market.
+- The empirical design therefore locks a forecast origin after the matched U.S.
+  cash close and evaluates the next OSE day-session opening gap.
+- This market design makes timing alignment part of the empirical question, not
+  only a data-cleaning detail.
 
 - Primary target:
     - Settlement-to-open gap: log day-session open minus log previous settlement.
@@ -198,7 +207,41 @@ appendix material.
 
 ## 3. Methods
 
-### 3.1 Forecasting Protocol
+### 3.1 Pipeline Structure
+
+| Step | Layer | Purpose |
+| --- | --- | --- |
+| 1 | Vendor and calendar sources | Pull or read J-Quants, Massive, FRED, Cboe, and exchange-calendar inputs. |
+| 2 | Bronze and silver cache | Preserve typed vendor/cache rows, then normalize point-in-time research features. |
+| 3 | Gold modeling panel | Join targets, calendar map, feature coverage, and leakage-bound signatures. |
+| 4 | Leakage and coverage gates | Enforce timestamp ordering and sample eligibility before evaluation. |
+| 5 | Baseline benchmarks and ML-tail registry | Run target-history/econometric baseline benchmarks and LightGBM tail-model families. |
+| 6 | Metrics, inference, diagnostics | Build loss matrices, DM/MCS/Murphy diagnostics, stress windows, and result matrix artifacts. |
+| 7 | Results snapshot | Summarize run-specific evidence and claim boundaries for reader review. |
+
+- Data-access and cache artifacts live under `data/bronze` and `data/silver`.
+- Durable modeling evidence lives under `data/gold`.
+- Forecasts, metrics, diagnostics, and LaTeX exports live under
+  `reports/runs/<run_id>`.
+- Reporting rebuilds read from gold and reports; they must not trigger vendor
+  data calls.
+
+### 3.2 Model And Evaluation Protocol
+
+- The registered risk level is `tail_level = 0.95`; the nominal VaR exception
+  rate is 5%.
+- A VaR exception is counted when `realized_loss > var_forecast`.
+- Forecast evaluation uses coverage diagnostics, Kupiec/Christoffersen tests
+  where available, quantile loss, Fissler-Ziegel joint VaR-ES loss, and DM/MCS
+  inference.
+- Benchmarks use target-history information only.
+- ML-tail models add predictors through fixed nested information sets.
+- DM/MCS inference is read as unconditional average-sample forecast-comparison
+  evidence.
+- CPA is read as a conditional loss-difference diagnostic, not as a forecasting
+  model.
+
+### 3.3 Forecasting Protocol
 
 - All models use the same point-in-time forecasting protocol.
 - The minimum training-history requirement is common across model families.
@@ -211,7 +254,7 @@ appendix material.
 
   `realized_loss_t > var_forecast_t`.
 
-### 3.2 Baseline Benchmarks
+### 3.4 Baseline Benchmarks
 
 - The baseline benchmarks are target-history and econometric:
     - historical empirical quantile;
@@ -222,7 +265,7 @@ appendix material.
     - GJR-GARCH-EVT in the McNeil-Frey filtered-EVT tradition.
 - These models establish the external VaR/ES reference before adding high-dimensional cross-market predictors.
 
-### 3.3 Advanced Econometric Benchmarks
+### 3.5 Advanced Econometric Benchmarks
 
 - Advanced econometric benchmarks are implemented to widen the peer comparison:
     - CAViaR;
@@ -232,7 +275,7 @@ appendix material.
 - These rows are claim-gated.
 - Numerical convergence and common-sample availability determine how they are used in the paper.
 
-### 3.4 LightGBM Direct Quantile
+### 3.6 LightGBM Direct Quantile
 
 - `lightgbm_direct_quantile` estimates the conditional 95% loss quantile directly:
 
@@ -243,7 +286,7 @@ appendix material.
 - Its ES companion is empirical rather than a separate ES model.
 - Current evidence shows that direct quantile rows must be read together with coverage diagnostics because lower average loss can coincide with higher exception rates.
 
-### 3.5 LightGBM Location-Scale Empirical Tail
+### 3.7 LightGBM Location-Scale Empirical Tail
 
 - `lightgbm_location_scale_empirical` separates conditional body learning from tail calibration:
     - first-stage LightGBM estimates a conditional mean-like location with an L2 objective;
@@ -252,7 +295,7 @@ appendix material.
     - out-of-fold standardized losses are used for empirical VaR/ES calibration.
 - This is the main non-EVT filtered-tail comparator inside the LightGBM family.
 
-### 3.6 LightGBM Standardized-Loss POT-GPD
+### 3.8 LightGBM Standardized-Loss POT-GPD
 
 - The standardized-loss POT-GPD family uses the same location-scale body filter, then fits a GPD to standardized-loss exceedances.
 - Current registered variants:
@@ -262,7 +305,7 @@ appendix material.
 - The UniBM route keeps the same LightGBM mean/log-scale body filter and POT threshold, but replaces the MLE shape estimate with a UniBM block-maxima-derived estimate of `xi`; the GPD scale is then refit with `xi` fixed.
 - This is a shape-estimator diagnostic variant, not a new primary ML specification.
 
-### 3.7 LightGBM Robust Body Filters
+### 3.9 LightGBM Robust Body Filters
 
 - New research-candidate LightGBM+EVT models are implemented at the 95% level only and remain outside the primary ML table until post-rerun review:
     - `lightgbm_median_mad_pot_gpd_plain_mle`;
@@ -277,7 +320,7 @@ appendix material.
     - quantile crossing is handled and recorded.
 - These routes test whether a more robust body filter improves the filtered tail supplied to POT-GPD.
 
-### 3.8 EVT Details
+### 3.10 EVT Details
 
 - POT-GPD is applied only to strictly positive exceedances.
 - The GPD location is fixed at zero for exceedances.
@@ -299,7 +342,7 @@ appendix material.
     - extremal-index diagnostics;
     - raw versus filtered tail summaries.
 
-### 3.9 Performance Metrics And Inference
+### 3.11 Performance Metrics And Inference
 
 - VaR calibration:
     - empirical breach rate;
@@ -425,81 +468,65 @@ flowchart LR
   regimes, and scoring outputs. They are not downstream products of DM, MCS, or
   CPA.
 
-## 5. Expected Outputs
+## 5. Results And Discussion Artifact Plan
 
 ### 5.1 Main Tables
 
-- Data and timing audit:
-    - sample period;
-    - forecast rows;
-    - target construction;
-    - zero hard look-ahead-bias failures;
-    - warnings and FRED vintage limitation.
-- Baseline benchmark and advanced econometric benchmark table:
-    - breach rate;
-    - exception count;
-    - quantile loss;
-    - FZ loss where available;
-    - coverage test status.
-- ML-tail nested information-set table:
-    - separate left and right tails;
-    - four nested information sets;
-    - 95% VaR breach rates;
-    - quantile loss;
-    - FZ loss;
-    - exception counts.
-- All-model diagnostic scan:
-    - broad inventory of implemented benchmark and ML model families;
-    - useful for screening;
-    - not a formal common-sample ranking.
-- Restricted common-sample result matrix:
-    - direct quantile, location-scale, and POT-GPD family comparisons;
-    - common-sample flags;
-    - DM/MCS availability;
-    - sample-size and exception-count gates.
-- CPA tables:
-    - loss-differential regressions on ex-ante observables;
-    - quantile-loss CPA and FZ-loss CPA reported separately.
+- Predictor block and coverage table: data/methods table showing information
+  blocks, source families, feature counts, representative variables, missingness,
+  and model role. Coverage is not admissibility; timestamp and feature-matrix
+  gates still apply.
+- Model inventory table: compact methods table explaining Historical,
+  GARCH/GJR, GARCH-EVT, advanced econometric, direct LightGBM, location-scale,
+  and POT-GPD constructions. Performance belongs in result tables, not here.
+- Benchmark floor table: common-sample benchmark breach rates and loss metrics,
+  with left/right tail detail available when page space allows.
+- ML information-ladder table: the main nested information-set table for direct
+  LightGBM, reported separately for left and right tails.
+- Selected model performance table: deterministic selected-row summary after
+  sample-size, coverage, FZ-loss, and quantile-loss gates.
+- Compact DM/MCS summary table: headline paired inference only. Full matrices
+  stay in the appendix.
 
 ### 5.2 Main Figures
 
-- Target distribution and raw-tail diagnostics:
-    - histogram and density of the settlement-to-open gap;
-    - left/right loss QQ plots;
-    - log survival plot;
-    - mean excess plot;
-    - Hill plot;
-    - GPD threshold stability summary.
-- Coverage breach-rate plots:
-    - left and right tails shown separately;
-    - nominal 5% reference line;
-    - baseline benchmarks, advanced econometric benchmarks, and ML-tail families shown together where readable.
-- Murphy diagrams:
-    - benchmark Murphy diagnostics;
-    - ML-tail nested information-set Murphy diagnostics;
-    - interpreted as scoring-function diagnostics, not pairwise dominance claims.
-- EVT standardized-residual diagnostics:
-    - log survival;
-    - QQ;
-    - mean excess;
-    - Hill;
-    - threshold stability.
-- Side-specific ML-tail promotion table:
-    - left tail: median/IQR POT-GPD after N/coverage gate and restricted DM/MCS review;
-    - right tail: location-scale empirical after N/coverage gate and restricted DM/MCS review;
-    - interpret as promoted tail-side rows, not as a universal model-family ranking.
+- Figure 1, market timing design: institutional timing diagram for OSE
+  settlement, night session, U.S. close, model cutoff, and next OSE open. This
+  is a forecast-origin diagram, not a causal price-discovery diagram.
+- Figure 2, opening-gap tail motivation: density versus Gaussian, left/right
+  log survival, and mean-excess diagnostics. This motivates the target and EVT
+  route; it is not forecast validation.
+- Figure 3, simplified coverage diagnostics: selected benchmark floor, direct
+  LightGBM information ladder, and side-specific promoted candidates with
+  nominal 5% line and Wilson intervals.
+- Figure 4, information-set ladder: direct visual evidence for JP only to U.S.
+  close, Japan proxy, and Asia proxy increments. Read with coverage and DM/MCS.
+- Figure 5, cumulative loss difference: anchor-loss-minus-candidate-loss over
+  time. Upward movement means the candidate has lower accumulated loss.
 
 ### 5.3 Appendix Figures And Tables
 
-- DST attenuation diagnostics.
-- ES severity diagnostics.
-- Pre-open trigger diagnostics.
-- Stress-window diagnostics.
-- Full per-model metrics.
-- Full DM/MCS and CPA artifacts.
-- Feature availability, missingness, and source-coverage audits.
-- Options-source and options-feature audit tables.
-- EVT EVI-path, extremal-index, and threshold-stability outputs.
+- Raw target diagnostics: histogram/density, left/right QQ plots, log survival,
+  mean excess, and Hill plot.
+- Full coverage diagnostics and selected performance figures: appendix checks
+  backing the simplified main coverage and selected-performance summaries.
+- Stress-window overlays: illustration only, not validation, PnL, cost, or
+  trading-performance evidence.
+- DM/MCS heatmaps: appendix pairwise detail; negative loss differences favor
+  the candidate.
+- Murphy diagrams: scoring-family diagnostics, not pairwise dominance claims.
+- ES severity and pre-open trigger diagnostics: risk-monitoring diagnostics,
+  not model-selection or alpha claims.
+- EVT standardized-residual diagnostics: QQ, log survival, mean excess, Hill,
+  and threshold stability for the POT-GPD route.
+- DST attenuation diagnostics: descriptive timing-regime evidence, not
+  structural causality.
+- Appendix tables: full benchmark scan, full LGBM scan, tail-side risk tables,
+  promoted tail rows, restricted result matrix, ES/trigger/DST diagnostics,
+  claim-scope reference, and configuration robustness.
+- The complete generated figure and table map is maintained in
+  [Results Snapshot](results_snapshot.md), which now includes both result
+  interpretation and artifact placement.
 
 ### 5.4 Appendix Configuration Robustness
 

@@ -133,7 +133,7 @@ Main table and figure checks:
 - Table 2 should summarize the benchmark floor without becoming a full matrix.
 - Table 3 should separate the headline information ladder from restricted
   side-specific promoted candidate rows.
-- Figure 1 should motivate the target tail behavior, preferably with log survival.
+- Figure 1 should define the market-timing design; target tail motivation should follow as the next main figure.
 - Figure 2 should show left/right coverage-breach diagnostics.
 - Figure 3 should support the selected-model or performance narrative without
   turning the paper into a model leaderboard.

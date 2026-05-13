@@ -84,15 +84,23 @@ def figure_gallery_markdown(*, figure_manifest: dict[str, object], run_id: str) 
         by_family.setdefault(_figure_family(str(entry.get("name") or "")), []).append(entry)
     sections: list[str] = []
     order = [
-        ("target_distribution", "Figure 1. Target Distribution And Tail Diagnostics"),
-        ("coverage", "Figure 2. Coverage Breach-Rate Diagnostics"),
-        ("selected_performance", "Figure 3. Selected Benchmark-vs-LGBM Performance"),
-        ("benchmark_murphy", "Figure 4. Benchmark Murphy Diagnostics"),
-        ("ml_tail_murphy", "Figure 5. ML-Tail Murphy Diagnostics"),
-        ("severity", "Figure 6. ES Severity Diagnostics"),
-        ("trigger", "Figure 7. Selected Trigger Diagnostics"),
-        ("evt_standardized", "Figure 8. EVT Standardized-Residual Diagnostics"),
-        ("dst", "Appendix Figure A. DST Attenuation Diagnostics"),
+        ("timing_design", "Figure 1. Market Timing Design"),
+        ("target_motivation", "Figure 2. Opening-Gap Tail Motivation"),
+        ("coverage_simplified", "Figure 3. Simplified Coverage Breach-Rate Diagnostics"),
+        ("information_ladder", "Figure 4. Information-Set Ladder"),
+        ("cumulative_loss", "Figure 5. Cumulative Loss Difference"),
+        ("target_distribution", "Figure 6. Raw Target Distribution Diagnostics"),
+        ("coverage", "Figure 7. Full Coverage Breach-Rate Diagnostics"),
+        ("selected_performance", "Figure 8. Selected Benchmark-vs-LGBM Performance"),
+        ("full_var_overlay", "Figure 9. Full-Sample VaR Overlay Diagnostics"),
+        ("stress_overlay", "Figure 10. VaR/ES Stress-Window Overlays"),
+        ("dm_mcs", "Figure 11. DM/MCS Heatmaps"),
+        ("benchmark_murphy", "Figure 12. Benchmark Murphy Diagnostics"),
+        ("ml_tail_murphy", "Figure 13. ML-Tail Murphy Diagnostics"),
+        ("severity", "Figure 14. ES Severity Diagnostics"),
+        ("trigger", "Figure 15. Selected Trigger Diagnostics"),
+        ("evt_standardized", "Figure 16. EVT Standardized-Residual Diagnostics"),
+        ("dst", "Figure 17. DST Attenuation Diagnostics"),
     ]
     for family, title in order:
         family_entries = by_family.get(family, [])
@@ -137,10 +145,26 @@ def _png_figure_entries(figure_manifest: dict[str, object]) -> list[dict[str, ob
 
 
 def _figure_family(name: str) -> str:
+    if name == "market_timing_design":
+        return "timing_design"
+    if name == "target_tail_motivation":
+        return "target_motivation"
     if name.startswith("target_"):
         return "target_distribution"
+    if name.startswith("coverage_breach_rates_simplified"):
+        return "coverage_simplified"
     if name.startswith("coverage_breach_rates"):
         return "coverage"
+    if name == "tailrisk_information_ladder":
+        return "information_ladder"
+    if name.startswith("cumulative_loss_difference"):
+        return "cumulative_loss"
+    if name.startswith("var_es_stress_overlay"):
+        return "stress_overlay"
+    if name.startswith("full_sample_var_overlay"):
+        return "full_var_overlay"
+    if name.startswith("dm_mcs_heatmap"):
+        return "dm_mcs"
     if name.startswith("selected_model_performance"):
         return "selected_performance"
     if name.startswith("benchmark_murphy"):
@@ -162,6 +186,7 @@ def _figure_sort_key(family: str, item: dict[str, object]) -> tuple[object, ...]
     name = str(item.get("name") or "")
     if family == "target_distribution":
         target_order = {
+            "target_tail_motivation": 0,
             "target_gap_histogram_density": 0,
             "target_loss_qq_left_tail": 1,
             "target_loss_qq_right_tail": 2,
@@ -175,6 +200,26 @@ def _figure_sort_key(family: str, item: dict[str, object]) -> tuple[object, ...]
 
 def _figure_key_readings(family: str) -> list[str]:
     readings = {
+        "timing_design": [
+            "- Key readings: the diagram defines forecast origin, model cutoff, and target timing.",
+            "- It is a session-alignment schematic, not a causal price-discovery diagram.",
+        ],
+        "target_motivation": [
+            "- Key readings: the composite figure combines density, log survival, and mean-excess diagnostics for the raw opening-gap target.",
+            "- It motivates tail-risk modeling and does not validate any forecast model.",
+        ],
+        "coverage_simplified": [
+            "- Key readings: this main-text figure strips coverage diagnostics down to fixed benchmark, direct information ladder, and side-specific promoted candidates.",
+            "- Wilson intervals show exception-rate uncertainty around the nominal 5% line.",
+        ],
+        "information_ladder": [
+            "- Key readings: the figure is the direct visual counterpart to the nested-information-set research question.",
+            "- Loss changes must still be read with coverage and inference gates.",
+        ],
+        "cumulative_loss": [
+            "- Key readings: upward movement means the candidate has lower cumulative loss under the fixed anchor-loss-minus-candidate-loss convention.",
+            "- This shows whether improvements accumulate through time or are concentrated in a few dates.",
+        ],
         "target_distribution": [
             "- Key readings: these figures describe the raw settlement-to-open gap and the left/right loss tails.",
             "- They motivate VaR/ES and POT-GPD modeling, but they do not validate LightGBM+EVT forecasts.",
@@ -186,7 +231,20 @@ def _figure_key_readings(family: str) -> list[str]:
         "selected_performance": [
             "- Key readings: compact main-figure rows split models into two broad groups, Benchmark and LGBM.",
             "- Within each tail and group, rows are selected by sufficient sample size, VaR coverage near 5%, then lower FZ loss and quantile loss.",
-            "- Full benchmark and LGBM per-model results are exported in appendix tables, so this figure is a readable summary rather than the full result set.",
+            "- Full benchmark and LGBM per-model results are exported in full-result tables, so this figure is a readable summary rather than the full result set.",
+        ],
+        "full_var_overlay": [
+            "- Key readings: full-sample overlays show realized loss against a fixed benchmark-comparator VaR and the locked side-specific promoted ML-tail VaR.",
+            "- The benchmark line uses GJR-GARCH-EVT with GJR-GARCH-t fallback; the ML line is not selected by inspecting this plot.",
+            "- Treat the plot as a visual diagnostic. Formal validation remains the coverage, loss, DM/MCS, Murphy, and EVT evidence.",
+        ],
+        "stress_overlay": [
+            "- Supporting diagnostic: stress-window overlays illustrate threshold behavior around fixed windows.",
+            "- They do not report hedge PnL, transaction-cost evidence, or trading performance.",
+        ],
+        "dm_mcs": [
+            "- Supporting diagnostic: heatmap cells report one-sided DM p-values and candidate-minus-anchor loss differences.",
+            "- Negative loss differences favor the candidate; MCS markers indicate retained candidates where available.",
         ],
         "benchmark_murphy": [
             "- Key readings: curves report benchmark elementary-score diagnostics on a common grid.",
@@ -197,7 +255,7 @@ def _figure_key_readings(family: str) -> list[str]:
             "- Interpret curve separation together with the primary ML coverage warning and unconditional inference gates.",
         ],
         "dst": [
-            "- Appendix-only diagnostic: the left/right timing-regime patterns are not stable enough for a main-text claim.",
+            "- Supporting diagnostic: the left/right timing-regime patterns are not stable enough for a headline claim.",
             "- Key readings: bars report loss gains from adding `JP + US close core` to `JP only`, split by EST/EDT timing regime.",
             "- A positive gain means the expanded information set has lower average loss; a negative gain means it performs worse on that loss metric.",
             "- This diagnostic is computed for the current primary nested-information-set anchor, `LGBM direct quantile`; it is not an average across all LightGBM/EVT variants or a model-selection exercise.",

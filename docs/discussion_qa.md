@@ -130,7 +130,8 @@ The current evidence is a calibration-versus-loss tradeoff.
 | ML-tail nested information sets | Yes, after review | Strict nested-information-set comparison; currently direct quantile survived the gate. |
 | ML-tail per-model rows | No | Model-specific OOS diagnostics; samples need not match across model families. |
 | Restricted result matrix | No primary claim | Matched-date comparison for model families and within-model increments. |
-| DST, stress, Murphy, hedge-trigger diagnostics | Diagnostic only | Useful for interpretation and risk monitoring, not automatic model-selection evidence. |
+| Timing, target, information-ladder, coverage figures | Supporting main-text evidence | Design/motivation/headline visualization; still read with tables and gates. |
+| DST, stress, Murphy, DM/MCS heatmaps, hedge-trigger diagnostics | Diagnostic only | Useful for interpretation and risk monitoring, not automatic model-selection evidence. |
 
 - The paper can claim a point-in-time forecast evaluation of OSE Nikkei 225 Futures opening-gap tail risk.
 - It can report that U.S. close information and proxy blocks change average loss and coverage patterns under registered information sets.

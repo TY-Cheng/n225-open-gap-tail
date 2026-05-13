@@ -1,0 +1,76 @@
+% run_id: tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa
+% git_commit: f420c4fadc2c2c5412871310a9c63953bd89e697
+% config_hash: 185d7a164462eecacd189001ec2815e2ff9f5fff0051ad922d4c346b7f97d584
+% table_scope: full_per_model_appendix
+\begin{tabular}{lll lrrrrr}
+\toprule
+group & model & info & side & N & breach & q_loss & fz_loss & severity \\
+\midrule
+LGBM & LGBM direct quantile & JP only & left\_tail & 553 & 0.086799 & 0.001424 & -3.488959 & 0.008358 \\
+LGBM & LGBM direct quantile & JP + US close core & left\_tail & 553 & 0.108499 & 0.001155 & -3.644840 & 0.006242 \\
+LGBM & LGBM direct quantile & JP + US close core + JP proxy & left\_tail & 526 & 0.108365 & 0.001112 & -3.825642 & 0.005976 \\
+LGBM & LGBM direct quantile & JP + US close core + JP proxy + Asia proxy & left\_tail & 526 & 0.106464 & 0.001116 & -3.814288 & 0.006150 \\
+LGBM & LGBM location-scale empirical & JP only & left\_tail & 507 & 0.061144 & 0.001534 & -3.477645 & 0.008976 \\
+LGBM & LGBM location-scale empirical & JP + US close core & left\_tail & 505 & 0.071287 & 0.000997 & -4.185787 & 0.005292 \\
+LGBM & LGBM location-scale empirical & JP + US close core + JP proxy & left\_tail & 489 & 0.049080 & 0.000932 & -4.248459 & 0.006063 \\
+LGBM & LGBM location-scale empirical & JP + US close core + JP proxy + Asia proxy & left\_tail & 487 & 0.043121 & 0.000911 & -4.355898 & 0.006897 \\
+LGBM & LGBM median/IQR POT-GPD plain MLE & JP only & left\_tail & 553 & 0.037975 & 0.001369 & -3.697074 & 0.010578 \\
+LGBM & LGBM median/IQR POT-GPD plain MLE & JP + US close core & left\_tail & 553 & 0.048825 & 0.000987 & -4.040197 & 0.007472 \\
+LGBM & LGBM median/IQR POT-GPD plain MLE & JP + US close core + JP proxy & left\_tail & 526 & 0.045627 & 0.000914 & -4.196634 & 0.006401 \\
+LGBM & LGBM median/IQR POT-GPD plain MLE & JP + US close core + JP proxy + Asia proxy & left\_tail & 525 & 0.053333 & 0.000932 & -4.170755 & 0.006113 \\
+LGBM & LGBM median/IQR POT-GPD UniBM block-maxima shape & JP only & left\_tail & 553 & 0.039783 & 0.001372 & -3.693699 & 0.010116 \\
+LGBM & LGBM median/IQR POT-GPD UniBM block-maxima shape & JP + US close core & left\_tail & 553 & 0.050633 & 0.000991 & -4.048124 & 0.007420 \\
+LGBM & LGBM median/IQR POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy & left\_tail & 526 & 0.043726 & 0.000913 & -4.189080 & 0.006574 \\
+LGBM & LGBM median/IQR POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy + Asia proxy & left\_tail & 525 & 0.055238 & 0.000931 & -4.160611 & 0.006030 \\
+LGBM & LGBM median/MAD POT-GPD plain MLE & JP only & left\_tail & 483 & 0.062112 & 0.001494 & -3.589816 & 0.009689 \\
+LGBM & LGBM median/MAD POT-GPD plain MLE & JP + US close core & left\_tail & 483 & 0.066253 & 0.001080 & -4.099802 & 0.008093 \\
+LGBM & LGBM median/MAD POT-GPD plain MLE & JP + US close core + JP proxy & left\_tail & 473 & 0.073996 & 0.001002 & -4.201361 & 0.006537 \\
+LGBM & LGBM median/MAD POT-GPD plain MLE & JP + US close core + JP proxy + Asia proxy & left\_tail & 472 & 0.069915 & 0.001007 & -4.168909 & 0.006929 \\
+LGBM & LGBM median/MAD POT-GPD UniBM block-maxima shape & JP only & left\_tail & 483 & 0.062112 & 0.001497 & -3.594328 & 0.009727 \\
+LGBM & LGBM median/MAD POT-GPD UniBM block-maxima shape & JP + US close core & left\_tail & 483 & 0.074534 & 0.001087 & -4.080794 & 0.007429 \\
+LGBM & LGBM median/MAD POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy & left\_tail & 473 & 0.078224 & 0.001012 & -4.218879 & 0.006448 \\
+LGBM & LGBM median/MAD POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy + Asia proxy & left\_tail & 472 & 0.078390 & 0.001015 & -4.145878 & 0.006428 \\
+LGBM & LGBM POT-GPD plain MLE & JP only & left\_tail & 483 & 0.064182 & 0.001548 & -3.467208 & 0.008741 \\
+LGBM & LGBM POT-GPD plain MLE & JP + US close core & left\_tail & 482 & 0.070539 & 0.001019 & -4.126608 & 0.005521 \\
+LGBM & LGBM POT-GPD plain MLE & JP + US close core + JP proxy & left\_tail & 471 & 0.050955 & 0.000937 & -4.274280 & 0.005877 \\
+LGBM & LGBM POT-GPD plain MLE & JP + US close core + JP proxy + Asia proxy & left\_tail & 468 & 0.044872 & 0.000931 & -4.215795 & 0.006926 \\
+LGBM & LGBM POT-GPD UniBM block-maxima shape & JP only & left\_tail & 483 & 0.062112 & 0.001547 & -3.471587 & 0.008986 \\
+LGBM & LGBM POT-GPD UniBM block-maxima shape & JP + US close core & left\_tail & 483 & 0.070393 & 0.001024 & -4.105994 & 0.005719 \\
+LGBM & LGBM POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy & left\_tail & 471 & 0.055202 & 0.000937 & -4.286501 & 0.005645 \\
+LGBM & LGBM POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy + Asia proxy & left\_tail & 468 & 0.049145 & 0.000931 & -4.255916 & 0.006381 \\
+LGBM & LGBM direct quantile & JP only & right\_tail & 553 & 0.084991 & 0.001263 & -3.579655 & 0.007732 \\
+LGBM & LGBM direct quantile & JP + US close core & right\_tail & 553 & 0.104882 & 0.001205 & -3.562526 & 0.007118 \\
+LGBM & LGBM direct quantile & JP + US close core + JP proxy & right\_tail & 526 & 0.121673 & 0.001207 & -3.580739 & 0.006111 \\
+LGBM & LGBM direct quantile & JP + US close core + JP proxy + Asia proxy & right\_tail & 526 & 0.121673 & 0.001202 & -3.592511 & 0.006050 \\
+LGBM & LGBM location-scale empirical & JP only & right\_tail & 507 & 0.045365 & 0.001392 & -3.540265 & 0.009275 \\
+LGBM & LGBM location-scale empirical & JP + US close core & right\_tail & 503 & 0.065606 & 0.001132 & -3.887989 & 0.007667 \\
+LGBM & LGBM location-scale empirical & JP + US close core + JP proxy & right\_tail & 492 & 0.052846 & 0.001072 & -3.932425 & 0.007860 \\
+LGBM & LGBM location-scale empirical & JP + US close core + JP proxy + Asia proxy & right\_tail & 489 & 0.067485 & 0.001148 & -3.855410 & 0.007311 \\
+LGBM & LGBM median/IQR POT-GPD plain MLE & JP only & right\_tail & 553 & 0.028933 & 0.001225 & -3.784285 & 0.011012 \\
+LGBM & LGBM median/IQR POT-GPD plain MLE & JP + US close core & right\_tail & 553 & 0.061483 & 0.001068 & -3.910587 & 0.006284 \\
+LGBM & LGBM median/IQR POT-GPD plain MLE & JP + US close core + JP proxy & right\_tail & 526 & 0.051331 & 0.000998 & -3.999673 & 0.006714 \\
+LGBM & LGBM median/IQR POT-GPD plain MLE & JP + US close core + JP proxy + Asia proxy & right\_tail & 526 & 0.041825 & 0.000988 & -3.990207 & 0.007746 \\
+LGBM & LGBM median/IQR POT-GPD UniBM block-maxima shape & JP only & right\_tail & 553 & 0.030741 & 0.001213 & -3.785779 & 0.010966 \\
+LGBM & LGBM median/IQR POT-GPD UniBM block-maxima shape & JP + US close core & right\_tail & 553 & 0.059675 & 0.001069 & -3.907785 & 0.006599 \\
+LGBM & LGBM median/IQR POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy & right\_tail & 526 & 0.049430 & 0.000996 & -3.998306 & 0.006969 \\
+LGBM & LGBM median/IQR POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy + Asia proxy & right\_tail & 526 & 0.041825 & 0.000989 & -3.989895 & 0.007892 \\
+LGBM & LGBM median/MAD POT-GPD plain MLE & JP only & right\_tail & 483 & 0.049689 & 0.001315 & -3.618814 & 0.009930 \\
+LGBM & LGBM median/MAD POT-GPD plain MLE & JP + US close core & right\_tail & 481 & 0.072765 & 0.001121 & -3.951474 & 0.007656 \\
+LGBM & LGBM median/MAD POT-GPD plain MLE & JP + US close core + JP proxy & right\_tail & 473 & 0.078224 & 0.001084 & -4.043240 & 0.006928 \\
+LGBM & LGBM median/MAD POT-GPD plain MLE & JP + US close core + JP proxy + Asia proxy & right\_tail & 472 & 0.067797 & 0.001083 & -4.060735 & 0.007991 \\
+LGBM & LGBM median/MAD POT-GPD UniBM block-maxima shape & JP only & right\_tail & 483 & 0.055901 & 0.001316 & -3.630921 & 0.009338 \\
+LGBM & LGBM median/MAD POT-GPD UniBM block-maxima shape & JP + US close core & right\_tail & 482 & 0.074689 & 0.001119 & -4.029230 & 0.007563 \\
+LGBM & LGBM median/MAD POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy & right\_tail & 473 & 0.078224 & 0.001085 & -4.019123 & 0.007015 \\
+LGBM & LGBM median/MAD POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy + Asia proxy & right\_tail & 472 & 0.069915 & 0.001081 & -4.030926 & 0.007801 \\
+LGBM & LGBM POT-GPD plain MLE & JP only & right\_tail & 483 & 0.043478 & 0.001397 & -3.577668 & 0.008965 \\
+LGBM & LGBM POT-GPD plain MLE & JP + US close core & right\_tail & 479 & 0.056367 & 0.001154 & -3.877244 & 0.008916 \\
+LGBM & LGBM POT-GPD plain MLE & JP + US close core + JP proxy & right\_tail & 472 & 0.048729 & 0.001087 & -3.913792 & 0.008450 \\
+LGBM & LGBM POT-GPD plain MLE & JP + US close core + JP proxy + Asia proxy & right\_tail & 469 & 0.061834 & 0.001164 & -3.858581 & 0.007890 \\
+LGBM & LGBM POT-GPD UniBM block-maxima shape & JP only & right\_tail & 483 & 0.045549 & 0.001392 & -3.571613 & 0.008783 \\
+LGBM & LGBM POT-GPD UniBM block-maxima shape & JP + US close core & right\_tail & 480 & 0.058333 & 0.001149 & -3.882059 & 0.008650 \\
+LGBM & LGBM POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy & right\_tail & 472 & 0.050847 & 0.001078 & -3.912916 & 0.007960 \\
+LGBM & LGBM POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy + Asia proxy & right\_tail & 469 & 0.061834 & 0.001163 & -3.865048 & 0.007858 \\
+\midrule
+\multicolumn{9}{l}{\footnotesize Visible notes: appendix table; lower quantile/FZ loss and lower exceedance severity are better, while VaR breach should be read relative to the nominal 5% exception rate.} \\
+\bottomrule
+\end{tabular}

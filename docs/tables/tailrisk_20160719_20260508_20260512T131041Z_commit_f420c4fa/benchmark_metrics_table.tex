@@ -1,0 +1,31 @@
+% run_id: tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa
+% git_commit: f420c4fadc2c2c5412871310a9c63953bd89e697
+% config_hash: 185d7a164462eecacd189001ec2815e2ff9f5fff0051ad922d4c346b7f97d584
+% claim_level: research_candidate
+% loss convention: realized_loss is positive loss for selected tail_side; lower FZ loss is better
+\begin{tabular}{lllrrrrr}
+\toprule
+model & info & side & tail & rows & breach & q_loss & fz_loss \\
+\midrule
+Taylor ALD/FZ0 asymmetric slope & Target history & left\_tail & 0.950 & 712 & 0.060393 & 0.001335 & -3.713459 \\
+Taylor ALD/FZ0 asymmetric slope & Target history & right\_tail & 0.950 & 712 & 0.060393 & 0.001259 & -3.686215 \\
+Taylor ALD/FZ0 SAV & Target history & left\_tail & 0.950 & 712 & 0.056180 & 0.001333 & -3.710978 \\
+Taylor ALD/FZ0 SAV & Target history & right\_tail & 0.950 & 712 & 0.057584 & 0.001292 & -3.666035 \\
+ewma\_vol\_scaled & Target history & left\_tail & 0.950 & 712 & 0.053371 & 0.001406 & -3.647322 \\
+ewma\_vol\_scaled & Target history & right\_tail & 0.950 & 712 & 0.044944 & 0.001346 & -3.657596 \\
+garch\_t & Target history & left\_tail & 0.950 & 712 & 0.061798 & 0.001369 & -3.698455 \\
+garch\_t & Target history & right\_tail & 0.950 & 712 & 0.040730 & 0.001275 & -3.710665 \\
+gas\_t\_location\_scale & Target history & left\_tail & 0.950 & 712 & 0.064607 & 0.001353 & -3.689714 \\
+gas\_t\_location\_scale & Target history & right\_tail & 0.950 & 712 & 0.049157 & 0.001305 & -3.675173 \\
+gjr\_garch\_evt & Target history & left\_tail & 0.950 & 712 & 0.061798 & 0.001333 & -3.741256 \\
+gjr\_garch\_evt & Target history & right\_tail & 0.950 & 712 & 0.056180 & 0.001225 & -3.724563 \\
+gjr\_garch\_t & Target history & left\_tail & 0.950 & 712 & 0.071629 & 0.001342 & -3.717158 \\
+gjr\_garch\_t & Target history & right\_tail & 0.950 & 712 & 0.040730 & 0.001217 & -3.751161 \\
+historical\_quantile & Target history & left\_tail & 0.950 & 712 & 0.056180 & 0.001481 & -3.533414 \\
+historical\_quantile & Target history & right\_tail & 0.950 & 712 & 0.067416 & 0.001504 & -3.408048 \\
+rolling\_quantile & Target history & left\_tail & 0.950 & 712 & 0.058989 & 0.001486 & -3.517693 \\
+rolling\_quantile & Target history & right\_tail & 0.950 & 712 & 0.071629 & 0.001498 & -3.428070 \\
+\midrule
+\multicolumn{8}{l}{\footnotesize Visible notes: candidate artifact; lower FZ loss is better; inference artifacts use block-bootstrap DM and HLN Tmax MCS; common-sample status is recorded in metrics metadata.} \\
+\bottomrule
+\end{tabular}

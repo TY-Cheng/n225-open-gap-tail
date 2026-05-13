@@ -3982,8 +3982,10 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
     run_dir = tmp_path / "reports" / "runs" / "figure_export"
     metrics_dir = run_dir / "metrics"
     forecasts_dir = run_dir / "forecasts"
+    panel_dir = run_dir / "panel"
     metrics_dir.mkdir(parents=True)
     forecasts_dir.mkdir(parents=True)
+    panel_dir.mkdir(parents=True)
     (run_dir / "manifest.json").write_text(
         json.dumps(
             {
@@ -3994,10 +3996,54 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
         ),
         encoding="utf-8",
     )
+    panel_rows = []
+    for idx in range(120):
+        gap = 0.004 * math.sin(idx / 6.0)
+        if idx % 37 == 0:
+            gap += 0.045
+        if idx % 41 == 0:
+            gap -= 0.038
+        panel_rows.append(
+            {
+                "forecast_date": f"2025-01-{(idx % 28) + 1:02d}",
+                "forecast_sample": True,
+                "gap_t": gap,
+            }
+        )
+    pl.DataFrame(panel_rows).write_parquet(panel_dir / "modeling_panel.parquet")
+    pl.DataFrame(
+        [
+            {
+                "feature": "spy_return",
+                "clean_rows": 500,
+                "non_missing_rows": 500,
+                "missingness_rate": 0.0,
+                "first_valid_date": "2023-01-01",
+                "last_valid_date": "2026-01-08",
+                "source_family": "massive_daily",
+                "source_block": "us_core",
+                "vintage_safe": True,
+                "revision_risk_label": None,
+            },
+            {
+                "feature": "ewj_return",
+                "clean_rows": 500,
+                "non_missing_rows": 480,
+                "missingness_rate": 0.04,
+                "first_valid_date": "2023-01-05",
+                "last_valid_date": "2026-01-08",
+                "source_family": "japan_proxy",
+                "source_block": "japan_proxy",
+                "vintage_safe": True,
+                "revision_risk_label": None,
+            },
+        ]
+    ).write_parquet(panel_dir / "feature_coverage.parquet")
     metric_rows = []
     for tail_side in (paper_module.TAIL_SIDE_LEFT, paper_module.TAIL_SIDE_RIGHT):
         for model_name, breach in (
             ("historical_quantile", 0.05),
+            ("gjr_garch_evt", 0.05),
             ("garch_t", 0.07),
         ):
             metric_rows.append(
@@ -4053,6 +4099,22 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
             }
             ml_rows.append(base)
             ml_rows.append({**base, "model_name": paper_module.ML_TAIL_LOCATION_SCALE_MODEL})
+        promoted_spec = next(
+            item
+            for item in reporting_latex.PROMOTED_TAIL_MODEL_SPECS
+            if item["tail_side"] == tail_side
+        )
+        ml_rows.append(
+            {
+                **base,
+                "model_name": promoted_spec["model_name"],
+                "information_set": promoted_spec["information_set"],
+                "var_breach_rate": 0.052,
+                "exceedance_count": 26,
+                "mean_quantile_loss": 0.0008,
+                "mean_fz_loss": -3.4,
+            }
+        )
     ml_metrics = pl.DataFrame(ml_rows)
     ml_metrics.filter(
         pl.col("model_name") == paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL
@@ -4118,6 +4180,70 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
                 }
             )
     pl.DataFrame(dst_rows).write_parquet(metrics_dir / "ml_tail_dst_attenuation.parquet")
+    dm_rows = []
+    mcs_rows = []
+    for tail_side in (paper_module.TAIL_SIDE_LEFT, paper_module.TAIL_SIDE_RIGHT):
+        promoted_spec = next(
+            item
+            for item in reporting_latex.PROMOTED_TAIL_MODEL_SPECS
+            if item["tail_side"] == tail_side
+        )
+        dm_rows.extend(
+            [
+                {
+                    "comparison_family": "information_set_ladder",
+                    "comparison_axis": "information_set_increment",
+                    "sample_policy": "restricted_tail_model_common_sample",
+                    "loss_family": "var_es_fz_loss",
+                    "tail_side": tail_side,
+                    "information_set": "japan_only_plus_us_close_core",
+                    "model_name": paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
+                    "baseline_entity": "japan_only",
+                    "candidate_entity": "japan_only_plus_us_close_core",
+                    "paired_rows": 100,
+                    "common_n": 100,
+                    "joint_exception_count": 8,
+                    "mean_loss_diff_candidate_minus_baseline": -0.10,
+                    "pvalue_one_sided": 0.04,
+                    "inference_status": "ok_block_bootstrap_dm",
+                },
+                {
+                    "comparison_family": "tail_model_family",
+                    "comparison_axis": "model_family",
+                    "sample_policy": "restricted_tail_model_common_sample",
+                    "loss_family": "var_es_fz_loss",
+                    "tail_side": tail_side,
+                    "information_set": promoted_spec["information_set"],
+                    "model_name": promoted_spec["model_name"],
+                    "baseline_entity": paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
+                    "candidate_entity": promoted_spec["model_name"],
+                    "paired_rows": 100,
+                    "common_n": 100,
+                    "joint_exception_count": 8,
+                    "mean_loss_diff_candidate_minus_baseline": -0.08,
+                    "pvalue_one_sided": 0.06,
+                    "inference_status": "ok_block_bootstrap_dm",
+                },
+            ]
+        )
+        mcs_rows.append(
+            {
+                "comparison_family": "tail_model_family",
+                "comparison_axis": "model_family",
+                "sample_policy": "restricted_tail_model_common_sample",
+                "loss_family": "var_es_fz_loss",
+                "tail_side": tail_side,
+                "information_set": promoted_spec["information_set"],
+                "model_name": promoted_spec["model_name"],
+                "rows": 100,
+                "joint_exception_count": 8,
+                "mean_loss": -3.4,
+                "included_in_mcs": True,
+                "mcs_status": "ok",
+            }
+        )
+    pl.DataFrame(dm_rows).write_parquet(metrics_dir / "ml_tail_result_matrix_dm.parquet")
+    pl.DataFrame(mcs_rows).write_parquet(metrics_dir / "ml_tail_result_matrix_mcs.parquet")
     forecast_rows = []
     for tail_side in (paper_module.TAIL_SIDE_LEFT, paper_module.TAIL_SIDE_RIGHT):
         for day in range(8):
@@ -4131,8 +4257,20 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
                     "tail_level": 0.95,
                     "refit_frequency": "daily",
                     "var_forecast": 0.01 + day * 0.001,
+                    "es_forecast": 0.015 + day * 0.001,
                     "realized_loss": 0.02 if day % 3 == 0 else 0.005,
+                    "var_breach": day % 3 == 0,
                     "is_valid_forecast": True,
+                    "fit_status": "ok",
+                }
+            )
+            forecast_rows.append(
+                {
+                    **forecast_rows[-1],
+                    "model_name": "gjr_garch_evt",
+                    "var_forecast": 0.012 + day * 0.001,
+                    "es_forecast": 0.017 + day * 0.001,
+                    "var_breach": day % 4 == 0,
                 }
             )
             forecast_rows.append(
@@ -4141,14 +4279,38 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
                     "model_name": paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
                     "information_set": "japan_only",
                     "refit_frequency": "monthly",
+                    "var_forecast": 0.011 + day * 0.001,
+                    "es_forecast": 0.016 + day * 0.001,
+                }
+            )
+            forecast_rows.append(
+                {
+                    **forecast_rows[-1],
+                    "information_set": "japan_only_plus_us_close_core",
+                    "var_forecast": 0.0105 + day * 0.001,
+                    "es_forecast": 0.0155 + day * 0.001,
+                }
+            )
+            promoted_spec = next(
+                item
+                for item in reporting_latex.PROMOTED_TAIL_MODEL_SPECS
+                if item["tail_side"] == tail_side
+            )
+            forecast_rows.append(
+                {
+                    **forecast_rows[-1],
+                    "model_name": promoted_spec["model_name"],
+                    "information_set": promoted_spec["information_set"],
+                    "var_forecast": 0.0102 + day * 0.001,
+                    "es_forecast": 0.0152 + day * 0.001,
                 }
             )
     forecast_frame = pl.DataFrame(forecast_rows)
-    forecast_frame.filter(pl.col("model_name") == "historical_quantile").write_parquet(
-        forecasts_dir / "benchmark_forecasts.parquet"
-    )
     forecast_frame.filter(
-        pl.col("model_name") == paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL
+        pl.col("model_name").is_in(["historical_quantile", "gjr_garch_evt"])
+    ).write_parquet(forecasts_dir / "benchmark_forecasts.parquet")
+    forecast_frame.filter(
+        ~pl.col("model_name").is_in(["historical_quantile", "gjr_garch_evt"])
     ).write_parquet(forecasts_dir / "ml_tail_forecasts.parquet")
 
     latex = export_tables(run_dir=run_dir)
@@ -4164,15 +4326,30 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
     assert all((run_dir / table["path"]).exists() for table in table_manifest["tables"])
     assert entries
     assert {entry["format"] for entry in entries} == {"png", "pdf"}
-    assert {entry["tail_side"] for entry in entries} == {
-        paper_module.TAIL_SIDE_LEFT,
-        paper_module.TAIL_SIDE_RIGHT,
-    }
+    assert {paper_module.TAIL_SIDE_LEFT, paper_module.TAIL_SIDE_RIGHT}.issubset(
+        {entry["tail_side"] for entry in entries}
+    )
+    assert any(entry["name"] == "market_timing_design" for entry in entries)
+    assert any(
+        table["name"] == "tailrisk_predictor_block_coverage" for table in table_manifest["tables"]
+    )
+    assert any(table["name"] == "tailrisk_model_inventory" for table in table_manifest["tables"])
+    assert any(entry["name"] == "coverage_breach_rates_simplified_left_tail" for entry in entries)
+    assert any(entry["name"] == "tailrisk_information_ladder" for entry in entries)
+    assert any(entry["name"] == "cumulative_loss_difference_left_tail" for entry in entries)
+    assert any(entry["name"] == "full_sample_var_overlay_left_tail" for entry in entries)
+    assert any(entry["name"] == "var_es_stress_overlay_left_tail" for entry in entries)
+    assert any(entry["name"] == "dm_mcs_heatmap_left_tail" for entry in entries)
     assert any(entry["name"] == "coverage_breach_rates_left_tail" for entry in entries)
     assert any(entry["name"] == "benchmark_murphy_right_tail" for entry in entries)
     assert any("not structural causal identification" in entry["caption"] for entry in entries)
     assert any("not hedge PnL" in entry["caption"] for entry in entries)
     assert all((run_dir / entry["path"]).exists() for entry in entries)
+    full_overlay = reporting_figures._full_sample_var_overlay_forecasts(run_dir)
+    assert "JP-only direct" not in set(full_overlay["plot_group"].to_list())
+    assert {"Benchmark comparator", "Promoted ML-tail"}.issubset(
+        set(full_overlay["plot_group"].to_list())
+    )
 
 
 def test_export_figures_skips_missing_optional_artifacts(tmp_path: Path) -> None:
@@ -4227,6 +4404,7 @@ def test_export_figures_renders_target_distribution_diagnostics(tmp_path: Path) 
         manifest={"run_id": "target_figures"},
     )
     target_names = {
+        "target_tail_motivation",
         "target_gap_histogram_density",
         "target_loss_qq_left_tail",
         "target_loss_qq_right_tail",
@@ -4246,6 +4424,129 @@ def test_export_figures_renders_target_distribution_diagnostics(tmp_path: Path) 
         for entry in entries
     )
     assert all((run_dir / entry["path"]).exists() for entry in entries)
+
+
+def test_reporting_new_figure_helpers_lock_selection_order_and_loss_sign(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "reports" / "runs" / "reporting_new_helpers"
+    metrics_dir = run_dir / "metrics"
+    metrics_dir.mkdir(parents=True)
+    pl.DataFrame(
+        [
+            {
+                "model_name": "garch_t",
+                "tail_side": paper_module.TAIL_SIDE_LEFT,
+                "information_set": "target_history_only",
+                "rows": 500,
+                "var_breach_rate": 0.04,
+                "expected_breach_rate": 0.05,
+                "exceedance_count": 20,
+                "mean_quantile_loss": 0.002,
+                "mean_fz_loss": -5.0,
+            },
+            {
+                "model_name": "gjr_garch_evt",
+                "tail_side": paper_module.TAIL_SIDE_LEFT,
+                "information_set": "target_history_only",
+                "rows": 500,
+                "var_breach_rate": 0.06,
+                "expected_breach_rate": 0.05,
+                "exceedance_count": 30,
+                "mean_quantile_loss": 0.003,
+                "mean_fz_loss": -4.0,
+            },
+        ]
+    ).write_parquet(metrics_dir / "benchmark_metrics_per_model.parquet")
+    pl.DataFrame(
+        [
+            {
+                "model_name": paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
+                "tail_side": paper_module.TAIL_SIDE_LEFT,
+                "information_set": information_set,
+                "rows": 500,
+                "var_breach_rate": 0.05,
+                "expected_breach_rate": 0.05,
+                "exceedance_count": 25,
+                "mean_quantile_loss": 0.001,
+                "mean_fz_loss": -3.0 - idx,
+            }
+            for idx, information_set in enumerate(
+                (
+                    "japan_only_plus_us_close_core",
+                    "japan_only",
+                )
+            )
+        ]
+    ).write_parquet(metrics_dir / "ml_tail_metrics.parquet")
+
+    coverage = reporting_figures._coverage_simplified_frame(run_dir)
+    benchmark_rows = coverage.filter(pl.col("group_label") == "Benchmark")
+    direct_rows = coverage.filter(pl.col("group_label") == "Direct ladder").sort("display_order")
+
+    assert benchmark_rows["model_name"].to_list() == ["gjr_garch_evt"]
+    assert direct_rows["information_set"].to_list() == [
+        "japan_only",
+        "japan_only_plus_us_close_core",
+    ]
+    japan_only_order = reporting_figures._information_order("japan_only")
+    us_core_order = reporting_figures._information_order("japan_only_plus_us_close_core")
+    assert japan_only_order < us_core_order
+
+    loss_frame = pl.DataFrame(
+        [
+            {
+                "suite": "ml_tail",
+                "forecast_date": "2026-01-01",
+                "tail_side": paper_module.TAIL_SIDE_LEFT,
+                "model_name": "anchor",
+                "information_set": "a",
+                "fz_loss": 2.0,
+            },
+            {
+                "suite": "ml_tail",
+                "forecast_date": "2026-01-01",
+                "tail_side": paper_module.TAIL_SIDE_LEFT,
+                "model_name": "candidate",
+                "information_set": "b",
+                "fz_loss": 1.0,
+            },
+            {
+                "suite": "ml_tail",
+                "forecast_date": "2026-01-02",
+                "tail_side": paper_module.TAIL_SIDE_LEFT,
+                "model_name": "anchor",
+                "information_set": "a",
+                "fz_loss": 2.0,
+            },
+            {
+                "suite": "ml_tail",
+                "forecast_date": "2026-01-02",
+                "tail_side": paper_module.TAIL_SIDE_LEFT,
+                "model_name": "candidate",
+                "information_set": "b",
+                "fz_loss": 3.0,
+            },
+        ]
+    )
+    paired = reporting_figures._paired_cumulative_loss(
+        loss_frame,
+        tail_side=paper_module.TAIL_SIDE_LEFT,
+        anchor={"suite": "ml_tail", "model_name": "anchor", "information_set": "a"},
+        candidate={"suite": "ml_tail", "model_name": "candidate", "information_set": "b"},
+    )
+
+    assert paired["gain"].to_list() == [1.0, -1.0]
+    assert paired["cumulative_gain"].to_list() == [1.0, 0.0]
+    assert reporting_figures._plot_date_values(["2026-01-02", date(2026, 4, 1)]) == [
+        date(2026, 1, 2),
+        date(2026, 4, 1),
+    ]
+    fig, ax = reporting_figures.plt.subplots()
+    reporting_figures._set_monthly_date_ticks(ax)
+    assert isinstance(ax.xaxis.get_major_locator(), reporting_figures.mdates.MonthLocator)
+    assert isinstance(ax.xaxis.get_major_formatter(), reporting_figures.mdates.DateFormatter)
+    reporting_figures.plt.close(fig)
 
 
 def test_export_figures_renders_evt_standardized_residual_diagnostics(tmp_path: Path) -> None:
@@ -4379,6 +4680,65 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
     assert reporting_latex._range_label(None, 1) == "n/a"
     assert reporting_latex._range_label(5, 5) == "5"
     assert reporting_latex._range_label(5, 7) == "5--7"
+    coverage = pl.DataFrame(
+        [
+            {
+                "source_family": "jquants",
+                "source_block": "japan_history",
+                "feature": "n225_day_return_lag1",
+                "missingness_rate": 0.0,
+            },
+            {
+                "source_family": "massive",
+                "source_block": "us_core",
+                "feature": "spy_return",
+                "missingness_rate": 0.1,
+            },
+            {
+                "source_family": "massive",
+                "source_block": "us_late_session",
+                "feature": "spy_late_30m_return",
+                "missingness_rate": 0.2,
+            },
+            {
+                "source_family": "massive",
+                "source_block": "japan_proxy",
+                "feature": "ewj_return",
+                "missingness_rate": 0.3,
+            },
+            {
+                "source_family": "massive",
+                "source_block": "asia_proxy",
+                "feature": "ewy_return",
+                "missingness_rate": 0.4,
+            },
+            {
+                "source_family": "jquants",
+                "source_block": "options_risk",
+                "feature": "option_iv",
+                "missingness_rate": 0.5,
+            },
+            {
+                "source_family": "fred",
+                "source_block": "fred_credit_enriched",
+                "feature": "baa_spread",
+                "missingness_rate": 0.6,
+            },
+        ]
+    )
+    coverage_rows = reporting_latex._predictor_block_coverage_rows(coverage)
+    assert {row["role"] for row in coverage_rows} >= {
+        "Japan/history anchor",
+        "U.S. close core",
+        "U.S. late-session timing",
+        "Japan proxy increment",
+        "Asia proxy increment",
+        "Options-risk diagnostic",
+        "Macro/credit enrichment",
+    }
+    coverage_text = reporting_latex._predictor_block_coverage_to_latex(coverage)
+    assert "feature-matrix gates" in coverage_text
+    assert reporting_latex._source_block_role("other_controls") == "Supporting control"
     promoted_spec = reporting_latex.PROMOTED_TAIL_MODEL_SPECS[0]
     promoted_metric = pl.DataFrame(
         [
@@ -4441,6 +4801,63 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
             },
         ]
     )
+    summary_dm = pl.DataFrame(
+        [
+            {
+                "tail_side": paper_module.TAIL_SIDE_LEFT,
+                "comparison_family": "information_set_ladder",
+                "comparison_axis": "information_set_increment",
+                "information_set": "japan_only_plus_us_close_core",
+                "candidate_entity": "japan_only_plus_us_close_core",
+                "baseline_entity": "japan_only",
+                "loss_family": "var_es_fz_loss",
+                "mean_loss_diff_candidate_minus_baseline": -0.01,
+                "pvalue_one_sided": 0.03,
+                "inference_status": "ok_block_bootstrap_dm",
+            },
+            {
+                "tail_side": promoted_spec["tail_side"],
+                "comparison_family": "tail_model_family",
+                "comparison_axis": "model_family",
+                "information_set": promoted_spec["information_set"],
+                "candidate_entity": promoted_spec["model_name"],
+                "baseline_entity": paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
+                "loss_family": "var_es_fz_loss",
+                "mean_loss_diff_candidate_minus_baseline": -0.02,
+                "pvalue_one_sided": 0.02,
+                "inference_status": "ok_block_bootstrap_dm",
+            },
+        ]
+    )
+    summary_mcs = pl.DataFrame(
+        [
+            {
+                "tail_side": paper_module.TAIL_SIDE_LEFT,
+                "information_set": "japan_only_plus_us_close_core",
+                "model_name": "japan_only_plus_us_close_core",
+                "loss_family": "var_es_fz_loss",
+                "included_in_mcs": True,
+                "mcs_status": "ok",
+            },
+            {
+                "tail_side": promoted_spec["tail_side"],
+                "information_set": promoted_spec["information_set"],
+                "model_name": promoted_spec["model_name"],
+                "loss_family": "var_es_fz_loss",
+                "included_in_mcs": False,
+                "mcs_status": "ok",
+            },
+        ]
+    )
+    dm_mcs_summary_text = reporting_latex._dm_mcs_summary_to_latex(summary_dm, summary_mcs)
+    assert "negative loss differences favor the candidate" in dm_mcs_summary_text
+    assert "JP only -> +US close" in dm_mcs_summary_text
+    assert "Direct quantile -> promoted ML-tail" in dm_mcs_summary_text
+    assert "Benchmark floor -> promoted ML-tail" in dm_mcs_summary_text
+    assert "ok\\_block\\_bootstrap\\_dm" in dm_mcs_summary_text
+    assert "out" in dm_mcs_summary_text
+    assert "missing\\_dm\\_artifact" in reporting_latex._dm_mcs_summary_to_latex(None, None)
+    assert reporting_latex._summary_mcs_cell(pl.DataFrame({"x": [1]}), {}) == "n/a"
     promoted_rows = reporting_latex._promoted_tail_model_rows(
         promoted_metric, dm=promoted_dm, mcs=promoted_mcs
     )
@@ -4625,7 +5042,7 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
     severity_export = (latex.latex_dir / "tailrisk_es_severity_table.tex").read_text(
         encoding="utf-8"
     )
-    assert latex.tables == 6
+    assert latex.tables == 7
     assert (latex.latex_dir / "ml_tail_promoted_tail_models_table.tex").exists()
     assert (latex.latex_dir / "appendix_lgbm_all_models_table.tex").exists()
     assert "ml\\_tail\\_per\\_model" in severity_export

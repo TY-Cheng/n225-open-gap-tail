@@ -35,9 +35,9 @@ The primary target is the settlement-to-open gap:
 
 The open matters because it is the first OSE day-session mark after the U.S. close information set and after the Japanese night-session interval.
 
-- In the current clean primary sample (`n=1661`), the settle-to-open gap ranges from `-0.087513 log (-8.38%)` on `2020-03-13` to `0.096937 log (+10.18%)` on `2025-04-10`.
+- In the current clean primary sample (`n=1712`), the settle-to-open gap ranges from `-0.087513 log (-8.38%)` on `2020-03-13` to `0.096937 log (+10.18%)` on `2025-04-10`.
 - The largest absolute clean settle-to-open gap is `0.096937 log (+10.18%)` on `2025-04-10`; this is large enough to make opening-gap tail risk a substantive risk-management forecasting problem rather than a cosmetic return-prediction exercise.
-- The clean 1% to 99% settle-to-open range is `-0.028446 log (-2.80%)` to `0.027351 log (+2.77%)`, so the extremes are far outside the usual daily opening-gap range.
+- The clean 1% to 99% settle-to-open range is `-0.031145 log (-3.07%)` to `0.027508 log (+2.79%)`, so the extremes are far outside the usual daily opening-gap range.
 - Even after the night-session close, the clean night-close-to-open residual ranges from `-0.038278 log (-3.76%)` to `0.042071 log (+4.30%)`, with maximum absolute residual `0.042071 log (+4.30%)`.
 - These magnitudes make the empirical object an opening-tail risk problem, not only an average next-open return-forecasting problem.
 
@@ -139,4 +139,4 @@ The current evidence is a calibration-versus-loss tradeoff.
 - It should not claim that one model is universally strongest.
 - It should not average left-tail and right-tail evidence into one mechanism.
 - It should not present DST, trigger, or feature-block diagnostics as causal proof or realized trading performance.
-- The current bottom line: the pipeline now produces a clean evidence set from the durable gold layer; baseline benchmark, advanced econometric benchmark, and ML-tail suites completed with zero recorded forecast failures; advanced rows are implemented evidence but remain nonblocking until author-reviewed against the same sample and inference gates.
+- The current bottom line: the pipeline now produces a clean evidence set from the durable gold layer; baseline benchmark, advanced econometric benchmark, and ML-tail suites completed with zero recorded advanced-forecast failures; advanced rows are implemented evidence but remain nonblocking until author-reviewed against the same sample and inference gates.

@@ -47,18 +47,20 @@ results from memory or from file names alone.
 
 Evidence boundary:
 
-- Primary manuscript evidence must remain locked to the current clean committed run:
-  tailrisk_20160719_20260508_20260511T152225Z_commit_2b473c4e
+- Primary manuscript evidence must remain locked to the current research-candidate run:
+  tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa
 - The primary git commit must be:
-  2b473c4e177fb9776ba0710411bf990513cd701d
+  f420c4fadc2c2c5412871310a9c63953bd89e697
+- The run manifest records `git_dirty=True`; treat it as research-candidate evidence,
+  not a final manuscript-freeze artifact.
 - The primary config hash must be:
   185d7a164462eecacd189001ec2815e2ff9f5fff0051ad922d4c346b7f97d584
 - The primary cache key must be:
-  f45fadd6303d9b50e4356b421024bfffda9766558cfd0464a6628cba7758427b
+  d7915602fb98b038b6eb2a9a33e4be2018ae59be570fef603a4929121bf060f4
 - The primary panel signature must be:
-  63ea2acb4baad92e9cb757fc661e47e8852e1f9b7ef78714a2a8eb564417da13
+  f1ca88ded1c0cf25817205318cce38b3c2bfe6e84c220cfb9b1d16d9dfa4d5cc
 - The claim level is research_candidate, not deployment evidence.
-- Older May 8, May 10, and dirty May 11 runs must not be used for manuscript claims.
+- Older May 8, May 10, and May 11 runs must not be used for manuscript claims.
 - Appendix configuration-robustness evidence must come from the same locked run and
   may be used only as secondary diagnostic evidence.
 - Sensitivity artifacts must not relabel promoted candidates or create a new headline

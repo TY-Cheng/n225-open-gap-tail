@@ -73,8 +73,8 @@ appendix material.
 
 ### 2.1 Sample And Evaluation Window
 
-- Current clean evaluation window: `2018-06-20` to `2026-05-01`.
-- Current forecast-sample size: `1661` trading-day observations.
+- Current clean evaluation window: `2018-06-20` to `2026-05-08`.
+- Current forecast-sample size: `1712` trading-day observations.
 - The current clean run is a research-candidate evidence set, not a final manuscript freeze.
 - The current primary level is 95% VaR/ES.
 

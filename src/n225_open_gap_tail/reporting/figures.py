@@ -89,9 +89,9 @@ def _remove_stale_figures(figure_dir: Path) -> None:
 def _market_timing_design_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object]]:
     if not (run_dir / "manifest.json").exists():
         return []
-    fig, ax = plt.subplots(figsize=(12.8, 2.7))
+    fig, ax = plt.subplots(figsize=(12.8, 3.05))
     ax.set_xlim(-0.6, 14.8)
-    ax.set_ylim(-1.05, 1.25)
+    ax.set_ylim(-1.42, 1.25)
     ax.axis("off")
 
     events = [
@@ -129,13 +129,18 @@ def _market_timing_design_figures(*, run_dir: Path, figure_dir: Path) -> list[di
                 "linewidth": 0.8,
             },
         )
-    ax.plot([2.35, 2.35, 7.05, 7.05], [-0.48, -0.78, -0.78, -0.48], color="#818cf8", linewidth=1.3)
+    ax.plot(
+        [2.35, 2.35, 7.05, 7.05],
+        [-0.58, -1.02, -1.02, -0.58],
+        color="#818cf8",
+        linewidth=1.3,
+    )
     ax.text(
         4.70,
-        -0.93,
+        -1.20,
         "OSE night session",
         ha="center",
-        va="top",
+        va="center",
         fontsize=8.7,
         color="#1d4ed8",
     )
@@ -150,7 +155,7 @@ def _market_timing_design_figures(*, run_dir: Path, figure_dir: Path) -> list[di
         "day close 15:15 JST, night session 16:30-05:30 JST, and next day open "
         "08:45 JST. From 2024-11-05, JPX hours are day close 15:45 JST and night "
         "session 17:00-06:00 JST; the next day open remains 08:45 JST. The model "
-        "cutoff is the matched U.S. cash close plus the registered data-availability "
+        "cutoff is the matched U.S. cash close plus the pre-specified data-availability "
         "lag; the OSE night close is timing context, not the forecast origin. The "
         "figure is a forecast-origin and target-timing diagram, not a structural "
         "market-transmission diagram."

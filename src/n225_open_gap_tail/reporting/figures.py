@@ -862,7 +862,7 @@ def _information_ladder_figures(*, run_dir: Path, figure_dir: Path) -> list[dict
     )
     ylabel = "Mean FZ loss (lower is better)" if use_fz else "Mean quantile loss (lower is better)"
     ax.set_ylabel(ylabel)
-    ax.set_title("Direct LightGBM information ladder")
+    ax.set_title("Nested U.S.-close information sets")
     ax.legend(frameon=False, fontsize=8)
     _style_axes(ax)
     return _save_figure(
@@ -873,8 +873,8 @@ def _information_ladder_figures(*, run_dir: Path, figure_dir: Path) -> list[dict
         source_artifacts=["metrics/ml_tail_metrics.parquet"],
         tail_side="left_right",
         caption=(
-            "Headline direct-LightGBM information ladder. The x-axis follows the "
-            "registered nested information sets from JP only to U.S. close, Japan "
+            "Headline nested information-set comparison. The x-axis follows the "
+            "pre-specified nested information sets from JP only to U.S. close, Japan "
             "proxy, and Asia proxy; lower plotted loss is better."
         ),
         claim_scope="headline_nested_information_set_ladder",

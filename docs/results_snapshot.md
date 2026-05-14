@@ -589,8 +589,10 @@ they do not mean the artifact is missing from this page.
 
 #### Figure 1. Market Timing Design
 
-- Key readings: the diagram defines forecast origin, model cutoff, and target timing.
-- It is a session-alignment schematic, not a causal price-discovery diagram.
+- Key readings: the diagram defines JST event timing, the matched U.S.-close cutoff, and the OSE day-open target.
+- OSE schedule note: pre-2024-11-05 hours use day close 15:15 JST and night session 16:30-05:30 JST; from 2024-11-05, JPX uses day close 15:45 JST and night session 17:00-06:00 JST, with day open still 08:45 JST.
+- The OSE night close is timing context; the forecast origin is the matched U.S. cash close plus the data-availability lag.
+- It is a session-alignment schematic, not a structural market-transmission diagram.
 
 ![market_timing_design](figures/tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa/market_timing_design.png)
 

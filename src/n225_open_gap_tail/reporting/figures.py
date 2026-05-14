@@ -89,69 +89,72 @@ def _remove_stale_figures(figure_dir: Path) -> None:
 def _market_timing_design_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object]]:
     if not (run_dir / "manifest.json").exists():
         return []
-    fig, ax = plt.subplots(figsize=(12.2, 4.7))
-    ax.set_xlim(0, 24)
-    ax.set_ylim(-1.5, 3.2)
+    fig, ax = plt.subplots(figsize=(12.8, 2.7))
+    ax.set_xlim(-0.6, 14.8)
+    ax.set_ylim(-1.05, 1.25)
     ax.axis("off")
-    y = 1.1
-    ax.annotate(
-        "",
-        xy=(22.6, y),
-        xytext=(1.2, y),
-        arrowprops={"arrowstyle": "->", "linewidth": 1.8, "color": "#111827"},
-    )
+
     events = [
-        (1.6, "OSE day close /\nsettlement", "15:15 JST", "#475569"),
-        (3.0, "OSE night\nopens", "16:30 JST", "#2563eb"),
-        (12.5, "U.S. cash\nclose", "16:00 ET", "#dc2626"),
-        (14.2, "Model\ncutoff", "after U.S. close", "#7c3aed"),
-        (16.0, "OSE night\ncloses", "05:30 JST", "#2563eb"),
-        (19.3, "Next OSE\nday open", "08:45 JST", "#059669"),
+        (0.0, "T-1\n15:15\nOSE close /\nsettlement", "#eef2ff", 0.84),
+        (2.35, "T-1\n16:30\nOSE night\nopens", "#eef2ff", 0.84),
+        (4.70, "T\n05:00\nU.S. close\nif EDT", "#fef2f2", 0.84),
+        (7.05, "T\n05:30\nOSE night\ncloses", "#eef2ff", 0.84),
+        (9.40, "T\n06:00\nU.S. close\nif EST", "#fef2f2", 0.84),
+        (11.75, "T\nmatched\nU.S. close\n+ data lag\ncutoff", "#fdf2f8", 1.02),
+        (14.10, "T\n08:45\nOSE day\nopen", "#f0fdf4", 0.84),
     ]
-    for x, label, time_label, color in events:
-        ax.plot([x, x], [y - 0.45, y + 0.45], color=color, linewidth=1.8)
-        ax.text(x, y + 0.62, label, ha="center", va="bottom", fontsize=9, color="#111827")
-        ax.text(x, y - 0.62, time_label, ha="center", va="top", fontsize=8, color=color)
-    ax.add_patch(plt.Rectangle((3.0, y - 0.16), 13.0, 0.32, color="#dbeafe", alpha=0.65, zorder=-1))
-    ax.add_patch(plt.Rectangle((10.0, y + 0.95), 3.0, 0.28, color="#fee2e2", alpha=0.9, zorder=-1))
+    for (x0, _label0, _face0, half_width0), (x1, _label1, _face1, half_width1) in zip(
+        events[:-1], events[1:], strict=True
+    ):
+        ax.annotate(
+            "",
+            xy=(x1 - half_width1, 0.0),
+            xytext=(x0 + half_width0, 0.0),
+            arrowprops={"arrowstyle": "->", "linewidth": 1.2, "color": "#9ca3af"},
+        )
+    for x, label, facecolor, _half_width in events:
+        ax.text(
+            x,
+            0.0,
+            label,
+            ha="center",
+            va="center",
+            fontsize=9.2,
+            color="#111827",
+            linespacing=1.0,
+            bbox={
+                "boxstyle": "round,pad=0.36,rounding_size=0.08",
+                "facecolor": facecolor,
+                "edgecolor": "#a3a3a3",
+                "linewidth": 0.8,
+            },
+        )
+    ax.plot([2.35, 2.35, 7.05, 7.05], [-0.48, -0.78, -0.78, -0.48], color="#818cf8", linewidth=1.3)
     ax.text(
-        9.5,
-        y + 1.33,
-        "OSE night session overlaps the U.S. cash session",
-        ha="center",
-        fontsize=9,
-    )
-    ax.text(10.0, y + 0.17, "information flow", ha="center", fontsize=8, color="#1d4ed8")
-    ax.annotate(
-        "",
-        xy=(14.15, y + 0.15),
-        xytext=(12.55, y + 0.15),
-        arrowprops={"arrowstyle": "->", "linewidth": 1.5, "color": "#7c3aed"},
-    )
-    ax.annotate(
-        "Opening gap realized\nonly at next day open",
-        xy=(19.3, y - 0.05),
-        xytext=(20.7, y - 1.05),
-        arrowprops={"arrowstyle": "->", "linewidth": 1.0, "color": "#059669"},
+        4.70,
+        -0.93,
+        "OSE night session",
         ha="center",
         va="top",
-        fontsize=8,
-        color="#065f46",
+        fontsize=8.7,
+        color="#1d4ed8",
     )
-    ax.text(
-        12.0,
-        -1.25,
-        (
-            "Forecast-origin and target-timing schematic only. EST/EDT, early-close, "
-            "and holiday/desync handling are enforced by the calendar map; this is not "
-            "a causal price-discovery diagram."
-        ),
-        ha="center",
-        va="center",
-        fontsize=8,
-        color="#374151",
+    ax.set_title(
+        "JST timing for the settlement-to-open forecast design",
+        fontsize=12.5,
     )
-    ax.set_title("Session-aligned forecast origin for N225 opening-gap tail risk", fontsize=12)
+    caption = (
+        "Session-aligned forecast-origin and target-timing diagram. The U.S. cash "
+        "close appears at 05:00 JST during U.S. daylight-saving time and at 06:00 "
+        "JST during U.S. standard time. OSE labels show the pre-2024-11-05 hours: "
+        "day close 15:15 JST, night session 16:30-05:30 JST, and next day open "
+        "08:45 JST. From 2024-11-05, JPX hours are day close 15:45 JST and night "
+        "session 17:00-06:00 JST; the next day open remains 08:45 JST. The model "
+        "cutoff is the matched U.S. cash close plus the registered data-availability "
+        "lag; the OSE night close is timing context, not the forecast origin. The "
+        "figure is a forecast-origin and target-timing diagram, not a structural "
+        "market-transmission diagram."
+    )
     return _save_figure(
         fig,
         run_dir=run_dir,
@@ -163,12 +166,7 @@ def _market_timing_design_figures(*, run_dir: Path, figure_dir: Path) -> list[di
             "panel/calendar_map.parquet",
         ],
         tail_side="design",
-        caption=(
-            "Session-aligned forecast-origin and target-timing diagram. The schematic "
-            "defines OSE day settlement, OSE night trading, U.S. cash close, model "
-            "cutoff, and the next OSE day-session open; it is not a causal "
-            "price-discovery diagram."
-        ),
+        caption=caption,
         claim_scope="design_forecast_origin_not_causal_price_discovery",
     )
 

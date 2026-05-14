@@ -3978,6 +3978,58 @@ def test_dst_attenuation_latex_export_is_descriptive(tmp_path: Path) -> None:
     assert "conditional predictive ability" not in latex_text
 
 
+def test_market_timing_design_labels_jst_cutoff_and_schedule_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_dir = tmp_path / "reports" / "runs" / "timing_design"
+    run_dir.mkdir(parents=True)
+    (run_dir / "manifest.json").write_text("{}", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_save_figure(fig: object, **kwargs: object) -> list[dict[str, object]]:
+        texts: list[str] = []
+        for ax in fig.axes:
+            texts.append(ax.get_title())
+            texts.extend(text.get_text() for text in ax.texts)
+        captured["text"] = "\n".join(texts)
+        captured["kwargs"] = kwargs
+        reporting_figures.plt.close(fig)
+        return [
+            {
+                "name": kwargs["name"],
+                "path": "latex/figures/market_timing_design.png",
+                "format": "png",
+                "source_artifacts": kwargs["source_artifacts"],
+                "tail_side": kwargs["tail_side"],
+                "caption": kwargs["caption"],
+                "claim_scope": kwargs["claim_scope"],
+            }
+        ]
+
+    monkeypatch.setattr(reporting_figures, "_save_figure", fake_save_figure)
+
+    entries = reporting_figures._market_timing_design_figures(
+        run_dir=run_dir, figure_dir=run_dir / "latex" / "figures"
+    )
+
+    text = str(captured["text"])
+    kwargs = cast(dict[str, object], captured["kwargs"])
+    assert entries
+    assert kwargs["claim_scope"] == "design_forecast_origin_not_causal_price_discovery"
+    assert "JST timing for the settlement-to-open forecast design" in text
+    assert "if EDT" in text
+    assert "if EST" in text
+    assert "matched\nU.S. close\n+ data lag\ncutoff" in text
+    caption = str(kwargs["caption"])
+    assert "05:00 JST" in caption
+    assert "06:00 JST" in caption
+    assert "pre-2024-11-05 hours" in caption
+    assert "day close 15:45 JST" in caption
+    assert "night session 17:00-06:00 JST" in caption
+    assert "OSE night close is timing context, not the forecast origin" in caption
+    assert "not a structural market-transmission diagram" in caption
+
+
 def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> None:
     run_dir = tmp_path / "reports" / "runs" / "figure_export"
     metrics_dir = run_dir / "metrics"

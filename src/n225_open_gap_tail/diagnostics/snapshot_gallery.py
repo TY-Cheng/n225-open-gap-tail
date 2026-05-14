@@ -201,8 +201,10 @@ def _figure_sort_key(family: str, item: dict[str, object]) -> tuple[object, ...]
 def _figure_key_readings(family: str) -> list[str]:
     readings = {
         "timing_design": [
-            "- Key readings: the diagram defines forecast origin, model cutoff, and target timing.",
-            "- It is a session-alignment schematic, not a causal price-discovery diagram.",
+            "- Key readings: the diagram defines JST event timing, the matched U.S.-close cutoff, and the OSE day-open target.",
+            "- OSE schedule note: pre-2024-11-05 hours use day close 15:15 JST and night session 16:30-05:30 JST; from 2024-11-05, JPX uses day close 15:45 JST and night session 17:00-06:00 JST, with day open still 08:45 JST.",
+            "- The OSE night close is timing context; the forecast origin is the matched U.S. cash close plus the data-availability lag.",
+            "- It is a session-alignment schematic, not a structural market-transmission diagram.",
         ],
         "target_motivation": [
             "- Key readings: the composite figure combines density, log survival, and mean-excess diagnostics for the raw opening-gap target.",

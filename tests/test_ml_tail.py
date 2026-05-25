@@ -26,7 +26,6 @@ import n225_open_gap_tail.forecasting._benchmark_suite as benchmark_suite
 import n225_open_gap_tail.forecasting._ml_tail_shards as ml_tail_shards
 import n225_open_gap_tail.forecasting._ml_tail_suite as ml_tail_suite
 import n225_open_gap_tail.inference as paper_inference
-import n225_open_gap_tail.metrics.cpa as cpa_module
 import n225_open_gap_tail.metrics.stat_utils as stat_utils
 import n225_open_gap_tail.models.benchmark as benchmark_models
 import n225_open_gap_tail.models.benchmark_advanced as benchmark_advanced
@@ -102,7 +101,6 @@ def _patch_paper_module(
         "n225_open_gap_tail.forecasting.artifacts",
         "n225_open_gap_tail.models.benchmark_advanced_math",
         "n225_open_gap_tail.models.benchmark_advanced_stateful",
-        "n225_open_gap_tail.metrics.cpa",
         "n225_open_gap_tail.metrics.result_matrix_grouping",
         "n225_open_gap_tail.metrics.result_matrix_scoring",
         "n225_open_gap_tail.metrics.result_matrix_notes",
@@ -1167,8 +1165,6 @@ def test_evaluate_ml_tail_suite_writes_lightgbm_ladder_artifacts(
     assert (run_dir / "metrics" / "ml_tail_dst_attenuation.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_feature_unavailability.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_feature_unavailability_dates.parquet").exists()
-    assert (run_dir / "metrics" / "ml_tail_cpa_inference.parquet").exists()
-    assert (run_dir / "metrics" / "cross_model_cpa_inference.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_result_matrix.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_result_matrix_sample_audit.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_result_matrix_dm.parquet").exists()
@@ -1183,27 +1179,14 @@ def test_evaluate_ml_tail_suite_writes_lightgbm_ladder_artifacts(
     assert (run_dir / "metrics" / "ml_tail_result_matrix_notes.md").exists()
     result_matrix = pl.read_parquet(run_dir / "metrics" / "ml_tail_result_matrix.parquet")
     primary_metrics = pl.read_parquet(run_dir / "metrics" / "ml_tail_metrics.parquet")
-    cpa = pl.read_parquet(run_dir / "metrics" / "ml_tail_cpa_inference.parquet")
-    cross_cpa = pl.read_parquet(run_dir / "metrics" / "cross_model_cpa_inference.parquet")
     assert not set(paper_module.ML_TAIL_ROBUST_POT_GPD_MODEL_NAMES).intersection(
         set(primary_metrics["model_name"].to_list())
     )
-    assert set(cpa["tail_side"].to_list()) == {"left_tail", "right_tail"}
-    assert "var_quantile_loss" in set(cpa["loss_family"].to_list())
-    assert set(cross_cpa["inference_status"].to_list()) == {"skipped_missing_benchmark_forecasts"}
     assert {
         "var_quantile_loss",
         "var_coverage",
         "var_es_fz_loss",
     }.issubset(set(result_matrix["loss_family"].to_list()))
-    incremental_text = json.dumps(
-        pl.read_parquet(run_dir / "metrics" / "ml_tail_incremental_information.parquet").to_dicts()
-    )
-    dst_text = json.dumps(
-        pl.read_parquet(run_dir / "metrics" / "ml_tail_dst_attenuation.parquet").to_dicts()
-    )
-    assert "conditional predictive ability" not in incremental_text
-    assert "conditional predictive ability" not in dst_text
     status = json.loads((run_dir / "metrics" / "ml_tail_status.json").read_text(encoding="utf-8"))
     assert set(status["implemented_components"]) == set(paper_module.ML_TAIL_MODEL_NAMES)
     assert status["unavailable_components"] == {}
@@ -1212,8 +1195,5 @@ def test_evaluate_ml_tail_suite_writes_lightgbm_ladder_artifacts(
     }
     assert registered_models == {"model_a", "model_b", "model_c", "model_d"}
     assert status["registered_information_sets"]["model_d"].endswith("plus_asia_proxy")
-    assert status["cpa_inference_rows"] == cpa.height
-    assert status["cross_model_cpa_inference_rows"] == cross_cpa.height
-    assert status["cross_model_cpa_status"] == "skipped_missing_benchmark_forecasts"
     assert status["evt_body_tail_diagnostic_rows"] >= 0
     assert status["evt_route_gate_status_rows"] >= 0

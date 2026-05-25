@@ -335,9 +335,9 @@ def _model_inventory_to_latex(*, manifest: Mapping[str, object] | None = None) -
         ),
         (
             "Advanced econometric",
-            "CAViaR; CARE; GAS; Taylor ALD/FZ0",
+            "CAViaR; CARE; GAS",
             "target history",
-            "recursive/score/ALD",
+            "recursive/score",
             "varies by family",
             "nonblocking benchmark",
         ),

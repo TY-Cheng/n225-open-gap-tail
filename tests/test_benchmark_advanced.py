@@ -25,7 +25,6 @@ import n225_open_gap_tail.forecasting as paper_module
 import n225_open_gap_tail.forecasting._benchmark_suite as benchmark_suite
 import n225_open_gap_tail.forecasting._ml_tail_suite as ml_tail_suite
 import n225_open_gap_tail.inference as paper_inference
-import n225_open_gap_tail.metrics.cpa as cpa_module
 import n225_open_gap_tail.metrics.stat_utils as stat_utils
 import n225_open_gap_tail.models.benchmark_advanced as benchmark_advanced
 import n225_open_gap_tail.models.benchmark_advanced_math as advanced_math
@@ -99,7 +98,6 @@ def _patch_paper_module(
         "n225_open_gap_tail.forecasting.artifacts",
         "n225_open_gap_tail.models.benchmark_advanced_math",
         "n225_open_gap_tail.models.benchmark_advanced_stateful",
-        "n225_open_gap_tail.metrics.cpa",
         "n225_open_gap_tail.metrics.result_matrix_grouping",
         "n225_open_gap_tail.metrics.result_matrix_scoring",
         "n225_open_gap_tail.metrics.result_matrix_notes",
@@ -176,7 +174,7 @@ def test_derivative_free_optimizer_runs_bounded_restarts_on_flat_objective() -> 
     result = advanced_math._run_derivative_free_optimizer(
         objective=lambda params: 1.0,
         x0=np.array([1.0, 0.5]),
-        model_name="ald_taylor_var_es_sav",
+        model_name="caviar_sav",
         tail_level=0.95,
         forecast_date="2026-01-05",
     )
@@ -326,25 +324,9 @@ def test_stateful_forecast_t_does_not_use_realized_loss_t(
     assert forecasts[0]["es_forecast"] == pytest.approx(mutated_forecasts[0]["es_forecast"])
 
 
-def test_taylor_ald_fz0_and_gas_pot_validity_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gas_pot_validity_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 30)
     _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 3)
-    losses = np.array(
-        [0.01 + (0.11 if index % 9 == 0 else float(index % 5) / 1000.0) for index in range(80)]
-    )
-
-    fit = benchmark_advanced._fit_advanced_model(
-        train=losses[:60],
-        model_name="ald_taylor_var_es_sav",
-        tail_level=0.95,
-        forecast_date="2026-03-02",
-        previous_params=None,
-        gas_nu_by_year={},
-    )
-    forecast = benchmark_advanced._forecast_from_advanced_fit(fit)
-    assert fit["fit_status"] == "ok"
-    assert forecast["es_forecast"] >= forecast["var_forecast"]
-    assert fit["restart_count"] <= paper_module.ADVANCED_OPTIMIZER_MAX_RESTARTS
 
     tail = benchmark_advanced._advanced_pot_gpd_standardized_tail(
         standardized_losses=np.r_[np.linspace(-1.0, 2.0, 50), np.linspace(2.5, 5.0, 12)],
@@ -356,12 +338,16 @@ def test_taylor_ald_fz0_and_gas_pot_validity_helpers(monkeypatch: pytest.MonkeyP
     assert "gpd_unconstrained_loc_hat" in tail
 
 
-def test_advanced_registry_retains_single_taylor_ald_fz0_family() -> None:
+def test_advanced_registry_contains_only_supported_families() -> None:
     advanced_models = tuple(pipeline_runtime.BENCHMARK_ADVANCED_MODEL_NAMES)
-    assert "ald_taylor_var_es_sav" in advanced_models
-    assert "ald_taylor_var_es_asymmetric_slope" in advanced_models
-    assert not any(model.startswith("direct_fz_loss_") for model in advanced_models)
-    assert advanced_math._objective_kind("ald_taylor_var_es_sav") == "ald_fz0"
+    assert advanced_models == (
+        "caviar_sav",
+        "caviar_asymmetric_slope",
+        "care_expectile_sav",
+        "care_expectile_asymmetric_slope",
+        "gas_t_location_scale",
+        "gas_t_pot_gpd",
+    )
 
 
 def test_advanced_helper_failure_branches_are_explicit(monkeypatch: pytest.MonkeyPatch) -> None:

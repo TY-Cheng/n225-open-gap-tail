@@ -1,0 +1,89 @@
+group,tail,info,model,N,breach,breach_pass,gate_pass,q_loss,fz_loss,severity
+Benchmark,Left,Target history,care_expectile_asymmetric_slope,617,0.079417,False,False,0.001446,-3.612053,0.007879
+Benchmark,Left,Target history,care_expectile_sav,610,0.068852,True,True,0.001459,-3.601814,0.008946
+Benchmark,Left,Target history,caviar_asymmetric_slope,498,0.072289,True,True,0.001572,-3.521194,0.00941
+Benchmark,Left,Target history,caviar_sav,488,0.059426,True,True,0.001574,-3.53093,0.011676
+Benchmark,Left,Target history,ewma_vol_scaled,712,0.053371,True,True,0.001406,-3.647322,0.008636
+Benchmark,Left,Target history,garch_t,712,0.061798,True,True,0.001369,-3.698455,0.008609
+Benchmark,Left,Target history,gas_t_location_scale,712,0.064607,True,True,0.001353,-3.689714,0.00867
+Benchmark,Left,Target history,gas_t_pot_gpd,213,0.046948,True,False,0.001273,-3.78551,0.006754
+Benchmark,Left,Target history,gjr_garch_evt,712,0.061798,True,True,0.001333,-3.741256,0.007631
+Benchmark,Left,Target history,gjr_garch_t,712,0.071629,True,True,0.001342,-3.717158,0.007359
+Benchmark,Left,Target history,historical_quantile,712,0.05618,True,True,0.001481,-3.533414,0.01214
+Benchmark,Left,Target history,rolling_quantile,712,0.058989,True,True,0.001486,-3.517693,0.011683
+Benchmark,Right,Target history,care_expectile_asymmetric_slope,669,0.077728,False,False,0.001318,-3.550754,0.008691
+Benchmark,Right,Target history,care_expectile_sav,669,0.083707,False,False,0.001365,-3.486841,0.00827
+Benchmark,Right,Target history,caviar_asymmetric_slope,494,0.064777,True,True,0.00149,-3.481569,0.010982
+Benchmark,Right,Target history,caviar_sav,494,0.062753,True,True,0.001558,-3.415118,0.01171
+Benchmark,Right,Target history,ewma_vol_scaled,712,0.044944,True,True,0.001346,-3.657596,0.010079
+Benchmark,Right,Target history,garch_t,712,0.04073,True,True,0.001275,-3.710665,0.011005
+Benchmark,Right,Target history,gas_t_location_scale,712,0.049157,True,True,0.001305,-3.675173,0.010593
+Benchmark,Right,Target history,gas_t_pot_gpd,213,0.079812,False,False,0.001795,-3.033493,0.013694
+Benchmark,Right,Target history,gjr_garch_evt,712,0.05618,True,True,0.001225,-3.724563,0.009079
+Benchmark,Right,Target history,gjr_garch_t,712,0.04073,True,True,0.001217,-3.751161,0.010594
+Benchmark,Right,Target history,historical_quantile,712,0.067416,True,True,0.001504,-3.408048,0.012307
+Benchmark,Right,Target history,rolling_quantile,712,0.071629,True,True,0.001498,-3.42807,0.011532
+LGBM,Left,JP only,LGBM direct quantile,553,0.086799,False,False,0.001424,-3.488959,0.008358
+LGBM,Left,JP + US close core,LGBM direct quantile,553,0.108499,False,False,0.001155,-3.64484,0.006242
+LGBM,Left,JP + US close core + JP proxy,LGBM direct quantile,526,0.108365,False,False,0.001112,-3.825642,0.005976
+LGBM,Left,JP + US close core + JP proxy + Asia proxy,LGBM direct quantile,526,0.106464,False,False,0.001116,-3.814288,0.00615
+LGBM,Left,JP only,LGBM location-scale empirical,507,0.061144,True,True,0.001534,-3.477645,0.008976
+LGBM,Left,JP + US close core,LGBM location-scale empirical,505,0.071287,True,True,0.000997,-4.185787,0.005292
+LGBM,Left,JP + US close core + JP proxy,LGBM location-scale empirical,489,0.04908,True,True,0.000932,-4.248459,0.006063
+LGBM,Left,JP + US close core + JP proxy + Asia proxy,LGBM location-scale empirical,487,0.043121,True,True,0.000911,-4.355898,0.006897
+LGBM,Left,JP only,LGBM median/IQR POT-GPD plain MLE,553,0.037975,True,True,0.001369,-3.697074,0.010578
+LGBM,Left,JP + US close core,LGBM median/IQR POT-GPD plain MLE,553,0.048825,True,True,0.000987,-4.040197,0.007472
+LGBM,Left,JP + US close core + JP proxy,LGBM median/IQR POT-GPD plain MLE,526,0.045627,True,True,0.000914,-4.196634,0.006401
+LGBM,Left,JP + US close core + JP proxy + Asia proxy,LGBM median/IQR POT-GPD plain MLE,525,0.053333,True,True,0.000932,-4.170755,0.006113
+LGBM,Left,JP only,LGBM median/IQR POT-GPD UniBM block-maxima shape,553,0.039783,True,True,0.001372,-3.693699,0.010116
+LGBM,Left,JP + US close core,LGBM median/IQR POT-GPD UniBM block-maxima shape,553,0.050633,True,True,0.000991,-4.048124,0.00742
+LGBM,Left,JP + US close core + JP proxy,LGBM median/IQR POT-GPD UniBM block-maxima shape,526,0.043726,True,True,0.000913,-4.18908,0.006574
+LGBM,Left,JP + US close core + JP proxy + Asia proxy,LGBM median/IQR POT-GPD UniBM block-maxima shape,525,0.055238,True,True,0.000931,-4.160611,0.00603
+LGBM,Left,JP only,LGBM median/MAD POT-GPD plain MLE,483,0.062112,True,True,0.001494,-3.589816,0.009689
+LGBM,Left,JP + US close core,LGBM median/MAD POT-GPD plain MLE,483,0.066253,True,True,0.00108,-4.099802,0.008093
+LGBM,Left,JP + US close core + JP proxy,LGBM median/MAD POT-GPD plain MLE,473,0.073996,True,True,0.001002,-4.201361,0.006537
+LGBM,Left,JP + US close core + JP proxy + Asia proxy,LGBM median/MAD POT-GPD plain MLE,472,0.069915,True,True,0.001007,-4.168909,0.006929
+LGBM,Left,JP only,LGBM median/MAD POT-GPD UniBM block-maxima shape,483,0.062112,True,True,0.001497,-3.594328,0.009727
+LGBM,Left,JP + US close core,LGBM median/MAD POT-GPD UniBM block-maxima shape,483,0.074534,True,True,0.001087,-4.080794,0.007429
+LGBM,Left,JP + US close core + JP proxy,LGBM median/MAD POT-GPD UniBM block-maxima shape,473,0.078224,False,False,0.001012,-4.218879,0.006448
+LGBM,Left,JP + US close core + JP proxy + Asia proxy,LGBM median/MAD POT-GPD UniBM block-maxima shape,472,0.07839,False,False,0.001015,-4.145878,0.006428
+LGBM,Left,JP only,LGBM POT-GPD plain MLE,483,0.064182,True,True,0.001548,-3.467208,0.008741
+LGBM,Left,JP + US close core,LGBM POT-GPD plain MLE,482,0.070539,True,True,0.001019,-4.126608,0.005521
+LGBM,Left,JP + US close core + JP proxy,LGBM POT-GPD plain MLE,471,0.050955,True,True,0.000937,-4.27428,0.005877
+LGBM,Left,JP + US close core + JP proxy + Asia proxy,LGBM POT-GPD plain MLE,468,0.044872,True,True,0.000931,-4.215795,0.006926
+LGBM,Left,JP only,LGBM POT-GPD UniBM block-maxima shape,483,0.062112,True,True,0.001547,-3.471587,0.008986
+LGBM,Left,JP + US close core,LGBM POT-GPD UniBM block-maxima shape,483,0.070393,True,True,0.001024,-4.105994,0.005719
+LGBM,Left,JP + US close core + JP proxy,LGBM POT-GPD UniBM block-maxima shape,471,0.055202,True,True,0.000937,-4.286501,0.005645
+LGBM,Left,JP + US close core + JP proxy + Asia proxy,LGBM POT-GPD UniBM block-maxima shape,468,0.049145,True,True,0.000931,-4.255916,0.006381
+LGBM,Right,JP only,LGBM direct quantile,553,0.084991,False,False,0.001263,-3.579655,0.007732
+LGBM,Right,JP + US close core,LGBM direct quantile,553,0.104882,False,False,0.001205,-3.562526,0.007118
+LGBM,Right,JP + US close core + JP proxy,LGBM direct quantile,526,0.121673,False,False,0.001207,-3.580739,0.006111
+LGBM,Right,JP + US close core + JP proxy + Asia proxy,LGBM direct quantile,526,0.121673,False,False,0.001202,-3.592511,0.00605
+LGBM,Right,JP only,LGBM location-scale empirical,507,0.045365,True,True,0.001392,-3.540265,0.009275
+LGBM,Right,JP + US close core,LGBM location-scale empirical,503,0.065606,True,True,0.001132,-3.887989,0.007667
+LGBM,Right,JP + US close core + JP proxy,LGBM location-scale empirical,492,0.052846,True,True,0.001072,-3.932425,0.00786
+LGBM,Right,JP + US close core + JP proxy + Asia proxy,LGBM location-scale empirical,489,0.067485,True,True,0.001148,-3.85541,0.007311
+LGBM,Right,JP only,LGBM median/IQR POT-GPD plain MLE,553,0.028933,True,True,0.001225,-3.784285,0.011012
+LGBM,Right,JP + US close core,LGBM median/IQR POT-GPD plain MLE,553,0.061483,True,True,0.001068,-3.910587,0.006284
+LGBM,Right,JP + US close core + JP proxy,LGBM median/IQR POT-GPD plain MLE,526,0.051331,True,True,0.000998,-3.999673,0.006714
+LGBM,Right,JP + US close core + JP proxy + Asia proxy,LGBM median/IQR POT-GPD plain MLE,526,0.041825,True,True,0.000988,-3.990207,0.007746
+LGBM,Right,JP only,LGBM median/IQR POT-GPD UniBM block-maxima shape,553,0.030741,True,True,0.001213,-3.785779,0.010966
+LGBM,Right,JP + US close core,LGBM median/IQR POT-GPD UniBM block-maxima shape,553,0.059675,True,True,0.001069,-3.907785,0.006599
+LGBM,Right,JP + US close core + JP proxy,LGBM median/IQR POT-GPD UniBM block-maxima shape,526,0.04943,True,True,0.000996,-3.998306,0.006969
+LGBM,Right,JP + US close core + JP proxy + Asia proxy,LGBM median/IQR POT-GPD UniBM block-maxima shape,526,0.041825,True,True,0.000989,-3.989895,0.007892
+LGBM,Right,JP only,LGBM median/MAD POT-GPD plain MLE,483,0.049689,True,True,0.001315,-3.618814,0.00993
+LGBM,Right,JP + US close core,LGBM median/MAD POT-GPD plain MLE,481,0.072765,True,True,0.001121,-3.951474,0.007656
+LGBM,Right,JP + US close core + JP proxy,LGBM median/MAD POT-GPD plain MLE,473,0.078224,False,False,0.001084,-4.04324,0.006928
+LGBM,Right,JP + US close core + JP proxy + Asia proxy,LGBM median/MAD POT-GPD plain MLE,472,0.067797,True,True,0.001083,-4.060735,0.007991
+LGBM,Right,JP only,LGBM median/MAD POT-GPD UniBM block-maxima shape,483,0.055901,True,True,0.001316,-3.630921,0.009338
+LGBM,Right,JP + US close core,LGBM median/MAD POT-GPD UniBM block-maxima shape,482,0.074689,True,True,0.001119,-4.02923,0.007563
+LGBM,Right,JP + US close core + JP proxy,LGBM median/MAD POT-GPD UniBM block-maxima shape,473,0.078224,False,False,0.001085,-4.019123,0.007015
+LGBM,Right,JP + US close core + JP proxy + Asia proxy,LGBM median/MAD POT-GPD UniBM block-maxima shape,472,0.069915,True,True,0.001081,-4.030926,0.007801
+LGBM,Right,JP only,LGBM POT-GPD plain MLE,483,0.043478,True,True,0.001397,-3.577668,0.008965
+LGBM,Right,JP + US close core,LGBM POT-GPD plain MLE,479,0.056367,True,True,0.001154,-3.877244,0.008916
+LGBM,Right,JP + US close core + JP proxy,LGBM POT-GPD plain MLE,472,0.048729,True,True,0.001087,-3.913792,0.00845
+LGBM,Right,JP + US close core + JP proxy + Asia proxy,LGBM POT-GPD plain MLE,469,0.061834,True,True,0.001164,-3.858581,0.00789
+LGBM,Right,JP only,LGBM POT-GPD UniBM block-maxima shape,483,0.045549,True,True,0.001392,-3.571613,0.008783
+LGBM,Right,JP + US close core,LGBM POT-GPD UniBM block-maxima shape,480,0.058333,True,True,0.001149,-3.882059,0.00865
+LGBM,Right,JP + US close core + JP proxy,LGBM POT-GPD UniBM block-maxima shape,472,0.050847,True,True,0.001078,-3.912916,0.00796
+LGBM,Right,JP + US close core + JP proxy + Asia proxy,LGBM POT-GPD UniBM block-maxima shape,469,0.061834,True,True,0.001163,-3.865048,0.007858

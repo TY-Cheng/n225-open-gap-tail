@@ -42,9 +42,7 @@ def evidence_map_mermaid() -> str:
             '  D --> F["Primary ML nested information sets"]',
             '  E --> G["Metrics, DM/MCS, Murphy diagnostics"]',
             "  F --> G",
-            '  F --> H["CPA conditional loss-difference diagnostics"]',
             '  G --> I["Tables and figures"]',
-            "  H --> I",
             '  I --> J["Generated results snapshot"]',
         ]
     )

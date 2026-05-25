@@ -68,8 +68,7 @@ Current implementation status:
   loss POT-GPD variants over the registered nested information ladder.
 - Result governance is implemented for primary ML metrics, per-model diagnostics, result
   matrix artifacts, feature-unavailability diagnostics, paired-loss inference,
-  confidence-set inference, Murphy diagnostics, stress windows, DST attenuation, and
-  conditional predictive ability diagnostics.
+  confidence-set inference, Murphy diagnostics, stress windows, and DST attenuation.
 - Reporting utilities generate manuscript-facing discussion, evidence maps, table
   manifests, and figure galleries from artifacts. These outputs summarize evidence;
   they do not create new empirical evidence.
@@ -136,8 +135,6 @@ Evaluation and manuscript gates:
   valid VaR-ES pairs, ES exceedance severity, tail-ranking diagnostics, and paired-loss
   inference where the sample supports it.
 - Murphy diagnostics are diagnostic plots, not standalone significance tests.
-- Conditional predictive ability diagnostics are conditional loss-difference evidence,
-  not automatic model-selection claims.
 - Use the primary ML nested information-set table for the main information-set story. Treat restricted
   cross-family rows as diagnostic or restricted evidence unless common-sample and
   inference gates justify promotion.

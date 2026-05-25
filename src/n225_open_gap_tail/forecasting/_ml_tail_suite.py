@@ -37,10 +37,6 @@ from n225_open_gap_tail.forecasting.artifacts import (
     _write_parquet,
 )
 from n225_open_gap_tail.inference.core import build_common_sample_artifacts
-from n225_open_gap_tail.metrics.cpa import (
-    build_cross_model_cpa_inference_records,
-    build_ml_tail_cpa_inference_records,
-)
 from n225_open_gap_tail.metrics.information import (
     _assert_run_config_compatible,
     _gold_artifact_path,
@@ -204,17 +200,6 @@ def evaluate_ml_tail_suite(
     evt_diagnostic_variant_metrics = _evt_diagnostic_variant_metric_records(
         cast(list[dict[str, object]], artifacts["per_model_metrics"])
     )
-    cpa_inference = build_ml_tail_cpa_inference_records(forecasts)
-    benchmark_forecast_path = forecast_root / "benchmark_forecasts.parquet"
-    benchmark_forecasts = (
-        pl.read_parquet(benchmark_forecast_path).to_dicts()
-        if benchmark_forecast_path.exists()
-        else []
-    )
-    cross_model_cpa_inference = build_cross_model_cpa_inference_records(
-        ml_tail_forecasts=forecasts,
-        benchmark_forecasts=benchmark_forecasts,
-    )
     _write_parquet(metrics_root / "ml_tail_metrics.parquet", metrics)
     _write_parquet(
         metrics_root / "ml_tail_metrics_per_model.parquet",
@@ -283,11 +268,6 @@ def evaluate_ml_tail_suite(
     _write_parquet(
         metrics_root / "evt_diagnostic_variant_metrics.parquet", evt_diagnostic_variant_metrics
     )
-    _write_parquet(metrics_root / "ml_tail_cpa_inference.parquet", cpa_inference)
-    _write_parquet(
-        metrics_root / "cross_model_cpa_inference.parquet",
-        cross_model_cpa_inference,
-    )
     (metrics_root / "ml_tail_result_matrix_notes.md").write_text(
         cast(str, result_matrix_artifacts["notes"]),
         encoding="utf-8",
@@ -321,11 +301,6 @@ def evaluate_ml_tail_suite(
             "evt_route_gate_status_rows": len(evt_route_gate_status),
             "evt_route_availability_rows": len(evt_route_availability),
             "evt_diagnostic_variant_metric_rows": len(evt_diagnostic_variant_metrics),
-            "cpa_inference_rows": len(cpa_inference),
-            "cross_model_cpa_inference_rows": len(cross_model_cpa_inference),
-            "cross_model_cpa_status": "completed"
-            if benchmark_forecasts
-            else "skipped_missing_benchmark_forecasts",
             "tail_sides": list(active_tail_sides),
             "result_matrix_sample_audit_rows": len(
                 cast(list[dict[str, object]], result_matrix_artifacts["sample_audit"])
@@ -344,8 +319,6 @@ def evaluate_ml_tail_suite(
             "ml_tail_forecast_rows": len(forecasts),
             "ml_tail_metric_rows": len(metrics),
             "ml_tail_tail_sides": list(active_tail_sides),
-            "ml_tail_cpa_inference_rows": len(cpa_inference),
-            "cross_model_cpa_inference_rows": len(cross_model_cpa_inference),
             "evt_shape_stability_rows": len(evt_shape_stability),
             "extremal_index_diagnostic_rows": len(extremal_index_diagnostics),
             "evt_cap_sensitivity_rows": len(evt_cap_sensitivity),

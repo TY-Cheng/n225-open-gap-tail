@@ -258,8 +258,6 @@ BENCHMARK_ADVANCED_MODEL_NAMES = (
     "caviar_asymmetric_slope",
     "care_expectile_sav",
     "care_expectile_asymmetric_slope",
-    "ald_taylor_var_es_sav",
-    "ald_taylor_var_es_asymmetric_slope",
     "gas_t_location_scale",
     "gas_t_pot_gpd",
 )

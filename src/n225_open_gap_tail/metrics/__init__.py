@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from .information import *
-from .cpa import *
 from .result_matrix import *
 from .stat_utils import *
 

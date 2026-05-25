@@ -17,8 +17,7 @@ U.S. information may be partially incorporated before the Japanese opening aucti
 - Compares benchmark econometric models, advanced tail-risk benchmarks, and LightGBM tail
   specifications.
 - Reports VaR coverage, quantile loss, Fissler-Ziegel VaR-ES loss, DM/MCS inference,
-  conditional predictive ability diagnostics, Murphy diagrams, and supporting risk
-  diagnostics.
+  Murphy diagrams, and supporting risk diagnostics.
 
 The repository does not implement a live trading system, portfolio allocation rule, or
 execution-cost study.
@@ -80,9 +79,8 @@ averaged across sides or interpreted as the same economic mechanism.
 
 - Baseline benchmarks: historical quantile, rolling quantile, volatility-scaled quantile,
   GARCH/GJR-GARCH, and GJR-GARCH-EVT.
-- Advanced econometric benchmarks: CAViaR, CARE/expectile models, GAS models, Taylor-style
-  asymmetric-Laplace VaR-ES specifications, and joint VaR-ES estimation through
-  Fissler-Ziegel scoring where convergence and validity checks are satisfied.
+- Advanced econometric benchmarks: CAViaR, CARE/expectile models, and GAS models
+  where convergence and validity checks are satisfied.
 - ML tail models: flexible, tree-based direct quantile estimation via gradient boosting
   (LightGBM), LightGBM location-scale models, and LightGBM standardized-loss POT-GPD.
 
@@ -173,6 +171,10 @@ For a completed run, regenerate the snapshot without fetching vendor data:
 just snapshot latest
 ```
 
+Snapshot export also refreshes the slide-facing model metrics audit under
+`docs/tables/<run_id>/model_metrics_breach_audit.md` and
+`docs/tables/<run_id>/model_metrics_full_rows.csv`.
+
 Appendix-only configuration robustness can be generated without changing
 primary/promoted results:
 
@@ -207,8 +209,6 @@ just docs
 
 - The contribution is a forecast-evaluation design for Nikkei 225 Futures opening-gap
   VaR/ES, not a new machine-learning algorithm.
-- Conditional predictive ability results are loss-differential regressions on ex-ante
-  observables. They do not generate VaR or ES forecasts.
 - DST results are descriptive timing-regime evidence, not structural identification.
 - Trigger diagnostics are risk-monitoring summaries, not trading-strategy evidence.
 - The U.S.-close-mark target is deferred until licensed intraday Nikkei futures marks are

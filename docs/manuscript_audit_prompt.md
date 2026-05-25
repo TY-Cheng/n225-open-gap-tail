@@ -92,7 +92,7 @@ JFM empirical-rigor checks:
 
 - Out-of-sample protocol is explicit: refit cadence, expanding or rolling
   window, training cutoff, out-of-fold construction, and forecast-origin timing.
-- Common-sample N is stated for paired DM, MCS, CPA, promoted-candidate, or
+- Common-sample N is stated for paired DM, MCS, promoted-candidate, or
   restricted comparisons. Unequal-N comparisons are flagged.
 - Block-bootstrap parameters are stated where block-bootstrap inference is used.
 - Multiple-testing risk is addressed. If many pairwise DM tests are reported,
@@ -117,7 +117,7 @@ Anti-black-box and ML readability checks:
 
 - LightGBM is defended as a non-parametric conditional estimator for
   high-dimensional, nonlinear, cross-market predictors, not as a black-box winner.
-- The paper uses nested information blocks, common-sample gates, CPA diagnostics,
+- The paper uses nested information blocks, common-sample gates,
   and coverage-loss tension to make ML behavior interpretable.
 - It does not claim feature-level attribution unless locked-run artifacts contain
   feature-importance, SHAP, gain, or permutation evidence. If no such artifacts
@@ -155,10 +155,10 @@ Model and evaluation checks:
   Level 4 stabilized POT-GPD variants as gated robustness candidates.
 - LightGBM and EVT are conditional-learning and tail-calibration layers, not a
   new algorithmic contribution.
-- Historical quantiles, GARCH/GJR/GJR-EVT, CAViaR/CARE/GAS/Taylor ALD/FZ0
+- Historical quantiles, GARCH/GJR/GJR-EVT, and CAViaR/CARE/GAS
   comparators are described as implemented, diagnostic, or out of scope.
 - VaR coverage, exception counts, ES diagnostics, Fissler-Ziegel joint VaR-ES
-  loss, CPA diagnostics, Murphy diagrams, and trigger/severity diagnostics are
+  loss, Murphy diagrams, and trigger/severity diagnostics are
   reported without substituting generic accuracy metrics.
 - The 95% VaR/ES evidence scope is respected. Do not introduce unsupported
   deeper-tail performance claims.
@@ -167,7 +167,7 @@ Dual-audience exposition checks:
 
 - Every technical term is defined on first use when it matters to the argument:
   GARCH, GJR, ARCH, EVT, POT, GPD, Hill estimator, CAViaR, CARE, GAS-t,
-  Taylor ALD, FZ scoring, MCS, DM, CPA, pinball loss, OOF, refit window,
+  FZ scoring, MCS, DM, pinball loss, OOF, refit window,
   settlement price, day session, night session, open interest, FOMC, BOJ, EDT,
   EST.
 - Every displayed formula has a one-sentence prose gloss nearby.

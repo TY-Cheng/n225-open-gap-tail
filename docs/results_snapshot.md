@@ -30,15 +30,13 @@ flowchart LR
   D --> F["Primary ML nested information sets"]
   E --> G["Metrics, DM/MCS, Murphy diagnostics"]
   F --> G
-  F --> H["CPA conditional loss-difference diagnostics"]
   G --> I["Tables and figures"]
-  H --> I
   I --> J["Generated results snapshot"]
 ```
 
 - The left branch binds vendor and calendar inputs into a timestamp-audited gold panel.
 - The middle branch compares baseline benchmarks, advanced econometric benchmarks, and ML-tail forecasts on registered loss units.
-- The right branch separates primary ML nested information sets, diagnostic model-family comparisons, unconditional DM/MCS inference, CPA diagnostics, and supporting figures.
+- The right branch separates primary ML nested information sets, diagnostic model-family comparisons, unconditional DM/MCS inference, and supporting figures.
 
 ## Results Context: Data, Target, And Timing
 
@@ -234,7 +232,7 @@ flowchart LR
 - Benchmarks use target-history information only. ML-tail models add predictors through fixed nested information sets.
 - Most specifications use expanding pre-forecast training histories. The rolling-quantile benchmark is the designed exception and uses the most recent 1,000 clean observations.
 - LightGBM hyperparameters are held fixed across information sets and refit dates; the snapshot reports model-family evidence rather than tuning-search evidence.
-- DM/MCS inference is read on average across the unconditional evaluation sample. CPA is read as a conditional loss-difference diagnostic, not as a forecasting model.
+- DM/MCS inference is read on average across the unconditional evaluation sample.
 
 ## Results And Discussion
 
@@ -251,10 +249,6 @@ Status: `completed`; forecast rows: `17781`; metric rows: `18`; failures: `0`.
 
 | Model | Information set | Tail side | Rows | VaR breach rate | Exceptions | Mean quantile loss | Mean FZ loss |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Taylor ALD/FZ0 asymmetric slope | Target history | left_tail | 712 | 6.039% | 43 | 0.0013351 | -3.71346 |
-| Taylor ALD/FZ0 asymmetric slope | Target history | right_tail | 712 | 6.039% | 43 | 0.0012591 | -3.68621 |
-| Taylor ALD/FZ0 SAV | Target history | left_tail | 712 | 5.618% | 40 | 0.00133287 | -3.71098 |
-| Taylor ALD/FZ0 SAV | Target history | right_tail | 712 | 5.758% | 41 | 0.00129168 | -3.66603 |
 | ewma_vol_scaled | Target history | left_tail | 712 | 5.337% | 38 | 0.00140619 | -3.64732 |
 | ewma_vol_scaled | Target history | right_tail | 712 | 4.494% | 32 | 0.00134642 | -3.6576 |
 | garch_t | Target history | left_tail | 712 | 6.180% | 44 | 0.00136884 | -3.69845 |
@@ -324,8 +318,6 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 
 | Suite | Model | Information set | Metric rows | OOS N mean+-sd | Breach mean+-sd | Abs cov err mean+-sd | Q loss mean+-sd | FZ loss mean+-sd | ES severity mean+-sd |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| benchmark_advanced | Taylor ALD/FZ0 SAV | Target history | 2 | 712 +/- 0 | 5.688% +/- 0.099% | 0.688% +/- 0.099% | 0.00131228 +/- 2.9124e-05 | -3.68851 +/- 0.0317793 | 0.00890717 +/- 0.000780652 |
-| benchmark_advanced | Taylor ALD/FZ0 asymmetric slope | Target history | 2 | 712 +/- 0 | 6.039% +/- 0.000% | 1.039% +/- 0.000% | 0.0012971 +/- 5.37372e-05 | -3.69984 +/- 0.0192644 | 0.00853049 +/- 0.000741618 |
 | benchmark_advanced | care_expectile_asymmetric_slope | Target history | 2 | 643 +/- 36.7696 | 7.857% +/- 0.119% | 2.857% +/- 0.119% | 0.00138179 +/- 9.09011e-05 | -3.5814 +/- 0.0433453 | 0.00828488 +/- 0.00057407 |
 | benchmark_advanced | care_expectile_sav | Target history | 2 | 639.5 +/- 41.7193 | 7.628% +/- 1.050% | 2.628% +/- 1.050% | 0.00141169 +/- 6.66442e-05 | -3.54433 +/- 0.0812983 | 0.00860785 +/- 0.00047848 |
 | benchmark_advanced | caviar_asymmetric_slope | Target history | 2 | 496 +/- 2.82843 | 6.853% +/- 0.531% | 1.853% +/- 0.531% | 0.00153106 +/- 5.83979e-05 | -3.50138 +/- 0.0280187 | 0.0101962 +/- 0.00111158 |
@@ -446,12 +438,6 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 - Block-bootstrap DM and HLN Tmax MCS artifacts are unconditional forecast-comparison diagnostics; any p-value should be read on average across the unconditional evaluation sample, not as condition-specific evidence.
 - Loss differentials alone do not constitute an improvement claim; coverage, exception counts, sample gates, and inference status must be reviewed together.
 - Result-matrix tail-event power flags and suite-level inference gates report `0` restricted rows with insufficient tail-event power and `0/48` unavailable DM/MCS inference rows.
-
-#### CPA as conditional loss-difference diagnostics
-
-- The ML-tail nested-information-set CPA artifact is a conditional loss-difference diagnostic across `2` tail side(s), with `48` registered row(s), `48` HAC-Wald gate pass(es), and loss families `var_es_fz_loss`, `var_quantile_loss`.
-- The registered cross-model CPA artifact is a conditional loss-difference diagnostic with `560` row(s), `496` HAC-Wald gate pass(es), and loss families `var_es_fz_loss`, `var_quantile_loss`.
-- Quantile-loss CPA and FZ-loss CPA are downstream inference over existing loss differentials; CPA does not generate VaR/ES forecasts and does not replace DM/MCS.
 
 #### Supporting diagnostics
 
@@ -577,6 +563,7 @@ they do not mean the artifact is missing from this page.
 | Promoted tail rows | [ml_tail_promoted_tail_models_table.tex](tables/tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa/ml_tail_promoted_tail_models_table.tex) | Locked side-specific promotion-gate rows; not a universal model-family ranking. |
 | Full benchmark scan | [appendix_benchmark_all_models_table.tex](tables/tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa/appendix_benchmark_all_models_table.tex) | Complete benchmark inventory supporting benchmark breadth. |
 | Full LGBM scan | [appendix_lgbm_all_models_table.tex](tables/tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa/appendix_lgbm_all_models_table.tex) | Complete per-model LightGBM scan; do not use as a raw leaderboard. |
+| Model metrics breach audit | [model_metrics_breach_audit.md](tables/tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa/model_metrics_breach_audit.md), [model_metrics_full_rows.csv](tables/tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa/model_metrics_full_rows.csv) | Breach-neighborhood and row-count gate audit across benchmark and LGBM/EVT rows; useful for diagnostic-admissibility review, not a replacement for QL/FZ, Kupiec/Christoffersen, DM, or MCS evidence. |
 | Restricted result matrix | [ml_tail_result_matrix_table.tex](tables/tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa/ml_tail_result_matrix_table.tex), [ml_tail_result_matrix_summary_table.tex](tables/tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa/ml_tail_result_matrix_summary_table.tex) | Restricted common-sample model-family comparison and summary. |
 | Compact DM/MCS summary | [tailrisk_dm_mcs_summary_table.tex](tables/tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa/tailrisk_dm_mcs_summary_table.tex) | Headline paired inference table; negative loss differences favor the candidate. |
 | ES severity | [tailrisk_es_severity_table.tex](tables/tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa/tailrisk_es_severity_table.tex) | Conditional-on-exception severity diagnostic; not standalone model selection. |
@@ -881,8 +868,6 @@ _Figure: `dst_attenuation_right_tail`. Source: `metrics/ml_tail_dst_attenuation.
 | ml_tail_result_matrix_mcs | `reports/runs/tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa/metrics/ml_tail_result_matrix_mcs.parquet` | yes |
 | ml_tail_dm_inference | `reports/runs/tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa/metrics/ml_tail_dm_inference.parquet` | yes |
 | ml_tail_mcs | `reports/runs/tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa/metrics/ml_tail_mcs.parquet` | yes |
-| ml_tail_cpa_inference | `reports/runs/tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa/metrics/ml_tail_cpa_inference.parquet` | yes |
-| cross_model_cpa_inference | `reports/runs/tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa/metrics/cross_model_cpa_inference.parquet` | yes |
 | ml_tail_model_eviction | `reports/runs/tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa/metrics/ml_tail_model_eviction.parquet` | yes |
 | ml_tail_dst_attenuation | `reports/runs/tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa/metrics/ml_tail_dst_attenuation.parquet` | yes |
 | ml_tail_murphy | `reports/runs/tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa/metrics/ml_tail_murphy.parquet` | yes |

@@ -481,7 +481,7 @@ design lives in [Paper Plan](paper_plan.md).
 
 - The left branch binds vendor and calendar inputs into a timestamp-audited gold panel.
 - The middle branch compares baseline benchmarks, advanced econometric benchmarks, and ML-tail forecasts on registered loss units.
-- The right branch separates primary ML nested information sets, diagnostic model-family comparisons, unconditional DM/MCS inference, CPA diagnostics, and supporting figures.
+- The right branch separates primary ML nested information sets, diagnostic model-family comparisons, unconditional DM/MCS inference, and supporting figures.
 
 ## Results Context: Data, Target, And Timing
 
@@ -559,7 +559,7 @@ design lives in [Paper Plan](paper_plan.md).
 - Benchmarks use target-history information only. ML-tail models add predictors through fixed nested information sets.
 - Most specifications use expanding pre-forecast training histories. The rolling-quantile benchmark is the designed exception and uses the most recent 1,000 clean observations.
 - LightGBM hyperparameters are held fixed across information sets and refit dates; the snapshot reports model-family evidence rather than tuning-search evidence.
-- DM/MCS inference is read on average across the unconditional evaluation sample. CPA is read as a conditional loss-difference diagnostic, not as a forecasting model.
+- DM/MCS inference is read on average across the unconditional evaluation sample.
 
 ## Results And Discussion
 

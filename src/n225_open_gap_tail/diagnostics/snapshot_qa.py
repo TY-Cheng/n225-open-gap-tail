@@ -16,7 +16,7 @@ def advanced_benchmark_qa_text(
             "The baseline benchmarks, advanced econometric benchmarks, and ML-tail suite are implemented and have completed artifacts in this run.",
             (
                 "Advanced econometric benchmark families such as CAViaR, CARE/expectile, "
-                "Taylor ALD/FZ0 joint VaR-ES, and GAS produce nonblocking empirical forecast rows; "
+                "and GAS produce nonblocking empirical forecast rows; "
                 "their interpretation still follows the benchmark and restricted-sample gates."
             ),
             (
@@ -32,7 +32,7 @@ def advanced_benchmark_qa_text(
         ),
         (
             "Advanced econometric benchmark families such as CAViaR, CARE/expectile, "
-            "Taylor ALD/FZ0 joint VaR-ES, and GAS should be read as unavailable diagnostics when "
+            "and GAS should be read as unavailable diagnostics when "
             "their optimizers produce no valid forecast rows."
         ),
         (
@@ -157,7 +157,6 @@ The evaluation is built around tail-risk performance, not a single ranking.
 - Fissler-Ziegel loss: evaluates joint VaR/ES forecasts where ES is valid.
 - Mean exceedance severity: reports how large exceptions are once they happen.
 - DM and MCS are average-sample inference across the unconditional evaluation sample.
-- CPA is a conditional loss-difference diagnostic based on loss-differential regressions on ex-ante observables. It does not produce forecasts.
 - Murphy diagrams, DST, stress-window, ES severity, and trigger diagnostics are supporting evidence.
 
 ## What do the current results say?

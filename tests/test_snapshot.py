@@ -622,7 +622,6 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     assert "## Results And Discussion" in rendered
     assert "<!-- generated: results_discussion -->" in rendered
     _assert_results_discussion_subsections_in_order(rendered)
-    assert "#### CPA as conditional loss-difference diagnostics" in rendered
     assert "Figure: dst_attenuation_left_tail" in rendered
     assert "Source: metrics/ml_tail_dst_attenuation.parquet" in rendered
     assert (
@@ -767,13 +766,11 @@ def _assert_discussion_qa_headings_in_order(rendered: str) -> None:
     ]
     positions = [rendered.index(heading) for heading in headings]
     assert positions == sorted(positions)
-    assert "conditional loss-difference diagnostic" in rendered
     assert "The final VaR/ES level is 95%" in rendered
     assert "it is not the reported VaR level" in rendered
     assert "advanced econometric benchmark layer is registered as nonblocking" in rendered
     assert "should be read as unavailable diagnostics" in rendered
     assert "Smoke-only artifact" not in rendered
-    assert ("Giacomini" + "-White") not in rendered
     assert ("G" + "W") not in rendered
     _assert_no_forbidden_promotional_terms(rendered)
 
@@ -1254,28 +1251,6 @@ def test_snapshot_table_asset_sync_and_sensitivity_summary_cover_docs_helpers(
 
 
 def test_results_discussion_manuscript_audit_helpers_cover_branches(tmp_path: Path) -> None:
-    cpa_text = results_discussion_module._results_cpa_discussion(
-        pl.DataFrame(
-            [
-                {
-                    "tail_side": "left_tail",
-                    "loss_family": "var_quantile_loss",
-                    "inference_status": "ok_newey_west_hac_wald_cpa",
-                }
-            ]
-        ),
-        pl.DataFrame(
-            [
-                {
-                    "loss_family": "var_es_fz_loss",
-                    "inference_status": "ok_newey_west_hac_wald_cpa",
-                }
-            ]
-        ),
-    )
-    assert "conditional loss-difference diagnostic" in cpa_text
-    assert "1` HAC-Wald gate pass" in cpa_text
-
     missing_panel_audit = results_discussion_module._results_data_timing_audit(
         manifest={"combined_clean_start": "2018-06-20"},
         data_vintage={"fred_vintage_safe": False},
@@ -1680,7 +1655,6 @@ def _assert_results_discussion_subsections_in_order(rendered: str) -> None:
         "#### Primary ML specifications across nested information sets",
         "#### Restricted model-family comparison",
         "#### Coverage and inference gates",
-        "#### CPA as conditional loss-difference diagnostics",
         "#### Supporting diagnostics",
         "#### Not yet claimed",
     ]

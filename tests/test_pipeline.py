@@ -149,7 +149,6 @@ def _patch_paper_module(
         "n225_open_gap_tail.forecasting.artifacts",
         "n225_open_gap_tail.models.benchmark_advanced_math",
         "n225_open_gap_tail.models.benchmark_advanced_stateful",
-        "n225_open_gap_tail.metrics.cpa",
         "n225_open_gap_tail.metrics.result_matrix_grouping",
         "n225_open_gap_tail.metrics.result_matrix_scoring",
         "n225_open_gap_tail.metrics.result_matrix_notes",
@@ -3546,10 +3545,6 @@ def test_incremental_and_dst_artifacts_use_block_bootstrap_dm_labels() -> None:
         baseline_information_set="japan_only",
         expanded_information_set="japan_only_plus_us_close_core",
     )
-    payload = json.dumps([*incremental, *dst])
-
-    assert "conditional predictive ability" not in payload
-    assert "instrumented conditional predictive ability" not in payload
     assert any(row["dm_method"] == "moving_block_bootstrap_unconditional_dm" for row in incremental)
     assert any(row["inference_status"] == "ok_block_bootstrap_dm" for row in incremental)
     assert any(
@@ -3839,8 +3834,6 @@ def test_evaluate_benchmark_suite_and_latex_export_with_synthetic_panel(
         encoding="utf-8"
     )
     assert "% config_hash:" in latex_text
-    assert "conditional predictive ability" not in latex_text
-    assert "instrumented conditional predictive ability" not in latex_text
     trigger_text = (latex.latex_dir / "tailrisk_hedge_trigger_diagnostics_table.tex").read_text(
         encoding="utf-8"
     )
@@ -3897,8 +3890,6 @@ def test_result_matrix_latex_export_has_restricted_notes(tmp_path: Path) -> None
     assert "block-bootstrap DM" in latex_text
     assert "VaR-only and VaR-ES" in summary_text
     assert "Restricted samples are not primary evidence" in summary_text
-    assert "conditional predictive ability" not in latex_text
-    assert "instrumented conditional predictive ability" not in latex_text
 
 
 def test_export_tables_clears_stale_tables_when_primary_gate_fails(tmp_path: Path) -> None:
@@ -3975,7 +3966,6 @@ def test_dst_attenuation_latex_export_is_descriptive(tmp_path: Path) -> None:
     assert latex.tables == 1
     assert "descriptive forecast evidence" in latex_text
     assert "not a structural causal mechanism" in latex_text
-    assert "conditional predictive ability" not in latex_text
 
 
 def test_market_timing_design_labels_jst_cutoff_and_schedule_note(

@@ -41,12 +41,6 @@ def generate_results_discussion(
     ml_tail_mcs = _read_parquet_optional(paths["ml_tail_mcs"])
     result_matrix_dm = _read_parquet_optional(paths["ml_tail_result_matrix_dm"])
     result_matrix_mcs = _read_parquet_optional(paths["ml_tail_result_matrix_mcs"])
-    cpa_path = paths.get("ml_tail_cpa_inference")
-    ml_tail_cpa = _read_parquet_optional(cpa_path) if cpa_path is not None else pl.DataFrame()
-    cross_cpa_path = paths.get("cross_model_cpa_inference")
-    cross_model_cpa = (
-        _read_parquet_optional(cross_cpa_path) if cross_cpa_path is not None else pl.DataFrame()
-    )
     ml_tail_eviction = _read_parquet_optional(paths["ml_tail_model_eviction"])
     ml_tail_metrics_per_model = _read_parquet_optional(paths["ml_tail_metrics_per_model"])
     ml_tail_dst = _read_parquet_optional(paths["ml_tail_dst_attenuation"])
@@ -113,10 +107,6 @@ def generate_results_discussion(
         )
     }
 
-### CPA as conditional loss-difference diagnostics
-
-{_results_cpa_discussion(ml_tail_cpa, cross_model_cpa)}
-
 ### Supporting diagnostics
 
 {
@@ -149,30 +139,6 @@ def _read_parquet_optional(path: Path) -> pl.DataFrame:
     if not path.exists():
         return pl.DataFrame()
     return pl.read_parquet(path)
-
-
-def _results_cpa_discussion(cpa: pl.DataFrame, cross_model_cpa: pl.DataFrame) -> str:
-    if cpa.is_empty() and cross_model_cpa.is_empty():
-        return "- Instrumented CPA conditional loss-difference diagnostics are not implemented in the current artifacts; the reported DM and MCS outputs are unconditional average-sample forecast-comparison diagnostics."
-    ok_rows = 0
-    if "inference_status" in cpa.columns:
-        ok_rows = int(cpa.filter(pl.col("inference_status").str.starts_with("ok")).height)
-    cross_ok_rows = 0
-    if "inference_status" in cross_model_cpa.columns:
-        cross_ok_rows = int(
-            cross_model_cpa.filter(pl.col("inference_status").str.starts_with("ok")).height
-        )
-    tail_side_count = _unique_count(cpa, "tail_side")
-    cross_rows = int(cross_model_cpa.height)
-    loss_families = _unique_values(cpa, "loss_family")
-    cross_loss_families = _unique_values(cross_model_cpa, "loss_family")
-    return "\n".join(
-        [
-            f"- The ML-tail nested-information-set CPA artifact is a conditional loss-difference diagnostic across `{tail_side_count}` tail side(s), with `{cpa.height}` registered row(s), `{ok_rows}` HAC-Wald gate pass(es), and loss families {loss_families}.",
-            f"- The registered cross-model CPA artifact is a conditional loss-difference diagnostic with `{cross_rows}` row(s), `{cross_ok_rows}` HAC-Wald gate pass(es), and loss families {cross_loss_families}.",
-            "- Quantile-loss CPA and FZ-loss CPA are downstream inference over existing loss differentials; CPA does not generate VaR/ES forecasts and does not replace DM/MCS.",
-        ]
-    )
 
 
 def _results_data_timing_audit(

@@ -6,7 +6,7 @@ from pathlib import Path
 
 FORBIDDEN = re.compile(
     r"\b(?:p2a|p2b|p2c)\b|paper-panel|paper-eval|paper-grade|"
-    r"paper-leakage-check|paper-latex-tables|\bGW\b|Giacomini-White|"
+    r"paper-leakage-check|paper-latex-tables|"
     r"benchmark[_-]floor|ml_tail_headline|evt_ablation|"
     r"\bheadline(?:_|-)?(?:model|metrics|candidate|claim|promotion|feature|sample|row|rows)|"
     r"\bablation(?:_|-)?(?:model|metric|variant)",

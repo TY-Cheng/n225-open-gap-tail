@@ -50,6 +50,10 @@ docs port="8000": _require-external-uv-env
 
 snapshot run_id="latest": _require-external-data-paths
     {{cli}} snapshot --run-id "{{ run_id }}"
+    just _slide-audit "{{ run_id }}"
+
+_slide-audit run_id="latest": _require-external-uv-env
+    PYTHONPATH=src uv run python scripts/export_model_metrics_breach_audit.py --run-id "{{ run_id }}"
 
 sensitivity run_id="latest" workers="6": _require-external-data-paths
     {{cli}} sensitivity --run-id "{{ run_id }}" --workers "{{ workers }}"

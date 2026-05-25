@@ -58,7 +58,10 @@ appendix material.
 - **Forecast comparison**:
     - Average loss comparisons use paired out-of-sample losses.
     - DM/MCS are interpreted as unconditional average-sample inference.
-    - CPA is treated as loss-differential regressions on ex-ante observables, not as a forecasting model.
+- **Model-validation robustness**:
+    - The paper separates scalar forecast ranking from pass/fail risk-model adequacy.
+    - Quantile loss and Fissler-Ziegel loss rank average predictive performance; Kupiec and Christoffersen tests assess VaR calibration and exception dynamics.
+    - A diagnostic-admissibility profile summarizes whether a model remains acceptable across tail sides and nested information sets. This is an information-set robustness or robust-satisficing idea.
 
 ### 1.4 Research Questions
 
@@ -238,8 +241,6 @@ appendix material.
 - ML-tail models add predictors through fixed nested information sets.
 - DM/MCS inference is read as unconditional average-sample forecast-comparison
   evidence.
-- CPA is read as a conditional loss-difference diagnostic, not as a forecasting
-  model.
 
 ### 3.3 Forecasting Protocol
 
@@ -270,8 +271,7 @@ appendix material.
 - Advanced econometric benchmarks are implemented to widen the peer comparison:
     - CAViaR;
     - CARE and expectile-based tail models;
-    - Generalized Autoregressive Score (GAS) models;
-    - Taylor-style asymmetric-Laplace/FZ0 joint VaR-ES specifications.
+    - Generalized Autoregressive Score (GAS) models.
 - These rows are claim-gated.
 - Numerical convergence and common-sample availability determine how they are used in the paper.
 
@@ -357,18 +357,28 @@ appendix material.
     - ES exceedance severity, interpreted conditional on a VaR exception.
 - Terminology is fixed as follows:
     - `FZ loss` means the Fissler-Ziegel joint VaR-ES evaluation score;
-    - `Taylor ALD/FZ0` means the advanced benchmark training objective/working-likelihood interpretation;
-    - the paper should not report a separate `ALD loss` metric.
+    - no separate likelihood-style VaR-ES loss label is used in the paper.
 - Scoring-function diagnostics:
     - Murphy diagrams for baseline benchmarks and ML-tail information sets.
 - Model comparison:
     - block-bootstrap Diebold-Mariano tests on paired loss differentials;
-    - Hansen-Lunde-Nason MCS where sample and exception-count gates permit;
-    - CPA as loss-differential regressions on ex-ante observables.
+    - Hansen-Lunde-Nason MCS where sample and exception-count gates permit.
 - Supporting diagnostics:
     - DST attenuation;
     - stress-window performance;
     - pre-open risk-trigger summaries.
+- Cross-scenario admissibility:
+    - The headline robustness question is whether a model remains acceptable
+      under sparse and rich information sets, and on both tail sides.
+    - A 24-check version combines eight tail-by-information-set scenarios with
+      three calibration diagnostics: breach-neighborhood, Kupiec unconditional
+      coverage, and Christoffersen independence or conditional coverage where
+      available.
+    - This diagnostic battery is a validation profile, not a single formal
+      hypothesis test and not proof of universal optimality.
+    - The current breach-audit artifact reports the narrower breach-neighborhood
+      and row-count gates; it should not be described as the full 24-check table
+      unless the Kupiec and Christoffersen pass/fail grid is included.
 - Pre-open risk-trigger summaries are not VaR calibration tests. They use a
   within-model alert rule: a date is flagged when that model's VaR forecast is
   above its own 75th-percentile VaR forecast on the evaluation sample. The rule
@@ -431,7 +441,7 @@ flowchart LR
     subgraph Evaluation["Evaluation"]
         CAL["VaR calibration<br/>breach rate, exceptions,<br/>Kupiec/Christoffersen"]
         LOSS["Forecast scores<br/>quantile loss;<br/>FZ joint VaR-ES loss"]
-        INF["Loss comparison<br/>DM, MCS, CPA"]
+        INF["Loss comparison<br/>DM, MCS"]
         DIAG["Forecast diagnostics<br/>Murphy, DST attenuation,<br/>ES severity, triggers, stress windows"]
     end
 
@@ -466,7 +476,7 @@ flowchart LR
   information sets where the model family is eligible.
 - Forecast diagnostics are computed from forecasts, realized losses, timing
   regimes, and scoring outputs. They are not downstream products of DM, MCS, or
-  CPA.
+  other loss-comparison inference.
 
 ## 5. Results And Discussion Artifact Plan
 
@@ -622,7 +632,12 @@ flowchart LR
 - Fissler-Ziegel scoring: joint VaR-ES evaluation.
 - Murphy diagrams: sensitivity of forecast comparison to scoring-function choice.
 - Diebold-Mariano and MCS: unconditional average-sample model comparison.
-- CPA: state-dependent loss-differential inference using ex-ante instruments.
+- Diagnostic admissibility across nested information sets:
+    - VaR backtesting and interval-forecast evaluation: [Kupiec 1995](https://doi.org/10.3905/jod.1995.407942), [Christoffersen 1998](https://doi.org/10.2307/2527341).
+    - Risk-model validation and governance: [BIS MAR99](https://www.bis.org/basel_framework/chapter/MAR/99.htm), [Federal Reserve SR 11-7](https://www.federalreserve.gov/bankinforeg/srletters/sr1107.htm).
+    - Proper scoring and joint VaR-ES scoring: [Gneiting and Raftery 2007](https://doi.org/10.1198/016214506000001437), [Fissler and Ziegel 2016](https://doi.org/10.1214/16-AOS1439).
+    - Forecast comparison: [Diebold and Mariano 1995](https://doi.org/10.1080/07350015.1995.10524599), [Hansen, Lunde, and Nason 2011](https://doi.org/10.3982/ECTA5771).
+    - Specification robustness and robust satisficing: [Simonsohn, Simmons, and Nelson 2020](https://doi.org/10.1038/s41562-020-0912-z), [Schwartz, Ben-Haim, and Dacso 2011](https://doi.org/10.1111/j.1468-5914.2010.00450.x), [Ben-Haim 2014](https://doi.org/10.1080/00207721.2012.684906).
 
 ### 8.3 Reproducibility Notes
 

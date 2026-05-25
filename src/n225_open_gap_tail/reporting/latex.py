@@ -460,11 +460,6 @@ def _claim_scope_to_latex(*, manifest: Mapping[str, object] | None = None) -> st
             "no structural causal claim",
         ),
         (
-            "*_cpa_inference.parquet",
-            "conditional loss-difference diagnostics",
-            "no forecasting-model or primary-superiority claim",
-        ),
-        (
             "hedge-trigger table",
             "VaR trigger diagnostic",
             "no hedge PnL or trading-alpha claim",

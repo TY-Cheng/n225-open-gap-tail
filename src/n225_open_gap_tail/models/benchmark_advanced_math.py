@@ -20,9 +20,7 @@ from n225_open_gap_tail.config.runtime import (
     np,
     PipelineRunError,
     stable_hash,
-    static_empirical_es,
     stats,
-    validate_forecast_values,
 )
 
 
@@ -100,9 +98,6 @@ def _recursive_initial_params(
                 core = np.asarray([intercept, persistence, shock, shock * 0.25], dtype=float)
             else:
                 core = np.asarray([intercept, persistence, shock], dtype=float)
-            if _uses_positive_gap(model_name):
-                gap = max(static_empirical_es(finite, base_var) - base_var, 1e-5)
-                core = np.append(core, math.log(gap))
             candidates.append(core)
     objective_kind = _objective_kind(model_name)
     best = min(
@@ -132,16 +127,9 @@ def _coarse_initialization_score(
         train=train,
         params=params,
         variant=variant,
-        has_gap=_uses_positive_gap(model_name),
+        has_gap=False,
         tail_level=tail_level,
     )
-    if objective_kind == "ald_fz0":
-        return _fz_objective(
-            train,
-            var_path,
-            var_path + _positive_gap_from_params(params),
-            tail_level,
-        )
     if objective_kind == "expectile":
         return float(np.mean((train - var_path) ** 2))
     return _quantile_objective(train, var_path, tail_level)
@@ -400,60 +388,10 @@ def _expectile_objective(train: np.ndarray, var_path: np.ndarray, *, tau: float)
     return float(np.mean(weights * diff * diff))
 
 
-def _fz_objective(
-    train: np.ndarray,
-    var_path: np.ndarray,
-    es_path: np.ndarray,
-    tail_level: float,
-) -> float:
-    if train.size != var_path.size or train.size != es_path.size:
-        return 1e12
-    losses = [
-        _fz_loss_one(float(y), float(var), float(es), tail_level)
-        for y, var, es in zip(train, var_path, es_path, strict=True)
-    ]
-    finite = np.asarray([value for value in losses if math.isfinite(value)], dtype=float)
-    if finite.size == 0:
-        return 1e12
-    return float(np.mean(finite))
-
-
-def _fz_loss_one(loss: float, var_forecast: float, es_forecast: float, tail_level: float) -> float:
-    valid, _ = validate_forecast_values(var_forecast, es_forecast)
-    if not valid or es_forecast <= 0.0:
-        return math.nan
-    alpha = 1.0 - tail_level
-    x = -loss
-    var_return = -var_forecast
-    es_return = -es_forecast
-    indicator = 1.0 if x <= var_return else 0.0
-    return float(
-        (1.0 / (alpha * es_return)) * indicator * (x - var_return)
-        + var_return / es_return
-        + math.log(-es_return)
-        - 1.0
-    )
-
-
-def _positive_gap_from_params(params: np.ndarray) -> float:
-    return float(max(math.exp(float(params[-1])), 1e-12))
-
-
 def _objective_kind(model_name: str) -> str:
     if model_name.startswith("care_expectile_"):
         return "expectile"
-    if model_name.startswith("ald_taylor_"):
-        return "ald_fz0"
-    if model_name.startswith("direct_fz_loss_"):
-        raise PipelineRunError(
-            "direct_fz_loss_* is a retired alias; use ald_taylor_var_es_* "
-            "for the Taylor ALD/FZ0 joint VaR-ES benchmark"
-        )
     return "quantile"
-
-
-def _uses_positive_gap(model_name: str) -> bool:
-    return model_name.startswith("ald_taylor_")
 
 
 def _recursive_variant(model_name: str) -> str:
@@ -495,8 +433,6 @@ def _failure_status_for_model(model_name: str) -> str:
         return "unavailable_gas_filter_failed"
     if model_name.startswith("care_expectile_"):
         return "unavailable_care_expectile_calibration_failed"
-    if model_name.startswith("direct_fz_loss_"):
-        return "unavailable_retired_direct_fz_alias"
     return "unavailable_advanced_optimizer_failed"
 
 
@@ -506,14 +442,12 @@ __all__ = [
     "_empirical_es_multiplier",
     "_expectile_objective",
     "_failure_status_for_model",
-    "_fz_objective",
     "_gas_filter_path",
     "_gas_initial_params",
     "_gas_next_log_sigma",
     "_gas_params_valid",
     "_objective_kind",
     "_parameter_payload",
-    "_positive_gap_from_params",
     "_profile_gas_nu",
     "_quantile_objective",
     "_recursive_initial_params",
@@ -523,5 +457,4 @@ __all__ = [
     "_recursive_variant",
     "_run_derivative_free_optimizer",
     "_student_t_standardized_var_es",
-    "_uses_positive_gap",
 ]

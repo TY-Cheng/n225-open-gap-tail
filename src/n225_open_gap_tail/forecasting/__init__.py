@@ -105,7 +105,6 @@ from n225_open_gap_tail.models.ml_tail_oof import (
     _rearrange_quantile_predictions as _rearrange_quantile_predictions,
 )
 from n225_open_gap_tail.metrics.information import *
-from n225_open_gap_tail.metrics.cpa import *
 from n225_open_gap_tail.metrics.result_matrix import *
 from n225_open_gap_tail.metrics.stat_utils import *
 from n225_open_gap_tail.metrics.stat_utils import _fmt as _fmt, _safe_mean as _safe_mean

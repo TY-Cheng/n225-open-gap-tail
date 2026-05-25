@@ -25,7 +25,6 @@ import n225_open_gap_tail.forecasting as paper_module
 import n225_open_gap_tail.forecasting._benchmark_suite as benchmark_suite
 import n225_open_gap_tail.forecasting._ml_tail_suite as ml_tail_suite
 import n225_open_gap_tail.inference as paper_inference
-import n225_open_gap_tail.metrics.cpa as cpa_module
 import n225_open_gap_tail.metrics.stat_utils as stat_utils
 import n225_open_gap_tail.models.benchmark_advanced as benchmark_advanced
 import n225_open_gap_tail.models.benchmark_advanced_math as advanced_math
@@ -87,7 +86,6 @@ def _patch_paper_module(monkeypatch: pytest.MonkeyPatch, name: str, value: objec
         reporting_tables,
         reporting_latex,
         reporting_figures,
-        cpa_module,
         benchmark_advanced,
         advanced_math,
     ]:
@@ -187,8 +185,6 @@ def test_ml_tail_result_matrix_separates_var_and_var_es_layers() -> None:
         for row in mcs
         if row["loss_family"] == "var_coverage"
     )
-    assert "conditional predictive ability" not in notes
-    assert "instrumented conditional predictive ability" not in notes
     assert "dominates" not in notes
     assert "significantly outperforms" not in notes
     assert "best" not in notes.lower()

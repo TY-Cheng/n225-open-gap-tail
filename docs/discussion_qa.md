@@ -66,7 +66,7 @@ All predictors must be available before the OSE target open under the point-in-t
 The baseline benchmarks, advanced econometric benchmarks, and ML-tail suite are implemented and have completed artifacts in this run.
 
 - Baseline benchmarks include historical quantiles, rolling quantiles, EWMA, GARCH-t, GJR-GARCH-t, and GJR-GARCH-EVT.
-- Advanced econometric benchmark families such as CAViaR, CARE/expectile, Taylor ALD/FZ0 joint VaR-ES, and GAS produce nonblocking empirical forecast rows; their interpretation still follows the benchmark and restricted-sample gates.
+- Advanced econometric benchmark families such as CAViaR, CARE/expectile, and GAS produce nonblocking empirical forecast rows; their interpretation still follows the benchmark and restricted-sample gates.
 - The ML suite includes direct LightGBM quantile forecasts, location-scale empirical calibration, standardized-loss POT-GPD variants, and the new research-candidate LightGBM+EVT routes.
 - LightGBM is used as a fixed tabular learner. The paper does not claim a new machine-learning algorithm.
 - Hyperparameters are held fixed across information sets and refit dates.
@@ -108,8 +108,29 @@ The evaluation is built around tail-risk performance, not a single ranking.
 - Fissler-Ziegel loss: evaluates joint VaR/ES forecasts where ES is valid.
 - Mean exceedance severity: reports how large exceptions are once they happen.
 - DM and MCS are average-sample inference across the unconditional evaluation sample.
-- CPA is a conditional loss-difference diagnostic based on loss-differential regressions on ex-ante observables. It does not produce forecasts.
 - Murphy diagrams, DST, stress-window, ES severity, and trigger diagnostics are supporting evidence.
+
+## How should the 24-check robustness profile be framed?
+
+The 24-check idea is a risk-model validation and robust-satisficing story.
+
+- The 24-check idea asks whether a forecast specification remains admissible across evaluation scenarios: two tail sides, four nested information sets, and three calibration diagnostics such as breach-neighborhood, Kupiec unconditional coverage, and Christoffersen independence/conditional-coverage checks where sample size permits.
+- The current `model_metrics_breach_audit.md` artifact is narrower than the full 24-check concept: it reports breach-neighborhood and row-count gates across the eight LGBM/EVT tail-by-information-set scenarios. A full 24-check table should be labeled separately if Kupiec and Christoffersen pass/fail flags are added to the same grid.
+- The best label for this paper is `diagnostic admissibility across nested information sets` or `information-set robustness`.
+
+The literature support comes from five adjacent strands:
+
+- VaR backtesting: Kupiec (1995) motivates formal tail-probability accuracy checks, while Christoffersen (1998) moves beyond unconditional coverage toward interval-forecast independence and conditional validity. Links: [Kupiec 1995 SSRN](https://ssrn.com/abstract=6697), [Kupiec DOI](https://doi.org/10.3905/jod.1995.407942), [Christoffersen DOI](https://doi.org/10.2307/2527341).
+- Risk-model governance: Basel's backtesting framework and SR 11-7 treat backtesting, benchmarking, sensitivity analysis, and ongoing monitoring as validation evidence, so a pass/fail diagnostic battery is natural for risk-model adequacy. Links: [BIS MAR99](https://www.bis.org/basel_framework/chapter/MAR/99.htm), [Federal Reserve SR 11-7](https://www.federalreserve.gov/bankinforeg/srletters/sr1107.htm).
+- Proper scoring and forecast comparison: quantile loss and Fissler-Ziegel loss rank forecast quality under scoring rules; DM and MCS then provide average-sample forecast-comparison inference. These answer a different question from pass-all admissibility. Links: [Gneiting and Raftery 2007](https://doi.org/10.1198/016214506000001437), [Fissler and Ziegel 2016](https://doi.org/10.1214/16-AOS1439), [Diebold and Mariano 1995](https://doi.org/10.1080/07350015.1995.10524599), [Hansen, Lunde, and Nason 2011](https://doi.org/10.3982/ECTA5771).
+- Specification-curve or multiverse robustness: the same empirical conclusion should be checked across defensible analysis specifications, which is analogous to checking the model across tails, information sets, and diagnostics. Link: [Simonsohn, Simmons, and Nelson 2020](https://doi.org/10.1038/s41562-020-0912-z).
+- Robust satisficing: instead of maximizing one average objective, choose the specification that achieves acceptable performance across the widest set of relevant circumstances. Links: [Schwartz, Ben-Haim, and Dacso 2011](https://doi.org/10.1111/j.1468-5914.2010.00450.x), [Ben-Haim 2014](https://doi.org/10.1080/00207721.2012.684906).
+
+The paper-facing language should be:
+
+> Average quantile and Fissler-Ziegel losses rank predictive efficiency, while Kupiec and Christoffersen tests assess VaR calibration and exception dynamics. We summarize robustness through a diagnostic-admissibility profile across tails and nested information sets. A model that remains admissible with both sparse and rich information sets is more useful for risk-model deployment than one that wins only under a narrow evaluation specification.
+
+This should not be written as proof that a model is universally optimal. Non-rejection is not proof of correctness, and multiple pass/fail checks should be read as a validation profile rather than a single formal hypothesis test.
 
 ## What do the current results say?
 

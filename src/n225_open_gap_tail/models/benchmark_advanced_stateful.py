@@ -34,14 +34,12 @@ from n225_open_gap_tail.models.benchmark_advanced_math import (
     _empirical_es_multiplier,
     _expectile_objective,
     _failure_status_for_model,
-    _fz_objective,
     _gas_filter_path,
     _gas_initial_params,
     _gas_next_log_sigma,
     _gas_params_valid,
     _objective_kind,
     _parameter_payload,
-    _positive_gap_from_params,
     _profile_gas_nu,
     _quantile_objective,
     _recursive_initial_params,
@@ -51,7 +49,6 @@ from n225_open_gap_tail.models.benchmark_advanced_math import (
     _recursive_variant,
     _run_derivative_free_optimizer,
     _student_t_standardized_var_es,
-    _uses_positive_gap,
 )
 
 
@@ -318,14 +315,14 @@ def _fit_recursive_var_model(
         if not _recursive_params_valid(
             params,
             variant=variant,
-            has_gap=_uses_positive_gap(model_name),
+            has_gap=False,
         ):
             return 1e12
         var_path, _ = _recursive_var_path(
             train=train,
             params=params,
             variant=variant,
-            has_gap=_uses_positive_gap(model_name),
+            has_gap=False,
             tail_level=tail_level,
         )
         objective_train = train[burn_in_rows:]
@@ -335,14 +332,6 @@ def _fit_recursive_var_model(
                 objective_train,
                 objective_var_path,
                 tau=_required_float(expectile_tau),
-            )
-        if objective_kind == "ald_fz0":
-            gap = _positive_gap_from_params(params)
-            return _fz_objective(
-                objective_train,
-                objective_var_path,
-                objective_var_path + gap,
-                tail_level,
             )
         return _quantile_objective(objective_train, objective_var_path, tail_level)
 
@@ -358,32 +347,25 @@ def _fit_recursive_var_model(
         train=train,
         params=params,
         variant=variant,
-        has_gap=_uses_positive_gap(model_name),
+        has_gap=False,
         tail_level=tail_level,
     )
-    if _uses_positive_gap(model_name):
-        gap = _positive_gap_from_params(params)
-        es_multiplier = None
-        es_source = "positive_gap_joint_var_es"
-        fz_interpretation = "joint_var_es_optimized"
-    else:
-        es_multiplier_info = _empirical_es_multiplier(
-            train_losses=train[burn_in_rows:],
-            train_var_forecasts=var_path[burn_in_rows:],
-        )
-        if es_multiplier_info["status"] != "ok":
-            return {
-                "fit_status": "unavailable_empirical_es_companion_insufficient_exceedances",
-                "failure_reason": es_multiplier_info["status"],
-                "burn_in_rows": burn_in_rows,
-                **opt,
-                **care_calibration,
-                **es_multiplier_info,
-            }
-        gap = None
-        es_multiplier = _required_float(es_multiplier_info["es_multiplier"])
-        es_source = "empirical_exceedance_companion"
-        fz_interpretation = "augmented_var_es_pair_not_jointly_estimated"
+    es_multiplier_info = _empirical_es_multiplier(
+        train_losses=train[burn_in_rows:],
+        train_var_forecasts=var_path[burn_in_rows:],
+    )
+    if es_multiplier_info["status"] != "ok":
+        return {
+            "fit_status": "unavailable_empirical_es_companion_insufficient_exceedances",
+            "failure_reason": es_multiplier_info["status"],
+            "burn_in_rows": burn_in_rows,
+            **opt,
+            **care_calibration,
+            **es_multiplier_info,
+        }
+    es_multiplier = _required_float(es_multiplier_info["es_multiplier"])
+    es_source = "empirical_exceedance_companion"
+    fz_interpretation = "augmented_var_es_pair_not_jointly_estimated"
     parameter_payload = _parameter_payload(
         model_name=model_name,
         params=params,
@@ -394,7 +376,6 @@ def _fit_recursive_var_model(
             "objective_kind": objective_kind,
             "expectile_tau": expectile_tau,
             "es_multiplier": es_multiplier,
-            "positive_es_gap": gap,
         },
     )
     return {
@@ -405,7 +386,6 @@ def _fit_recursive_var_model(
         "variant": variant,
         "objective_kind": objective_kind,
         "state": {"var": float(next_var)},
-        "positive_gap": gap,
         "es_multiplier": es_multiplier,
         "es_source": es_source,
         "fz_interpretation": fz_interpretation,
@@ -541,10 +521,7 @@ def _forecast_from_advanced_fit(fit: dict[str, object]) -> dict[str, object]:
         }
     state = cast(dict[str, object], fit["state"])
     var = max(_required_float(state["var"]), 1e-12)
-    if fit.get("positive_gap") is not None:
-        es = var + _required_float(fit["positive_gap"])
-    else:
-        es = var * _required_float(fit["es_multiplier"])
+    es = var * _required_float(fit["es_multiplier"])
     return {
         "var_forecast": float(var),
         "es_forecast": float(max(var, es)),
@@ -571,7 +548,7 @@ def _update_advanced_fit_state(fit: dict[str, object], realized_loss: float) -> 
         y=realized_loss,
         params=params,
         variant=str(fit["variant"]),
-        has_gap=_uses_positive_gap(model_name),
+        has_gap=False,
     )
 
 
@@ -853,11 +830,6 @@ def _advanced_model_metadata(model_name: str) -> dict[str, str]:
         return {
             "model_family": "care_expectile",
             "model_variant": model_name.removeprefix("care_expectile_"),
-        }
-    if model_name.startswith("ald_taylor_"):
-        return {
-            "model_family": "ald_taylor_var_es",
-            "model_variant": model_name.removeprefix("ald_taylor_"),
         }
     if model_name.startswith("gas_t_"):
         return {"model_family": "gas_t", "model_variant": model_name.removeprefix("gas_t_")}

@@ -55,8 +55,6 @@ def full_run_snapshot_paths(
         "ml_tail_result_matrix_mcs": run_dir / "metrics" / "ml_tail_result_matrix_mcs.parquet",
         "ml_tail_dm_inference": run_dir / "metrics" / "ml_tail_dm_inference.parquet",
         "ml_tail_mcs": run_dir / "metrics" / "ml_tail_mcs.parquet",
-        "ml_tail_cpa_inference": run_dir / "metrics" / "ml_tail_cpa_inference.parquet",
-        "cross_model_cpa_inference": run_dir / "metrics" / "cross_model_cpa_inference.parquet",
         "ml_tail_model_eviction": run_dir / "metrics" / "ml_tail_model_eviction.parquet",
         "ml_tail_dst_attenuation": run_dir / "metrics" / "ml_tail_dst_attenuation.parquet",
         "ml_tail_murphy": run_dir / "metrics" / "ml_tail_murphy.parquet",

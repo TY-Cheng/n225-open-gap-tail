@@ -579,6 +579,45 @@ def test_sensitivity_command_reports_summary(
     assert "status: ok" in result.output
 
 
+def test_sensitivity_command_dispatches_force(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "tailrisk_run"
+
+    def fake_resolve_run_dir(settings: object, run_id: str) -> Path:
+        assert run_id == "tailrisk_test"
+        return run_dir
+
+    def fake_evaluate_suite(**kwargs: object) -> EvaluationResult:
+        assert kwargs["run_dir"] == run_dir
+        assert kwargs["suite"] == "sensitivity"
+        assert kwargs["force"] is True
+        return EvaluationResult(
+            run_id="tailrisk_test",
+            run_dir=run_dir,
+            forecast_rows=1,
+            metric_rows=2,
+            status="ok",
+        )
+
+    monkeypatch.setattr(cli, "resolve_run_dir", fake_resolve_run_dir)
+    monkeypatch.setattr(cli, "evaluate_suite", fake_evaluate_suite)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "sensitivity",
+            "--run-id",
+            "tailrisk_test",
+            "--force",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "sensitivity forecast rows: 1" in result.output
+
+
 def test_run_command_runs_panel_eval_and_latex(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

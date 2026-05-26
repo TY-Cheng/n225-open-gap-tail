@@ -46,7 +46,7 @@ jobs:
         run: uv sync --extra docs
 
       - name: Build docs
-        run: uv run mkdocs build --strict
+        run: uv run mkdocs build --clean --strict
 
       - name: Configure Pages
         if: github.event_name != 'pull_request'

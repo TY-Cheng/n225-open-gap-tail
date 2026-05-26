@@ -218,12 +218,17 @@ def _history_feature_values(
 
 def _lgbm_training_params(overrides: Mapping[str, object] | None = None) -> dict[str, object]:
     params: dict[str, object] = {
-        "n_estimators": 80,
-        "learning_rate": 0.05,
-        "num_leaves": 15,
-        "min_child_samples": 20,
-        "subsample": 0.9,
-        "colsample_bytree": 0.9,
+        "n_estimators": 160,
+        "learning_rate": 0.025,
+        "max_depth": -1,
+        "num_leaves": 20,
+        "min_child_samples": 25,
+        "subsample": 0.85,
+        "subsample_freq": 1,
+        "colsample_bytree": 0.85,
+        "reg_alpha": 0.1,
+        "reg_lambda": 0.5,
+        "num_threads": 1,
     }
     if overrides:
         for key in tuple(params):
@@ -343,7 +348,6 @@ def _forecast_ml_tail_lightgbm_sequence(
                     alpha=tail_level,
                     **_lgbm_training_params(lgbm_params),
                     random_state=int(tail_level * 10_000) + len(information_set),
-                    num_threads=1,
                     verbosity=-1,
                 )
                 model.fit(x_train, y_train)

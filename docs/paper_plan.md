@@ -9,14 +9,14 @@ hide:
 
 **U.S. Close Information and Pre-Open Tail Risk in OSE Nikkei 225 Futures**
 
-This page is the paper-facing plan for the empirical design. It is organized in
-the order a reader would expect in a finance paper: research question,
-institutional context, data, methods, workflow, expected outputs, and
-appendix material.
+This page is the paper-facing manuscript blueprint. It follows the order of a
+finance paper: introduction, literature and gap, contribution, materials and
+methods, registered experiments, expected results/discussion, claim boundaries,
+and appendix/source notes.
 
 ## 1. Introduction
 
-### 1.1 Main Question
+### 1.1 Overview And Why This Work
 
 - The paper asks whether information observed by the U.S. cash-market close helps forecast the tail risk of the next Osaka Exchange (OSE) Nikkei 225 Futures day-session open.
 - The primary empirical object is the settlement-to-open gap of the Nikkei 225 Futures large contract:
@@ -28,6 +28,14 @@ appendix material.
     - `right_tail`: upside opening-gap risk, `realized_loss_t = gap_t`.
 - The registered primary tail level is 95% VaR, with a nominal 5% exception rate.
 - The empirical question is predictive and out-of-sample. It is not a structural causal design.
+- Why this setting is useful:
+    - the target is economically concrete: a futures opening gap relative to a
+      settlement reference;
+    - the forecast origin is observable before the next OSE open;
+    - the information experiment is naturally nested: Japan-only history,
+      then U.S. close information, then Japan and Asia proxy blocks;
+    - tail-risk claims can be disciplined by VaR coverage tests before reading
+      average loss improvements.
 
 ### 1.2 Market Context
 
@@ -39,7 +47,7 @@ appendix material.
 
   `feature_available_ts_utc <= model_cutoff_ts_utc < target_open_ts_utc`.
 
-### 1.3 Relation To The Literature
+### 1.3 Literature Review And Existing Results
 
 - **International information transmission**:
     - The empirical setting is cross-market and timing-sensitive: U.S. equity, rates, volatility, FX, credit, and proxy-ETF information is observed before the Japanese futures open.
@@ -62,8 +70,47 @@ appendix material.
     - The paper separates scalar forecast ranking from pass/fail risk-model adequacy.
     - Quantile loss and Fissler-Ziegel loss rank average predictive performance; Kupiec and Christoffersen tests assess VaR calibration and exception dynamics.
     - A diagnostic-admissibility profile summarizes whether a model remains acceptable across tail sides and nested information sets. This is an information-set robustness or robust-satisficing idea.
+- Existing evidence in the current research run:
+    - the clean forecast sample is large enough for a full-sample OOS
+      comparison from 2018-06-20 to 2026-05-22, but still thin in realized 5%
+      tail events;
+    - direct LightGBM quantile rows are useful information-set comparators but
+      fail the current all-scenario calibration story;
+    - GJR-GARCH-EVT and two LightGBM+EVT families form the post-24-check
+      comparison set for the current FZ DM heatmap;
+    - the current manuscript story should therefore sell calibration robustness
+      first, then loss and information-set gains among admissible models.
 
-### 1.4 Research Questions
+### 1.4 Research Gap
+
+- Standard international-transmission work is usually about returns,
+  volatility, or price discovery, not the VaR/ES risk of the next OSE futures
+  day-session open under a strict point-in-time U.S. close cutoff.
+- Standard VaR/ES forecast comparisons often rank models by average scores
+  without first asking whether a model remains usable across sparse and rich
+  information sets.
+- Flexible ML quantile methods can improve average loss while producing
+  exception rates that are too high for risk-model claims; this paper makes
+  that tension visible rather than hiding it behind a single ranking.
+- Filtered EVT models are natural for heavy-tailed standardized losses, but the
+  empirical question is whether the filtered-tail route remains stable under
+  actual market timing, nested predictors, and finite tail-event counts.
+
+### 1.5 Contributions
+
+- A point-in-time OSE pre-open tail-risk dataset and timing design linking
+  J-Quants Nikkei 225 Futures data to U.S. close market information.
+- A nested information-set experiment that separates Japan-only history, U.S.
+  close core variables, Japan proxy variables, and Asia proxy variables.
+- A benchmark-versus-ML tail-risk comparison that evaluates VaR calibration,
+  quantile loss, and Fissler-Ziegel joint VaR-ES loss in one consistent
+  positive-loss convention.
+- A post-coverage-screen comparison design: headline comparisons are made only
+  among models that pass the current calibration/admissibility screen.
+- A generated evidence map connecting every table and figure to source
+  artifacts and claim scope, so manuscript statements remain traceable.
+
+### 1.6 Research Questions
 
 - Does U.S. close information add predictive content beyond Japan-only history?
 - Is most of the marginal content captured by core U.S. close variables, or do Japan and Asia proxy blocks add further information?
@@ -72,16 +119,16 @@ appendix material.
 - Do LightGBM body filters combined with POT-GPD tail extrapolation improve VaR/ES behavior relative to direct 95% quantile forecasts?
 - Are loss differentials related to ex-ante observables such as VIX or calendar conditions?
 
-## 2. Materials
+## 2. Materials And Data Description
 
-### 2.1 Sample And Evaluation Window
+### 2.1 Sample, Market, And Evaluation Window
 
 - Current clean evaluation window: `2018-06-20` to `2026-05-22`.
 - Current forecast-sample size: `1722` trading-day observations.
 - The current clean run is a research-candidate evidence set, not a final manuscript freeze.
 - The current primary level is 95% VaR/ES.
 
-### 2.2 Market Introduction And Target Contract
+### 2.2 Market Description And Target Contract
 
 - The Osaka Exchange day session opens at 08:45 JST and follows a prior
   settlement reference for the Nikkei 225 Futures large contract.
@@ -209,6 +256,11 @@ appendix material.
 - These blocks test marginal predictive content. They are not an exhaustive variable search.
 
 ## 3. Methods
+
+This section defines the empirical procedure after data construction: forecast
+origin, benchmark and ML-tail model families, EVT calibration, performance
+metrics, inference, and the criteria used to decide which comparisons are
+paper-facing.
 
 ### 3.1 Pipeline Structure
 
@@ -342,7 +394,7 @@ appendix material.
     - extremal-index diagnostics;
     - raw versus filtered tail summaries.
 
-### 3.11 Performance Metrics And Inference
+### 3.11 Performance Metrics, Selection Criteria, And Inference
 
 - VaR calibration:
     - empirical breach rate;
@@ -350,11 +402,26 @@ appendix material.
     - deviation from the nominal 5% exception rate;
     - Kupiec unconditional coverage test;
     - Christoffersen independence or conditional coverage test where sample size permits.
+- Why calibration comes first:
+    - VaR is a risk-limit object, so an apparently low loss is not enough if
+      realized exceptions are too frequent or clustered;
+    - the current paper sells robustness across tail sides and information
+      sets, so pass/fail calibration evidence must precede any model-win
+      language.
 - VaR loss:
     - quantile loss on paired out-of-sample forecasts.
+- Why quantile loss is retained:
+    - it is the proper score for VaR alone;
+    - it keeps direct quantile rows interpretable even when ES is empirical or
+      auxiliary.
 - Joint VaR-ES evaluation:
     - Fissler-Ziegel joint loss for valid VaR-ES pairs;
     - ES exceedance severity, interpreted conditional on a VaR exception.
+- Why FZ loss is the main joint score:
+    - it evaluates VaR and ES as a pair;
+    - it is used only as evaluation language in the paper;
+    - legacy likelihood-style implementation language is treated as benchmark
+      objective interpretation, not as a second paper-facing loss.
 - Terminology is fixed as follows:
     - `FZ loss` means the Fissler-Ziegel joint VaR-ES evaluation score;
     - no separate likelihood-style VaR-ES loss label is used in the paper.
@@ -363,6 +430,11 @@ appendix material.
       families across the four registered information sets.
 - Model comparison:
     - block-bootstrap Diebold-Mariano tests on paired loss differentials.
+- Why DM is supporting inference:
+    - it tests average paired loss differences on common forecast dates;
+    - it is not a conditional state-by-state mechanism test;
+    - the post-24-check 3-by-3 heatmap uses strict common dates across
+      GJR-GARCH-EVT, LGBM POT-GPD plain MLE (C), and LGBM POT-GPD UniBM (C).
 - Supporting diagnostics:
     - stress-window performance.
 - Cross-scenario admissibility:
@@ -433,7 +505,7 @@ flowchart LR
         CAL["VaR calibration<br/>breach rate, exceptions,<br/>Kupiec/Christoffersen"]
         LOSS["Forecast scores<br/>quantile loss;<br/>FZ joint VaR-ES loss"]
         INF["Loss comparison<br/>DM"]
-        DIAG["Forecast diagnostics<br/>Murphy,<br/>ES severity, triggers, stress windows"]
+        DIAG["Forecast diagnostics<br/>Murphy,<br/>ES severity,<br/>stress windows"]
     end
 
     J --> A
@@ -469,9 +541,90 @@ flowchart LR
   regimes, and scoring outputs. They are not downstream products of DM or
   other loss-comparison inference.
 
-## 5. Results And Discussion Artifact Plan
+## 5. Expected Experiments
 
-### 5.1 Main Tables
+### 5.1 Primary Data And Timing Experiments
+
+- Build the OSE settlement-to-open gap target and verify the final forecast
+  sample.
+- Audit U.S./Japan session matching, early closes, holiday desynchronization,
+  DST regimes, roll/SQ exclusions, and vendor availability timestamps.
+- Report target-tail motivation diagnostics: density versus Gaussian, log
+  survival, mean excess, and Hill/GPD tail-index paths.
+- Output expected evidence:
+    - `market_timing_design`;
+    - `target_tail_motivation`;
+    - run metadata, panel construction, target-audit, calendar, feature
+      coverage, and leakage sections in the Results Snapshot.
+
+### 5.2 Benchmark Experiments
+
+- Run target-history and econometric baselines on left/right 95% loss surfaces.
+- Include historical/rolling quantile, EWMA or volatility-scaled quantile,
+  GARCH-t, GJR-GARCH-t, and GJR-GARCH-EVT.
+- Include advanced econometric benchmarks where they converge and pass artifact
+  gates; these rows remain claim-gated.
+- Output expected evidence:
+    - benchmark metrics tables;
+    - benchmark Murphy diagnostics;
+    - selected benchmark-versus-LGBM performance figures;
+    - all-model diagnostic scan.
+
+### 5.3 Nested Information-Set ML Experiments
+
+- Run LightGBM direct quantile and LightGBM filtered-tail families over the
+  nested A/B/C/D information sets.
+- Evaluate left and right tails separately.
+- Treat direct quantile rows as information-set comparators, but do not promote
+  them when they fail calibration/admissibility gates.
+- Output expected evidence:
+    - primary ML nested-information-set table;
+    - per-model ML-tail appendix table;
+    - 24-check coverage/admissibility discussion;
+    - LGBM Murphy diagnostics for the pass-all LGBM+EVT families.
+
+### 5.4 Post-24-Check Cross-Suite Comparison
+
+- Restrict the headline comparison set to models that pass the current
+  calibration/admissibility screen:
+    - `GJR-GARCH-EVT`;
+    - `LGBM POT-GPD plain MLE (C)`;
+    - `LGBM POT-GPD UniBM (C)`.
+- Compute the 3-by-3 pairwise FZ DM heatmap separately for left and right tails.
+- Use a strict global common sample within each tail so the benchmark and
+  LGBM rows are paired on identical forecast dates.
+- Output expected evidence:
+    - `dm_heatmap_left_tail`;
+    - `dm_heatmap_right_tail`;
+    - common-sample N in the figure subtitle/caption.
+
+### 5.5 Information-Increment And Stress Diagnostics
+
+- Plot cumulative FZ gains relative to the same-family A-only LGBM+EVT anchor.
+- Compare GJR-GARCH-EVT and B/C/D information expansions against that A-only
+  anchor to show information increments after the 24-check screen.
+- Use stress-window overlays to illustrate VaR/ES behavior in broad stress
+  episodes; do not interpret them as PnL, trading alpha, or validation by
+  themselves.
+- Output expected evidence:
+    - `cumulative_lgbm_a_anchor_fz_gain`;
+    - `var_es_stress_overlay_2024_stress_episode`;
+    - `var_es_stress_overlay_2025_stress_episode`;
+    - full-sample VaR overlay diagnostics.
+
+### 5.6 Appendix Robustness Experiments
+
+- Run `just sensitivity` as post-24-check appendix evidence only.
+- Perturb nearby LightGBM capacity for the two pass-all C-information LGBM+EVT
+  families.
+- Perturb POT thresholds at `0.875` and `0.925`, while recording `0.95` as a
+  boundary diagnostic at the 95% VaR level.
+- Do not feed sensitivity rows into model selection, promoted rows, DM gates,
+  selected figures, or the cross-suite FZ DM heatmap.
+
+## 6. Expected Results And Discussion Outputs
+
+### 6.1 Main Tables
 
 - Predictor block and coverage table: data/methods table showing information
   blocks, source families, feature counts, representative variables, missingness,
@@ -489,33 +642,42 @@ flowchart LR
 - Compact DM summary table: headline paired inference only. Full matrices
   stay in the appendix.
 
-### 5.2 Main Figures
+### 6.2 Main Figures
 
 - Figure 1, market timing design: institutional timing diagram for OSE
   settlement, night session, U.S. close, model cutoff, and next OSE open. This
   is a forecast-origin diagram, not a causal price-discovery diagram.
 - Figure 2, opening-gap tail motivation: density versus Gaussian, left/right
-  log survival, and mean-excess diagnostics. This motivates the target and EVT
-  route; it is not forecast validation.
+  log survival, mean-excess diagnostics, and Hill tail-index paths. This single
+  composite motivates the target and EVT route; it is not forecast validation.
 - Coverage-screen evidence is summarized in tables rather than a compact
   main-text coverage figure; this avoids duplicating the 24-check pass/fail
   story.
 - Direct LightGBM information-ladder graphics are not main-text figures under
   the 24-check robustness story because the direct quantile rows fail the
   calibration screen.
-- Figure 3, cumulative loss difference: anchor-loss-minus-candidate-loss over
-  time. Upward movement means the candidate has lower accumulated loss.
+- Figure 3, cumulative FZ-gain diagnostics: one 2-by-2 figure after the
+  24-check coverage screen. Each panel fixes a tail side and one of the two
+  24-check-passing LGBM+EVT families. The anchor is the corresponding A-only
+  LGBM+EVT forecast; plotted candidates are GJR-GARCH-EVT and the same-family
+  B/C/D information expansions. Upward movement means the candidate has lower
+  accumulated FZ loss than A-only under the fixed
+  anchor-loss-minus-candidate-loss convention.
 
-### 5.3 Appendix Figures And Tables
+### 6.3 Appendix Figures And Tables
 
 - Raw target diagnostics: histogram/density, left/right QQ plots, log survival,
   mean excess, and Hill plot.
 - Full coverage diagnostics and selected performance figures: appendix checks
   backing the main coverage and selected-performance summaries.
-- Stress-window overlays: illustration only, not validation, PnL, cost, or
-  trading-performance evidence.
-- DM heatmaps: appendix pairwise detail; negative loss differences favor
-  the candidate.
+- Stress-window overlays: broad OOS stress episodes with left/right tails
+  sharing the same x-axis; LGBM lines use information set C, the best-FZ row
+  within the two 24-check LGBM+EVT families. Illustration only, not validation,
+  PnL, cost, or trading-performance evidence.
+- DM heatmaps: appendix pairwise FZ detail for the post-24-check cross-suite
+  set; rows are candidates, columns are anchors, and negative differences favor
+  the row model. Each tail uses a strict global common sample across
+  GJR-GARCH-EVT, LGBM plain MLE C, and LGBM UniBM C.
 - Murphy diagrams: scoring-family diagnostics, not pairwise dominance claims.
 - ES severity diagnostics: conditional exceedance diagnostics, not
   model-selection or alpha claims.
@@ -528,23 +690,17 @@ flowchart LR
   [Results Snapshot](results_snapshot.md), which now includes both result
   interpretation and artifact placement.
 
-### 5.4 Appendix Configuration Robustness
+### 6.4 Appendix Configuration Robustness
 
 - The primary design compares pre-specified point-in-time forecast specifications.
-- Configuration sensitivity is reported only as appendix robustness evidence and is not used to select primary selections.
-- LightGBM capacity sensitivity varies only:
-    - number of trees;
-    - learning rate;
-    - number of leaves;
-    - minimum child samples;
-    - row and column subsampling.
-- EWMA sensitivity reports the primary `lambda = 0.94` row and sensitivity rows at `0.90` and `0.97`.
-- POT threshold sensitivity reports forecastable thresholds `0.90` and `0.925`.
+- `just sensitivity` is fixed to the post-24-check paper set: `GJR-GARCH-EVT`, `LGBM POT-GPD plain MLE (C)`, and `LGBM POT-GPD UniBM (C)`.
+- The sensitivity run varies nearby LightGBM capacity only for the two pass-all C-information LGBM+EVT families.
+- POT threshold sensitivity reports forecastable thresholds `0.875` and `0.925` for the same post-24-check set, bracketing the registered primary threshold `0.90`.
 - At 95% VaR, threshold `0.95` is recorded only as a boundary diagnostic with status `not_applicable_threshold_not_below_tail_level`.
 - Sensitivity artifacts live under `reports/runs/<run_id>/sensitivity/` and carry `primary_claim_allowed=false`.
-- Robustness labels describe conclusion stability versus the registered primary specification. They do not feed DM gates, promoted rows, result-matrix selection, or selected-model figures.
+- Robustness labels describe conclusion stability versus the registered primary specification. They do not feed the cross-suite FZ DM heatmap, promoted rows, result-matrix selection, or selected-model figures.
 
-## 6. Manuscript Structure
+## 7. Manuscript Structure
 
 - Introduction:
     - state the pre-open tail-risk problem;
@@ -581,7 +737,7 @@ flowchart LR
     - state limitations from coverage drift, FRED vintages, EVT sample size, and missing U.S.-close Nikkei futures marks;
     - define the next empirical extension only where it sharpens interpretation of the current OSE pre-open tail-risk design.
 
-## 7. Claim Boundaries
+## 8. Claim Boundaries
 
 - No structural causal spillover claim.
 - No price-discovery claim.
@@ -592,9 +748,9 @@ flowchart LR
 - No options-risk primary claim unless historical options entitlement, timestamp safety, and liquidity gates pass.
 - No model-family ranking claim from restricted short samples.
 
-## 8. Appendix And Source Notes
+## 9. Appendix And Source Notes
 
-### 8.1 Source Notes
+### 9.1 Source Notes
 
 - JPX Nikkei 225 Futures contract specifications: [Nikkei 225 Futures | Japan Exchange Group](https://www.jpx.co.jp/english/derivatives/products/domestic/225futures/01.html)
 - JPX derivatives trading hours: [Trading Hours | Derivatives | Japan Exchange Group](https://www.jpx.co.jp/english/derivatives/rules/trading-hours/index.html)
@@ -606,7 +762,7 @@ flowchart LR
 - Cboe VIX historical data: [VIX Index Historical Data | Cboe](https://www.cboe.com/tradable_products/vix/vix_historical_data)
 - CME Nikkei products: [Nikkei 225 futures | CME Group](https://www.cmegroup.com/nikkei)
 
-### 8.2 Literature Notes
+### 9.2 Literature Notes
 
 - McNeil-Frey filtered EVT: conditional volatility/body filtering followed by EVT tail estimation.
 - Basel VaR backtesting: exception-counting intuition for VaR validation; this
@@ -625,12 +781,12 @@ flowchart LR
     - Forecast comparison: [Diebold and Mariano 1995](https://doi.org/10.1080/07350015.1995.10524599).
     - Specification robustness and robust satisficing: [Simonsohn, Simmons, and Nelson 2020](https://doi.org/10.1038/s41562-020-0912-z), [Schwartz, Ben-Haim, and Dacso 2011](https://doi.org/10.1111/j.1468-5914.2010.00450.x), [Ben-Haim 2014](https://doi.org/10.1080/00207721.2012.684906).
 
-### 8.3 Reproducibility Notes
+### 9.3 Reproducibility Notes
 
 - The generated results snapshot is the evidence map; this paper plan is the manuscript design.
 - Data source details are maintained in `docs/data.md`.
 - Current result tables and figure provenance are maintained in `docs/results_snapshot.md`.
 - The canonical run artifacts live under `REPORTS_DIR/runs/<run_id>/`.
 - Paper-facing tables and figures are emitted under `REPORTS_DIR/runs/<run_id>/latex/`.
-- The local data root should be an absolute external-storage path, not a cloud-synced repo directory or repo-local symlink. `REPORTS_DIR` can remain local because generated reporting artifacts are comparatively small.
+- The local data root should be external storage, either through absolute `.env` paths or a repo-local `data/` symlink that resolves outside the cloud-synced repo. `REPORTS_DIR` can remain local because generated reporting artifacts are comparatively small.
 - `table_manifest.json` and `figure_manifest.json` provide source-artifact and claim-scope traceability for the generated paper-facing outputs.

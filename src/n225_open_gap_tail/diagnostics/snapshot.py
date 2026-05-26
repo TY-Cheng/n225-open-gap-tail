@@ -114,8 +114,9 @@ def write_results_snapshot_from_run(
     _validate_snapshot_artifacts(paths)
     panel = _read_parquet_optional(paths["modeling_panel"])
     docs_path = Path("docs/results_snapshot.md")
-    discussion_path = Path("docs/discussion_qa.md")
+    discussion_path = Path("docs/faq.md")
     docs_path.parent.mkdir(parents=True, exist_ok=True)
+    _cleanup_stale_snapshot_asset_dirs(docs_dir=docs_path.parent, current_run_id=run_dir.name)
     _snapshot_gallery.sync_snapshot_figure_assets(
         run_dir=run_dir,
         figure_manifest=_read_json_dict(paths["figure_manifest"]),
@@ -163,6 +164,20 @@ def _sync_snapshot_table_assets(*, run_dir: Path, docs_dir: Path) -> None:
             continue
         for source_path in sorted(source_dir.glob("*.tex")):
             shutil.copy2(source_path, target_dir / source_path.name)
+
+
+def _cleanup_stale_snapshot_asset_dirs(*, docs_dir: Path, current_run_id: str) -> None:
+    for asset_root_name in ("figures", "tables"):
+        asset_root = docs_dir / asset_root_name
+        if not asset_root.exists():
+            continue
+        for stale_path in asset_root.glob("tailrisk_*"):
+            if stale_path.name == current_run_id:
+                continue
+            if stale_path.is_dir():
+                shutil.rmtree(stale_path)
+            else:
+                stale_path.unlink(missing_ok=True)
 
 
 def build_snapshot_id(
@@ -312,7 +327,9 @@ def _full_run_results_markdown(
             ml_tail_stress=ml_tail_stress,
         ),
         levels=1,
-    ).replace("### Results And Discussion", "### Results interpretation and claim boundaries")
+    ).replace(
+        "### Results And Discussion", "### 4.8 Integrated interpretation and claim boundaries"
+    )
 
     run_id = str(manifest.get("run_id") or run_dir.name)
     panel_bounds = _panel_bounds(panel)
@@ -453,21 +470,23 @@ hide:
   - navigation
 ---
 
-# Results And Discussion Snapshot
+# Results And Discussion
 
 > **Research-candidate full-run artifact.** This page is generated from `{run_id}`.
 > It summarizes the durable gold modeling sample and run outputs, not the older
 > bounded access-check snapshot. It is still a research-candidate artifact:
 > final manuscript claims require a clean committed run and author review of the
-> tables and notes.
+> tables and notes. It is organized as the paper's Results and Discussion
+> section: sample and timing results, model setup, forecasting outcomes,
+> diagnostics, tables, figures, and claim boundaries.
 
-## Results And Discussion Overview
+## 1. Overview And Link To Paper Plan
 
-This page is the merged results-and-artifact map for the locked run. It keeps
-enough data and method context to make each result auditable, then organizes the
-tables and figures in the order they support the Results and Discussion section.
-Full data-source detail lives in [Data](data.md), and the paper-level research
-design lives in [Paper Plan](paper_plan.md).
+This page is the generated Results and Discussion companion to
+[Paper Plan](paper_plan.md). It carries forward the planned manuscript sections:
+data/timing evidence, model/evaluation setup, benchmark results, ML nested
+information-set results, post-24-check comparisons, supporting diagnostics, and
+claim boundaries. Full data-source detail lives in [Data](data.md).
 
 ### Evidence Map
 
@@ -479,7 +498,7 @@ design lives in [Paper Plan](paper_plan.md).
 - The middle branch compares baseline benchmarks, advanced econometric benchmarks, and ML-tail forecasts on registered loss units.
 - The right branch separates primary ML nested information sets, diagnostic model-family comparisons, unconditional DM inference, and supporting figures.
 
-## Results Context: Data, Target, And Timing
+## 2. Data, Target, And Timing Results
 
 ### Run Metadata
 
@@ -525,7 +544,7 @@ design lives in [Paper Plan](paper_plan.md).
 - Warnings are retained because they identify conservative-lag or missing-feature situations that may matter for interpretation.
 - The panel signature is deterministic and binds the leakage check to the current gold panel/config.
 
-## Results Context: Model Configuration And Evaluation
+## 3. Model And Evaluation Setup
 
 ### Pipeline Structure
 
@@ -557,11 +576,9 @@ design lives in [Paper Plan](paper_plan.md).
 - LightGBM hyperparameters are held fixed across information sets and refit dates; the snapshot reports model-family evidence rather than tuning-search evidence.
 - DM inference is read on average across the unconditional evaluation sample.
 
-## Results And Discussion
+## 4. Forecasting Results And Discussion
 
-### Main result tables
-
-#### Benchmark Suite
+### 4.1 Benchmark results
 
 Status: `{benchmark_status_label}`; forecast rows: `{benchmark_status.get("forecast_rows")}`; metric rows: `{benchmark_status.get("metric_rows")}`; failures: `{benchmark_status.get("failures")}`.
 
@@ -574,7 +591,7 @@ Status: `{benchmark_status_label}`; forecast rows: `{benchmark_status.get("forec
 - The table is not a leaderboard by itself; coverage, exception counts, quantile loss, and FZ loss must be read together.
 - Common-sample rows are reported directly so readers can see the effective evidence size.
 
-#### Primary ML Specifications
+### 4.2 Primary ML specifications across nested information sets
 
 Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; forecast rows: `{ml_tail_status.get("forecast_rows")}`; failures: `{ml_tail_status.get("failures")}`.
 
@@ -585,7 +602,7 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 - Differences across information blocks are candidate forecast evidence only after the common-sample, coverage, and inference diagnostics are reviewed.
 - {ml_coverage_review}
 
-#### Side-specific ML-tail Promotion Gate
+### 4.3 Side-specific ML-tail promotion gate
 
 {promoted_tail_model_table}
 
@@ -593,7 +610,7 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 - The current run's promoted rows are exactly the rows shown above; read them as side-specific paper candidates, not as a universal family ranking.
 - This is not a universal model-family ranking and does not replace the strict primary nested-information-set table above.
 
-#### ML-tail artifact relationship
+### 4.4 ML-tail artifact relationship
 
 {metric_artifact_table}
 
@@ -601,9 +618,7 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 - `ml_tail_metrics_per_model.parquet` reports each implemented ML-tail model on its own valid OOS rows; it is useful for debugging coverage but is not a cross-model comparison table.
 - `ml_tail_result_matrix.parquet` creates restricted common samples for VaR-only and VaR-ES comparisons across model families and within-model information-set increments.
 
-### Other result tables
-
-#### All-model diagnostic scan
+### 4.5 All-model diagnostic scan
 
 {all_model_comparison_table}
 
@@ -611,7 +626,7 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 - Mean and standard deviation are computed across registered metric rows for the same suite/model/information-set configuration; for most rows this summarizes left- and right-tail metrics.
 - It is a diagnostic scan, not the formal cross-model comparison table. Cross-model claims still require common-sample result-matrix and DM evidence because valid dates and model gates can differ.
 
-#### Restricted Common-Sample Result Matrix
+### 4.6 Restricted common-sample result matrix and DM evidence
 
 {result_matrix_table}
 
@@ -620,7 +635,7 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 - Restricted direct-quantile performance is only a comparison anchor for the tail-model family; it does not replace the primary direct-quantile evidence.
 - DM records are emitted only where registered row-count and exception-count gates pass; otherwise the result matrix remains descriptive.
 
-#### Stress And Diagnostic Windows
+### 4.7 Stress and diagnostic windows
 
 {stress_table}
 
@@ -630,31 +645,31 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 
 {results_discussion}
 
-## Results And Discussion: Figures, Tables, And Source Artifacts
+## 5. Figures, Tables, And Source Artifacts
 
 This section merges the former figure/table placement page into the results
 snapshot. All generated figures and tables are listed with their intended
 interpretation. The words "supporting" and "diagnostic" describe claim scope;
 they do not mean the artifact is missing from this page.
 
-### Configuration Robustness Evidence
+### 5.1 Configuration robustness evidence
 
 {configuration_sensitivity}
 
-### Generated Table Manifest
+### 5.2 Generated table manifest
 
 {table_manifest_table}
 
 - The table manifest records the generated LaTeX table files, their source artifacts, and their claim scopes.
 - Tables are paper-facing exports; the Markdown tables above are snapshot summaries for browser review.
 
-### Table Interpretation Guide
+### 5.3 Table interpretation guide
 
 {_table_interpretation_markdown(run_id)}
 
 {figure_gallery}
 
-### Source Artifact Index
+### 5.4 Source artifact index
 
 {artifact_table}
 
@@ -674,6 +689,11 @@ def _configuration_sensitivity_markdown(run_dir: Path) -> str:
             "`just snapshot latest`."
         )
     status = _read_json_dict(status_path)
+    scope = str(status.get("scope") or "legacy_full")
+    selected_infos = status.get("selected_information_sets")
+    selected_benchmarks = status.get("selected_benchmark_models")
+    selected_lgbm = status.get("selected_lgbm_models")
+    job_counts = status.get("job_counts")
     rows = [
         (
             "LGBM capacity",
@@ -682,23 +702,37 @@ def _configuration_sensitivity_markdown(run_dir: Path) -> str:
             ),
         ),
         (
-            "EWMA lambda",
-            _sensitivity_metric_summary(
-                metrics_root / "benchmark_configuration_sensitivity_metrics.parquet"
-            ),
-        ),
-        (
             "POT threshold",
             _sensitivity_metric_summary(metrics_root / "evt_threshold_sensitivity_metrics.parquet"),
         ),
     ]
+    formatted_job_counts = "not recorded"
+    if isinstance(job_counts, dict):
+        paper_job_counts = {
+            key: value
+            for key, value in cast(dict[str, object], job_counts).items()
+            if key != "ewma_lambda"
+        }
+        formatted_job_counts = ", ".join(
+            f"{key}={value}" for key, value in paper_job_counts.items()
+        )
+    formatted_infos = (
+        ", ".join(f"`{display_information_set_label(value)}`" for value in selected_infos)
+        if isinstance(selected_infos, list | tuple)
+        else _code(selected_infos)
+    )
     return "\n\n".join(
         (
             _markdown_table(
                 ("Field", "Value"),
                 [
                     ("Source primary run", _code(status.get("source_primary_run_id"))),
+                    ("Scope", _code(scope)),
                     ("Primary-claim allowed", _code(status.get("primary_claim_allowed"))),
+                    ("Selected LGBM models", _join_model_list(selected_lgbm)),
+                    ("Selected benchmark models", _join_model_list(selected_benchmarks)),
+                    ("Selected information sets", formatted_infos),
+                    ("Job counts", _code(formatted_job_counts)),
                     ("Forecast rows", _code(status.get("forecast_rows"))),
                     ("Metric rows", _code(status.get("metric_rows"))),
                     ("Status", _code(status.get("status"))),
@@ -707,12 +741,11 @@ def _configuration_sensitivity_markdown(run_dir: Path) -> str:
             _markdown_table(("Sensitivity family", "Rows / classifications"), rows),
             (
                 "- The primary design compares pre-specified point-in-time forecast "
-                "specifications. Configuration sensitivity is robustness "
-                "evidence and is not used to select primary selections.\n"
-                "- LGBM rows vary only capacity settings; EWMA reports the primary "
-                "lambda 0.94 plus 0.90 and 0.97; POT threshold rows use forecastable "
-                "0.90/0.925 settings and mark 0.95 as a boundary diagnostic at the "
-                "95% VaR level.\n"
+                "specifications. Configuration sensitivity is post-24-check robustness "
+                "evidence and is not used for model selection or the cross-suite FZ DM heatmap.\n"
+                "- The run is fixed to the post-24-check paper set. LGBM rows perturb "
+                "capacity only for the pass-all C-information LGBM+EVT families, "
+                "and POT threshold rows perturb those rows plus GJR-GARCH-EVT.\n"
                 "- Robustness classes describe conclusion stability versus the "
                 "registered primary specification. They do not feed DM gates, "
                 "promoted-model logic, or selected-model figures."

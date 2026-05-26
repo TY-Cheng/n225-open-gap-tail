@@ -311,12 +311,16 @@ def _fit_lgb_regression_model(
     x_train = _feature_matrix(frame, active_features)
     params: dict[str, object] = {
         "objective": objective,
-        "n_estimators": 80,
-        "learning_rate": 0.05,
-        "num_leaves": 15,
-        "min_child_samples": 20,
-        "subsample": 0.9,
-        "colsample_bytree": 0.9,
+        "n_estimators": 160,
+        "learning_rate": 0.025,
+        "max_depth": -1,
+        "num_leaves": 20,
+        "min_child_samples": 25,
+        "subsample": 0.85,
+        "subsample_freq": 1,
+        "colsample_bytree": 0.85,
+        "reg_alpha": 0.1,
+        "reg_lambda": 0.5,
         "random_state": random_state,
         "num_threads": 1,
         "verbosity": -1,
@@ -325,10 +329,15 @@ def _fit_lgb_regression_model(
         for key in (
             "n_estimators",
             "learning_rate",
+            "max_depth",
             "num_leaves",
             "min_child_samples",
             "subsample",
+            "subsample_freq",
             "colsample_bytree",
+            "reg_alpha",
+            "reg_lambda",
+            "num_threads",
         ):
             if key in lgbm_params:
                 params[key] = lgbm_params[key]

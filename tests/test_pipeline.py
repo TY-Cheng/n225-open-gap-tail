@@ -4155,6 +4155,39 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
                     "es_forecast": 0.0152 + day * 0.001,
                 }
             )
+            for model_offset, model_name in enumerate(
+                reporting_figures.LGBM_24CHECK_CUMULATIVE_MODELS
+            ):
+                for information_offset, information_set in enumerate(
+                    reporting_figures.INFORMATION_LADDER_ORDER
+                ):
+                    forecast_rows.append(
+                        {
+                            "forecast_date": f"2026-01-{day + 1:02d}",
+                            "target_family": "full_gap_settle_to_open",
+                            "tail_side": tail_side,
+                            "model_name": model_name,
+                            "information_set": information_set,
+                            "tail_level": 0.95,
+                            "refit_frequency": "monthly",
+                            "var_forecast": (
+                                0.0103
+                                + day * 0.001
+                                - information_offset * 0.0001
+                                + model_offset * 0.00005
+                            ),
+                            "es_forecast": (
+                                0.0153
+                                + day * 0.001
+                                - information_offset * 0.0001
+                                + model_offset * 0.00005
+                            ),
+                            "realized_loss": 0.02 if day % 3 == 0 else 0.005,
+                            "var_breach": day % 3 == 0,
+                            "is_valid_forecast": True,
+                            "fit_status": "ok",
+                        }
+                    )
     forecast_frame = pl.DataFrame(forecast_rows)
     forecast_frame.filter(
         pl.col("model_name").is_in(["historical_quantile", "gjr_garch_evt"])
@@ -4184,19 +4217,75 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
         table["name"] == "tailrisk_predictor_block_coverage" for table in table_manifest["tables"]
     )
     assert any(table["name"] == "tailrisk_model_inventory" for table in table_manifest["tables"])
-    assert any(entry["name"] == "cumulative_loss_difference_left_tail" for entry in entries)
+    assert any(entry["name"] == "cumulative_lgbm_a_anchor_fz_gain" for entry in entries)
     assert any(entry["name"] == "full_sample_var_overlay_left_tail" for entry in entries)
-    assert any(entry["name"] == "var_es_stress_overlay_left_tail" for entry in entries)
+    assert any(str(entry["name"]).startswith("var_es_stress_overlay_") for entry in entries)
     assert any(entry["name"] == "dm_heatmap_left_tail" for entry in entries)
+    dm_entries = [
+        entry
+        for entry in entries
+        if entry["format"] == "png" and str(entry["name"]).startswith("dm_heatmap_")
+    ]
+    assert {entry["name"] for entry in dm_entries} == {
+        "dm_heatmap_left_tail",
+        "dm_heatmap_right_tail",
+    }
+    for entry in dm_entries:
+        assert entry["source_artifacts"] == [
+            "forecasts/benchmark_forecasts.parquet",
+            "forecasts/ml_tail_forecasts.parquet",
+        ]
+        assert entry["claim_scope"] == "post_24check_cross_suite_fz_dm_diagnostic"
+        assert "strict global common sample (N=8)" in entry["caption"]
+        assert "Fissler-Ziegel joint VaR-ES loss" in entry["caption"]
     assert any(entry["name"] == "coverage_breach_rates_left_tail" for entry in entries)
     assert any(entry["name"] == "benchmark_murphy_right_tail" for entry in entries)
     assert any("does not report hedge PnL" in entry["caption"] for entry in entries)
     assert all((run_dir / entry["path"]).exists() for entry in entries)
+    dm_loss_rows = reporting_figures._cross_suite_dm_loss_rows(run_dir)
+    assert set(dm_loss_rows["plot_label"].unique().to_list()) == {
+        "GJR-GARCH-EVT",
+        "LGBM plain MLE C",
+        "LGBM UniBM C",
+    }
+    assert paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL not in set(
+        dm_loss_rows["model_name"].unique().to_list()
+    )
+    left_dm_records = reporting_figures._cross_suite_dm_records(
+        dm_loss_rows,
+        paper_module.TAIL_SIDE_LEFT,
+    )
+    assert len(left_dm_records) == 6
+    assert {record["common_n"] for record in left_dm_records} == {8}
+    assert {record["loss_family"] for record in left_dm_records} == {"var_es_fz_loss"}
+    assert {record["candidate_label"] for record in left_dm_records} == {
+        "GJR-GARCH-EVT",
+        "LGBM plain MLE C",
+        "LGBM UniBM C",
+    }
+    missing_unibm = dm_loss_rows.filter(pl.col("plot_label") != "LGBM UniBM C")
+    missing_records = reporting_figures._cross_suite_dm_records(
+        missing_unibm,
+        paper_module.TAIL_SIDE_LEFT,
+    )
+    assert {record["common_n"] for record in missing_records} == {0}
+    assert all(
+        record["inference_status"] == "unavailable_no_global_common_sample"
+        for record in missing_records
+    )
     full_overlay = reporting_figures._full_sample_var_overlay_forecasts(run_dir)
     assert "JP-only direct" not in set(full_overlay["plot_group"].to_list())
     assert {"Benchmark comparator", "Promoted ML-tail"}.issubset(
         set(full_overlay["plot_group"].to_list())
     )
+    stress_overlay = reporting_figures._stress_overlay_forecasts(run_dir)
+    stress_groups = set(stress_overlay["plot_group"].to_list())
+    assert "JP-only direct" not in stress_groups
+    assert {
+        "GJR-GARCH-EVT",
+        "LGBM POT-GPD plain MLE (C)",
+        "LGBM POT-GPD UniBM (C)",
+    }.issubset(stress_groups)
 
 
 def test_export_figures_skips_missing_optional_artifacts(tmp_path: Path) -> None:
@@ -4251,12 +4340,6 @@ def test_export_figures_renders_target_distribution_diagnostics(tmp_path: Path) 
     )
     target_names = {
         "target_tail_motivation",
-        "target_gap_histogram_density",
-        "target_loss_qq_left_tail",
-        "target_loss_qq_right_tail",
-        "target_log_survival",
-        "target_mean_excess",
-        "target_hill_plot",
     }
     entries = [
         entry for entry in result.figure_entries if str(entry.get("name", "")).startswith("target_")
@@ -4474,62 +4557,6 @@ def test_reporting_new_figure_helpers_lock_selection_order_and_loss_sign(
     assert isinstance(ax.xaxis.get_major_locator(), reporting_figures.mdates.MonthLocator)
     assert isinstance(ax.xaxis.get_major_formatter(), reporting_figures.mdates.DateFormatter)
     reporting_figures.plt.close(fig)
-
-
-def test_export_figures_renders_evt_standardized_residual_diagnostics(tmp_path: Path) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "evt_residual_figures"
-    forecast_dir = run_dir / "forecasts"
-    forecast_dir.mkdir(parents=True)
-    rows = []
-    for tail_side in (paper_module.TAIL_SIDE_LEFT, paper_module.TAIL_SIDE_RIGHT):
-        for idx in range(220):
-            base = 0.02 + 0.003 * math.sin(idx / 9.0)
-            shock = 0.08 if idx % 31 == 0 else 0.0
-            rows.append(
-                {
-                    "forecast_date": f"2025-03-{(idx % 28) + 1:02d}",
-                    "target_family": "full_gap_settle_to_open",
-                    "tail_side": tail_side,
-                    "model_name": paper_module.ML_TAIL_LOCATION_SCALE_MODEL,
-                    "information_set": "japan_only",
-                    "tail_level": 0.95,
-                    "location_forecast": 0.01,
-                    "scale_forecast": 0.02,
-                    "realized_loss": base + shock,
-                    "is_valid_forecast": True,
-                }
-            )
-    pl.DataFrame(rows).write_parquet(forecast_dir / "ml_tail_forecasts.parquet")
-
-    result = reporting_figures.export_figures(
-        run_dir=run_dir,
-        manifest={"run_id": "evt_residual_figures"},
-    )
-    evt_entries = [
-        entry
-        for entry in result.figure_entries
-        if str(entry.get("name", "")).startswith("evt_standardized_")
-    ]
-    expected_names = {
-        f"evt_standardized_{kind}_{tail_side}"
-        for kind in ("qq", "log_survival", "mean_excess", "hill", "threshold_stability")
-        for tail_side in (paper_module.TAIL_SIDE_LEFT, paper_module.TAIL_SIDE_RIGHT)
-    }
-
-    assert {entry["name"] for entry in evt_entries if entry["format"] == "png"} == expected_names
-    assert {entry["tail_side"] for entry in evt_entries} == {
-        paper_module.TAIL_SIDE_LEFT,
-        paper_module.TAIL_SIDE_RIGHT,
-    }
-    assert all(
-        entry["source_artifacts"] == ["forecasts/ml_tail_forecasts.parquet"]
-        for entry in evt_entries
-    )
-    assert all(
-        entry["claim_scope"] == "evt_standardized_residual_diagnostic_not_forecast_claim"
-        for entry in evt_entries
-    )
-    assert all((run_dir / entry["path"]).exists() for entry in evt_entries)
 
 
 def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) -> None:

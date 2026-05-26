@@ -1,0 +1,17 @@
+% run_id: tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4
+% git_commit: 7f628ff4f66258a36314f492b652cdf7ef594b7e
+% config_hash: 874b7125bfae77a6fb261d40af0f987d89e5bae1e5ebc54a3958be66f9c17b4c
+% claim_level: research_candidate
+% loss convention: realized_loss is positive loss for selected tail_side; lower FZ loss is better
+\begin{tabular}{lllrrrrr}
+\toprule
+model & info & side & tail & rows & breach & q_loss & fz_loss \\
+\midrule
+LGBM direct quantile & JP only & right\_tail & 0.950 & 527 & 0.096774 & 0.001310 & -3.487426 \\
+LGBM direct quantile & JP + US close core & right\_tail & 0.950 & 527 & 0.119545 & 0.001252 & -3.486236 \\
+LGBM direct quantile & JP + US close core + JP proxy & right\_tail & 0.950 & 527 & 0.115750 & 0.001211 & -3.557463 \\
+LGBM direct quantile & JP + US close core + JP proxy + Asia proxy & right\_tail & 0.950 & 527 & 0.129032 & 0.001222 & -3.559147 \\
+\midrule
+\multicolumn{8}{l}{\footnotesize Visible notes: candidate artifact; lower FZ loss is better; inference artifacts use block-bootstrap DM; common-sample status is recorded in metrics metadata.} \\
+\bottomrule
+\end{tabular}

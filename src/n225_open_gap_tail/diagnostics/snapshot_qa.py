@@ -56,7 +56,7 @@ hide:
   - navigation
 ---
 
-# Discussion Q&A
+# FAQ
 
 This page gives the plain-language framing behind the generated results snapshot. It is a guide to the empirical design and the current evidence, not a substitute for the tables, figures, and registered diagnostics.
 
@@ -129,7 +129,7 @@ No. The paper compares registered point-in-time forecast specifications, not a t
 - CARE, GAS, and related advanced benchmarks may use small pre-registered grids where that is part of the model specification.
 - LightGBM hyperparameters are held fixed across information sets and refit dates so information-set comparisons are not contaminated by a separate tuning search.
 - This design may leave some model-specific performance untapped, but it keeps the nested information-set experiment interpretable.
-- Appendix configuration robustness varies LightGBM capacity, EWMA lambda, and POT threshold choices after the primary run.
+- Appendix configuration robustness varies nearby LightGBM capacity and POT threshold choices after the primary run.
 - Those rows carry `primary_claim_allowed=false`: they answer reviewer concerns about sensitivity, but they do not select primary selections, promoted rows, DM gates, or selected-model figures.
 - The primary design compares pre-specified point-in-time forecast specifications. Configuration sensitivity is reported as appendix robustness evidence and is not used to select primary selections.
 

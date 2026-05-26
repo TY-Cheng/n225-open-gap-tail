@@ -59,13 +59,19 @@ def table_manifest_markdown(table_manifest: dict[str, object]) -> str:
     for item in raw_tables:
         if not isinstance(item, dict):
             continue
+        name = str(item.get("name") or "unnamed_table")
+        path = str(item.get("path") or "")
+        if "benchmark_configuration_sensitivity" in name or (
+            "benchmark_configuration_sensitivity" in path
+        ):
+            continue
         rows.append(
             (
-                str(item.get("name") or "unnamed_table"),
+                name,
                 _source_artifacts_text(item.get("source_artifacts")),
                 _code(item.get("claim_scope")),
                 _code(item.get("tail_side")),
-                _code(item.get("path")),
+                _code(path),
             )
         )
     if not rows:
@@ -84,17 +90,15 @@ def figure_gallery_markdown(*, figure_manifest: dict[str, object], run_id: str) 
     order = [
         ("timing_design", "Figure 1. Market Timing Design"),
         ("target_motivation", "Figure 2. Opening-Gap Tail Motivation"),
-        ("cumulative_loss", "Figure 3. Cumulative Loss Difference"),
-        ("target_distribution", "Figure 4. Raw Target Distribution Diagnostics"),
-        ("coverage", "Figure 5. Full Coverage Breach-Rate Diagnostics"),
-        ("selected_performance", "Figure 6. Selected Benchmark-vs-LGBM Performance"),
-        ("full_var_overlay", "Figure 7. Full-Sample VaR Overlay Diagnostics"),
-        ("stress_overlay", "Figure 8. VaR/ES Stress-Window Overlays"),
-        ("dm", "Figure 9. DM Heatmaps"),
-        ("benchmark_murphy", "Figure 10. Benchmark Murphy Diagnostics"),
-        ("lgbm_24check_murphy", "Figure 11. 24-Check LGBM Murphy Diagnostics"),
-        ("severity", "Figure 12. ES Severity Diagnostics"),
-        ("evt_standardized", "Figure 13. EVT Standardized-Residual Diagnostics"),
+        ("cumulative_loss", "Figure 3. Cumulative FZ-Gain Diagnostics"),
+        ("coverage", "Figure 4. Full Coverage Breach-Rate Diagnostics"),
+        ("selected_performance", "Figure 5. Selected Benchmark-vs-LGBM Performance"),
+        ("full_var_overlay", "Figure 6. Full-Sample VaR Overlay Diagnostics"),
+        ("stress_overlay", "Figure 7. VaR/ES Stress-Window Overlays"),
+        ("dm", "Figure 8. DM Heatmaps"),
+        ("benchmark_murphy", "Figure 9. Benchmark Murphy Diagnostics"),
+        ("lgbm_24check_murphy", "Figure 10. 24-Check LGBM Murphy Diagnostics"),
+        ("severity", "Figure 11. ES Severity Diagnostics"),
     ]
     for family, title in order:
         family_entries = by_family.get(family, [])
@@ -149,7 +153,11 @@ def _figure_family(name: str) -> str:
         return "coverage"
     if name == "tailrisk_information_ladder":
         return "information_ladder"
-    if name.startswith("cumulative_loss_difference"):
+    if (
+        name.startswith("cumulative_loss_difference")
+        or name.startswith("cumulative_information_increment")
+        or name.startswith("cumulative_lgbm_a_anchor")
+    ):
         return "cumulative_loss"
     if name.startswith("var_es_stress_overlay"):
         return "stress_overlay"
@@ -167,24 +175,11 @@ def _figure_family(name: str) -> str:
         return "ml_tail_murphy"
     if name.startswith("es_severity"):
         return "severity"
-    if name.startswith("evt_standardized"):
-        return "evt_standardized"
     return "other"
 
 
 def _figure_sort_key(family: str, item: dict[str, object]) -> tuple[object, ...]:
     name = str(item.get("name") or "")
-    if family == "target_distribution":
-        target_order = {
-            "target_tail_motivation": 0,
-            "target_gap_histogram_density": 0,
-            "target_loss_qq_left_tail": 1,
-            "target_loss_qq_right_tail": 2,
-            "target_log_survival": 3,
-            "target_mean_excess": 4,
-            "target_hill_plot": 5,
-        }
-        return (target_order.get(name, 99), name)
     return (str(item.get("tail_side") or ""), name)
 
 
@@ -197,7 +192,7 @@ def _figure_key_readings(family: str) -> list[str]:
             "- It is a session-alignment schematic, not a structural market-transmission diagram.",
         ],
         "target_motivation": [
-            "- Key readings: the composite figure combines density, log survival, and mean-excess diagnostics for the raw opening-gap target.",
+            "- Key readings: the composite figure combines density, log survival, mean-excess, and Hill tail-index diagnostics for the raw opening-gap target.",
             "- It motivates tail-risk modeling and does not validate any forecast model.",
         ],
         "information_ladder": [
@@ -205,8 +200,9 @@ def _figure_key_readings(family: str) -> list[str]:
             "- Loss changes must still be read with coverage and inference gates.",
         ],
         "cumulative_loss": [
-            "- Key readings: upward movement means the candidate has lower cumulative loss under the fixed anchor-loss-minus-candidate-loss convention.",
-            "- This shows whether improvements accumulate through time or are concentrated in a few dates.",
+            "- Key readings: upward movement means the candidate has lower cumulative FZ loss under the fixed anchor-loss-minus-candidate-loss convention.",
+            "- Each panel uses the corresponding A-only LGBM+EVT forecast as anchor.",
+            "- The GJR-GARCH-EVT line is an own-history benchmark reference; B/C/D lines show same-family information increments.",
         ],
         "target_distribution": [
             "- Key readings: these figures describe the raw settlement-to-open gap and the left/right loss tails.",
@@ -227,12 +223,14 @@ def _figure_key_readings(family: str) -> list[str]:
             "- Treat the plot as a visual diagnostic. Formal validation remains the coverage, loss, DM, Murphy, and EVT evidence.",
         ],
         "stress_overlay": [
-            "- Supporting diagnostic: stress-window overlays illustrate threshold behavior around fixed windows.",
+            "- Supporting diagnostic: stress-window overlays illustrate threshold behavior in broad OOS stress episodes with left/right tails sharing each episode's x-axis.",
+            "- The LGBM overlays use information set C, the best-FZ row within the two 24-check LGBM+EVT families.",
             "- They do not report hedge PnL, transaction-cost evidence, or trading performance.",
         ],
         "dm": [
-            "- Supporting diagnostic: heatmap cells report one-sided DM p-values and candidate-minus-anchor loss differences.",
-            "- Negative loss differences favor the candidate.",
+            "- Supporting diagnostic: heatmap cells report pairwise FZ-loss differences and one-sided DM p-values for the pass-all cross-suite model set.",
+            "- Rows are candidates, columns are anchors, and negative candidate-minus-anchor differences favor the row model.",
+            "- Each tail uses a strict global common sample across GJR-GARCH-EVT, LGBM plain MLE C, and LGBM UniBM C.",
         ],
         "benchmark_murphy": [
             "- Key readings: curves report target-history benchmark elementary-score diagnostics on a common grid.",
@@ -245,11 +243,6 @@ def _figure_key_readings(family: str) -> list[str]:
         "severity": [
             "- Key readings: bars report conditional-on-exception severity diagnostics.",
             "- Severity is reported for risk interpretation but is not a standalone model-selection claim.",
-        ],
-        "evt_standardized": [
-            "- Key readings: figures show EVT diagnostics for LightGBM location-scale standardized residuals.",
-            "- QQ, log-survival, mean-excess, Hill, and threshold-stability diagnostics validate the POT-GPD tail assumption.",
-            "- These are assumption-validation diagnostics, not forecast-performance claims.",
         ],
     }
     return readings.get(family, ["- Key readings: generated diagnostic figure."])

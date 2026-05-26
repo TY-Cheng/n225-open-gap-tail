@@ -84,7 +84,7 @@ nav:
   - Paper Plan: paper_plan.md
   - Data: data.md
   - Results Snapshot: results_snapshot.md
-  - Discussion Q&A: discussion_qa.md
+  - FAQ: faq.md
   - Audit Prompts:
       - Development Audit: development_audit_prompt.md
       - Manuscript Audit: manuscript_audit_prompt.md

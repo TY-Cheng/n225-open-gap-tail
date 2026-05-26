@@ -435,12 +435,6 @@ def _table_manifest_entry(table_file: str) -> dict[str, object]:
             "appendix_configuration_robustness_lgbm",
             None,
         ),
-        "appendix_benchmark_configuration_sensitivity_table.tex": (
-            "appendix_benchmark_configuration_sensitivity",
-            ["sensitivity/metrics/benchmark_configuration_sensitivity_metrics.parquet"],
-            "appendix_configuration_robustness_benchmark",
-            None,
-        ),
         "appendix_evt_threshold_sensitivity_table.tex": (
             "appendix_evt_threshold_sensitivity",
             ["sensitivity/metrics/evt_threshold_sensitivity_metrics.parquet"],
@@ -499,12 +493,11 @@ def _table_caption(name: str) -> str:
         ),
         "tailrisk_dm_summary": "Compact headline DM paired-inference summary table.",
         "appendix_lgbm_configuration_sensitivity": (
-            "Appendix LightGBM configuration sensitivity table."
+            "Appendix post-24-check LightGBM configuration sensitivity table."
         ),
-        "appendix_benchmark_configuration_sensitivity": (
-            "Appendix benchmark configuration sensitivity table."
+        "appendix_evt_threshold_sensitivity": (
+            "Appendix post-24-check POT threshold sensitivity table."
         ),
-        "appendix_evt_threshold_sensitivity": "Appendix POT threshold sensitivity table.",
     }
     return captions.get(name, "Generated LaTeX table artifact.")
 
@@ -519,11 +512,6 @@ def _export_sensitivity_tables(
             "lgbm_configuration_sensitivity_metrics.parquet",
             "appendix_lgbm_configuration_sensitivity_table.tex",
             "appendix_configuration_robustness_lgbm",
-        ),
-        (
-            "benchmark_configuration_sensitivity_metrics.parquet",
-            "appendix_benchmark_configuration_sensitivity_table.tex",
-            "appendix_configuration_robustness_benchmark",
         ),
         (
             "evt_threshold_sensitivity_metrics.parquet",

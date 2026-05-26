@@ -120,8 +120,9 @@ UV_PROJECT_ENVIRONMENT="${HOME}/.venvs/n225-open-gap-tail"
 ```
 
 Mutable research storage is also controlled by `.env`. On local machines, keep
-`DATA_DIR` as an absolute external path outside cloud-synced checkouts; do not
-use a repo-local `data/` symlink. `REPORTS_DIR` can remain `reports` because run
+`DATA_DIR` as an absolute external path outside cloud-synced checkouts. A
+repo-local `data/` symlink is acceptable if it resolves outside this repo.
+`REPORTS_DIR` can remain `reports` because run
 summaries, figures, and tables are much smaller than the data lake.
 
 Typical local checks:
@@ -181,6 +182,9 @@ primary/promoted results:
 ```bash
 just sensitivity latest
 ```
+
+The sensitivity run is fixed to the post-24-check paper set: `GJR-GARCH-EVT`,
+`LGBM POT-GPD plain MLE (C)`, and `LGBM POT-GPD UniBM (C)`.
 
 The visible `just` surface is intentionally small:
 

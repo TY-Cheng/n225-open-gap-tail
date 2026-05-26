@@ -43,7 +43,7 @@ jobs:
         run: uv run pytest -m "not vendor and not realdata"
 
       - name: Strict docs build
-        run: uv run mkdocs build --strict
+        run: uv run mkdocs build --clean --strict
 
       - name: Legacy-name guard
         run: python scripts/lint_legacy_names.py

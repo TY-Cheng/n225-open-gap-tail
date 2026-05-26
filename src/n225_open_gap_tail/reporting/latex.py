@@ -205,9 +205,10 @@ def _configuration_sensitivity_to_latex(
             f"{_latex_escape(class_label)} \\\\"
         )
     note = (
-        "Visible notes: appendix-only configuration robustness diagnostics. "
+        "Visible notes: appendix-only post-24-check configuration robustness diagnostics. "
         "Rows carry primary_claim_allowed=false and are not used to select "
-        "primary selections, promoted rows, DM gates, or selected-model figures. "
+        "primary selections, promoted rows, DM gates, the cross-suite FZ DM heatmap, "
+        "or selected-model figures. "
         "Lower quantile/FZ loss is better; breach should be read against the 5% "
         "nominal exception rate. Boundary EVT rows at u=0.95 are diagnostics at "
         "the 95% VaR level, not alternative forecasts."

@@ -3,21 +3,16 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from n225_open_gap_tail.config.runtime import (
     cast,
     delayed,
     EvaluationResult,
-    EWMA_MAIN_LAMBDA,
-    ML_TAIL_DIRECT_QUANTILE_MODEL,
-    ML_TAIL_LOCATION_SCALE_MODEL,
-    ML_TAIL_MEDIAN_IQR_POT_GPD_PLAIN_MLE_MODEL,
-    ML_TAIL_MEDIAN_MAD_POT_GPD_PLAIN_MLE_MODEL,
-    ML_TAIL_MODEL_NAMES,
-    ML_TAIL_POT_GPD_MODEL_NAMES,
+    ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
+    ML_TAIL_POT_GPD_UNIBM_MODEL,
     ML_TAIL_REFIT_FREQUENCY,
-    ML_TAIL_ROBUST_POT_GPD_MODEL_NAMES,
     Parallel,
     Path,
     PIPELINE_CONFIG,
@@ -40,6 +35,11 @@ from n225_open_gap_tail.forecasting.artifacts import (
     _write_json,
     _write_parquet,
 )
+from n225_open_gap_tail.metrics.admissibility import (
+    PASS_ALL_BENCHMARK_MODEL,
+    benchmark_model_passes,
+    pass_all_lgbm_model_names,
+)
 from n225_open_gap_tail.metrics.stat_utils import (
     christoffersen_independence_test,
     fz_loss,
@@ -50,53 +50,117 @@ from n225_open_gap_tail.models.benchmark import _evaluate_benchmark_shard
 from n225_open_gap_tail.models.ml_tail import _evaluate_ml_tail_shard
 from n225_open_gap_tail.panel.build import (
     ml_tail_feature_columns_for_information_set,
-    registered_ml_tail_information_sets,
 )
 from n225_open_gap_tail.reporting.tables import export_sensitivity_tables
 
-LGBM_CONFIGURATION_SENSITIVITY_MODELS = (
-    ML_TAIL_DIRECT_QUANTILE_MODEL,
-    ML_TAIL_LOCATION_SCALE_MODEL,
-    "lightgbm_standardized_loss_pot_gpd_plain_mle",
-    ML_TAIL_MEDIAN_IQR_POT_GPD_PLAIN_MLE_MODEL,
-)
-LGBM_TARGETED_MEDIAN_MAD_MODEL = ML_TAIL_MEDIAN_MAD_POT_GPD_PLAIN_MLE_MODEL
 LGBM_CONFIGURATION_SPECS: dict[str, dict[str, object]] = {
     "current": {
-        "n_estimators": 80,
-        "learning_rate": 0.05,
-        "num_leaves": 15,
-        "min_child_samples": 20,
-        "subsample": 0.90,
-        "colsample_bytree": 0.90,
-    },
-    "shallow": {
-        "n_estimators": 50,
-        "learning_rate": 0.05,
-        "num_leaves": 10,
-        "min_child_samples": 30,
-        "subsample": 0.90,
-        "colsample_bytree": 0.90,
-    },
-    "deeper": {
         "n_estimators": 160,
-        "learning_rate": 0.05,
-        "num_leaves": 31,
-        "min_child_samples": 10,
-        "subsample": 0.90,
-        "colsample_bytree": 0.90,
+        "learning_rate": 0.025,
+        "max_depth": -1,
+        "num_leaves": 20,
+        "min_child_samples": 25,
+        "subsample": 0.85,
+        "subsample_freq": 1,
+        "colsample_bytree": 0.85,
+        "reg_alpha": 0.1,
+        "reg_lambda": 0.5,
+        "num_threads": 1,
     },
-}
-EWMA_CONFIGURATION_SPECS: dict[str, float] = {
-    "primary": EWMA_MAIN_LAMBDA,
-    "lambda_0_90": 0.90,
-    "lambda_0_97": 0.97,
+    "near_low": {
+        "n_estimators": 128,
+        "learning_rate": 0.025,
+        "max_depth": -1,
+        "num_leaves": 16,
+        "min_child_samples": 30,
+        "subsample": 0.85,
+        "subsample_freq": 1,
+        "colsample_bytree": 0.85,
+        "reg_alpha": 0.1,
+        "reg_lambda": 0.5,
+        "num_threads": 1,
+    },
+    "near_high": {
+        "n_estimators": 192,
+        "learning_rate": 0.025,
+        "max_depth": -1,
+        "num_leaves": 24,
+        "min_child_samples": 20,
+        "subsample": 0.85,
+        "subsample_freq": 1,
+        "colsample_bytree": 0.85,
+        "reg_alpha": 0.1,
+        "reg_lambda": 0.5,
+        "num_threads": 1,
+    },
 }
 EVT_THRESHOLD_SPECS: dict[str, float] = {
-    "u_0_900": 0.900,
+    "u_0_875": 0.875,
     "u_0_925": 0.925,
     "u_0_950_boundary": 0.950,
 }
+SENSITIVITY_SCOPE = "paper"
+POST_24CHECK_LGBM_FAMILIES = (
+    ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
+    ML_TAIL_POT_GPD_UNIBM_MODEL,
+)
+PAPER_LGBM_CONFIGURATION_LABELS = ("near_low", "near_high")
+RETIRED_EWMA_SENSITIVITY_ARTIFACTS = (
+    Path("forecasts/benchmark_configuration_sensitivity_forecasts.parquet"),
+    Path("forecasts/benchmark_configuration_sensitivity_forecasts.parquet.metadata.json"),
+    Path("forecasts/benchmark_configuration_sensitivity_diagnostics.parquet"),
+    Path("forecasts/benchmark_configuration_sensitivity_diagnostics.parquet.metadata.json"),
+    Path("metrics/benchmark_configuration_sensitivity_metrics.parquet"),
+    Path("metrics/benchmark_configuration_sensitivity_metrics.parquet.metadata.json"),
+    Path("latex/tables/appendix_benchmark_configuration_sensitivity_table.tex"),
+)
+
+
+@dataclass(frozen=True)
+class SensitivitySelection:
+    lgbm_models: tuple[str, ...]
+    benchmark_models: tuple[str, ...]
+    evt_benchmark_models: tuple[str, ...]
+    information_sets: tuple[str, ...]
+    lgbm_config_labels: tuple[str, ...]
+    evt_lgbm_models: tuple[str, ...]
+
+
+def _sensitivity_selection(
+    *,
+    run_dir: Path,
+) -> SensitivitySelection:
+    ml_metrics = _read_primary_metric_frame(
+        run_dir / "metrics" / "ml_tail_metrics_per_model.parquet"
+    )
+    benchmark_metrics = _read_primary_metric_frame(
+        run_dir / "metrics" / "benchmark_metrics_per_model.parquet"
+    )
+    pass_all_models = pass_all_lgbm_model_names(ml_metrics)
+    selected_lgbm_models = tuple(
+        model for model in POST_24CHECK_LGBM_FAMILIES if model in pass_all_models
+    )
+    missing_lgbm_models = tuple(
+        model for model in POST_24CHECK_LGBM_FAMILIES if model not in selected_lgbm_models
+    )
+    if missing_lgbm_models:
+        raise PipelineRunError(
+            "Sensitivity requires the post-24-check LGBM families, but these did not "
+            f"pass all checks in ml_tail_metrics_per_model.parquet: {missing_lgbm_models}"
+        )
+    if not benchmark_model_passes(benchmark_metrics, model_name=PASS_ALL_BENCHMARK_MODEL):
+        raise PipelineRunError(
+            f"Sensitivity requires {PASS_ALL_BENCHMARK_MODEL} to pass the left/right "
+            "benchmark validation rows in benchmark_metrics_per_model.parquet."
+        )
+    return SensitivitySelection(
+        lgbm_models=selected_lgbm_models,
+        benchmark_models=(PASS_ALL_BENCHMARK_MODEL,),
+        evt_benchmark_models=(PASS_ALL_BENCHMARK_MODEL,),
+        information_sets=(PIPELINE_CONFIG.feature_sets.ml_tail_model_c_information_set,),
+        lgbm_config_labels=PAPER_LGBM_CONFIGURATION_LABELS,
+        evt_lgbm_models=selected_lgbm_models,
+    )
 
 
 def lgbm_sensitivity_config(label: str) -> dict[str, object]:
@@ -148,15 +212,17 @@ def evaluate_sensitivity_suite(
     sensitivity_root = run_dir / "sensitivity"
     status_path = sensitivity_root / "metrics" / "sensitivity_status.json"
     if status_path.exists() and not force:
-        export_sensitivity_tables(run_dir=run_dir)
         status = cast(dict[str, object], _read_json(status_path))
-        return EvaluationResult(
-            run_id=run_dir.name,
-            run_dir=run_dir,
-            forecast_rows=int(status.get("forecast_rows") or 0),
-            metric_rows=int(status.get("metric_rows") or 0),
-            status=str(status.get("status") or "cached"),
-        )
+        if _cached_sensitivity_status_matches(status):
+            _remove_retired_ewma_sensitivity_artifacts(sensitivity_root)
+            export_sensitivity_tables(run_dir=run_dir)
+            return EvaluationResult(
+                run_id=run_dir.name,
+                run_dir=run_dir,
+                forecast_rows=int(status.get("forecast_rows") or 0),
+                metric_rows=int(status.get("metric_rows") or 0),
+                status=str(status.get("status") or "cached"),
+            )
     panel_path = _gold_artifact_path(
         run_dir, "modeling_panel", run_dir / "panel" / "modeling_panel.parquet"
     )
@@ -176,50 +242,46 @@ def evaluate_sensitivity_suite(
     if len(tail_levels) != 1 or not tail_levels:
         raise PipelineRunError("Configuration sensitivity expects the registered 0.95 tail level")
     tail_level = tail_levels[0]
-    information_sets = registered_ml_tail_information_sets()
+    selection = _sensitivity_selection(
+        run_dir=run_dir,
+    )
     lgbm_jobs = _build_lgbm_capacity_jobs(
         panel_path=panel_path,
         coverage_path=coverage_path,
         coverage_rows=coverage_rows,
-        information_sets=information_sets,
+        information_sets=selection.information_sets,
         tail_sides=active_tail_sides,
         tail_level=tail_level,
-    )
-    ewma_jobs = _build_ewma_jobs(
-        panel_path=panel_path,
-        tail_sides=active_tail_sides,
-        tail_level=tail_level,
+        models=selection.lgbm_models,
+        config_labels=selection.lgbm_config_labels,
     )
     evt_jobs, evt_boundary_rows = _build_evt_threshold_jobs(
         panel_path=panel_path,
         coverage_path=coverage_path,
         coverage_rows=coverage_rows,
-        information_sets=information_sets,
+        information_sets=selection.information_sets,
         tail_sides=active_tail_sides,
         tail_level=tail_level,
+        pot_models=selection.evt_lgbm_models,
+        benchmark_models=selection.evt_benchmark_models,
     )
     n_jobs = _bounded_workers(workers)
     _evaluation_log(
         "configuration sensitivity queued="
-        f"lgbm={len(lgbm_jobs)} ewma={len(ewma_jobs)} evt={len(evt_jobs)} n_jobs={n_jobs}"
+        f"scope={SENSITIVITY_SCOPE} lgbm={len(lgbm_jobs)} "
+        f"evt={len(evt_jobs)} n_jobs={n_jobs}"
     )
+    _remove_retired_ewma_sensitivity_artifacts(sensitivity_root)
     lgbm_result = _run_jobs(lgbm_jobs, _evaluate_ml_tail_shard, n_jobs=n_jobs)
-    ewma_result = _run_jobs(ewma_jobs, _evaluate_benchmark_shard, n_jobs=n_jobs)
     evt_result = _run_jobs(evt_jobs, _sensitivity_worker, n_jobs=n_jobs)
     lgbm_forecasts = _tag_rows(
         lgbm_result["forecasts"], source_run_id=run_dir.name, primary_claim_allowed=False
-    )
-    ewma_forecasts = _tag_rows(
-        ewma_result["forecasts"], source_run_id=run_dir.name, primary_claim_allowed=False
     )
     evt_forecasts = _tag_rows(
         evt_result["forecasts"], source_run_id=run_dir.name, primary_claim_allowed=False
     )
     lgbm_diagnostics = _tag_rows(
         lgbm_result["diagnostics"], source_run_id=run_dir.name, primary_claim_allowed=False
-    )
-    ewma_diagnostics = _tag_rows(
-        ewma_result["diagnostics"], source_run_id=run_dir.name, primary_claim_allowed=False
     )
     evt_diagnostics = _tag_rows(
         evt_result["diagnostics"], source_run_id=run_dir.name, primary_claim_allowed=False
@@ -229,11 +291,6 @@ def evaluate_sensitivity_suite(
         primary_metrics=_read_primary_ml_metrics(run_dir),
         source_run_id=run_dir.name,
     )
-    ewma_metrics = _metric_rows_from_forecasts(
-        ewma_forecasts,
-        primary_metrics=_read_primary_benchmark_metrics(run_dir),
-        source_run_id=run_dir.name,
-    )
     evt_metrics = _metric_rows_from_forecasts(
         evt_forecasts,
         primary_metrics=_read_primary_evt_metrics(run_dir),
@@ -241,7 +298,10 @@ def evaluate_sensitivity_suite(
     )
     evt_metrics.extend(
         _tag_rows(
-            evt_boundary_rows, source_primary_run_id=run_dir.name, primary_claim_allowed=False
+            evt_boundary_rows,
+            source_primary_run_id=run_dir.name,
+            primary_claim_allowed=False,
+            sensitivity_scope=SENSITIVITY_SCOPE,
         )
     )
     forecast_root = sensitivity_root / "forecasts"
@@ -251,38 +311,37 @@ def evaluate_sensitivity_suite(
     _write_parquet(
         forecast_root / "lgbm_configuration_sensitivity_forecasts.parquet", lgbm_forecasts
     )
-    _write_parquet(
-        forecast_root / "benchmark_configuration_sensitivity_forecasts.parquet", ewma_forecasts
-    )
     _write_parquet(forecast_root / "evt_threshold_sensitivity_forecasts.parquet", evt_forecasts)
     _write_parquet(
         forecast_root / "lgbm_configuration_sensitivity_diagnostics.parquet", lgbm_diagnostics
     )
-    _write_parquet(
-        forecast_root / "benchmark_configuration_sensitivity_diagnostics.parquet", ewma_diagnostics
-    )
     _write_parquet(forecast_root / "evt_threshold_sensitivity_diagnostics.parquet", evt_diagnostics)
     _write_parquet(metrics_root / "lgbm_configuration_sensitivity_metrics.parquet", lgbm_metrics)
-    _write_parquet(
-        metrics_root / "benchmark_configuration_sensitivity_metrics.parquet", ewma_metrics
-    )
     _write_parquet(metrics_root / "evt_threshold_sensitivity_metrics.parquet", evt_metrics)
-    forecast_rows = len(lgbm_forecasts) + len(ewma_forecasts) + len(evt_forecasts)
-    metric_rows = len(lgbm_metrics) + len(ewma_metrics) + len(evt_metrics)
+    forecast_rows = len(lgbm_forecasts) + len(evt_forecasts)
+    metric_rows = len(lgbm_metrics) + len(evt_metrics)
     _write_json(
         status_path,
         {
             "status": "ok",
+            "scope": SENSITIVITY_SCOPE,
             "source_primary_run_id": run_dir.name,
             "primary_claim_allowed": False,
+            "selected_lgbm_models": list(selection.lgbm_models),
+            "selected_benchmark_models": list(selection.benchmark_models),
+            "selected_information_sets": list(selection.information_sets),
+            "job_counts": {
+                "lgbm_capacity": len(lgbm_jobs),
+                "evt_threshold": len(evt_jobs),
+                "evt_boundary_rows": len(evt_boundary_rows),
+            },
             "forecast_rows": forecast_rows,
             "metric_rows": metric_rows,
             "created_utc": datetime.now(UTC).isoformat(),
             "git_commit": manifest.get("git_commit"),
             "config_hash": manifest.get("config_hash"),
-            "lgbm_config_labels": sorted(LGBM_CONFIGURATION_SPECS),
-            "ewma_config_labels": sorted(EWMA_CONFIGURATION_SPECS),
-            "evt_threshold_labels": sorted(EVT_THRESHOLD_SPECS),
+            "lgbm_config_labels": list(selection.lgbm_config_labels),
+            "evt_threshold_labels": list(EVT_THRESHOLD_SPECS),
         },
     )
     export_sensitivity_tables(run_dir=run_dir)
@@ -295,6 +354,32 @@ def evaluate_sensitivity_suite(
     )
 
 
+def _cached_sensitivity_status_matches(status: dict[str, object]) -> bool:
+    if str(status.get("scope") or "") != SENSITIVITY_SCOPE:
+        return False
+    if _status_sequence(status.get("lgbm_config_labels")) != PAPER_LGBM_CONFIGURATION_LABELS:
+        return False
+    if _status_sequence(status.get("evt_threshold_labels")) != tuple(EVT_THRESHOLD_SPECS):
+        return False
+    if "ewma_config_labels" in status:
+        return False
+    job_counts = status.get("job_counts")
+    return not (isinstance(job_counts, dict) and "ewma_lambda" in job_counts)
+
+
+def _status_sequence(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list | tuple):
+        return ()
+    return tuple(str(item) for item in value)
+
+
+def _remove_retired_ewma_sensitivity_artifacts(sensitivity_root: Path) -> None:
+    for relative_path in RETIRED_EWMA_SENSITIVITY_ARTIFACTS:
+        path = sensitivity_root / relative_path
+        if path.exists():
+            path.unlink()
+
+
 def _build_lgbm_capacity_jobs(
     *,
     panel_path: Path,
@@ -303,79 +388,44 @@ def _build_lgbm_capacity_jobs(
     information_sets: tuple[str, ...],
     tail_sides: tuple[str, ...],
     tail_level: float,
+    models: tuple[str, ...],
+    config_labels: tuple[str, ...],
 ) -> list[dict[str, object]]:  # pragma: no cover
     jobs: list[dict[str, object]] = []
-    targeted_infos = tuple(
-        dict.fromkeys(
-            (
-                PIPELINE_CONFIG.feature_sets.ml_tail_model_a_information_set,
-                PIPELINE_CONFIG.feature_sets.ml_tail_model_c_information_set,
-                PIPELINE_CONFIG.feature_sets.ml_tail_model_d_information_set,
-            )
-        )
-    )
-    specs: list[tuple[str, str, tuple[str, ...]]] = []
-    for model_name in LGBM_CONFIGURATION_SENSITIVITY_MODELS:
-        for config_label in ("current", "shallow", "deeper"):
-            specs.append((model_name, config_label, information_sets))
-    for config_label in ("current", "deeper"):
-        specs.append((LGBM_TARGETED_MEDIAN_MAD_MODEL, config_label, targeted_infos))
-    for model_name, config_label, active_infos in specs:
-        for tail_side in tail_sides:
-            for information_set in active_infos:
-                candidate_features = ml_tail_feature_columns_for_information_set(
-                    coverage_rows,
-                    information_set=information_set,
-                )
-                jobs.append(
-                    {
-                        "panel_path": str(panel_path),
-                        "coverage_path": str(coverage_path),
-                        "tail_side": tail_side,
-                        "tail_level": tail_level,
-                        "target_family": PIPELINE_CONFIG.target_policy.primary_target_family,
-                        "information_set": information_set,
-                        "model_name": model_name,
-                        "refit_frequency": ML_TAIL_REFIT_FREQUENCY,
-                        "shard_id": _forecast_shard_id(
-                            model_name,
-                            tail_level,
-                            target_family=PIPELINE_CONFIG.target_policy.primary_target_family,
-                            tail_side=tail_side,
-                            information_set=f"{information_set}__{config_label}",
-                            refit_frequency=ML_TAIL_REFIT_FREQUENCY,
-                        ),
-                        "candidate_feature_hash": stable_hash(candidate_features),
-                        "lgbm_params": lgbm_sensitivity_config(config_label),
-                        "sensitivity_family": "lgbm_capacity",
-                        "config_label": config_label,
-                        "primary_claim_allowed": False,
-                    }
-                )
-    return jobs
-
-
-def _build_ewma_jobs(
-    *,
-    panel_path: Path,
-    tail_sides: tuple[str, ...],
-    tail_level: float,
-) -> list[dict[str, object]]:  # pragma: no cover
-    jobs: list[dict[str, object]] = []
-    for config_label, lambda_value in EWMA_CONFIGURATION_SPECS.items():
-        for tail_side in tail_sides:
-            jobs.append(
-                {
-                    "panel_path": str(panel_path),
-                    "tail_side": tail_side,
-                    "tail_level": tail_level,
-                    "models": ("ewma_vol_scaled",),
-                    "ewma_lambda": lambda_value,
-                    "sensitivity_family": "ewma_lambda",
-                    "config_label": config_label,
-                    "primary_claim_allowed": False,
-                }
-            )
+    for model_name in models:
+        for config_label in config_labels:
+            for tail_side in tail_sides:
+                for information_set in information_sets:
+                    candidate_features = ml_tail_feature_columns_for_information_set(
+                        coverage_rows,
+                        information_set=information_set,
+                    )
+                    jobs.append(
+                        {
+                            "panel_path": str(panel_path),
+                            "coverage_path": str(coverage_path),
+                            "tail_side": tail_side,
+                            "tail_level": tail_level,
+                            "target_family": PIPELINE_CONFIG.target_policy.primary_target_family,
+                            "information_set": information_set,
+                            "model_name": model_name,
+                            "refit_frequency": ML_TAIL_REFIT_FREQUENCY,
+                            "shard_id": _forecast_shard_id(
+                                model_name,
+                                tail_level,
+                                target_family=PIPELINE_CONFIG.target_policy.primary_target_family,
+                                tail_side=tail_side,
+                                information_set=f"{information_set}__{config_label}",
+                                refit_frequency=ML_TAIL_REFIT_FREQUENCY,
+                            ),
+                            "candidate_feature_hash": stable_hash(candidate_features),
+                            "lgbm_params": lgbm_sensitivity_config(config_label),
+                            "sensitivity_family": "lgbm_capacity",
+                            "config_label": config_label,
+                            "sensitivity_scope": SENSITIVITY_SCOPE,
+                            "primary_claim_allowed": False,
+                        }
+                    )
     return jobs
 
 
@@ -387,10 +437,11 @@ def _build_evt_threshold_jobs(
     information_sets: tuple[str, ...],
     tail_sides: tuple[str, ...],
     tail_level: float,
+    pot_models: tuple[str, ...],
+    benchmark_models: tuple[str, ...],
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:  # pragma: no cover
     jobs: list[dict[str, object]] = []
     boundary_rows: list[dict[str, object]] = []
-    pot_models = (*ML_TAIL_POT_GPD_MODEL_NAMES, *ML_TAIL_ROBUST_POT_GPD_MODEL_NAMES)
     for config_label, threshold in EVT_THRESHOLD_SPECS.items():
         if tail_level <= threshold:
             boundary_rows.extend(
@@ -401,6 +452,7 @@ def _build_evt_threshold_jobs(
                     tail_level=tail_level,
                     information_sets=information_sets,
                     models=pot_models,
+                    sensitivity_scope=SENSITIVITY_SCOPE,
                 )
             )
             boundary_rows.extend(
@@ -410,23 +462,26 @@ def _build_evt_threshold_jobs(
                     tail_sides=tail_sides,
                     tail_level=tail_level,
                     information_sets=("target_history_only",),
-                    models=("gjr_garch_evt",),
+                    models=benchmark_models,
+                    sensitivity_scope=SENSITIVITY_SCOPE,
                 )
             )
             continue
         for tail_side in tail_sides:
-            jobs.append(
-                {
-                    "panel_path": str(panel_path),
-                    "tail_side": tail_side,
-                    "tail_level": tail_level,
-                    "models": ("gjr_garch_evt",),
-                    "evt_threshold_quantile": threshold,
-                    "sensitivity_family": "evt_threshold",
-                    "config_label": config_label,
-                    "primary_claim_allowed": False,
-                }
-            )
+            for benchmark_model in benchmark_models:
+                jobs.append(
+                    {
+                        "panel_path": str(panel_path),
+                        "tail_side": tail_side,
+                        "tail_level": tail_level,
+                        "models": (benchmark_model,),
+                        "evt_threshold_quantile": threshold,
+                        "sensitivity_family": "evt_threshold",
+                        "config_label": config_label,
+                        "sensitivity_scope": SENSITIVITY_SCOPE,
+                        "primary_claim_allowed": False,
+                    }
+                )
             for model_name in pot_models:
                 for information_set in information_sets:
                     candidate_features = ml_tail_feature_columns_for_information_set(
@@ -447,6 +502,7 @@ def _build_evt_threshold_jobs(
                             "evt_threshold_quantile": threshold,
                             "sensitivity_family": "evt_threshold",
                             "config_label": config_label,
+                            "sensitivity_scope": SENSITIVITY_SCOPE,
                             "primary_claim_allowed": False,
                         }
                     )
@@ -461,6 +517,7 @@ def _evt_boundary_metric_rows(
     tail_level: float,
     information_sets: tuple[str, ...],
     models: tuple[str, ...],
+    sensitivity_scope: str | None = None,
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for tail_side in tail_sides:
@@ -470,6 +527,7 @@ def _evt_boundary_metric_rows(
                     {
                         "source_primary_run_id": None,
                         "primary_claim_allowed": False,
+                        "sensitivity_scope": sensitivity_scope,
                         "sensitivity_family": "evt_threshold",
                         "config_label": config_label,
                         "model_name": model_name,
@@ -524,6 +582,7 @@ def _run_jobs(
                     output.get(key, []),
                     sensitivity_family=str(payload.get("sensitivity_family") or ""),
                     config_label=str(payload.get("config_label") or ""),
+                    sensitivity_scope=payload.get("sensitivity_scope"),
                     primary_claim_allowed=False,
                     evt_threshold_quantile=payload.get("evt_threshold_quantile"),
                     lgbm_config_json=stable_hash(payload.get("lgbm_params") or {}),
@@ -615,6 +674,7 @@ def _metric_rows_from_forecasts(
             {
                 "source_primary_run_id": source_run_id,
                 "primary_claim_allowed": False,
+                "sensitivity_scope": rows[0].get("sensitivity_scope"),
                 "sensitivity_family": sensitivity_family,
                 "config_label": config_label,
                 "model_name": model_name,
@@ -665,6 +725,12 @@ def _deterioration_ratio(value: object, primary: object) -> float | None:
         return None
     denominator = max(abs(baseline), 1e-12)
     return float((observed - baseline) / denominator)
+
+
+def _read_primary_metric_frame(path: Path) -> pl.DataFrame:  # pragma: no cover
+    if not path.exists():
+        return pl.DataFrame()
+    return pl.read_parquet(path)
 
 
 def _read_primary_ml_metrics(

@@ -24,7 +24,6 @@ from n225_open_gap_tail.config.runtime import (
     DEFAULT_MIN_TRAIN_EXCEEDANCES,
     DEFAULT_MIN_TRAIN_ROWS,
     EWMA_MAIN_LAMBDA,
-    EWMA_SENSITIVITY_LAMBDAS,
     FeatureSetVersion,
     FETCH_FRED_SERIES_FOR_PIPELINE,
     FETCH_MASSIVE_TICKERS_FOR_PIPELINE,
@@ -425,7 +424,6 @@ def build_panel(
             "config_hash": config_hash,
             "tail_levels": TAIL_LEVELS,
             "ewma_lambda": EWMA_MAIN_LAMBDA,
-            "ewma_sensitivity_lambdas": EWMA_SENSITIVITY_LAMBDAS,
             "oos_start_policy": {
                 "earliest_oos_start": DEFAULT_EARLIEST_OOS_START,
                 "min_train_rows": DEFAULT_MIN_TRAIN_ROWS,

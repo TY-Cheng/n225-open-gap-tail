@@ -21,7 +21,7 @@ check: _require-external-uv-env
     uv run mypy src tests
     uv run python scripts/lint_mypy_ignore_debt.py
     uv run pytest -m "not vendor and not realdata"
-    uv run mkdocs build --strict
+    uv run mkdocs build --clean --strict
     just _lint-legacy-names
     just _lint-architecture
 
@@ -45,7 +45,7 @@ _lint-architecture:
     python3 scripts/lint_architecture.py
 
 docs port="8000": _require-external-uv-env
-    uv run mkdocs build --strict
+    uv run mkdocs build --clean --strict
     @port=$(python3 -c 'import socket, sys; host = "127.0.0.1"; start = int(sys.argv[1]); print(next(p for p in range(start, start + 100) if socket.socket().connect_ex((host, p))))' "{{ port }}"); echo "Serving docs at http://127.0.0.1:${port}"; uv run mkdocs serve -a 127.0.0.1:${port}
 
 snapshot run_id="latest": _require-external-data-paths
@@ -55,8 +55,9 @@ snapshot run_id="latest": _require-external-data-paths
 _slide-audit run_id="latest": _require-external-uv-env
     PYTHONPATH=src uv run python scripts/export_model_metrics_breach_audit.py --run-id "{{ run_id }}"
 
-sensitivity run_id="latest" workers="6": _require-external-data-paths
-    {{cli}} sensitivity --run-id "{{ run_id }}" --workers "{{ workers }}"
+sensitivity run_id="latest" workers="6" force="false": _require-external-data-paths
+    @if [[ "{{ force }}" != "true" && "{{ force }}" != "false" ]]; then echo "error: force must be true or false; sensitivity scope is fixed to paper" >&2; exit 2; fi
+    {{cli}} sensitivity --run-id "{{ run_id }}" --workers "{{ workers }}" {{ if force == "true" { "--force" } else { "" } }}
 
 _build-panel start="2016-07-19" end="" force="false": _require-external-data-paths
     {{cli}} build-panel --start "{{ start }}" {{ if end == "" { "" } else { "--end \"" + end + "\"" } }} {{ if force == "true" { "--force" } else { "" } }}

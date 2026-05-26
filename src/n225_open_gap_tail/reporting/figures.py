@@ -11,10 +11,12 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
-from scipy.stats import genpareto
+from matplotlib.lines import Line2D
 
 from n225_open_gap_tail.config.runtime import (
     BENCHMARK_BASELINE_MODEL_NAMES,
+    BOOTSTRAP_REPS,
+    INFERENCE_RANDOM_SEED,
     Mapping,
     ML_TAIL_DIRECT_QUANTILE_MODEL,
     ML_TAIL_LOCATION_SCALE_MODEL,
@@ -27,6 +29,8 @@ from n225_open_gap_tail.config.runtime import (
     np,
     pl,
     PRIMARY_TAIL_SIDE,
+    RESULT_MATRIX_MIN_DM_EXCEPTIONS,
+    RESULT_MATRIX_MIN_DM_ROWS,
     TAIL_SIDE_LEFT,
     TAIL_SIDE_RIGHT,
 )
@@ -35,34 +39,72 @@ from n225_open_gap_tail.config.model_labels import (
     display_model_label,
 )
 from n225_open_gap_tail.inference.core import build_murphy_records
+from n225_open_gap_tail.metrics.admissibility import (
+    PASS_ALL_COVERAGE_TOLERANCE,
+    PASS_ALL_INFORMATION_SETS,
+    PASS_ALL_LGBM_MODEL_ORDER,
+    PASS_ALL_MIN_ROWS,
+    PASS_ALL_TEST_ALPHA,
+    pass_all_lgbm_model_names,
+    pass_all_row_passes,
+)
 from n225_open_gap_tail.reporting.latex import (
     PROMOTED_TAIL_MODEL_SPECS,
     _selected_model_performance_rows,
     _severity_rows,
 )
-from n225_open_gap_tail.metrics.stat_utils import fz_loss, quantile_loss
+from n225_open_gap_tail.metrics.stat_utils import (
+    fz_loss,
+    moving_block_one_sided_pvalue,
+    quantile_loss,
+)
 
 
-INFORMATION_LADDER_ORDER = (
-    "japan_only",
-    "japan_only_plus_us_close_core",
-    "japan_only_plus_us_close_core_plus_japan_proxy",
-    "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy",
-)
-COVERAGE_GATE_ROBUST_MODEL_ORDER = (
-    ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
-    ML_TAIL_POT_GPD_UNIBM_MODEL,
-    ML_TAIL_LOCATION_SCALE_MODEL,
-    ML_TAIL_MEDIAN_IQR_POT_GPD_PLAIN_MLE_MODEL,
-    ML_TAIL_MEDIAN_IQR_POT_GPD_UNIBM_MODEL,
-    ML_TAIL_MEDIAN_MAD_POT_GPD_PLAIN_MLE_MODEL,
-    ML_TAIL_MEDIAN_MAD_POT_GPD_UNIBM_MODEL,
-)
-COVERAGE_GATE_MIN_ROWS = 450
-COVERAGE_GATE_TOLERANCE = 0.025
-COVERAGE_GATE_TEST_ALPHA = 0.05
+INFORMATION_LADDER_ORDER = PASS_ALL_INFORMATION_SETS
+COVERAGE_GATE_ROBUST_MODEL_ORDER = PASS_ALL_LGBM_MODEL_ORDER
+COVERAGE_GATE_MIN_ROWS = PASS_ALL_MIN_ROWS
+COVERAGE_GATE_TOLERANCE = PASS_ALL_COVERAGE_TOLERANCE
+COVERAGE_GATE_TEST_ALPHA = PASS_ALL_TEST_ALPHA
 BENCHMARK_STRESS_PRIMARY_MODEL = "gjr_garch_evt"
 BENCHMARK_STRESS_FALLBACK_MODEL = "gjr_garch_t"
+LGBM_24CHECK_CUMULATIVE_MODELS = (
+    ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
+    ML_TAIL_POT_GPD_UNIBM_MODEL,
+)
+INFORMATION_INCREMENT_ANCHOR_SET = "japan_only"
+INFORMATION_INCREMENT_CANDIDATE_SETS = INFORMATION_LADDER_ORDER[1:]
+STRESS_OVERLAY_INFORMATION_SET = INFORMATION_LADDER_ORDER[2]
+STRESS_OVERLAY_WINDOW_HALF_WIDTH_DAYS = 30
+STRESS_OVERLAY_MAX_WINDOWS = 2
+STRESS_OVERLAY_EPISODE_CLUSTER_DAYS = 90
+STRESS_OVERLAY_REALIZED_COLOR = "#111827"
+STRESS_OVERLAY_COLORS = {
+    "GJR-GARCH-EVT": "#2563eb",
+    "GJR-GARCH-t fallback": "#2563eb",
+    "LGBM POT-GPD plain MLE (C)": "#10b981",
+    "LGBM POT-GPD UniBM (C)": "#f97316",
+}
+STRESS_OVERLAY_MARKERS = {
+    "GJR-GARCH-EVT": "o",
+    "GJR-GARCH-t fallback": "o",
+    "LGBM POT-GPD plain MLE (C)": "s",
+    "LGBM POT-GPD UniBM (C)": "^",
+}
+CROSS_SUITE_DM_MODEL_SPECS = (
+    ("GJR-GARCH-EVT", "benchmark", BENCHMARK_STRESS_PRIMARY_MODEL, "target_history_only"),
+    (
+        "LGBM plain MLE C",
+        "ml_tail",
+        ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
+        STRESS_OVERLAY_INFORMATION_SET,
+    ),
+    (
+        "LGBM UniBM C",
+        "ml_tail",
+        ML_TAIL_POT_GPD_UNIBM_MODEL,
+        STRESS_OVERLAY_INFORMATION_SET,
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -79,7 +121,6 @@ def export_figures(*, run_dir: Path, manifest: Mapping[str, object]) -> FigureEx
     entries: list[dict[str, object]] = []
     entries.extend(_market_timing_design_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_target_tail_motivation_figures(run_dir=run_dir, figure_dir=figure_dir))
-    entries.extend(_target_distribution_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_coverage_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_cumulative_loss_difference_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_selected_model_performance_figures(run_dir=run_dir, figure_dir=figure_dir))
@@ -89,7 +130,6 @@ def export_figures(*, run_dir: Path, manifest: Mapping[str, object]) -> FigureEx
     entries.extend(_severity_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_stress_overlay_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_dm_heatmap_figures(run_dir=run_dir, figure_dir=figure_dir))
-    entries.extend(_evt_standardized_residual_figures(run_dir=run_dir, figure_dir=figure_dir))
     _ = manifest
     return FigureExportResult(figure_dir=figure_dir, figure_entries=entries)
 
@@ -199,16 +239,16 @@ def _target_tail_motivation_figures(*, run_dir: Path, figure_dir: Path) -> list[
         return []
     left_loss = -gap
     right_loss = gap
-    left_threshold = _tail_threshold(left_loss)
-    right_threshold = _tail_threshold(right_loss)
-    fig, axes = plt.subplots(1, 3, figsize=(15.2, 4.8))
-    axes[0].hist(gap, bins=50, density=True, color="#64748b", alpha=0.62, label="empirical")
-    _plot_normal_density(axes[0], gap)
-    axes[0].axvline(0.0, color="#111827", linewidth=1.0)
-    axes[0].set_title("A. Opening-gap density")
-    axes[0].set_xlabel("gap_t, log return")
-    axes[0].set_ylabel("Density")
-    axes[0].legend(frameon=False, fontsize=7)
+    fig, axes = plt.subplots(2, 2, figsize=(11.8, 8.6))
+    ax_density, ax_survival, ax_excess, ax_hill = axes.ravel()
+    ax_density.hist(gap, bins=50, density=True, color="#64748b", alpha=0.62, label="empirical")
+    _plot_normal_density(ax_density, gap)
+    ax_density.axvline(0.0, color="#111827", linewidth=1.0)
+    ax_density.set_title("A. Opening-gap density")
+    ax_density.set_xlabel("gap_t, log return")
+    ax_density.set_ylabel("Density")
+    ax_density.legend(frameon=False, fontsize=7)
+
     for label, values, color in (
         ("left loss", left_loss, "#dc2626"),
         ("right loss", right_loss, "#2563eb"),
@@ -216,34 +256,47 @@ def _target_tail_motivation_figures(*, run_dir: Path, figure_dir: Path) -> list[
         x, survival = _survival_curve(values)
         if x.size:
             mask = survival > 0
-            axes[1].semilogy(x[mask], survival[mask], label=label, color=color, linewidth=1.5)
-    axes[1].set_title("B. Tail log survival")
-    axes[1].set_xlabel("Positive loss magnitude")
-    axes[1].set_ylabel("Empirical survival, log scale")
-    axes[1].legend(frameon=False, fontsize=7)
-    for label, values, threshold, color in (
-        ("left loss", left_loss, left_threshold, "#dc2626"),
-        ("right loss", right_loss, right_threshold, "#2563eb"),
+            ax_survival.semilogy(
+                x[mask],
+                survival[mask],
+                label=label,
+                color=color,
+                linewidth=1.5,
+            )
+    ax_survival.set_title("B. Tail log survival")
+    ax_survival.set_xlabel("Positive loss magnitude")
+    ax_survival.set_ylabel("Empirical survival, log scale")
+    ax_survival.legend(frameon=False, fontsize=7)
+
+    for label, values, color in (
+        ("left loss", left_loss, "#dc2626"),
+        ("right loss", right_loss, "#2563eb"),
     ):
         thresholds, mean_excess = _mean_excess_curve(values)
         if thresholds.size:
-            axes[2].plot(thresholds, mean_excess, label=label, color=color, linewidth=1.5)
-            axes[2].axvline(threshold, color=color, linewidth=1.0, linestyle="--")
-            axes[2].text(
-                threshold,
-                float(np.nanmax(mean_excess)) if mean_excess.size else 0.0,
-                f"u={threshold:.3f}",
-                rotation=90,
-                ha="right",
-                va="top",
-                fontsize=7,
-                color=color,
-            )
-    axes[2].set_title("C. Mean excess")
-    axes[2].set_xlabel("Threshold u")
-    axes[2].set_ylabel("Mean excess over u")
-    axes[2].legend(frameon=False, fontsize=7)
-    for ax in axes:
+            ax_excess.plot(thresholds, mean_excess, label=label, color=color, linewidth=1.5)
+            threshold = _tail_threshold(values)
+            ax_excess.axvline(threshold, color=color, linewidth=1.0, linestyle="--")
+    ax_excess.set_title("C. Mean excess")
+    ax_excess.set_xlabel("Threshold u")
+    ax_excess.set_ylabel("Mean excess over u")
+    ax_excess.legend(frameon=False, fontsize=7)
+
+    for label, values, color in (
+        ("left loss", left_loss, "#dc2626"),
+        ("right loss", right_loss, "#2563eb"),
+        ("absolute gap", np.abs(gap), "#4b5563"),
+    ):
+        ks, xi = _hill_curve(values)
+        if ks.size:
+            ax_hill.plot(ks, xi, label=label, color=color, linewidth=1.5)
+    ax_hill.axhline(0.0, color="#111827", linewidth=0.9, linestyle=":")
+    ax_hill.set_title("D. Hill tail-index path")
+    ax_hill.set_xlabel("Upper order statistics k")
+    ax_hill.set_ylabel("Hill estimate of GPD shape xi")
+    ax_hill.legend(frameon=False, fontsize=7)
+
+    for ax in axes.ravel():
         _style_axes(ax)
     fig.suptitle("Opening-gap distribution and raw-tail diagnostics", fontsize=12)
     return _save_figure(
@@ -255,208 +308,12 @@ def _target_tail_motivation_figures(*, run_dir: Path, figure_dir: Path) -> list[
         tail_side="left_right_target_distribution",
         caption=(
             "Composite raw-target motivation figure: density versus a Gaussian "
-            "reference, left/right log-survival curves, and mean-excess curves with "
-            "90th-percentile positive-loss thresholds. This is raw target motivation, "
+            "reference, left/right log-survival curves, mean-excess curves, and "
+            "Hill tail-index paths. This is raw target motivation, "
             "not forecast validation."
         ),
         claim_scope="target_distribution_motivation_not_forecast_validation",
     )
-
-
-def _target_distribution_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object]]:
-    frame = _target_gap_frame(run_dir)
-    if frame.is_empty():
-        return []
-    gap = _finite_array(frame, "gap_t")
-    if gap.size < 50:
-        return []
-    left_loss = -gap
-    right_loss = gap
-    abs_gap = np.abs(gap)
-    source_artifacts = ["panel/modeling_panel.parquet"]
-    claim_scope = "target_distribution_motivation_not_forecast_validation"
-    entries: list[dict[str, object]] = []
-
-    fig, ax = plt.subplots(figsize=(8.5, 5.2))
-    ax.hist(gap, bins=55, density=True, color="#475569", alpha=0.62, label="empirical density")
-    _plot_normal_density(ax, gap)
-    quantile_lines = (
-        (0.01, "#dc2626"),
-        (0.05, "#f97316"),
-        (0.95, "#2563eb"),
-        (0.99, "#7c3aed"),
-    )
-    for probability, color in quantile_lines:
-        ax.axvline(float(np.quantile(gap, probability)), color=color, linewidth=1.0, linestyle="--")
-    ax.axvline(0.0, color="#111827", linewidth=1.0)
-    ax.set_title("Settlement-to-open gap distribution")
-    ax.set_xlabel("gap_t, log return")
-    ax.set_ylabel("Density")
-    ax.legend(frameon=False, fontsize=8)
-    _style_axes(ax)
-    entries.extend(
-        _save_figure(
-            fig,
-            run_dir=run_dir,
-            figure_dir=figure_dir,
-            name="target_gap_histogram_density",
-            source_artifacts=source_artifacts,
-            tail_side="target_distribution",
-            caption=(
-                "Raw settlement-to-open gap distribution for the clean modeling sample. "
-                "This target-distribution diagnostic motivates tail-risk modeling; it "
-                "does not validate any LightGBM+EVT forecast."
-            ),
-            claim_scope=claim_scope,
-        )
-    )
-
-    for tail_side, values in ((TAIL_SIDE_LEFT, left_loss), (TAIL_SIDE_RIGHT, right_loss)):
-        qq = _gpd_qq_values(values, threshold_probability=0.90)
-        if qq is None:
-            continue
-        empirical, fitted, threshold = qq
-        fig, ax = plt.subplots(figsize=(6.2, 5.6))
-        ax.scatter(fitted, empirical, s=18, color="#2563eb", alpha=0.78)
-        max_value = max(float(np.max(empirical)), float(np.max(fitted)))
-        ax.plot([0.0, max_value], [0.0, max_value], color="#111827", linewidth=1.1, linestyle="--")
-        ax.set_title(f"GPD Q-Q diagnostic ({_label_tail_side(tail_side)})")
-        ax.set_xlabel("Fitted GPD excess quantile")
-        ax.set_ylabel("Empirical excess quantile")
-        ax.text(
-            0.02,
-            0.96,
-            f"threshold = {threshold:.4f}",
-            transform=ax.transAxes,
-            va="top",
-            fontsize=8,
-            color="#374151",
-        )
-        _style_axes(ax)
-        entries.extend(
-            _save_figure(
-                fig,
-                run_dir=run_dir,
-                figure_dir=figure_dir,
-                name=f"target_loss_qq_{tail_side}",
-                source_artifacts=source_artifacts,
-                tail_side=tail_side,
-                caption=(
-                    f"Raw {tail_side} loss Q-Q diagnostic for excesses above the 90th "
-                    "percentile threshold. This is evidence on the target loss tail, not "
-                    "forecast validation for LightGBM+EVT."
-                ),
-                claim_scope=claim_scope,
-            )
-        )
-
-    fig, ax = plt.subplots(figsize=(8.4, 5.4))
-    plotted = False
-    for label, values, color in (
-        ("left loss", left_loss, "#dc2626"),
-        ("right loss", right_loss, "#2563eb"),
-        ("absolute gap", abs_gap, "#4b5563"),
-    ):
-        x, survival = _survival_curve(values)
-        if x.size:
-            ax.semilogy(x, survival, label=label, color=color, linewidth=1.5)
-            plotted = True
-    if plotted:
-        ax.set_title("Log survival diagnostics")
-        ax.set_xlabel("Loss magnitude")
-        ax.set_ylabel("Empirical survival probability, log scale")
-        ax.legend(frameon=False, fontsize=8)
-        _style_axes(ax)
-        entries.extend(
-            _save_figure(
-                fig,
-                run_dir=run_dir,
-                figure_dir=figure_dir,
-                name="target_log_survival",
-                source_artifacts=source_artifacts,
-                tail_side="left_right_target_distribution",
-                caption=(
-                    "Empirical log survival curves for raw left loss, right loss, and absolute "
-                    "settlement-to-open gap. This motivates tail-risk evaluation and is not a "
-                    "forecast-performance claim."
-                ),
-                claim_scope=claim_scope,
-            )
-        )
-    else:
-        plt.close(fig)
-
-    fig, ax = plt.subplots(figsize=(8.4, 5.4))
-    plotted = False
-    for label, values, color in (
-        ("left loss", left_loss, "#dc2626"),
-        ("right loss", right_loss, "#2563eb"),
-        ("absolute gap", abs_gap, "#4b5563"),
-    ):
-        thresholds, mean_excess = _mean_excess_curve(values)
-        if thresholds.size:
-            ax.plot(thresholds, mean_excess, label=label, color=color, linewidth=1.6)
-            plotted = True
-    if plotted:
-        ax.set_title("Mean excess diagnostics")
-        ax.set_xlabel("Threshold")
-        ax.set_ylabel("Mean excess over threshold")
-        ax.legend(frameon=False, fontsize=8)
-        _style_axes(ax)
-        entries.extend(
-            _save_figure(
-                fig,
-                run_dir=run_dir,
-                figure_dir=figure_dir,
-                name="target_mean_excess",
-                source_artifacts=source_artifacts,
-                tail_side="left_right_target_distribution",
-                caption=(
-                    "Mean excess curves for raw target losses. Near-linear upper-tail patterns "
-                    "are tail-shape motivation only; standardized residual-loss EVT diagnostics "
-                    "remain required for LightGBM+EVT forecasts."
-                ),
-                claim_scope=claim_scope,
-            )
-        )
-    else:
-        plt.close(fig)
-
-    fig, ax = plt.subplots(figsize=(8.4, 5.4))
-    plotted = False
-    for label, values, color in (
-        ("left loss", left_loss, "#dc2626"),
-        ("right loss", right_loss, "#2563eb"),
-        ("absolute gap", abs_gap, "#4b5563"),
-    ):
-        ks, xi = _hill_curve(values)
-        if ks.size:
-            ax.plot(ks, xi, label=label, color=color, linewidth=1.5)
-            plotted = True
-    if plotted:
-        ax.set_title("Hill tail-index diagnostics")
-        ax.set_xlabel("Number of upper order statistics, k")
-        ax.set_ylabel("Hill estimate of GPD shape xi")
-        ax.legend(frameon=False, fontsize=8)
-        _style_axes(ax)
-        entries.extend(
-            _save_figure(
-                fig,
-                run_dir=run_dir,
-                figure_dir=figure_dir,
-                name="target_hill_plot",
-                source_artifacts=source_artifacts,
-                tail_side="left_right_target_distribution",
-                caption=(
-                    "Hill estimates by k for raw left loss, right loss, and absolute gap. "
-                    "The plot is a raw-target tail diagnostic, not a model-comparison result."
-                ),
-                claim_scope=claim_scope,
-            )
-        )
-    else:
-        plt.close(fig)
-    return entries
 
 
 def _target_gap_frame(run_dir: Path) -> pl.DataFrame:
@@ -486,30 +343,6 @@ def _plot_normal_density(ax: object, values: object) -> None:
     x = np.linspace(float(np.min(values)), float(np.max(values)), 240)
     density = np.exp(-0.5 * ((x - mean) / std) ** 2) / (std * np.sqrt(2.0 * np.pi))
     ax.plot(x, density, color="#111827", linewidth=1.2, label="normal reference")
-
-
-def _gpd_qq_values(
-    values: object,
-    *,
-    threshold_probability: float,
-) -> tuple[object, object, float] | None:
-    finite = np.asarray(values, dtype=float)
-    finite = finite[np.isfinite(finite)]
-    if finite.size < 50:
-        return None
-    threshold = float(np.quantile(finite, threshold_probability))
-    excess = np.sort(finite[finite > threshold] - threshold)
-    if excess.size < 15 or float(np.max(excess)) <= 0.0:
-        return None
-    try:
-        shape, _, scale = genpareto.fit(excess, floc=0.0)
-    except (ValueError, RuntimeError, FloatingPointError):
-        return None
-    if not np.isfinite(shape) or not np.isfinite(scale) or scale <= 0.0:
-        return None
-    probabilities = (np.arange(1, excess.size + 1) - 0.5) / excess.size
-    fitted = genpareto.ppf(probabilities, c=shape, loc=0.0, scale=scale)
-    return excess, fitted, threshold
 
 
 def _survival_curve(values: object) -> tuple[object, object]:
@@ -565,60 +398,11 @@ def _hill_curve(values: object) -> tuple[object, object]:
 
 
 def _coverage_robust_model_names(frame: pl.DataFrame) -> tuple[str, ...]:
-    required = {
-        "model_name",
-        "tail_side",
-        "information_set",
-        "rows",
-        "var_breach_rate",
-        "expected_breach_rate",
-        "kupiec_pvalue",
-        "christoffersen_pvalue",
-    }
-    if frame.is_empty() or not required.issubset(frame.columns):
-        return ()
-    expected_scenarios = {
-        (tail_side, information_set)
-        for tail_side in (TAIL_SIDE_LEFT, TAIL_SIDE_RIGHT)
-        for information_set in INFORMATION_LADDER_ORDER
-    }
-    passed_by_model: dict[str, set[tuple[str, str]]] = {}
-    for row in frame.iter_rows(named=True):
-        model = str(row.get("model_name") or "")
-        if model == ML_TAIL_DIRECT_QUANTILE_MODEL:
-            continue
-        scenario = (str(row.get("tail_side") or ""), str(row.get("information_set") or ""))
-        if scenario not in expected_scenarios:
-            continue
-        if not _coverage_robust_row_passes(row):
-            continue
-        passed_by_model.setdefault(model, set()).add(scenario)
-    return tuple(
-        sorted(
-            (
-                model
-                for model, scenarios in passed_by_model.items()
-                if scenarios == expected_scenarios
-            ),
-            key=_coverage_robust_model_order,
-        )
-    )
+    return pass_all_lgbm_model_names(frame)
 
 
 def _coverage_robust_row_passes(row: Mapping[str, object]) -> bool:
-    rows = int(_optional_float(row.get("rows")) or 0)
-    breach = _optional_float(row.get("var_breach_rate"))
-    expected = _optional_float(row.get("expected_breach_rate")) or 0.05
-    kupiec = _optional_float(row.get("kupiec_pvalue"))
-    christoffersen = _optional_float(row.get("christoffersen_pvalue"))
-    if breach is None or kupiec is None or christoffersen is None:
-        return False
-    return (
-        rows >= COVERAGE_GATE_MIN_ROWS
-        and abs(breach - expected) <= COVERAGE_GATE_TOLERANCE
-        and kupiec >= COVERAGE_GATE_TEST_ALPHA
-        and christoffersen >= COVERAGE_GATE_TEST_ALPHA
-    )
+    return pass_all_row_passes(row)
 
 
 def _coverage_robust_model_order(value: object) -> int:
@@ -759,54 +543,91 @@ def _coverage_frame(run_dir: Path) -> pl.DataFrame:
 def _cumulative_loss_difference_figures(
     *, run_dir: Path, figure_dir: Path
 ) -> list[dict[str, object]]:
-    entries: list[dict[str, object]] = []
     loss_frame = _all_loss_rows(run_dir)
     if loss_frame.is_empty():
         return []
-    for tail_side in (TAIL_SIDE_LEFT, TAIL_SIDE_RIGHT):
-        series = _cumulative_loss_pairs(loss_frame, tail_side)
-        if not series:
-            continue
-        fig, ax = plt.subplots(figsize=(10.5, 5.4))
-        for label, frame in series:
-            if frame.is_empty():
-                continue
-            forecast_dates = _plot_date_values(frame["forecast_date"].to_list())
-            ax.plot(
-                forecast_dates,
-                frame["cumulative_gain"].to_list(),
-                linewidth=1.45,
-                label=label,
-            )
-        ax.axhline(0.0, color="#111827", linewidth=0.9, linestyle="--")
-        ax.set_title(f"Cumulative loss difference ({_label_tail_side(tail_side)})")
-        ax.set_xlabel("Forecast date")
-        ax.set_ylabel("Cumulative anchor loss - candidate loss")
-        ax.legend(frameon=False, fontsize=8)
-        _set_monthly_date_ticks(ax)
-        _style_axes(ax)
-        entries.extend(
-            _save_figure(
-                fig,
-                run_dir=run_dir,
-                figure_dir=figure_dir,
-                name=f"cumulative_loss_difference_{tail_side}",
-                source_artifacts=[
-                    "metrics/benchmark_loss_matrix.parquet",
-                    "metrics/ml_tail_loss_matrix.parquet",
-                    "forecasts/benchmark_forecasts.parquet",
-                    "forecasts/ml_tail_forecasts.parquet",
-                ],
-                tail_side=tail_side,
-                caption=(
-                    f"Cumulative loss-difference diagnostic for {tail_side}. Positive "
-                    "slope means the candidate has lower cumulative FZ loss than the "
-                    "anchor under the fixed sign convention anchor loss minus candidate loss."
-                ),
-                claim_scope="headline_cumulative_loss_difference_sign_fixed",
-            )
+    panel_specs = [
+        (tail_side, model_name)
+        for tail_side in (TAIL_SIDE_LEFT, TAIL_SIDE_RIGHT)
+        for model_name in LGBM_24CHECK_CUMULATIVE_MODELS
+    ]
+    panel_series = [
+        (
+            tail_side,
+            model_name,
+            _lgbm_a_anchor_cumulative_loss_pairs(loss_frame, tail_side, model_name),
         )
-    return entries
+        for tail_side, model_name in panel_specs
+    ]
+    if not any(rows for _, _, rows in panel_series):
+        return []
+
+    fig, axes = plt.subplots(
+        len((TAIL_SIDE_LEFT, TAIL_SIDE_RIGHT)),
+        len(LGBM_24CHECK_CUMULATIVE_MODELS),
+        figsize=(13.6, 8.1),
+        sharex=True,
+        sharey=True,
+    )
+    axes_array = np.asarray(axes)
+    for row_index, tail_side in enumerate((TAIL_SIDE_LEFT, TAIL_SIDE_RIGHT)):
+        for column_index, model_name in enumerate(LGBM_24CHECK_CUMULATIVE_MODELS):
+            ax = axes_array[row_index, column_index]
+            series = next(
+                rows
+                for series_tail, series_model, rows in panel_series
+                if series_tail == tail_side and series_model == model_name
+            )
+            for label, frame in series:
+                if frame.is_empty():
+                    continue
+                forecast_dates = _plot_date_values(frame["forecast_date"].to_list())
+                ax.plot(
+                    forecast_dates,
+                    frame["cumulative_gain"].to_list(),
+                    linewidth=1.45,
+                    label=label,
+                )
+            ax.axhline(0.0, color="#111827", linewidth=0.9, linestyle="--")
+            ax.set_title(
+                f"{_label_tail_side(tail_side)} | {display_model_label(model_name)}",
+                fontsize=10,
+            )
+            if row_index == axes_array.shape[0] - 1:
+                ax.set_xlabel("Forecast date")
+            if column_index == 0:
+                ax.set_ylabel("Cumulative FZ gain over LGBM(A)")
+            if row_index == 0 and column_index == 0:
+                ax.legend(frameon=False, fontsize=7)
+            _set_monthly_date_ticks(ax)
+            _style_axes(ax)
+    fig.suptitle(
+        "Cumulative FZ gains relative to the corresponding A-only LGBM+EVT baseline",
+        fontsize=13,
+    )
+    return _save_figure(
+        fig,
+        run_dir=run_dir,
+        figure_dir=figure_dir,
+        name="cumulative_lgbm_a_anchor_fz_gain",
+        source_artifacts=[
+            "metrics/benchmark_loss_matrix.parquet",
+            "metrics/ml_tail_loss_matrix.parquet",
+            "forecasts/benchmark_forecasts.parquet",
+            "forecasts/ml_tail_forecasts.parquet",
+        ],
+        tail_side="left_right",
+        caption=(
+            "Cumulative FZ-gain diagnostic relative to the corresponding A-only "
+            "LGBM+EVT baseline. Each panel fixes a tail side and one of the two "
+            "24-check-passing LGBM+EVT families. The GJR-GARCH-EVT line is an "
+            "own-history benchmark reference, while the other lines are B/C/D "
+            "information expansions within the same LGBM family. Positive movement "
+            "means the candidate has lower cumulative FZ loss than the A-only LGBM "
+            "anchor on paired dates."
+        ),
+        claim_scope="headline_lgbm_a_anchor_gjr_evt_and_information_increment_fz_gain",
+    )
 
 
 def _selected_model_performance_figures(
@@ -1136,35 +957,42 @@ def _stress_overlay_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str
     if forecasts.is_empty():
         return []
     entries: list[dict[str, object]] = []
-    for tail_side in (TAIL_SIDE_LEFT, TAIL_SIDE_RIGHT):
-        side = forecasts.filter(pl.col("tail_side") == tail_side)
-        if side.is_empty():
-            continue
-        windows = _stress_overlay_windows(side)
-        fig, axes = plt.subplots(len(windows), 1, figsize=(11.2, 4.1 * len(windows)), sharey=True)
-        if len(windows) == 1:
-            axes = [axes]
-        for ax, window in zip(axes, windows, strict=False):
+    windows = _stress_overlay_windows(forecasts)
+    for window in windows:
+        fig, axes = plt.subplots(2, 1, figsize=(11.2, 7.8), sharex=True, sharey=True)
+        for index, tail_side in enumerate((TAIL_SIDE_LEFT, TAIL_SIDE_RIGHT)):
+            ax = axes[index]
+            side = forecasts.filter(pl.col("tail_side") == tail_side)
             window_rows = _filter_date_window(side, window["start"], window["end"])
-            _plot_stress_overlay_panel(ax, window_rows, tail_side, window)
-        fig.suptitle(f"VaR/ES stress-window overlays ({_label_tail_side(tail_side)})")
+            _plot_stress_overlay_panel(
+                ax,
+                window_rows,
+                tail_side,
+                window,
+                show_x_label=index == 1,
+            )
+        fig.suptitle(f"VaR/ES stress-window overlay: {window['title']}")
+        _add_stress_overlay_shared_legend(fig)
         entries.extend(
             _save_figure(
                 fig,
                 run_dir=run_dir,
                 figure_dir=figure_dir,
-                name=f"var_es_stress_overlay_{tail_side}",
+                name=f"var_es_stress_overlay_{window['slug']}",
                 source_artifacts=[
                     "forecasts/benchmark_forecasts.parquet",
                     "forecasts/ml_tail_forecasts.parquet",
                 ],
-                tail_side=tail_side,
+                tail_side="left_right_tail",
                 caption=(
-                    f"Stress-window VaR/ES overlay for {tail_side}. The figure is an "
-                    "illustration of threshold behavior around fixed stress windows; it "
+                    "Stress-window VaR/ES overlay with left and right tails sharing the "
+                    "same OOS episode window. The LGBM lines use the C information set "
+                    "(JP + US close core + JP proxy), matching the best FZ rows within "
+                    "the two 24-check LGBM+EVT families. The figure is illustrative and "
                     "does not report hedge PnL, transaction costs, or trading performance."
                 ),
                 claim_scope="appendix_stress_overlay_illustration_not_validation",
+                tight_layout_rect=(0.0, 0.11, 1.0, 0.95),
             )
         )
     return entries
@@ -1205,463 +1033,288 @@ def _full_sample_var_overlay_figures(*, run_dir: Path, figure_dir: Path) -> list
 
 
 def _dm_heatmap_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object]]:
-    dm = _read_optional_parquet(run_dir / "metrics" / "ml_tail_result_matrix_dm.parquet")
-    required = {
-        "tail_side",
-        "baseline_entity",
-        "candidate_entity",
-        "loss_family",
-        "pvalue_one_sided",
-        "mean_loss_diff_candidate_minus_baseline",
-    }
-    if dm.is_empty() or not required.issubset(dm.columns):
+    loss_rows = _cross_suite_dm_loss_rows(run_dir)
+    if loss_rows.is_empty():
         return []
     entries: list[dict[str, object]] = []
     for tail_side in (TAIL_SIDE_LEFT, TAIL_SIDE_RIGHT):
-        rows = _compact_dm_rows(dm, tail_side)
-        if rows.is_empty():
+        records = _cross_suite_dm_records(loss_rows, tail_side)
+        if not records:
             continue
-        baselines = _ordered_unique(rows["baseline_entity"].to_list())
-        candidates = _ordered_unique(rows["candidate_entity"].to_list())
-        pvalues = np.full((len(baselines), len(candidates)), np.nan)
-        diffs = np.full_like(pvalues, np.nan, dtype=float)
-        for row in rows.iter_rows(named=True):
-            i = baselines.index(str(row["baseline_entity"]))
-            j = candidates.index(str(row["candidate_entity"]))
-            pvalues[i, j] = _optional_float(row.get("pvalue_one_sided")) or np.nan
-            diffs[i, j] = (
-                _optional_float(row.get("mean_loss_diff_candidate_minus_baseline")) or np.nan
-            )
-        fig, ax = plt.subplots(
-            figsize=(max(7.0, len(candidates) * 1.15), max(4.8, len(baselines) * 0.8))
-        )
-        image = ax.imshow(pvalues, cmap="viridis_r", vmin=0.0, vmax=0.25, aspect="auto")
-        cbar = fig.colorbar(image, ax=ax, fraction=0.035, pad=0.03)
-        cbar.set_label("One-sided DM p-value")
-        ax.set_xticks(
-            np.arange(len(candidates)),
-            [_short_label(_entity_label(value), max_len=24) for value in candidates],
-            rotation=35,
-            ha="right",
-        )
-        ax.set_yticks(
-            np.arange(len(baselines)),
-            [_short_label(_entity_label(value), max_len=28) for value in baselines],
-        )
-        for i in range(len(baselines)):
-            for j in range(len(candidates)):
-                if not np.isfinite(pvalues[i, j]):
+        labels = [spec[0] for spec in CROSS_SUITE_DM_MODEL_SPECS]
+        common_n = int(records[0].get("common_n") or 0)
+        values = np.full((len(labels), len(labels)), np.nan)
+        for record in records:
+            i = labels.index(str(record["candidate_label"]))
+            j = labels.index(str(record["anchor_label"]))
+            value = _optional_float(record.get("mean_fz_loss_diff_candidate_minus_anchor"))
+            values[i, j] = value if value is not None else np.nan
+        finite_values = values[np.isfinite(values)]
+        scale = float(np.nanmax(np.abs(finite_values))) if finite_values.size else 1.0
+        scale = max(scale, 1e-9)
+        cmap = plt.get_cmap("RdBu_r").copy()
+        cmap.set_bad("#f3f4f6")
+        norm = matplotlib.colors.TwoSlopeNorm(vmin=-scale, vcenter=0.0, vmax=scale)
+        fig, ax = plt.subplots(figsize=(8.4, 6.4))
+        image = ax.imshow(np.ma.masked_invalid(values), cmap=cmap, norm=norm, aspect="equal")
+        cbar = fig.colorbar(image, ax=ax, fraction=0.045, pad=0.035)
+        cbar.set_label("Mean FZ difference (candidate - anchor)")
+        ax.set_xticks(np.arange(len(labels)), labels, rotation=25, ha="right")
+        ax.set_yticks(np.arange(len(labels)), labels)
+        ax.set_xticks(np.arange(-0.5, len(labels), 1.0), minor=True)
+        ax.set_yticks(np.arange(-0.5, len(labels), 1.0), minor=True)
+        ax.grid(which="minor", color="white", linewidth=1.8)
+        ax.tick_params(which="minor", bottom=False, left=False)
+        record_by_pair = {
+            (str(record["candidate_label"]), str(record["anchor_label"])): record
+            for record in records
+        }
+        for i, candidate_label in enumerate(labels):
+            for j, anchor_label in enumerate(labels):
+                if i == j:
+                    ax.text(j, i, "—", ha="center", va="center", fontsize=13, color="#6b7280")
                     continue
-                diff = diffs[i, j]
-                ax.text(
-                    j,
-                    i,
-                    f"p={pvalues[i, j]:.3f}\nΔ={diff:.2g}",
-                    ha="center",
-                    va="center",
-                    fontsize=7,
-                    color="#111827",
-                )
-        ax.set_title(f"Compact DM heatmap ({_label_tail_side(tail_side)})")
-        ax.set_xlabel("Candidate")
-        ax.set_ylabel("Anchor")
+                record = record_by_pair.get((candidate_label, anchor_label))
+                text = _dm_heatmap_annotation(record)
+                value = values[i, j]
+                color = "white" if np.isfinite(value) and abs(value) > 0.55 * scale else "#111827"
+                ax.text(j, i, text, ha="center", va="center", fontsize=7.6, color=color)
+        ax.set_title(
+            f"Pairwise FZ DM heatmap ({_label_tail_side(tail_side)})\n"
+            f"Strict global common sample N={common_n}",
+            fontsize=11.2,
+            pad=14,
+        )
+        ax.set_xlabel("Anchor model")
+        ax.set_ylabel("Candidate model")
+        for spine in ax.spines.values():
+            spine.set_visible(False)
         entries.extend(
             _save_figure(
                 fig,
                 run_dir=run_dir,
                 figure_dir=figure_dir,
                 name=f"dm_heatmap_{tail_side}",
-                source_artifacts=["metrics/ml_tail_result_matrix_dm.parquet"],
+                source_artifacts=[
+                    "forecasts/benchmark_forecasts.parquet",
+                    "forecasts/ml_tail_forecasts.parquet",
+                ],
                 tail_side=tail_side,
                 caption=(
-                    f"Compact appendix DM heatmap for {tail_side}. Cells report "
-                    "one-sided DM p-values and candidate-minus-anchor mean loss "
-                    "differences; negative differences favor the candidate."
+                    f"Pass-all cross-suite pairwise FZ DM heatmap for {tail_side}. "
+                    "Rows are candidate models and columns are anchors. All cells use "
+                    f"the same strict global common sample (N={common_n}) formed by "
+                    "intersecting valid forecast dates for GJR-GARCH-EVT, LGBM plain "
+                    "MLE C, and LGBM UniBM C. Mean differences are in units of the "
+                    "Fissler-Ziegel joint VaR-ES loss; FZ scores may be negative under "
+                    "this scoring convention, and lower values mean better joint "
+                    "VaR-ES forecasts. Negative candidate-minus-anchor values favor "
+                    "the row model."
                 ),
-                claim_scope="appendix_dm_visual_diagnostic",
+                claim_scope="post_24check_cross_suite_fz_dm_diagnostic",
             )
         )
     return entries
 
 
-def _evt_standardized_residual_figures(
-    *, run_dir: Path, figure_dir: Path
-) -> list[dict[str, object]]:
-    """EVT diagnostics for LightGBM location-scale standardized residuals.
-
-    Reconstructs z_t = (realized_loss - location_forecast) / scale_forecast
-    from the saved forecast file and produces QQ, log-survival, mean-excess,
-    Hill, and threshold-stability figures per tail side.
-    """
-    frame = _read_optional_parquet(run_dir / "forecasts" / "ml_tail_forecasts.parquet")
-    if frame.is_empty():
-        return []
+def _cross_suite_dm_loss_rows(run_dir: Path) -> pl.DataFrame:
+    frames: list[pl.DataFrame] = []
+    forecast_specs = (
+        (run_dir / "forecasts" / "benchmark_forecasts.parquet", "benchmark"),
+        (run_dir / "forecasts" / "ml_tail_forecasts.parquet", "ml_tail"),
+    )
     required = {
-        "model_name",
+        "forecast_date",
         "tail_side",
-        "location_forecast",
-        "scale_forecast",
+        "model_name",
+        "information_set",
+        "tail_level",
         "realized_loss",
-        "is_valid_forecast",
+        "var_forecast",
+        "es_forecast",
     }
-    if not required.issubset(frame.columns):
-        return []
-    source_artifacts = ["forecasts/ml_tail_forecasts.parquet"]
-    claim_scope = "evt_standardized_residual_diagnostic_not_forecast_claim"
-    entries: list[dict[str, object]] = []
-    location_scale_names = set()
-    for row in frame.iter_rows(named=True):
-        mn = str(row.get("model_name") or "")
-        if mn.startswith("lightgbm_") and mn != ML_TAIL_DIRECT_QUANTILE_MODEL:
-            location_scale_names.add(mn)
-    anchor_model = "lightgbm_location_scale_empirical"
-    if anchor_model not in location_scale_names:
-        if location_scale_names:
-            anchor_model = sorted(location_scale_names)[0]
-        else:
-            return []
-    for tail_side in _available_tail_sides(frame):
-        z_values = _reconstruct_standardized_residuals(frame, tail_side, anchor_model)
-        if z_values.size < 80:
+    for path, suite in forecast_specs:
+        frame = _read_optional_parquet(path)
+        if frame.is_empty() or not required.issubset(frame.columns):
             continue
-        entries.extend(
-            _evt_qq_figure(
-                z_values,
-                tail_side=tail_side,
-                model_name=anchor_model,
-                run_dir=run_dir,
-                figure_dir=figure_dir,
-                source_artifacts=source_artifacts,
-                claim_scope=claim_scope,
+        frame = _valid_forecast_rows(frame)
+        rows: list[dict[str, object]] = []
+        for label, spec_suite, model_name, information_set in CROSS_SUITE_DM_MODEL_SPECS:
+            if spec_suite != suite:
+                continue
+            selected = frame.filter(
+                (pl.col("model_name") == model_name)
+                & (pl.col("information_set") == information_set)
             )
-        )
-        entries.extend(
-            _evt_log_survival_figure(
-                z_values,
-                tail_side=tail_side,
-                model_name=anchor_model,
-                run_dir=run_dir,
-                figure_dir=figure_dir,
-                source_artifacts=source_artifacts,
-                claim_scope=claim_scope,
-            )
-        )
-        entries.extend(
-            _evt_mean_excess_figure(
-                z_values,
-                tail_side=tail_side,
-                model_name=anchor_model,
-                run_dir=run_dir,
-                figure_dir=figure_dir,
-                source_artifacts=source_artifacts,
-                claim_scope=claim_scope,
-            )
-        )
-        entries.extend(
-            _evt_hill_figure(
-                z_values,
-                tail_side=tail_side,
-                model_name=anchor_model,
-                run_dir=run_dir,
-                figure_dir=figure_dir,
-                source_artifacts=source_artifacts,
-                claim_scope=claim_scope,
-            )
-        )
-        entries.extend(
-            _evt_threshold_stability_figure(
-                z_values,
-                tail_side=tail_side,
-                model_name=anchor_model,
-                run_dir=run_dir,
-                figure_dir=figure_dir,
-                source_artifacts=source_artifacts,
-                claim_scope=claim_scope,
-            )
-        )
-    return entries
+            for row in selected.iter_rows(named=True):
+                loss = _optional_float(row.get("realized_loss"))
+                var = _optional_float(row.get("var_forecast"))
+                es = _optional_float(row.get("es_forecast"))
+                tail_level = _optional_float(row.get("tail_level"))
+                if loss is None or var is None or es is None or tail_level is None:
+                    continue
+                score = fz_loss(loss, var, es, tail_level)
+                if not np.isfinite(score):
+                    continue
+                rows.append(
+                    {
+                        "plot_label": label,
+                        "suite": suite,
+                        "model_name": model_name,
+                        "information_set": information_set,
+                        "forecast_date": str(row["forecast_date"]),
+                        "target_family": row.get("target_family"),
+                        "tail_side": row.get("tail_side"),
+                        "tail_level": tail_level,
+                        "realized_loss": loss,
+                        "var_forecast": var,
+                        "fz_loss": score,
+                    }
+                )
+        if rows:
+            frames.append(pl.from_dicts(rows, infer_schema_length=None))
+    return pl.concat(frames, how="diagonal_relaxed") if frames else pl.DataFrame()
 
 
-def _reconstruct_standardized_residuals(
-    frame: pl.DataFrame, tail_side: str, model_name: str
-) -> np.ndarray:
-    """Reconstruct z_t from saved forecast rows."""
-    filtered = frame.filter(
-        (pl.col("tail_side") == tail_side)
-        & (pl.col("model_name") == model_name)
-        & (pl.col("is_valid_forecast") == True)  # noqa: E712
-        & pl.col("location_forecast").is_not_null()
-        & pl.col("scale_forecast").is_not_null()
-        & pl.col("realized_loss").is_not_null()
-    )
-    if filtered.is_empty():
-        return np.asarray([], dtype=float)
-    location = np.asarray(filtered["location_forecast"].to_list(), dtype=float)
-    scale = np.asarray(filtered["scale_forecast"].to_list(), dtype=float)
-    realized = np.asarray(filtered["realized_loss"].to_list(), dtype=float)
-    mask = np.isfinite(location) & np.isfinite(scale) & (scale > 0) & np.isfinite(realized)
-    z = (realized[mask] - location[mask]) / scale[mask]
-    return z[np.isfinite(z)]
-
-
-def _evt_qq_figure(
-    z_values: np.ndarray,
-    *,
-    tail_side: str,
-    model_name: str,
-    run_dir: Path,
-    figure_dir: Path,
-    source_artifacts: list[str],
-    claim_scope: str,
-) -> list[dict[str, object]]:
-    """GPD Q-Q plot for standardized residuals."""
-    qq = _gpd_qq_values(z_values, threshold_probability=0.90)
-    if qq is None:
+def _cross_suite_dm_records(loss_rows: pl.DataFrame, tail_side: str) -> list[dict[str, object]]:
+    if loss_rows.is_empty() or "tail_side" not in loss_rows.columns:
         return []
-    empirical, fitted, threshold = qq
-    fig, ax = plt.subplots(figsize=(6.2, 5.6))
-    ax.scatter(fitted, empirical, s=18, color="#059669", alpha=0.78)
-    max_value = max(float(np.max(empirical)), float(np.max(fitted)))
-    ax.plot([0.0, max_value], [0.0, max_value], color="#111827", linewidth=1.1, linestyle="--")
-    ax.set_title(f"Standardized residual GPD Q-Q ({_label_tail_side(tail_side)})")
-    ax.set_xlabel("Fitted GPD excess quantile")
-    ax.set_ylabel("Empirical excess quantile")
-    ax.text(
-        0.02,
-        0.96,
-        f"threshold = {threshold:.3f}  |  n_excess = {int(np.sum(z_values > threshold))}",
-        transform=ax.transAxes,
-        va="top",
-        fontsize=8,
-        color="#374151",
-    )
-    _style_axes(ax)
-    return _save_figure(
-        fig,
-        run_dir=run_dir,
-        figure_dir=figure_dir,
-        name=f"evt_standardized_qq_{tail_side}",
-        source_artifacts=source_artifacts,
-        tail_side=tail_side,
-        caption=(
-            "GPD Q-Q diagnostic for "
-            f"{display_model_label(model_name)} standardized residuals ({tail_side}). "
-            "Excesses above the plotted evaluation-sample 90th percentile threshold are "
-            "compared with fitted GPD quantiles. Residuals are pooled across available "
-            "information sets and tail levels for this diagnostic; this is not a "
-            "forecast-performance claim."
-        ),
-        claim_scope=claim_scope,
-    )
-
-
-def _evt_log_survival_figure(
-    z_values: np.ndarray,
-    *,
-    tail_side: str,
-    model_name: str,
-    run_dir: Path,
-    figure_dir: Path,
-    source_artifacts: list[str],
-    claim_scope: str,
-) -> list[dict[str, object]]:
-    """Log survival plot for standardized residuals."""
-    x, survival = _survival_curve(z_values)
-    if x.size < 10:
+    tail_rows = loss_rows.filter(pl.col("tail_side") == tail_side)
+    if tail_rows.is_empty():
         return []
-    fig, ax = plt.subplots(figsize=(8.4, 5.4))
-    ax.semilogy(x, survival, color="#059669", linewidth=1.5, label="standardized residuals")
-    # overlay normal reference
-    x_norm = np.linspace(float(np.min(x)), float(np.max(x)), 200)
-    from scipy.stats import norm  # type: ignore[import-untyped]
-
-    survival_norm = 1.0 - norm.cdf(
-        x_norm, loc=float(np.mean(z_values)), scale=float(np.std(z_values, ddof=1))
-    )
-    survival_norm = np.maximum(survival_norm, 1e-12)
-    ax.semilogy(
-        x_norm,
-        survival_norm,
-        color="#94a3b8",
-        linewidth=1.0,
-        linestyle="--",
-        label="normal reference",
-    )
-    ax.set_title(f"Standardized residual log survival ({_label_tail_side(tail_side)})")
-    ax.set_xlabel("Standardized loss z")
-    ax.set_ylabel("Empirical survival probability, log scale")
-    ax.legend(frameon=False, fontsize=8)
-    _style_axes(ax)
-    return _save_figure(
-        fig,
-        run_dir=run_dir,
-        figure_dir=figure_dir,
-        name=f"evt_standardized_log_survival_{tail_side}",
-        source_artifacts=source_artifacts,
-        tail_side=tail_side,
-        caption=(
-            f"Log survival curve for {display_model_label(model_name)} standardized "
-            f"residuals ({tail_side}) compared with a normal reference. Residuals are "
-            "pooled across available information sets and tail levels for this diagnostic."
-        ),
-        claim_scope=claim_scope,
-    )
-
-
-def _evt_mean_excess_figure(
-    z_values: np.ndarray,
-    *,
-    tail_side: str,
-    model_name: str,
-    run_dir: Path,
-    figure_dir: Path,
-    source_artifacts: list[str],
-    claim_scope: str,
-) -> list[dict[str, object]]:
-    """Mean excess plot for standardized residuals."""
-    thresholds, mean_excess = _mean_excess_curve(z_values)
-    if thresholds.size < 5:
-        return []
-    fig, ax = plt.subplots(figsize=(8.4, 5.4))
-    ax.plot(thresholds, mean_excess, color="#059669", linewidth=1.6, marker="o", markersize=3)
-    ax.set_title(f"Standardized residual mean excess ({_label_tail_side(tail_side)})")
-    ax.set_xlabel("Threshold z")
-    ax.set_ylabel("Mean excess E[Z - z | Z > z]")
-    ax.text(
-        0.02,
-        0.96,
-        "Linear pattern → GPD appropriate",
-        transform=ax.transAxes,
-        va="top",
-        fontsize=8,
-        color="#374151",
-        style="italic",
-    )
-    _style_axes(ax)
-    return _save_figure(
-        fig,
-        run_dir=run_dir,
-        figure_dir=figure_dir,
-        name=f"evt_standardized_mean_excess_{tail_side}",
-        source_artifacts=source_artifacts,
-        tail_side=tail_side,
-        caption=(
-            f"Mean excess function for {display_model_label(model_name)} standardized "
-            f"residuals ({tail_side}). A near-linear upper-tail pattern supports GPD "
-            "modeling for this pooled residual diagnostic; it is not a forecast-validation claim."
-        ),
-        claim_scope=claim_scope,
-    )
-
-
-def _evt_hill_figure(
-    z_values: np.ndarray,
-    *,
-    tail_side: str,
-    model_name: str,
-    run_dir: Path,
-    figure_dir: Path,
-    source_artifacts: list[str],
-    claim_scope: str,
-) -> list[dict[str, object]]:
-    """Hill plot for standardized residuals."""
-    ks, xi = _hill_curve(z_values)
-    if ks.size < 5:
-        return []
-    fig, ax = plt.subplots(figsize=(8.4, 5.4))
-    ax.plot(ks, xi, color="#059669", linewidth=1.5)
-    ax.axhline(0.0, color="#94a3b8", linewidth=0.8, linestyle=":")
-    ax.set_title(f"Standardized residual Hill plot ({_label_tail_side(tail_side)})")
-    ax.set_xlabel("Number of upper order statistics k")
-    ax.set_ylabel("Hill estimate of tail index ξ")
-    # annotate stable region
-    if ks.size > 10:
-        mid = len(ks) // 2
-        xi_window = xi[max(0, mid - 5) : mid + 5]
-        if len(xi_window) > 0:
-            ax.axhspan(
-                float(np.min(xi_window)),
-                float(np.max(xi_window)),
-                alpha=0.08,
-                color="#059669",
-                label=f"mid-range ξ ≈ {float(np.mean(xi_window)):.3f}",
+    labels = [spec[0] for spec in CROSS_SUITE_DM_MODEL_SPECS]
+    date_sets: list[set[str]] = []
+    for label in labels:
+        dates = set(
+            tail_rows.filter(pl.col("plot_label") == label)["forecast_date"].drop_nulls().to_list()
+        )
+        date_sets.append({str(value) for value in dates})
+    common_dates = sorted(set.intersection(*date_sets)) if all(date_sets) else []
+    row_by_label_date = {
+        (str(row["plot_label"]), str(row["forecast_date"])): row
+        for row in tail_rows.iter_rows(named=True)
+    }
+    records: list[dict[str, object]] = []
+    for candidate_label in labels:
+        for anchor_label in labels:
+            if candidate_label == anchor_label:
+                continue
+            records.append(
+                _cross_suite_dm_pair_record(
+                    candidate_label=candidate_label,
+                    anchor_label=anchor_label,
+                    common_dates=common_dates,
+                    row_by_label_date=row_by_label_date,
+                    tail_side=tail_side,
+                )
             )
-            ax.legend(frameon=False, fontsize=8)
-    _style_axes(ax)
-    return _save_figure(
-        fig,
-        run_dir=run_dir,
-        figure_dir=figure_dir,
-        name=f"evt_standardized_hill_{tail_side}",
-        source_artifacts=source_artifacts,
-        tail_side=tail_side,
-        caption=(
-            f"Hill tail-index estimates for {display_model_label(model_name)} standardized "
-            f"residuals ({tail_side}) "
-            "as a function of the number of upper order statistics k. A stable plateau "
-            "indicates consistent tail behavior. This is a tail-assumption diagnostic."
-        ),
-        claim_scope=claim_scope,
-    )
+    return records
 
 
-def _evt_threshold_stability_figure(
-    z_values: np.ndarray,
+def _cross_suite_dm_pair_record(
     *,
+    candidate_label: str,
+    anchor_label: str,
+    common_dates: list[str],
+    row_by_label_date: dict[tuple[str, str], dict[str, object]],
     tail_side: str,
-    model_name: str,
-    run_dir: Path,
-    figure_dir: Path,
-    source_artifacts: list[str],
-    claim_scope: str,
-) -> list[dict[str, object]]:
-    """Threshold stability plot for GPD shape and modified scale."""
-    grid = np.array([0.80, 0.85, 0.875, 0.90, 0.925, 0.95, 0.975])
-    shapes: list[float] = []
-    mod_scales: list[float] = []
-    kept_grid: list[float] = []
-    for probability in grid:
-        threshold = float(np.quantile(z_values, probability))
-        excess = z_values[z_values > threshold] - threshold
-        if excess.size < 15:
+) -> dict[str, object]:
+    diffs: list[float] = []
+    joint_exception_count = 0
+    for forecast_date in common_dates:
+        candidate = row_by_label_date.get((candidate_label, forecast_date))
+        anchor = row_by_label_date.get((anchor_label, forecast_date))
+        if candidate is None or anchor is None:
             continue
-        try:
-            shape, _, scale = genpareto.fit(excess, floc=0.0)
-        except (ValueError, RuntimeError, FloatingPointError):
-            continue
-        if not np.isfinite(shape) or not np.isfinite(scale) or scale <= 0.0:
-            continue
-        kept_grid.append(probability)
-        shapes.append(float(shape))
-        mod_scales.append(float(scale - shape * threshold))
-    if len(kept_grid) < 3:
-        return []
-    fig, axes = plt.subplots(2, 1, figsize=(8.4, 7.0), sharex=True)
-    axes[0].plot(kept_grid, shapes, color="#059669", linewidth=1.6, marker="o", markersize=4)
-    axes[0].axhline(0.0, color="#94a3b8", linewidth=0.8, linestyle=":")
-    axes[0].set_ylabel("GPD shape ξ̂")
-    axes[0].set_title(f"GPD threshold stability ({_label_tail_side(tail_side)})")
-    axes[1].plot(kept_grid, mod_scales, color="#2563eb", linewidth=1.6, marker="s", markersize=4)
-    axes[1].set_ylabel("Modified scale σ̂* = σ̂ − ξ̂·u")
-    axes[1].set_xlabel("Threshold quantile")
-    for ax in axes:
-        _style_axes(ax)
-    return _save_figure(
-        fig,
-        run_dir=run_dir,
-        figure_dir=figure_dir,
-        name=f"evt_standardized_threshold_stability_{tail_side}",
-        source_artifacts=source_artifacts,
-        tail_side=tail_side,
-        caption=(
-            f"GPD parameter stability across threshold quantiles for "
-            f"{display_model_label(model_name)} standardized residuals ({tail_side}). "
-            "Stable shape and modified scale across thresholds "
-            "support the POT-GPD specification. This diagnostic validates the threshold "
-            "choice, not forecast accuracy."
-        ),
-        claim_scope=claim_scope,
+        candidate_fz = _optional_float(candidate.get("fz_loss"))
+        anchor_fz = _optional_float(anchor.get("fz_loss"))
+        if candidate_fz is not None and anchor_fz is not None:
+            diffs.append(candidate_fz - anchor_fz)
+        joint_exception_count += int(
+            _forecast_row_breached(candidate) or _forecast_row_breached(anchor)
+        )
+    diff_array = np.array(diffs, dtype=float)
+    diff_array = diff_array[np.isfinite(diff_array)]
+    paired_rows = int(diff_array.size)
+    mean_diff = float(np.mean(diff_array)) if paired_rows else None
+    block_length = max(5, round(paired_rows ** (1.0 / 3.0))) if paired_rows else None
+    inference_status = _cross_suite_dm_gate_status(
+        common_n=len(common_dates),
+        joint_exception_count=joint_exception_count,
     )
+    pvalue = (
+        moving_block_one_sided_pvalue(
+            diff_array,
+            observed_mean=mean_diff,
+            reps=BOOTSTRAP_REPS,
+            block_length=int(block_length),
+            rng=np.random.default_rng(INFERENCE_RANDOM_SEED),
+        )
+        if inference_status == "ok_block_bootstrap_dm"
+        and mean_diff is not None
+        and block_length is not None
+        else None
+    )
+    return {
+        "comparison_family": "pass_all_cross_suite_pairwise",
+        "loss_family": "var_es_fz_loss",
+        "tail_side": tail_side,
+        "candidate_label": candidate_label,
+        "anchor_label": anchor_label,
+        "common_n": len(common_dates),
+        "paired_rows": paired_rows,
+        "joint_exception_count": joint_exception_count,
+        "mean_fz_loss_diff_candidate_minus_anchor": mean_diff,
+        "pvalue_one_sided": pvalue,
+        "reject_10pct": pvalue is not None and pvalue < 0.10,
+        "bootstrap_reps": BOOTSTRAP_REPS,
+        "bootstrap_seed": INFERENCE_RANDOM_SEED,
+        "block_length": block_length,
+        "alternative": "candidate_mean_fz_loss_less_than_anchor",
+        "null_hypothesis": "E[FZ_candidate_minus_anchor] >= 0",
+        "inference_status": inference_status,
+    }
+
+
+def _cross_suite_dm_gate_status(*, common_n: int, joint_exception_count: int) -> str:
+    if common_n == 0:
+        return "unavailable_no_global_common_sample"
+    if common_n < RESULT_MATRIX_MIN_DM_ROWS:
+        return "unavailable_insufficient_common_rows_for_inference"
+    if joint_exception_count < RESULT_MATRIX_MIN_DM_EXCEPTIONS:
+        return "unavailable_insufficient_tail_events_for_inference"
+    return "ok_block_bootstrap_dm"
+
+
+def _forecast_row_breached(row: dict[str, object]) -> bool:
+    loss = _optional_float(row.get("realized_loss"))
+    var = _optional_float(row.get("var_forecast"))
+    return loss is not None and var is not None and loss > var
+
+
+def _dm_heatmap_annotation(record: dict[str, object] | None) -> str:
+    if record is None:
+        return "n/a"
+    diff = _optional_float(record.get("mean_fz_loss_diff_candidate_minus_anchor"))
+    pvalue = _optional_float(record.get("pvalue_one_sided"))
+    if diff is None:
+        return f"n/a\nN={int(record.get('common_n') or 0)}"
+    pvalue_text = "p=n/a" if pvalue is None else f"p={pvalue:.3f}{_pvalue_stars(pvalue)}"
+    return f"ΔFZ={_format_dm_diff(diff)}\n{pvalue_text}"
+
+
+def _format_dm_diff(value: float) -> str:
+    return f"{value:.4f}" if abs(value) < 0.01 else f"{value:.3f}"
+
+
+def _pvalue_stars(pvalue: float) -> str:
+    if pvalue < 0.01:
+        return "***"
+    if pvalue < 0.05:
+        return "**"
+    if pvalue < 0.10:
+        return "*"
+    return ""
 
 
 def _tail_threshold(values: object, probability: float = 0.90) -> float:
@@ -1782,62 +1435,52 @@ def _valid_forecast_rows(frame: pl.DataFrame) -> pl.DataFrame:
     return filtered
 
 
-def _cumulative_loss_pairs(
-    loss_frame: pl.DataFrame, tail_side: str
+def _lgbm_a_anchor_cumulative_loss_pairs(
+    loss_frame: pl.DataFrame, tail_side: str, model_name: str
 ) -> list[tuple[str, pl.DataFrame]]:
     pairs: list[tuple[str, pl.DataFrame]] = []
-    direct_anchor = _loss_identity(
+    anchor = _loss_identity(
         suite="ml_tail",
-        model_name=ML_TAIL_DIRECT_QUANTILE_MODEL,
-        information_set="japan_only",
+        model_name=model_name,
+        information_set=INFORMATION_INCREMENT_ANCHOR_SET,
     )
-    direct_candidate = _loss_identity(
-        suite="ml_tail",
-        model_name=ML_TAIL_DIRECT_QUANTILE_MODEL,
-        information_set="japan_only_plus_us_close_core",
-    )
-    direct_pair = _paired_cumulative_loss(
+    benchmark_pair = _paired_cumulative_loss(
         loss_frame,
         tail_side=tail_side,
-        anchor=direct_anchor,
-        candidate=direct_candidate,
+        anchor=anchor,
+        candidate=_loss_identity(
+            suite="benchmark",
+            model_name=BENCHMARK_STRESS_PRIMARY_MODEL,
+            information_set="target_history_only",
+        ),
     )
-    if not direct_pair.is_empty():
-        pairs.append(("JP only direct → +US close direct", direct_pair))
-    promoted = _promoted_spec_for_tail(tail_side)
-    if promoted is not None:
-        benchmark_pair = _paired_cumulative_loss(
+    if not benchmark_pair.is_empty():
+        pairs.append(("GJR-GARCH-EVT", benchmark_pair))
+    for information_set in INFORMATION_INCREMENT_CANDIDATE_SETS:
+        pair = _paired_cumulative_loss(
             loss_frame,
             tail_side=tail_side,
-            anchor=_loss_identity(
-                suite="benchmark",
-                model_name=BENCHMARK_STRESS_PRIMARY_MODEL,
-                information_set="target_history_only",
-            ),
+            anchor=anchor,
             candidate=_loss_identity(
                 suite="ml_tail",
-                model_name=str(promoted["model_name"]),
-                information_set=str(promoted["information_set"]),
+                model_name=model_name,
+                information_set=information_set,
             ),
         )
-        if benchmark_pair.is_empty():
-            benchmark_pair = _paired_cumulative_loss(
-                loss_frame,
-                tail_side=tail_side,
-                anchor=_loss_identity(
-                    suite="benchmark",
-                    model_name=BENCHMARK_STRESS_FALLBACK_MODEL,
-                    information_set="target_history_only",
-                ),
-                candidate=_loss_identity(
-                    suite="ml_tail",
-                    model_name=str(promoted["model_name"]),
-                    information_set=str(promoted["information_set"]),
-                ),
-            )
-        if not benchmark_pair.is_empty():
-            pairs.append(("benchmark floor → promoted ML-tail", benchmark_pair))
+        if not pair.is_empty():
+            pairs.append((f"{_information_set_stage_label(information_set)} vs A", pair))
     return pairs
+
+
+def _information_set_stage_label(value: object) -> str:
+    text = "" if value is None else str(value)
+    labels = {
+        "japan_only": "A",
+        "japan_only_plus_us_close_core": "A+B",
+        "japan_only_plus_us_close_core_plus_japan_proxy": "A+B+C",
+        "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy": "A+B+C+D",
+    }
+    return labels.get(text, display_information_set_label(text))
 
 
 def _loss_identity(*, suite: str, model_name: str, information_set: str) -> dict[str, str]:
@@ -1933,7 +1576,7 @@ def _stress_overlay_forecasts(run_dir: Path) -> pl.DataFrame:
             if not selected.is_empty():
                 rows.append(
                     selected.with_columns(
-                        pl.lit("Benchmark floor").alias("plot_group"),
+                        pl.lit(_stress_benchmark_label(selected)).alias("plot_group"),
                         pl.lit(0).alias("plot_order"),
                     )
                 )
@@ -1942,38 +1585,43 @@ def _stress_overlay_forecasts(run_dir: Path) -> pl.DataFrame:
     if not ml_tail.is_empty():
         rows = []
         for tail_side in (TAIL_SIDE_LEFT, TAIL_SIDE_RIGHT):
-            direct = _metric_forecast_for_identity(
-                ml_tail,
-                tail_side=tail_side,
-                model_name=ML_TAIL_DIRECT_QUANTILE_MODEL,
-                information_set="japan_only",
-            )
-            if not direct.is_empty():
-                rows.append(
-                    direct.with_columns(
-                        pl.lit("JP-only direct").alias("plot_group"),
-                        pl.lit(1).alias("plot_order"),
-                    )
-                )
-            promoted = _promoted_spec_for_tail(tail_side)
-            if promoted is not None:
-                promoted_rows = _metric_forecast_for_identity(
+            for order, model_name in enumerate(LGBM_24CHECK_CUMULATIVE_MODELS, start=1):
+                model_rows = _metric_forecast_for_identity(
                     ml_tail,
                     tail_side=tail_side,
-                    model_name=str(promoted["model_name"]),
-                    information_set=str(promoted["information_set"]),
+                    model_name=model_name,
+                    information_set=STRESS_OVERLAY_INFORMATION_SET,
                 )
-                if not promoted_rows.is_empty():
+                if not model_rows.is_empty():
                     rows.append(
-                        promoted_rows.with_columns(
-                            pl.lit("Promoted ML-tail").alias("plot_group"),
-                            pl.lit(2).alias("plot_order"),
+                        model_rows.with_columns(
+                            pl.lit(_stress_lgbm_label(model_name)).alias("plot_group"),
+                            pl.lit(order).alias("plot_order"),
                         )
                     )
         frames.extend(rows)
     if not frames:
         return pl.DataFrame()
     return pl.concat([_valid_forecast_rows(frame) for frame in frames], how="diagonal_relaxed")
+
+
+def _stress_benchmark_label(frame: pl.DataFrame) -> str:
+    if frame.is_empty() or "model_name" not in frame.columns:
+        return "Benchmark comparator"
+    model_name = str(frame["model_name"][0])
+    if model_name == BENCHMARK_STRESS_PRIMARY_MODEL:
+        return "GJR-GARCH-EVT"
+    if model_name == BENCHMARK_STRESS_FALLBACK_MODEL:
+        return "GJR-GARCH-t fallback"
+    return display_model_label(model_name)
+
+
+def _stress_lgbm_label(model_name: str) -> str:
+    labels = {
+        ML_TAIL_POT_GPD_PLAIN_MLE_MODEL: "LGBM POT-GPD plain MLE (C)",
+        ML_TAIL_POT_GPD_UNIBM_MODEL: "LGBM POT-GPD UniBM (C)",
+    }
+    return labels.get(model_name, f"{display_model_label(model_name)} (C)")
 
 
 def _full_sample_var_overlay_forecasts(run_dir: Path) -> pl.DataFrame:
@@ -2050,25 +1698,46 @@ def _metric_forecast_for_identity(
 
 
 def _stress_overlay_windows(side: pl.DataFrame) -> list[dict[str, object]]:
-    windows = [
-        {
-            "name": "COVID fixed window",
-            "start": date(2020, 2, 15),
-            "end": date(2020, 4, 30),
-            "allow_empty": True,
-        }
-    ]
-    max_date = _max_loss_date(side)
-    if max_date is not None:
+    candidate_dates: list[date] = []
+    for tail_side in (TAIL_SIDE_LEFT, TAIL_SIDE_RIGHT):
+        tail_frame = side.filter(pl.col("tail_side") == tail_side)
+        candidate_dates.extend(
+            _top_non_overlapping_loss_dates(
+                tail_frame,
+                max_windows=STRESS_OVERLAY_MAX_WINDOWS,
+                half_width_days=STRESS_OVERLAY_WINDOW_HALF_WIDTH_DAYS,
+            )
+        )
+    return _stress_episode_windows(candidate_dates)
+
+
+def _stress_episode_windows(candidate_dates: list[date]) -> list[dict[str, object]]:
+    if not candidate_dates:
+        return []
+    clusters: list[list[date]] = []
+    for candidate in sorted(set(candidate_dates)):
+        if (
+            not clusters
+            or (candidate - clusters[-1][-1]).days > STRESS_OVERLAY_EPISODE_CLUSTER_DAYS
+        ):
+            clusters.append([candidate])
+        else:
+            clusters[-1].append(candidate)
+    windows: list[dict[str, object]] = []
+    for cluster in clusters:
+        start = min(cluster) - timedelta(days=STRESS_OVERLAY_WINDOW_HALF_WIDTH_DAYS)
+        end = max(cluster) + timedelta(days=STRESS_OVERLAY_WINDOW_HALF_WIDTH_DAYS)
+        year = min(cluster).year if len({item.year for item in cluster}) == 1 else start.year
         windows.append(
             {
-                "name": f"Max-loss window centered on {max_date.isoformat()}",
-                "start": max_date - timedelta(days=30),
-                "end": max_date + timedelta(days=30),
-                "allow_empty": False,
+                "slug": f"{year}_stress_episode",
+                "title": f"{year} OOS stress episode",
+                "start": start,
+                "end": end,
+                "centers": tuple(cluster),
             }
         )
-    return windows
+    return windows[:STRESS_OVERLAY_MAX_WINDOWS]
 
 
 def _max_loss_date(frame: pl.DataFrame) -> date | None:
@@ -2085,6 +1754,37 @@ def _max_loss_date(frame: pl.DataFrame) -> date | None:
     return _date_from_iso(row.get("forecast_date"))
 
 
+def _top_non_overlapping_loss_dates(
+    frame: pl.DataFrame,
+    *,
+    max_windows: int,
+    half_width_days: int,
+) -> list[date]:
+    if (
+        frame.is_empty()
+        or "realized_loss" not in frame.columns
+        or "forecast_date" not in frame.columns
+    ):
+        return []
+    unique = (
+        frame.select(["forecast_date", "realized_loss"])
+        .unique()
+        .sort("realized_loss", descending=True)
+    )
+    selected: list[date] = []
+    min_gap_days = half_width_days * 2
+    for row in unique.iter_rows(named=True):
+        candidate = _date_from_iso(row.get("forecast_date"))
+        if candidate is None:
+            continue
+        if any(abs((candidate - existing).days) <= min_gap_days for existing in selected):
+            continue
+        selected.append(candidate)
+        if len(selected) >= max_windows:
+            break
+    return selected
+
+
 def _filter_date_window(frame: pl.DataFrame, start: date, end: date) -> pl.DataFrame:
     if frame.is_empty() or "forecast_date" not in frame.columns:
         return pl.DataFrame()
@@ -2099,8 +1799,10 @@ def _plot_stress_overlay_panel(
     frame: pl.DataFrame,
     tail_side: str,
     window: Mapping[str, object],
+    *,
+    show_x_label: bool,
 ) -> None:
-    ax.set_title(str(window["name"]))
+    ax.set_title(_label_tail_side(tail_side).title())
     if frame.is_empty():
         ax.text(
             0.5,
@@ -2115,62 +1817,126 @@ def _plot_stress_overlay_panel(
         _style_axes(ax)
         return
     realized = frame.select(["forecast_date", "realized_loss"]).unique().sort("forecast_date")
-    dates = realized["forecast_date"].to_list()
+    dates = _plot_date_values(realized["forecast_date"].to_list())
     ax.plot(
         dates,
         realized["realized_loss"].to_list(),
-        color="#111827",
-        linewidth=1.1,
+        color=STRESS_OVERLAY_REALIZED_COLOR,
+        linewidth=1.2,
         label="realized loss",
     )
-    colors = {
-        "Benchmark floor": "#475569",
-        "JP-only direct": "#2563eb",
-        "Promoted ML-tail": "#7c3aed",
-    }
     for group, group_frame in frame.group_by("plot_group", maintain_order=True):
         label = str(group[0] if isinstance(group, tuple) else group)
         series = group_frame.sort("forecast_date")
-        color = colors.get(label, "#64748b")
+        color = STRESS_OVERLAY_COLORS.get(label, "#64748b")
+        series_dates = _plot_date_values(series["forecast_date"].to_list())
         ax.plot(
-            series["forecast_date"].to_list(),
+            series_dates,
             series["var_forecast"].to_list(),
             color=color,
-            linewidth=1.3,
+            linewidth=1.7,
             label=f"{label} VaR",
         )
         if "es_forecast" in series.columns and series["es_forecast"].drop_nulls().len() > 0:
             ax.plot(
-                series["forecast_date"].to_list(),
+                series_dates,
                 series["es_forecast"].to_list(),
                 color=color,
-                linewidth=1.0,
+                linewidth=1.4,
                 linestyle="--",
-                alpha=0.8,
+                alpha=0.86,
                 label=f"{label} ES",
             )
-    breaches = (
-        frame.filter(pl.col("var_breach").fill_null(False))
-        if "var_breach" in frame.columns
-        else pl.DataFrame()
-    )
-    if not breaches.is_empty():
-        breach_dates = (
-            breaches.select(["forecast_date", "realized_loss"]).unique().sort("forecast_date")
+        breaches = (
+            series.filter(pl.col("var_breach").fill_null(False))
+            if "var_breach" in series.columns
+            else pl.DataFrame()
         )
-        ax.scatter(
-            breach_dates["forecast_date"].to_list(),
-            breach_dates["realized_loss"].to_list(),
-            s=26,
-            color="#dc2626",
-            label="VaR breach",
-            zorder=5,
-        )
-    ax.set_ylabel("Positive loss")
-    ax.set_xlabel("Forecast date")
-    ax.tick_params(axis="x", rotation=30)
-    ax.legend(frameon=False, fontsize=7, ncol=2)
+        if not breaches.is_empty():
+            breach_points = (
+                breaches.select(["forecast_date", "realized_loss"]).unique().sort("forecast_date")
+            )
+            ax.scatter(
+                _plot_date_values(breach_points["forecast_date"].to_list()),
+                breach_points["realized_loss"].to_list(),
+                s=42,
+                marker=STRESS_OVERLAY_MARKERS.get(label, "o"),
+                color=color,
+                edgecolors="white",
+                linewidths=0.8,
+                label=f"{label} breach",
+                zorder=5,
+            )
+    ax.axhline(0.0, color="#9ca3af", linewidth=0.8, linestyle=":")
+    ax.set_ylabel("Tail-side loss\n(positive = adverse)")
+    ax.set_xlabel("Forecast date" if show_x_label else "")
+    ax.xaxis.set_major_locator(mdates.DayLocator(interval=7))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d"))
+    ax.tick_params(axis="x", rotation=0)
     _style_axes(ax)
+
+
+def _add_stress_overlay_shared_legend(fig: object) -> None:
+    handles = [
+        Line2D(
+            [0],
+            [0],
+            color=STRESS_OVERLAY_REALIZED_COLOR,
+            linewidth=1.4,
+            label="realized loss",
+        ),
+        Line2D(
+            [0],
+            [0],
+            color=STRESS_OVERLAY_COLORS["GJR-GARCH-EVT"],
+            linewidth=2.0,
+            label="GJR-GARCH-EVT",
+        ),
+        Line2D(
+            [0],
+            [0],
+            color=STRESS_OVERLAY_COLORS["LGBM POT-GPD plain MLE (C)"],
+            linewidth=2.0,
+            label="LGBM plain MLE (C)",
+        ),
+        Line2D(
+            [0],
+            [0],
+            color=STRESS_OVERLAY_COLORS["LGBM POT-GPD UniBM (C)"],
+            linewidth=2.0,
+            label="LGBM UniBM (C)",
+        ),
+        Line2D([0], [0], color="#374151", linewidth=1.5, label="solid = VaR"),
+        Line2D(
+            [0],
+            [0],
+            color="#374151",
+            linewidth=1.5,
+            linestyle="--",
+            label="dashed = ES",
+        ),
+        Line2D(
+            [0],
+            [0],
+            color="#374151",
+            marker="o",
+            linestyle="None",
+            markerfacecolor="#374151",
+            markeredgecolor="white",
+            markersize=6,
+            label="marker = VaR breach",
+        ),
+    ]
+    fig.legend(
+        handles=handles,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.01),
+        ncol=4,
+        frameon=False,
+        fontsize=7.5,
+        handlelength=2.2,
+        columnspacing=1.3,
+    )
 
 
 def _plot_full_sample_var_overlay_panel(
@@ -2369,8 +2135,9 @@ def _save_figure(
     tail_side: str,
     caption: str,
     claim_scope: str,
+    tight_layout_rect: tuple[float, float, float, float] | None = None,
 ) -> list[dict[str, object]]:
-    fig.tight_layout()
+    fig.tight_layout(rect=tight_layout_rect)
     entries: list[dict[str, object]] = []
     for fmt in ("png", "pdf"):
         output = figure_dir / f"{name}.{fmt}"

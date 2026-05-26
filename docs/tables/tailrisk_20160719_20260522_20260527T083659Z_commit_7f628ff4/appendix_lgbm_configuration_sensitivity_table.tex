@@ -1,0 +1,21 @@
+% run_id: tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4
+% git_commit: 7f628ff4f66258a36314f492b652cdf7ef594b7e
+% config_hash: 874b7125bfae77a6fb261d40af0f987d89e5bae1e5ebc54a3958be66f9c17b4c
+% table_scope: appendix_configuration_robustness_lgbm
+% primary_claim_allowed: false
+\begin{tabular}{lll l lrrrrl}
+\toprule
+family & config & model & info & side & N & breach & q_loss & fz_loss & class \\
+\midrule
+lgbm\_capacity & near\_high & LGBM POT-GPD plain MLE & JP + US close core + JP proxy & left\_tail & 474 & 0.052743 & 0.001016 & -4.140681 & robust \\
+lgbm\_capacity & near\_high & LGBM POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy & left\_tail & 474 & 0.059072 & 0.001016 & -4.096580 & robust \\
+lgbm\_capacity & near\_high & LGBM POT-GPD plain MLE & JP + US close core + JP proxy & right\_tail & 472 & 0.055085 & 0.001035 & -4.107486 & robust \\
+lgbm\_capacity & near\_high & LGBM POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy & right\_tail & 472 & 0.055085 & 0.001034 & -3.943110 & robust \\
+lgbm\_capacity & near\_low & LGBM POT-GPD plain MLE & JP + US close core + JP proxy & left\_tail & 473 & 0.065539 & 0.000967 & -4.142152 & robust \\
+lgbm\_capacity & near\_low & LGBM POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy & left\_tail & 473 & 0.071882 & 0.000977 & -4.151440 & robust \\
+lgbm\_capacity & near\_low & LGBM POT-GPD plain MLE & JP + US close core + JP proxy & right\_tail & 473 & 0.059197 & 0.001055 & -4.014885 & robust \\
+lgbm\_capacity & near\_low & LGBM POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy & right\_tail & 474 & 0.061181 & 0.001054 & -4.003208 & robust \\
+\midrule
+\multicolumn{10}{l}{\footnotesize Visible notes: appendix-only post-24-check configuration robustness diagnostics. Rows carry primary\_claim\_allowed=false and are not used to select primary selections, promoted rows, DM gates, the cross-suite FZ DM heatmap, or selected-model figures. Lower quantile/FZ loss is better; breach should be read against the 5\% nominal exception rate. Boundary EVT rows at u=0.95 are diagnostics at the 95\% VaR level, not alternative forecasts.} \\
+\bottomrule
+\end{tabular}

@@ -4,7 +4,6 @@ import os
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_EXTERNAL_DATA_PATHS = (
     "DATA_DIR",
@@ -27,6 +26,18 @@ def _resolved_env_path(name: str) -> tuple[Path | None, str | None]:
     return resolved, None
 
 
+def _repo_local_data_error(local_data: Path) -> str | None:
+    if not local_data.exists() and not local_data.is_symlink():
+        return None
+    if not local_data.is_symlink():
+        return f"repo-local data path must be an external symlink or absent: {local_data}"
+    target = local_data.resolve(strict=False)
+    if target.is_relative_to(ROOT):
+        return f"repo-local data symlink must resolve outside the repo: {local_data} -> {target}"
+    print(f"DATA_SYMLINK={local_data} -> {target}")
+    return None
+
+
 def main() -> int:
     errors: list[str] = []
     for name in REQUIRED_EXTERNAL_DATA_PATHS:
@@ -37,8 +48,8 @@ def main() -> int:
         print(f"{name}={path}")
 
     local_data = ROOT / "data"
-    if local_data.exists() or local_data.is_symlink():
-        errors.append(f"repo-local data path must not exist: {local_data}")
+    if error := _repo_local_data_error(local_data):
+        errors.append(error)
 
     if errors:
         for error in errors:

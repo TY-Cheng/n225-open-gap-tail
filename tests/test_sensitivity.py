@@ -1,18 +1,30 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
+import polars as pl
 import pytest
 
 from n225_open_gap_tail.config.runtime import (
-    EWMA_MAIN_LAMBDA,
+    ML_TAIL_DIRECT_QUANTILE_MODEL,
+    ML_TAIL_LOCATION_SCALE_MODEL,
+    ML_TAIL_MEDIAN_IQR_POT_GPD_PLAIN_MLE_MODEL,
+    ML_TAIL_MEDIAN_MAD_POT_GPD_PLAIN_MLE_MODEL,
     ML_TAIL_MODEL_NAMES,
+    ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
+    ML_TAIL_POT_GPD_UNIBM_MODEL,
+    PIPELINE_CONFIG,
     PipelineRunError,
 )
 from n225_open_gap_tail.forecasting.sensitivity import (
     EVT_THRESHOLD_SPECS,
-    EWMA_CONFIGURATION_SPECS,
     LGBM_CONFIGURATION_SPECS,
+    PAPER_LGBM_CONFIGURATION_LABELS,
+    POST_24CHECK_LGBM_FAMILIES,
+    _build_evt_threshold_jobs,
+    _build_lgbm_capacity_jobs,
+    _cached_sensitivity_status_matches,
     _deterioration_ratio,
     _evt_boundary_metric_rows,
     _metric_rows_from_forecasts,
@@ -21,23 +33,142 @@ from n225_open_gap_tail.forecasting.sensitivity import (
     classify_sensitivity_comparison,
     lgbm_sensitivity_config,
 )
+from n225_open_gap_tail.metrics.admissibility import (
+    PASS_ALL_BENCHMARK_MODEL,
+    PASS_ALL_INFORMATION_SETS,
+    PASS_ALL_TAIL_SIDES,
+    benchmark_model_passes,
+    pass_all_lgbm_model_names,
+)
 from n225_open_gap_tail.models.ml_tail import _lgbm_training_params
 
 
 def test_lgbm_sensitivity_config_labels_are_exact() -> None:
     assert lgbm_sensitivity_config("current") == {
-        "n_estimators": 80,
-        "learning_rate": 0.05,
-        "num_leaves": 15,
-        "min_child_samples": 20,
-        "subsample": 0.90,
-        "colsample_bytree": 0.90,
+        "n_estimators": 160,
+        "learning_rate": 0.025,
+        "max_depth": -1,
+        "num_leaves": 20,
+        "min_child_samples": 25,
+        "subsample": 0.85,
+        "subsample_freq": 1,
+        "colsample_bytree": 0.85,
+        "reg_alpha": 0.1,
+        "reg_lambda": 0.5,
+        "num_threads": 1,
     }
-    assert lgbm_sensitivity_config("shallow")["num_leaves"] == 10
-    assert lgbm_sensitivity_config("deeper")["n_estimators"] == 160
-    assert set(LGBM_CONFIGURATION_SPECS) == {"current", "shallow", "deeper"}
+    assert lgbm_sensitivity_config("near_low")["n_estimators"] == 128
+    assert lgbm_sensitivity_config("near_low")["num_leaves"] == 16
+    assert lgbm_sensitivity_config("near_low")["min_child_samples"] == 30
+    assert lgbm_sensitivity_config("near_high")["n_estimators"] == 192
+    assert lgbm_sensitivity_config("near_high")["num_leaves"] == 24
+    assert lgbm_sensitivity_config("near_high")["min_child_samples"] == 20
+    assert set(LGBM_CONFIGURATION_SPECS) == {"current", "near_low", "near_high"}
     with pytest.raises(PipelineRunError, match="Unknown LGBM sensitivity config label"):
         lgbm_sensitivity_config("wide")
+
+
+def test_sensitivity_cache_key_rejects_retired_paper_scope_artifacts() -> None:
+    current_status: dict[str, object] = {
+        "scope": "paper",
+        "lgbm_config_labels": list(PAPER_LGBM_CONFIGURATION_LABELS),
+        "evt_threshold_labels": list(EVT_THRESHOLD_SPECS),
+        "job_counts": {"lgbm_capacity": 8, "evt_threshold": 12, "evt_boundary_rows": 6},
+    }
+    assert _cached_sensitivity_status_matches(current_status)
+
+    stale_status = {
+        **current_status,
+        "lgbm_config_labels": ["shallow", "deeper"],
+        "evt_threshold_labels": ["u_0_900", "u_0_925", "u_0_950_boundary"],
+        "ewma_config_labels": [],
+        "job_counts": {
+            "lgbm_capacity": 8,
+            "ewma_lambda": 0,
+            "evt_threshold": 12,
+            "evt_boundary_rows": 6,
+        },
+    }
+    assert not _cached_sensitivity_status_matches(stale_status)
+
+
+def _passing_metric_row(
+    *,
+    model_name: str,
+    tail_side: str,
+    information_set: str,
+) -> dict[str, object]:
+    return {
+        "model_name": model_name,
+        "tail_side": tail_side,
+        "information_set": information_set,
+        "rows": 500,
+        "var_breach_rate": 0.05,
+        "expected_breach_rate": 0.05,
+        "kupiec_pvalue": 0.50,
+        "christoffersen_pvalue": 0.50,
+    }
+
+
+def test_pass_all_helpers_identify_admissible_lgbm_and_benchmark_models() -> None:
+    ml_rows = [
+        _passing_metric_row(model_name=model, tail_side=tail_side, information_set=info)
+        for model in (
+            ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
+            ML_TAIL_POT_GPD_UNIBM_MODEL,
+            ML_TAIL_DIRECT_QUANTILE_MODEL,
+        )
+        for tail_side in PASS_ALL_TAIL_SIDES
+        for info in PASS_ALL_INFORMATION_SETS
+    ]
+    assert pass_all_lgbm_model_names(pl.DataFrame(ml_rows)) == POST_24CHECK_LGBM_FAMILIES
+
+    benchmark_rows = [
+        _passing_metric_row(
+            model_name=PASS_ALL_BENCHMARK_MODEL,
+            tail_side=tail_side,
+            information_set="target_history_only",
+        )
+        for tail_side in PASS_ALL_TAIL_SIDES
+    ]
+    assert benchmark_model_passes(pl.DataFrame(benchmark_rows))
+
+
+def test_sensitivity_job_construction_keeps_only_post24check_c_models() -> None:
+    info_c = (PIPELINE_CONFIG.feature_sets.ml_tail_model_c_information_set,)
+    jobs = _build_lgbm_capacity_jobs(
+        panel_path=Path("panel.parquet"),
+        coverage_path=Path("coverage.parquet"),
+        coverage_rows=[],
+        information_sets=info_c,
+        tail_sides=PASS_ALL_TAIL_SIDES,
+        tail_level=0.95,
+        models=POST_24CHECK_LGBM_FAMILIES,
+        config_labels=PAPER_LGBM_CONFIGURATION_LABELS,
+    )
+    assert len(jobs) == 8
+    assert {job["model_name"] for job in jobs} == set(POST_24CHECK_LGBM_FAMILIES)
+    assert {job["information_set"] for job in jobs} == set(info_c)
+    assert {job["config_label"] for job in jobs} == set(PAPER_LGBM_CONFIGURATION_LABELS)
+    assert ML_TAIL_DIRECT_QUANTILE_MODEL not in {job["model_name"] for job in jobs}
+    assert ML_TAIL_LOCATION_SCALE_MODEL not in {job["model_name"] for job in jobs}
+    assert ML_TAIL_MEDIAN_IQR_POT_GPD_PLAIN_MLE_MODEL not in {job["model_name"] for job in jobs}
+    assert ML_TAIL_MEDIAN_MAD_POT_GPD_PLAIN_MLE_MODEL not in {job["model_name"] for job in jobs}
+
+    evt_jobs, boundary_rows = _build_evt_threshold_jobs(
+        panel_path=Path("panel.parquet"),
+        coverage_path=Path("coverage.parquet"),
+        coverage_rows=[],
+        information_sets=info_c,
+        tail_sides=PASS_ALL_TAIL_SIDES,
+        tail_level=0.95,
+        pot_models=POST_24CHECK_LGBM_FAMILIES,
+        benchmark_models=(PASS_ALL_BENCHMARK_MODEL,),
+    )
+    assert len(evt_jobs) == 12
+    assert len(boundary_rows) == 6
+    assert {job["evt_threshold_quantile"] for job in evt_jobs} == {0.875, 0.925}
+    assert {row["evt_threshold_quantile"] for row in boundary_rows} == {0.95}
 
 
 def test_primary_lgbm_params_remain_registered_current_spec() -> None:
@@ -46,15 +177,9 @@ def test_primary_lgbm_params_remain_registered_current_spec() -> None:
 
 def test_sensitivity_configs_do_not_enter_primary_model_registry() -> None:
     registry_text = " ".join(ML_TAIL_MODEL_NAMES)
-    assert "shallow" not in registry_text
-    assert "deeper" not in registry_text
+    assert "near_low" not in registry_text
+    assert "near_high" not in registry_text
     assert "sensitivity" not in registry_text
-
-
-def test_ewma_primary_lambda_label_is_not_a_sensitivity_lambda() -> None:
-    assert EWMA_CONFIGURATION_SPECS["primary"] == EWMA_MAIN_LAMBDA == 0.94
-    assert EWMA_CONFIGURATION_SPECS["lambda_0_90"] == 0.90
-    assert EWMA_CONFIGURATION_SPECS["lambda_0_97"] == 0.97
 
 
 def test_evt_threshold_095_is_boundary_only_at_95pct_tail() -> None:
@@ -138,7 +263,7 @@ def test_metric_rows_from_forecasts_registers_classification_and_primary_compari
             "information_set": "demo_info",
             "tail_side": "left_tail",
             "sensitivity_family": "lgbm_capacity",
-            "config_label": "deeper",
+            "config_label": "near_high",
             "evt_threshold_quantile": 0.90,
             "realized_loss": 2.0,
             "var_forecast": 1.0,
@@ -152,7 +277,7 @@ def test_metric_rows_from_forecasts_registers_classification_and_primary_compari
             "information_set": "demo_info",
             "tail_side": "left_tail",
             "sensitivity_family": "lgbm_capacity",
-            "config_label": "deeper",
+            "config_label": "near_high",
             "evt_threshold_quantile": 0.90,
             "realized_loss": 0.5,
             "var_forecast": 1.0,
@@ -203,7 +328,7 @@ def test_metric_rows_from_forecasts_registers_classification_and_primary_compari
                 "information_set": "empty_info",
                 "tail_side": "left_tail",
                 "sensitivity_family": "lgbm_capacity",
-                "config_label": "deeper",
+                "config_label": "near_high",
                 "realized_loss": 2.0,
                 "var_forecast": 1.0,
                 "es_forecast": None,

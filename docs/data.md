@@ -450,8 +450,8 @@ They use the same cache vocabulary as the run workflow: vendor payloads under
 constitute empirical validation of the forecasting paper.
 
 `data/bronze`, `data/silver`, and `data/gold` are logical data-lake locations.
-Local machines should map `DATA_DIR` to an absolute external-storage path in
-`.env`, not to a cloud-synced repo directory or repo-local symlink. `reports/runs`
+Local machines should map `DATA_DIR` to external storage in `.env`, or use a
+repo-local `data/` symlink that resolves outside the cloud-synced repo. `reports/runs`
 can remain local because generated run summaries, tables, and figures are small
 relative to the vendor cache and gold data lake.
 

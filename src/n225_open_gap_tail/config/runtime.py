@@ -161,7 +161,6 @@ TAIL_SIDE_LEFT = "left_tail"
 TAIL_SIDE_RIGHT = "right_tail"
 TAIL_SIDE_BOTH = "both"
 EWMA_MAIN_LAMBDA = PIPELINE_CONFIG.model_policy.ewma_lambda
-EWMA_SENSITIVITY_LAMBDAS = PIPELINE_CONFIG.model_policy.ewma_sensitivity_lambdas
 DEFAULT_MIN_TRAIN_ROWS = PIPELINE_CONFIG.model_policy.min_train_rows
 DEFAULT_MIN_TRAIN_EXCEEDANCES = PIPELINE_CONFIG.model_policy.min_train_exceedances
 DEFAULT_EARLIEST_OOS_START = PIPELINE_CONFIG.model_policy.earliest_oos_start

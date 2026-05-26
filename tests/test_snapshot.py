@@ -577,27 +577,27 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     )
 
     rendered = Path("docs/results_snapshot.md").read_text(encoding="utf-8")
-    discussion_rendered = Path("docs/discussion_qa.md").read_text(encoding="utf-8")
+    discussion_rendered = Path("docs/faq.md").read_text(encoding="utf-8")
     assert result.snapshot_id == run_id
     assert "Paper Plan](paper_plan.md)" in rendered
     assert "### What is the empirical question?" not in rendered
-    assert "# Discussion Q&A" in discussion_rendered
+    assert "# FAQ" in discussion_rendered
     _assert_discussion_qa_headings_in_order(discussion_rendered)
-    assert "## Results And Discussion Overview" in rendered
-    assert "## Results Context: Data, Target, And Timing" in rendered
-    assert "## Results Context: Model Configuration And Evaluation" in rendered
+    assert "## 1. Overview And Link To Paper Plan" in rendered
+    assert "## 2. Data, Target, And Timing Results" in rendered
+    assert "## 3. Model And Evaluation Setup" in rendered
     assert "### Target Distribution And Tail Diagnostics" in rendered
     assert "Target-distribution diagnostics are unavailable" in rendered
-    assert "## Results And Discussion" in rendered
+    assert "## 4. Forecasting Results And Discussion" in rendered
     assert "<!-- generated: results_discussion -->" in rendered
     _assert_results_discussion_subsections_in_order(rendered)
     assert "Gold modeling rows" in rendered
     assert "JP only" in rendered
     assert "### Run Metadata" in rendered
     assert "### Evidence Map" in rendered
-    assert "## Results And Discussion: Figures, Tables, And Source Artifacts" in rendered
-    assert "### Table Interpretation Guide" in rendered
-    assert "### Generated Table Manifest" in rendered
+    assert "## 5. Figures, Tables, And Source Artifacts" in rendered
+    assert "### 5.3 Table interpretation guide" in rendered
+    assert "### 5.2 Generated table manifest" in rendered
     assert "ml_tail_nested_information_set_table" in rendered
     assert "![es_severity_right_tail]" in rendered
     assert "figures/tailrisk_test/es_severity_right_tail.png" in rendered
@@ -630,11 +630,11 @@ def test_target_tail_diagnostics_markdown_reports_raw_target_boundary() -> None:
     manifest: dict[str, object] = {
         "figures": [
             {
-                "name": "target_gap_histogram_density",
-                "path": "latex/figures/target_gap_histogram_density.png",
+                "name": "target_tail_motivation",
+                "path": "latex/figures/target_tail_motivation.png",
                 "format": "png",
                 "source_artifacts": ["panel/modeling_panel.parquet"],
-                "tail_side": "target_distribution",
+                "tail_side": "left_right_target_distribution",
                 "claim_scope": "target_distribution_motivation_not_forecast_validation",
             }
         ]
@@ -651,7 +651,7 @@ def test_target_tail_diagnostics_markdown_reports_raw_target_boundary() -> None:
     assert "Excess kurtosis" in rendered
     assert "GPD xi" in rendered
     assert "Hill xi" in rendered
-    assert "target_gap_histogram_density" in rendered
+    assert "target_tail_motivation" in rendered
     assert "panel/modeling_panel.parquet" in rendered
     assert "not validate LightGBM+EVT forecasts" in rendered
     assert "not a finite-sample proof of Frechet" in rendered
@@ -1114,7 +1114,19 @@ def test_snapshot_table_asset_sync_and_sensitivity_summary_cover_docs_helpers(
         json.dumps(
             {
                 "source_primary_run_id": "tailrisk_primary",
+                "scope": "paper",
                 "primary_claim_allowed": False,
+                "selected_lgbm_models": [
+                    "lightgbm_standardized_loss_pot_gpd_plain_mle",
+                    "lightgbm_standardized_loss_pot_gpd_unibm",
+                ],
+                "selected_benchmark_models": ["gjr_garch_evt"],
+                "selected_information_sets": ["japan_only_plus_us_close_core_plus_japan_proxy"],
+                "job_counts": {
+                    "lgbm_capacity": 8,
+                    "evt_threshold": 12,
+                    "evt_boundary_rows": 6,
+                },
                 "forecast_rows": 10,
                 "metric_rows": 3,
                 "status": "completed",
@@ -1131,17 +1143,43 @@ def test_snapshot_table_asset_sync_and_sensitivity_summary_cover_docs_helpers(
             ]
         }
     ).write_parquet(sensitivity_metrics / "lgbm_configuration_sensitivity_metrics.parquet")
-    pl.DataFrame({"model": ["ewma_094", "ewma_097"]}).write_parquet(
-        sensitivity_metrics / "benchmark_configuration_sensitivity_metrics.parquet"
-    )
 
     summary = snapshot_module._configuration_sensitivity_markdown(run_dir)
 
     assert "tailrisk_primary" in summary
     assert "3 rows (robust_to_capacity=1, sensitive_to_capacity=2)" in summary
-    assert "2 rows" in summary
     assert "not generated" in summary
-    assert "robustness evidence" in summary
+    assert "post-24-check robustness evidence" in summary
+    assert "`paper`" in summary
+    assert "lgbm_capacity=8" in summary
+    assert "EWMA lambda" not in summary
+    assert "cross-suite FZ DM heatmap" in summary
+
+
+def test_snapshot_asset_cleanup_removes_stale_run_dirs(tmp_path: Path) -> None:
+    docs_dir = tmp_path / "docs"
+    current_run_id = "tailrisk_current"
+    stale_run_id = "tailrisk_old"
+    for root_name in ("figures", "tables"):
+        current_dir = docs_dir / root_name / current_run_id
+        current_dir.mkdir(parents=True)
+        (current_dir / "keep.txt").write_text("keep", encoding="utf-8")
+        stale_dir = docs_dir / root_name / stale_run_id
+        stale_dir.mkdir(parents=True)
+        (stale_dir / "stale.txt").write_text("stale", encoding="utf-8")
+        manual_dir = docs_dir / root_name / "manual"
+        manual_dir.mkdir(parents=True)
+        (manual_dir / "manual.txt").write_text("manual", encoding="utf-8")
+
+    snapshot_module._cleanup_stale_snapshot_asset_dirs(
+        docs_dir=docs_dir,
+        current_run_id=current_run_id,
+    )
+
+    for root_name in ("figures", "tables"):
+        assert (docs_dir / root_name / current_run_id / "keep.txt").exists()
+        assert not (docs_dir / root_name / stale_run_id).exists()
+        assert (docs_dir / root_name / "manual" / "manual.txt").exists()
 
 
 def test_results_discussion_manuscript_audit_helpers_cover_branches(tmp_path: Path) -> None:
@@ -1299,16 +1337,16 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
     run_dir = tmp_path / "reports" / "runs" / "tailrisk_gallery"
     figure_dir = run_dir / "latex" / "figures"
     figure_dir.mkdir(parents=True)
-    target_source = figure_dir / "target_gap_histogram_density.png"
+    target_source = figure_dir / "target_tail_motivation.png"
     target_source.write_bytes(b"png")
     source = figure_dir / "coverage_breach_rates_left_tail.png"
     source.write_bytes(b"png")
     extra_sources = [
         "market_timing_design.png",
         "target_tail_motivation.png",
-        "cumulative_loss_difference_left_tail.png",
+        "cumulative_lgbm_a_anchor_fz_gain.png",
         "full_sample_var_overlay_left_tail.png",
-        "var_es_stress_overlay_left_tail.png",
+        "var_es_stress_overlay_2025_stress_episode.png",
         "dm_heatmap_left_tail.png",
         "lgbm_24check_murphy_left_tail.png",
     ]
@@ -1338,11 +1376,11 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
                 "claim_scope": "headline",
             },
             {
-                "name": "cumulative_loss_difference_left_tail",
-                "path": "latex/figures/cumulative_loss_difference_left_tail.png",
+                "name": "cumulative_lgbm_a_anchor_fz_gain",
+                "path": "latex/figures/cumulative_lgbm_a_anchor_fz_gain.png",
                 "format": "png",
                 "source_artifacts": ["forecasts/ml_tail_forecasts.parquet"],
-                "tail_side": "left_tail",
+                "tail_side": "left_right",
                 "claim_scope": "headline",
             },
             {
@@ -1352,14 +1390,6 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
                 "source_artifacts": ["forecasts/ml_tail_forecasts.parquet"],
                 "tail_side": "left_tail",
                 "claim_scope": "diagnostic",
-            },
-            {
-                "name": "target_gap_histogram_density",
-                "path": "latex/figures/target_gap_histogram_density.png",
-                "format": "png",
-                "source_artifacts": ["panel/modeling_panel.parquet"],
-                "tail_side": "target_distribution",
-                "claim_scope": "target_distribution_motivation_not_forecast_validation",
             },
             {
                 "name": "lgbm_24check_murphy_left_tail",
@@ -1378,11 +1408,11 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
                 "claim_scope": "coverage_diagnostic_not_primary_claim",
             },
             {
-                "name": "var_es_stress_overlay_left_tail",
-                "path": "latex/figures/var_es_stress_overlay_left_tail.png",
+                "name": "var_es_stress_overlay_2025_stress_episode",
+                "path": "latex/figures/var_es_stress_overlay_2025_stress_episode.png",
                 "format": "png",
                 "source_artifacts": ["forecasts/ml_tail_forecasts.parquet"],
-                "tail_side": "left_tail",
+                "tail_side": "left_right_tail",
                 "claim_scope": "appendix",
             },
             {
@@ -1453,20 +1483,50 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
             ]
         }
     )
+    retired_table_manifest = snapshot_gallery.table_manifest_markdown(
+        {
+            "tables": [
+                {
+                    "name": "appendix_benchmark_configuration_sensitivity",
+                    "source_artifacts": [
+                        "sensitivity/metrics/benchmark_configuration_sensitivity_metrics.parquet"
+                    ],
+                    "claim_scope": "retired",
+                    "tail_side": None,
+                    "path": (
+                        "sensitivity/latex/tables/"
+                        "appendix_benchmark_configuration_sensitivity_table.tex"
+                    ),
+                },
+                {
+                    "name": "appendix_lgbm_configuration_sensitivity",
+                    "source_artifacts": [
+                        "sensitivity/metrics/lgbm_configuration_sensitivity_metrics.parquet"
+                    ],
+                    "claim_scope": "appendix_configuration_robustness_lgbm",
+                    "tail_side": None,
+                    "path": (
+                        "sensitivity/latex/tables/appendix_lgbm_configuration_sensitivity_table.tex"
+                    ),
+                },
+            ]
+        }
+    )
+    assert "appendix_lgbm_configuration_sensitivity" in retired_table_manifest
+    assert "appendix_benchmark_configuration_sensitivity" not in retired_table_manifest
     gallery = snapshot_gallery.figure_gallery_markdown(
         figure_manifest=manifest,
         run_id=run_dir.name,
     )
     assert "Figure 1. Market Timing Design" in gallery
     assert "Figure 2. Opening-Gap Tail Motivation" in gallery
-    assert "Figure 3. Cumulative Loss Difference" in gallery
-    assert "Figure 4. Raw Target Distribution Diagnostics" in gallery
-    assert "Figure 5. Full Coverage Breach-Rate Diagnostics" in gallery
-    assert "Figure 7. Full-Sample VaR Overlay Diagnostics" in gallery
-    assert "Figure 8. VaR/ES Stress-Window Overlays" in gallery
-    assert "Figure 9. DM Heatmaps" in gallery
-    assert "Figure 11. 24-Check LGBM Murphy Diagnostics" in gallery
-    assert "target_gap_histogram_density.png" in gallery
+    assert "Figure 3. Cumulative FZ-Gain Diagnostics" in gallery
+    assert "Figure 4. Full Coverage Breach-Rate Diagnostics" in gallery
+    assert "Figure 6. Full-Sample VaR Overlay Diagnostics" in gallery
+    assert "Figure 7. VaR/ES Stress-Window Overlays" in gallery
+    assert "Figure 8. DM Heatmaps" in gallery
+    assert "Figure 10. 24-Check LGBM Murphy Diagnostics" in gallery
+    assert "target_tail_motivation.png" in gallery
     assert "coverage_breach_rates_left_tail.png" in gallery
     assert "Figure artifacts are not available" in snapshot_gallery.figure_gallery_markdown(
         figure_manifest={},
@@ -1475,15 +1535,15 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
     assert snapshot_gallery._figure_family("market_timing_design") == "timing_design"
     assert snapshot_gallery._figure_family("target_tail_motivation") == "target_motivation"
     assert snapshot_gallery._figure_family("tailrisk_information_ladder") == "information_ladder"
-    assert (
-        snapshot_gallery._figure_family("cumulative_loss_difference_left_tail") == "cumulative_loss"
-    )
+    assert snapshot_gallery._figure_family("cumulative_lgbm_a_anchor_fz_gain") == "cumulative_loss"
     assert (
         snapshot_gallery._figure_family("full_sample_var_overlay_left_tail") == "full_var_overlay"
     )
-    assert snapshot_gallery._figure_family("var_es_stress_overlay_left_tail") == "stress_overlay"
+    assert (
+        snapshot_gallery._figure_family("var_es_stress_overlay_2025_stress_episode")
+        == "stress_overlay"
+    )
     assert snapshot_gallery._figure_family("dm_heatmap_left_tail") == "dm"
-    assert snapshot_gallery._figure_family("target_gap_histogram_density") == "target_distribution"
     assert snapshot_gallery._figure_family("benchmark_murphy_left_tail") == "benchmark_murphy"
     assert snapshot_gallery._figure_family("lgbm_24check_murphy_left_tail") == "lgbm_24check_murphy"
     assert snapshot_gallery._figure_family("es_severity_left_tail") == "severity"

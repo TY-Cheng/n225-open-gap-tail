@@ -1,0 +1,24 @@
+% run_id: tailrisk_20160719_20260522_20260525T142611Z_commit_bf63b13d
+% git_commit: bf63b13d5fb5d87b0529d1ec0f8c562e5bfae845
+% config_hash: 185d7a164462eecacd189001ec2815e2ff9f5fff0051ad922d4c346b7f97d584
+% table_scope: selected_benchmark_vs_lgbm_main_figure_rows
+\begin{tabular}{ll ll lrrrr}
+\toprule
+group & rank & model & info & side & N & breach & q_loss & fz_loss \\
+\midrule
+Benchmark & 1 & gjr\_garch\_evt & Target history & left\_tail & 722 & 0.060942 & 0.001330 & -3.746233 \\
+Benchmark & 2 & gjr\_garch\_t & Target history & left\_tail & 722 & 0.070637 & 0.001338 & -3.723459 \\
+Benchmark & 3 & garch\_t & Target history & left\_tail & 722 & 0.060942 & 0.001368 & -3.701083 \\
+LGBM & 1 & LGBM location-scale empirical & JP + US close core + JP proxy + Asia proxy & left\_tail & 488 & 0.043033 & 0.000914 & -4.358382 \\
+LGBM & 2 & LGBM POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy & left\_tail & 472 & 0.055085 & 0.000940 & -4.286679 \\
+LGBM & 3 & LGBM POT-GPD plain MLE & JP + US close core + JP proxy & left\_tail & 472 & 0.050847 & 0.000941 & -4.274489 \\
+Benchmark & 1 & gjr\_garch\_t & Target history & right\_tail & 722 & 0.042936 & 0.001222 & -3.739711 \\
+Benchmark & 2 & gjr\_garch\_evt & Target history & right\_tail & 722 & 0.058172 & 0.001233 & -3.708574 \\
+Benchmark & 3 & garch\_t & Target history & right\_tail & 722 & 0.041551 & 0.001278 & -3.703374 \\
+LGBM & 1 & LGBM median/MAD POT-GPD plain MLE & JP + US close core + JP proxy + Asia proxy & right\_tail & 473 & 0.069767 & 0.001080 & -4.059134 \\
+LGBM & 2 & LGBM median/MAD POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy + Asia proxy & right\_tail & 473 & 0.071882 & 0.001078 & -4.029358 \\
+LGBM & 3 & LGBM median/MAD POT-GPD UniBM block-maxima shape & JP + US close core & right\_tail & 483 & 0.074534 & 0.001116 & -4.027728 \\
+\midrule
+\multicolumn{9}{l}{\footnotesize Visible notes: selected rows use the deterministic main-figure rule: N >= 450, absolute VaR coverage error <= 0.025, then rank by FZ loss and quantile loss within each broad group and tail side. Full per-model results are exported separately for appendix use.} \\
+\bottomrule
+\end{tabular}

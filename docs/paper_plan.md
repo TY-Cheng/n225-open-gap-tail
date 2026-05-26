@@ -33,7 +33,6 @@ appendix material.
 
 - OSE Nikkei 225 Futures trade in both day and night sessions.
 - The U.S. cash close occurs before the next OSE day-session open, but the Japanese night session means that some U.S. information may already be reflected before the opening auction.
-- The amount of post-U.S.-close night trading differs between EST and EDT, which makes DST a useful descriptive timing diagnostic.
 - The paper therefore studies pre-open tail risk, not a generic close-to-close or overnight-return problem.
 - The forecast origin is the matched U.S. cash-market close plus the registered vendor-data availability lag.
 - The point-in-time condition is:
@@ -50,14 +49,15 @@ appendix material.
     - VaR calibration is assessed through exception rates and coverage tests.
     - ES enters through valid VaR-ES forecast pairs and Fissler-Ziegel (FZ) joint scoring.
 - **Dynamic quantile and tail models**:
-    - Econometric comparators include historical quantiles, volatility-scaled quantiles, GARCH/GJR-GARCH, CAViaR, CARE/expectile models, GAS models, and Taylor-style VaR-ES specifications.
+    - Econometric comparators include historical quantiles, volatility-scaled quantiles, GARCH/GJR-GARCH, CAViaR, CARE/expectile models, and GAS models.
+    - Paper-facing evaluation terminology uses Fissler-Ziegel loss for the joint VaR-ES score.
     - Machine-learning models use LightGBM as a flexible tabular forecaster, not as a new algorithmic contribution.
 - **Filtered EVT**:
     - The EVT component follows the filtered-tail logic: use a conditional model to remove body/scale variation, then fit a POT-GPD tail model to exceedances.
     - Plain fixed-location POT-GPD is the registered EVT estimator.
 - **Forecast comparison**:
     - Average loss comparisons use paired out-of-sample losses.
-    - DM/MCS are interpreted as unconditional average-sample inference.
+    - DM is interpreted as unconditional average-sample inference.
 - **Model-validation robustness**:
     - The paper separates scalar forecast ranking from pass/fail risk-model adequacy.
     - Quantile loss and Fissler-Ziegel loss rank average predictive performance; Kupiec and Christoffersen tests assess VaR calibration and exception dynamics.
@@ -70,14 +70,14 @@ appendix material.
 - Do the left and right tails display different patterns in calibration, loss, and timing diagnostics?
 - Are LightGBM direct quantile forecasts well calibrated at the 95% VaR level?
 - Do LightGBM body filters combined with POT-GPD tail extrapolation improve VaR/ES behavior relative to direct 95% quantile forecasts?
-- Are loss differentials related to ex-ante observables such as VIX, DST timing, or calendar conditions?
+- Are loss differentials related to ex-ante observables such as VIX or calendar conditions?
 
 ## 2. Materials
 
 ### 2.1 Sample And Evaluation Window
 
-- Current clean evaluation window: `2018-06-20` to `2026-05-08`.
-- Current forecast-sample size: `1712` trading-day observations.
+- Current clean evaluation window: `2018-06-20` to `2026-05-22`.
+- Current forecast-sample size: `1722` trading-day observations.
 - The current clean run is a research-candidate evidence set, not a final manuscript freeze.
 - The current primary level is 95% VaR/ES.
 
@@ -219,7 +219,7 @@ appendix material.
 | 3 | Gold modeling panel | Join targets, calendar map, feature coverage, and leakage-bound signatures. |
 | 4 | Leakage and coverage gates | Enforce timestamp ordering and sample eligibility before evaluation. |
 | 5 | Baseline benchmarks and ML-tail registry | Run target-history/econometric baseline benchmarks and LightGBM tail-model families. |
-| 6 | Metrics, inference, diagnostics | Build loss matrices, DM/MCS/Murphy diagnostics, stress windows, and result matrix artifacts. |
+| 6 | Metrics, inference, diagnostics | Build loss matrices, DM/Murphy diagnostics, stress windows, and result matrix artifacts. |
 | 7 | Results snapshot | Summarize run-specific evidence and claim boundaries for reader review. |
 
 - Data-access and cache artifacts live under `data/bronze` and `data/silver`.
@@ -235,11 +235,11 @@ appendix material.
   rate is 5%.
 - A VaR exception is counted when `realized_loss > var_forecast`.
 - Forecast evaluation uses coverage diagnostics, Kupiec/Christoffersen tests
-  where available, quantile loss, Fissler-Ziegel joint VaR-ES loss, and DM/MCS
+  where available, quantile loss, Fissler-Ziegel joint VaR-ES loss, and DM
   inference.
 - Benchmarks use target-history information only.
 - ML-tail models add predictors through fixed nested information sets.
-- DM/MCS inference is read as unconditional average-sample forecast-comparison
+- DM inference is read as unconditional average-sample forecast-comparison
   evidence.
 
 ### 3.3 Forecasting Protocol
@@ -359,14 +359,12 @@ appendix material.
     - `FZ loss` means the Fissler-Ziegel joint VaR-ES evaluation score;
     - no separate likelihood-style VaR-ES loss label is used in the paper.
 - Scoring-function diagnostics:
-    - Murphy diagrams for baseline benchmarks and ML-tail information sets.
+    - Murphy diagrams for target-history benchmarks and 24-check robust LGBM
+      families across the four registered information sets.
 - Model comparison:
-    - block-bootstrap Diebold-Mariano tests on paired loss differentials;
-    - Hansen-Lunde-Nason MCS where sample and exception-count gates permit.
+    - block-bootstrap Diebold-Mariano tests on paired loss differentials.
 - Supporting diagnostics:
-    - DST attenuation;
-    - stress-window performance;
-    - pre-open risk-trigger summaries.
+    - stress-window performance.
 - Cross-scenario admissibility:
     - The headline robustness question is whether a model remains acceptable
       under sparse and rich information sets, and on both tail sides.
@@ -379,13 +377,6 @@ appendix material.
     - The current breach-audit artifact reports the narrower breach-neighborhood
       and row-count gates; it should not be described as the full 24-check table
       unless the Kupiec and Christoffersen pass/fail grid is included.
-- Pre-open risk-trigger summaries are not VaR calibration tests. They use a
-  within-model alert rule: a date is flagged when that model's VaR forecast is
-  above its own 75th-percentile VaR forecast on the evaluation sample. The rule
-  therefore selects roughly the highest-risk quartile of model-date forecasts
-  and is evaluated by false-alarm and missed-exception rates. The nominal 95%
-  VaR level remains the tail forecast target and is evaluated separately by
-  breach rates, coverage tests, quantile loss, and FZ loss.
 
 ## 4. Workflow Chart
 
@@ -441,8 +432,8 @@ flowchart LR
     subgraph Evaluation["Evaluation"]
         CAL["VaR calibration<br/>breach rate, exceptions,<br/>Kupiec/Christoffersen"]
         LOSS["Forecast scores<br/>quantile loss;<br/>FZ joint VaR-ES loss"]
-        INF["Loss comparison<br/>DM, MCS"]
-        DIAG["Forecast diagnostics<br/>Murphy, DST attenuation,<br/>ES severity, triggers, stress windows"]
+        INF["Loss comparison<br/>DM"]
+        DIAG["Forecast diagnostics<br/>Murphy,<br/>ES severity, triggers, stress windows"]
     end
 
     J --> A
@@ -475,7 +466,7 @@ flowchart LR
   median/MAD or median/IQR POT-GPD variants. All use the same registered nested
   information sets where the model family is eligible.
 - Forecast diagnostics are computed from forecasts, realized losses, timing
-  regimes, and scoring outputs. They are not downstream products of DM, MCS, or
+  regimes, and scoring outputs. They are not downstream products of DM or
   other loss-comparison inference.
 
 ## 5. Results And Discussion Artifact Plan
@@ -495,7 +486,7 @@ flowchart LR
   LightGBM, reported separately for left and right tails.
 - Selected model performance table: deterministic selected-row summary after
   sample-size, coverage, FZ-loss, and quantile-loss gates.
-- Compact DM/MCS summary table: headline paired inference only. Full matrices
+- Compact DM summary table: headline paired inference only. Full matrices
   stay in the appendix.
 
 ### 5.2 Main Figures
@@ -506,12 +497,13 @@ flowchart LR
 - Figure 2, opening-gap tail motivation: density versus Gaussian, left/right
   log survival, and mean-excess diagnostics. This motivates the target and EVT
   route; it is not forecast validation.
-- Figure 3, simplified coverage diagnostics: selected benchmark floor, direct
-  LightGBM information ladder, and side-specific promoted candidates with
-  nominal 5% line and Wilson intervals.
-- Figure 4, information-set ladder: direct visual evidence for JP only to U.S.
-  close, Japan proxy, and Asia proxy increments. Read with coverage and DM/MCS.
-- Figure 5, cumulative loss difference: anchor-loss-minus-candidate-loss over
+- Coverage-screen evidence is summarized in tables rather than a compact
+  main-text coverage figure; this avoids duplicating the 24-check pass/fail
+  story.
+- Direct LightGBM information-ladder graphics are not main-text figures under
+  the 24-check robustness story because the direct quantile rows fail the
+  calibration screen.
+- Figure 3, cumulative loss difference: anchor-loss-minus-candidate-loss over
   time. Upward movement means the candidate has lower accumulated loss.
 
 ### 5.3 Appendix Figures And Tables
@@ -519,20 +511,18 @@ flowchart LR
 - Raw target diagnostics: histogram/density, left/right QQ plots, log survival,
   mean excess, and Hill plot.
 - Full coverage diagnostics and selected performance figures: appendix checks
-  backing the simplified main coverage and selected-performance summaries.
+  backing the main coverage and selected-performance summaries.
 - Stress-window overlays: illustration only, not validation, PnL, cost, or
   trading-performance evidence.
-- DM/MCS heatmaps: appendix pairwise detail; negative loss differences favor
+- DM heatmaps: appendix pairwise detail; negative loss differences favor
   the candidate.
 - Murphy diagrams: scoring-family diagnostics, not pairwise dominance claims.
-- ES severity and pre-open trigger diagnostics: risk-monitoring diagnostics,
-  not model-selection or alpha claims.
+- ES severity diagnostics: conditional exceedance diagnostics, not
+  model-selection or alpha claims.
 - EVT standardized-residual diagnostics: QQ, log survival, mean excess, Hill,
   and threshold stability for the POT-GPD route.
-- DST attenuation diagnostics: descriptive timing-regime evidence, not
-  structural causality.
 - Appendix tables: full benchmark scan, full LGBM scan, tail-side risk tables,
-  promoted tail rows, restricted result matrix, ES/trigger/DST diagnostics,
+  promoted tail rows, restricted result matrix, ES severity diagnostics,
   claim-scope reference, and configuration robustness.
 - The complete generated figure and table map is maintained in
   [Results Snapshot](results_snapshot.md), which now includes both result
@@ -552,7 +542,7 @@ flowchart LR
 - POT threshold sensitivity reports forecastable thresholds `0.90` and `0.925`.
 - At 95% VaR, threshold `0.95` is recorded only as a boundary diagnostic with status `not_applicable_threshold_not_below_tail_level`.
 - Sensitivity artifacts live under `reports/runs/<run_id>/sensitivity/` and carry `primary_claim_allowed=false`.
-- Robustness labels describe conclusion stability versus the registered primary specification. They do not feed DM/MCS gates, promoted rows, result-matrix selection, or selected-model figures.
+- Robustness labels describe conclusion stability versus the registered primary specification. They do not feed DM gates, promoted rows, result-matrix selection, or selected-model figures.
 
 ## 6. Manuscript Structure
 
@@ -564,7 +554,6 @@ flowchart LR
 - Institutional setting:
     - describe OSE day/night trading;
     - define the U.S. close cutoff;
-    - explain DST timing relevance;
     - state the point-in-time rule.
 - Materials:
     - describe Japanese futures and options data;
@@ -581,7 +570,7 @@ flowchart LR
     - report baseline benchmark calibration;
     - report ML-tail nested information sets separately for left and right tails;
     - report restricted model-family comparisons;
-    - report EVT, DST, ES severity, stress-window, and trigger diagnostics as supporting evidence.
+    - report EVT, ES severity, and stress-window diagnostics as supporting evidence.
 - Discussion:
     - interpret U.S. close information content;
     - distinguish downside and upside risk;
@@ -602,9 +591,6 @@ flowchart LR
 - No claim that LightGBM-EVT is a new ML algorithm.
 - No options-risk primary claim unless historical options entitlement, timestamp safety, and liquidity gates pass.
 - No model-family ranking claim from restricted short samples.
-- Risk-trigger diagnostics are monitoring diagnostics; they are not VaR
-  calibration tests, hedge PnL, transaction-cost, trading-alpha, or execution
-  performance evidence.
 
 ## 8. Appendix And Source Notes
 
@@ -631,12 +617,12 @@ flowchart LR
 - GAS models: score-driven updating for dynamic conditional distributions.
 - Fissler-Ziegel scoring: joint VaR-ES evaluation.
 - Murphy diagrams: sensitivity of forecast comparison to scoring-function choice.
-- Diebold-Mariano and MCS: unconditional average-sample model comparison.
+- Diebold-Mariano: unconditional average-sample model comparison.
 - Diagnostic admissibility across nested information sets:
     - VaR backtesting and interval-forecast evaluation: [Kupiec 1995](https://doi.org/10.3905/jod.1995.407942), [Christoffersen 1998](https://doi.org/10.2307/2527341).
     - Risk-model validation and governance: [BIS MAR99](https://www.bis.org/basel_framework/chapter/MAR/99.htm), [Federal Reserve SR 11-7](https://www.federalreserve.gov/bankinforeg/srletters/sr1107.htm).
     - Proper scoring and joint VaR-ES scoring: [Gneiting and Raftery 2007](https://doi.org/10.1198/016214506000001437), [Fissler and Ziegel 2016](https://doi.org/10.1214/16-AOS1439).
-    - Forecast comparison: [Diebold and Mariano 1995](https://doi.org/10.1080/07350015.1995.10524599), [Hansen, Lunde, and Nason 2011](https://doi.org/10.3982/ECTA5771).
+    - Forecast comparison: [Diebold and Mariano 1995](https://doi.org/10.1080/07350015.1995.10524599).
     - Specification robustness and robust satisficing: [Simonsohn, Simmons, and Nelson 2020](https://doi.org/10.1038/s41562-020-0912-z), [Schwartz, Ben-Haim, and Dacso 2011](https://doi.org/10.1111/j.1468-5914.2010.00450.x), [Ben-Haim 2014](https://doi.org/10.1080/00207721.2012.684906).
 
 ### 8.3 Reproducibility Notes

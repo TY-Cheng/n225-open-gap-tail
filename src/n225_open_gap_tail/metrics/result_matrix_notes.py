@@ -8,7 +8,6 @@ def _result_matrix_notes(
     matrix: list[dict[str, object]],
     sample_audit: list[dict[str, object]],
     dm_records: list[dict[str, object]],
-    mcs_records: list[dict[str, object]],
 ) -> str:
     tail_model_rows = [
         row
@@ -35,9 +34,6 @@ def _result_matrix_notes(
     )
     dm_unavailable = sum(
         1 for row in dm_records if str(row.get("inference_status") or "").startswith("unavailable")
-    )
-    mcs_unavailable = sum(
-        1 for row in mcs_records if str(row.get("mcs_status") or "").startswith("unavailable")
     )
     zero_exception_rows = sum(1 for row in matrix if row.get("zero_exception_flag") is True)
     lines = [
@@ -70,7 +66,6 @@ def _result_matrix_notes(
         f"`{min_joint_exceptions}`.",
         f"- Rows with zero model-specific exceptions: `{zero_exception_rows}`.",
         f"- DM records unavailable by registered gates: `{dm_unavailable}`.",
-        f"- MCS records unavailable by registered gates: `{mcs_unavailable}`.",
         "- Deng and Qiu (2021) motivate scoring-function comparison and caution "
         "with short ES backtests; this pipeline does not implement their exact test.",
         "- When exceptions are zero or sparse, FZ-loss rows are retained as "

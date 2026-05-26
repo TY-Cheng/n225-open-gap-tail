@@ -130,7 +130,7 @@ No. The paper compares registered point-in-time forecast specifications, not a t
 - LightGBM hyperparameters are held fixed across information sets and refit dates so information-set comparisons are not contaminated by a separate tuning search.
 - This design may leave some model-specific performance untapped, but it keeps the nested information-set experiment interpretable.
 - Appendix configuration robustness varies LightGBM capacity, EWMA lambda, and POT threshold choices after the primary run.
-- Those rows carry `primary_claim_allowed=false`: they answer reviewer concerns about sensitivity, but they do not select primary selections, promoted rows, DM/MCS gates, or selected-model figures.
+- Those rows carry `primary_claim_allowed=false`: they answer reviewer concerns about sensitivity, but they do not select primary selections, promoted rows, DM gates, or selected-model figures.
 - The primary design compares pre-specified point-in-time forecast specifications. Configuration sensitivity is reported as appendix robustness evidence and is not used to select primary selections.
 
 ## How do the LightGBM+EVT variants work?
@@ -143,7 +143,7 @@ tail fitting; it is not the reported VaR level.
 - Standardized-loss POT-GPD models fit a Generalized Pareto tail above the registered 0.90 threshold of out-of-fold standardized losses.
 - Median/MAD and median/IQR routes use more robust body filters before the POT-GPD step.
 - Plain MLE is the standard EVT comparator. Robust body-filter routes remain research-candidate diagnostics until the evidence supports promotion.
-- The current paper-facing promotion bridge is side-specific: median/IQR POT-GPD is the left-tail promoted ML-tail row, and location-scale empirical is the right-tail promoted ML-tail row. These rows are read with restricted DM/MCS evidence and do not create a universal model-family ranking.
+- The current paper-facing promotion bridge is side-specific: median/IQR POT-GPD is the left-tail promoted ML-tail row, and location-scale empirical is the right-tail promoted ML-tail row. These rows are read with restricted DM evidence and do not create a universal model-family ranking.
 
 ## How are forecasts judged?
 
@@ -156,8 +156,8 @@ The evaluation is built around tail-risk performance, not a single ranking.
 - Quantile loss: evaluates VaR forecasts.
 - Fissler-Ziegel loss: evaluates joint VaR/ES forecasts where ES is valid.
 - Mean exceedance severity: reports how large exceptions are once they happen.
-- DM and MCS are average-sample inference across the unconditional evaluation sample.
-- Murphy diagrams, DST, stress-window, ES severity, and trigger diagnostics are supporting evidence.
+- DM is average-sample inference across the unconditional evaluation sample.
+- Murphy diagrams, stress-window, and ES severity diagnostics are supporting evidence.
 
 ## What do the current results say?
 
@@ -177,9 +177,9 @@ The current evidence is a calibration-versus-loss tradeoff.
 - The paper can claim a point-in-time forecast evaluation of OSE Nikkei 225 Futures opening-gap tail risk.
 - It can report that U.S. close information and proxy blocks change average loss and coverage patterns under registered information sets.
 - It can report that direct LightGBM quantile forecasts are too liberal in the current primary ML rows.
-- It can report side-specific promoted ML-tail rows after showing the promotion gate and restricted DM/MCS evidence: median/IQR POT-GPD for the left tail and location-scale empirical for the right tail.
+- It can report side-specific promoted ML-tail rows after showing the promotion gate and restricted DM evidence: median/IQR POT-GPD for the left tail and location-scale empirical for the right tail.
 - It should not claim that one model is universally strongest.
 - It should not average left-tail and right-tail evidence into one mechanism.
-- It should not present DST, trigger, or feature-block diagnostics as causal proof or realized trading performance.
+- It should not present trigger or feature-block diagnostics as causal proof or realized trading performance.
 - The current bottom line: the pipeline now produces a clean evidence set from the durable gold layer; {advanced_bottom_line_bullet}
 """

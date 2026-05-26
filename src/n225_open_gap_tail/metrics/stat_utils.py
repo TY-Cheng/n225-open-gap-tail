@@ -81,68 +81,6 @@ def moving_block_one_sided_pvalue(
     return float((count + 1) / (reps + 1))
 
 
-def moving_block_bootstrap_mean_matrix(
-    matrix: np.ndarray,
-    *,
-    reps: int,
-    block_length: int,
-    rng: np.random.Generator,
-) -> np.ndarray:
-    n, m = matrix.shape
-    starts = np.arange(n)
-    output = np.empty((reps, m), dtype=float)
-    for rep in range(reps):
-        indices: list[int] = []
-        while len(indices) < n:
-            start = int(rng.choice(starts))
-            for offset in range(block_length):
-                indices.append((start + offset) % n)
-                if len(indices) == n:
-                    break
-        output[rep, :] = np.mean(matrix[indices, :], axis=0)
-    return output
-
-
-def hln_tmax_mcs_step(
-    losses: np.ndarray,
-    *,
-    reps: int,
-    block_length: int,
-    rng: np.random.Generator,
-) -> dict[str, object]:
-    if losses.ndim != 2 or min(losses.shape) < 2:
-        return {"tmax_stat": None, "pvalue": None, "t_values": np.array([])}
-    centered_against_cross_section = losses - np.mean(losses, axis=1, keepdims=True)
-    dbar = np.mean(centered_against_cross_section, axis=0)
-    null_centered = centered_against_cross_section - dbar
-    bootstrap_means = moving_block_bootstrap_mean_matrix(
-        null_centered,
-        reps=reps,
-        block_length=block_length,
-        rng=rng,
-    )
-    se = np.std(bootstrap_means, axis=0, ddof=1)
-    tiny_se = se <= 1e-12
-    t_values = np.divide(dbar, se, out=np.zeros_like(dbar), where=~tiny_se)
-    t_values = np.where(tiny_se & (dbar > 1e-12), 1e12, t_values)
-    t_values = np.where(tiny_se & (dbar < -1e-12), -1e12, t_values)
-    if np.all(np.isnan(t_values)):
-        return {"tmax_stat": None, "pvalue": None, "t_values": t_values}
-    tmax_stat = float(np.nanmax(t_values))
-    bootstrap_scaled = np.divide(
-        bootstrap_means,
-        se,
-        out=np.zeros_like(bootstrap_means),
-        where=~tiny_se,
-    )
-    bootstrap_tmax = np.nanmax(bootstrap_scaled, axis=1)
-    bootstrap_tmax = bootstrap_tmax[np.isfinite(bootstrap_tmax)]
-    if bootstrap_tmax.size == 0:
-        return {"tmax_stat": tmax_stat, "pvalue": None, "t_values": t_values}
-    pvalue = float((np.sum(bootstrap_tmax >= tmax_stat) + 1) / (bootstrap_tmax.size + 1))
-    return {"tmax_stat": tmax_stat, "pvalue": pvalue, "t_values": t_values}
-
-
 def kupiec_pof_test(*, breaches: np.ndarray, expected_probability: float) -> dict[str, object]:
     n = int(breaches.size)
     x = int(np.sum(breaches))

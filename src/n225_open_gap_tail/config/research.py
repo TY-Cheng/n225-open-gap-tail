@@ -272,8 +272,6 @@ class EvaluationPolicy:
     one_percent_min_exceedances: int = 10
     bootstrap_reps: int = 999
     inference_random_seed: int = 225
-    mcs_alpha: float = 0.10
-    mcs_method: str = "hln_tmax_moving_block_bootstrap"
     dm_method: str = "moving_block_bootstrap_unconditional_dm"
     panel_signature_hash_seed: int = 42
 

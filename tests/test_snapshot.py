@@ -545,46 +545,16 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
             {
                 "figures": [
                     {
-                        "name": "dst_attenuation_left_tail",
-                        "path": "latex/figures/dst_attenuation_left_tail.png",
+                        "name": "es_severity_right_tail",
+                        "path": "latex/figures/es_severity_right_tail.png",
                         "format": "png",
-                        "source_artifacts": ["metrics/ml_tail_dst_attenuation.parquet"],
-                        "tail_side": "left_tail",
-                        "caption": (
-                            "DST attenuation diagnostic for left_tail; bars report registered "
-                            "forecast-loss gain summaries by timing regime. This is descriptive "
-                            "forecast evidence, not structural causal identification."
-                        ),
-                        "claim_scope": (
-                            "descriptive_dst_attenuation_not_structural_causal_identification"
-                        ),
-                    },
-                    {
-                        "name": "dst_attenuation_left_tail",
-                        "path": "latex/figures/dst_attenuation_left_tail.pdf",
-                        "format": "pdf",
-                        "source_artifacts": ["metrics/ml_tail_dst_attenuation.parquet"],
-                        "tail_side": "left_tail",
-                        "caption": (
-                            "DST attenuation diagnostic for left_tail; bars report registered "
-                            "forecast-loss gain summaries by timing regime. This is descriptive "
-                            "forecast evidence, not structural causal identification."
-                        ),
-                        "claim_scope": (
-                            "descriptive_dst_attenuation_not_structural_causal_identification"
-                        ),
-                    },
-                    {
-                        "name": "trigger_diagnostics_right_tail",
-                        "path": "latex/figures/trigger_diagnostics_right_tail.png",
-                        "format": "png",
-                        "source_artifacts": ["forecasts/benchmark_forecasts.parquet"],
+                        "source_artifacts": ["metrics/benchmark_metrics.parquet"],
                         "tail_side": "right_tail",
                         "caption": (
-                            "VaR trigger diagnostic for right_tail; this is not hedge PnL, "
-                            "not transaction-cost evidence, and not trading-alpha evidence."
+                            "ES severity diagnostic for right_tail; conditional-on-exception "
+                            "severity is not a standalone model-selection claim."
                         ),
-                        "claim_scope": "trigger_diagnostic_not_pnl_cost_or_alpha",
+                        "claim_scope": "es_severity_diagnostic_not_model_selection_claim",
                     },
                 ]
             }
@@ -593,8 +563,7 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     )
     figure_dir = run_dir / "latex" / "figures"
     figure_dir.mkdir(parents=True)
-    (figure_dir / "dst_attenuation_left_tail.png").write_bytes(b"png")
-    (figure_dir / "trigger_diagnostics_right_tail.png").write_bytes(b"png")
+    (figure_dir / "es_severity_right_tail.png").write_bytes(b"png")
 
     result = snapshot_module.write_results_snapshot_from_run(
         settings=Settings(
@@ -622,12 +591,6 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     assert "## Results And Discussion" in rendered
     assert "<!-- generated: results_discussion -->" in rendered
     _assert_results_discussion_subsections_in_order(rendered)
-    assert "Figure: dst_attenuation_left_tail" in rendered
-    assert "Source: metrics/ml_tail_dst_attenuation.parquet" in rendered
-    assert (
-        "Claim scope: descriptive_dst_attenuation_not_structural_causal_identification" in rendered
-    )
-    assert "File: latex/figures/dst_attenuation_left_tail.png" in rendered
     assert "Gold modeling rows" in rendered
     assert "JP only" in rendered
     assert "### Run Metadata" in rendered
@@ -636,8 +599,8 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     assert "### Table Interpretation Guide" in rendered
     assert "### Generated Table Manifest" in rendered
     assert "ml_tail_nested_information_set_table" in rendered
-    assert "![dst_attenuation_left_tail]" in rendered
-    assert "figures/tailrisk_test/dst_attenuation_left_tail.png" in rendered
+    assert "![es_severity_right_tail]" in rendered
+    assert "figures/tailrisk_test/es_severity_right_tail.png" in rendered
     assert "tables/tailrisk_test/ml_tail_metrics_table.tex" in rendered
     assert "older" in rendered
     assert "bounded access-check snapshot" in rendered
@@ -851,7 +814,6 @@ def test_results_discussion_private_helpers_cover_fallbacks(tmp_path: Path) -> N
         in results_discussion_module._results_restricted_model_family_discussion(
             result_matrix=pl.DataFrame(),
             result_matrix_dm=pl.DataFrame(),
-            result_matrix_mcs=pl.DataFrame(),
         )
     )
     assert results_discussion_module._int_range(pl.DataFrame(), "common_n") == "not available"
@@ -900,27 +862,20 @@ def test_results_discussion_private_helpers_cover_fallbacks(tmp_path: Path) -> N
                 {"inference_status": "unavailable_descriptive_coverage_metric"},
             ]
         ),
-        result_matrix_mcs=pl.DataFrame([{"mcs_status": "unavailable_insufficient_common_rows"}]),
     )
     assert result_matrix_inference is not None
     assert (
         "restricted DM records include `1` gate-pass rows and `1` unavailable rows"
         in result_matrix_inference
     )
-    assert (
-        "restricted MCS records include `0` gate-pass rows and `1` unavailable rows"
-        in result_matrix_inference
-    )
 
     paths = {
-        "dst_attenuation_table": tmp_path / "dst.tex",
         "es_severity_table": tmp_path / "severity.tex",
-        "hedge_trigger_table": tmp_path / "trigger.tex",
         "result_matrix_summary_table": tmp_path / "summary.tex",
     }
     assert "not yet been exported" in results_discussion_module._diagnostic_table_sentence(paths)
-    paths["dst_attenuation_table"].write_text("x", encoding="utf-8")
-    assert "1/4" in results_discussion_module._diagnostic_table_sentence(paths)
+    paths["es_severity_table"].write_text("x", encoding="utf-8")
+    assert "1/2" in results_discussion_module._diagnostic_table_sentence(paths)
 
     assert "not yet been performed" in results_discussion_module._severity_discussion_sentence(
         benchmark_metrics=pl.DataFrame(),
@@ -937,61 +892,6 @@ def test_results_discussion_private_helpers_cover_fallbacks(tmp_path: Path) -> N
         ml_tail_metrics=pl.DataFrame(),
         ml_tail_metrics_per_model=pl.DataFrame(),
     )
-
-    combined = results_discussion_module._combine_forecasts_for_snapshot(
-        benchmark_forecasts=pl.DataFrame([{"model_name": "historical_quantile"}]),
-        ml_tail_forecasts=pl.DataFrame([{"model_name": "lightgbm_direct_quantile"}]),
-    )
-    assert combined.height == 2
-    assert set(combined["suite"].to_list()) == {"benchmark", "ml_tail"}
-    assert results_discussion_module._combine_forecasts_for_snapshot(
-        benchmark_forecasts=pl.DataFrame(),
-        ml_tail_forecasts=pl.DataFrame(),
-    ).is_empty()
-
-    assert "not yet been performed" in results_discussion_module._trigger_discussion_sentence(
-        pl.DataFrame()
-    )
-    assert "no valid forecast rows" in results_discussion_module._trigger_discussion_sentence(
-        pl.DataFrame(
-            [
-                {
-                    "model_name": "m",
-                    "information_set": "i",
-                    "tail_level": 0.95,
-                    "var_forecast": None,
-                    "realized_loss": None,
-                    "is_valid_forecast": True,
-                }
-            ]
-        )
-    )
-    trigger_text = results_discussion_module._trigger_discussion_sentence(
-        pl.DataFrame(
-            [
-                {
-                    "suite": "ml_tail",
-                    "model_name": "m",
-                    "information_set": "i",
-                    "tail_level": 0.95,
-                    "var_forecast": 1.0,
-                    "realized_loss": 0.8,
-                    "is_valid_forecast": True,
-                },
-                {
-                    "suite": "ml_tail",
-                    "model_name": "m",
-                    "information_set": "i",
-                    "tail_level": 0.95,
-                    "var_forecast": 2.0,
-                    "realized_loss": 2.5,
-                    "is_valid_forecast": True,
-                },
-            ]
-        )
-    )
-    assert "marks `1` model-date rows" in trigger_text
-    assert "mean triggered exception severity is `0.5`" in trigger_text
 
 
 def test_snapshot_private_helpers_cover_defensive_edges() -> None:
@@ -1115,12 +1015,6 @@ def test_snapshot_private_helpers_cover_defensive_edges() -> None:
     assert "reject10" in snapshot_module._snapshot_dm_cell(dm_ok)
     assert snapshot_module._snapshot_dm_cell({"inference_status": "skipped"}) == "skipped"
     assert snapshot_module._snapshot_dm_cell(None) == "n/a"
-    assert snapshot_module._snapshot_mcs_cell({"included_in_mcs": True}) == "in"
-    assert (
-        snapshot_module._snapshot_mcs_cell({"included_in_mcs": False, "mcs_status": "ok"}) == "out"
-    )
-    assert snapshot_module._snapshot_mcs_cell({"mcs_status": "skipped"}) == "skipped"
-    assert snapshot_module._snapshot_mcs_cell(None) == "n/a"
     assert "baseline" in snapshot_module._benchmark_layer_table(
         {
             "benchmark_baseline_forecast_rows": 10,
@@ -1338,7 +1232,6 @@ def test_results_discussion_manuscript_audit_helpers_cover_branches(tmp_path: Pa
             ]
         ),
         result_matrix_dm=pl.DataFrame([{"inference_status": "ok_block_bootstrap_dm"}]),
-        result_matrix_mcs=pl.DataFrame([{"mcs_status": "unavailable_insufficient_common_rows"}]),
     )
     assert "severely sample-limited" in restricted
     assert "restricted DM records include `1` gate-pass rows" in restricted
@@ -1346,7 +1239,6 @@ def test_results_discussion_manuscript_audit_helpers_cover_branches(tmp_path: Pa
     assert (
         results_discussion_module._result_matrix_inference_sentence(
             result_matrix_dm=pl.DataFrame([{"status": "missing_owner_column"}]),
-            result_matrix_mcs=pl.DataFrame(),
         )
         is None
     )
@@ -1367,34 +1259,6 @@ def test_results_discussion_manuscript_audit_helpers_cover_branches(tmp_path: Pa
         ml_tail_metrics_per_model=pl.DataFrame([{"mean_exceedance_severity": 0.03}]),
     )
     assert "3` finite rows" in severity
-
-    trigger = results_discussion_module._trigger_discussion_sentence(
-        pl.DataFrame(
-            [
-                {
-                    "suite": "ml_tail",
-                    "tail_side": "left_tail",
-                    "model_name": "m",
-                    "information_set": "i",
-                    "tail_level": 0.95,
-                    "var_forecast": 1.0,
-                    "realized_loss": 0.9,
-                    "is_valid_forecast": True,
-                },
-                {
-                    "suite": "ml_tail",
-                    "tail_side": "right_tail",
-                    "model_name": "m",
-                    "information_set": "i",
-                    "tail_level": 0.95,
-                    "var_forecast": 1.0,
-                    "realized_loss": 1.2,
-                    "is_valid_forecast": True,
-                },
-            ]
-        )
-    )
-    assert "marks `2` model-date rows" in trigger
 
     assert results_discussion_module._benchmark_calibration_note(pl.DataFrame()) is None
     assert (
@@ -1442,12 +1306,11 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
     extra_sources = [
         "market_timing_design.png",
         "target_tail_motivation.png",
-        "coverage_breach_rates_simplified_left_tail.png",
-        "tailrisk_information_ladder.png",
         "cumulative_loss_difference_left_tail.png",
         "full_sample_var_overlay_left_tail.png",
         "var_es_stress_overlay_left_tail.png",
-        "dm_mcs_heatmap_left_tail.png",
+        "dm_heatmap_left_tail.png",
+        "lgbm_24check_murphy_left_tail.png",
     ]
     for file_name in extra_sources:
         (figure_dir / file_name).write_bytes(b"png")
@@ -1471,22 +1334,6 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
                 "path": "latex/figures/target_tail_motivation.png",
                 "format": "png",
                 "source_artifacts": ["panel/modeling_panel.parquet"],
-                "tail_side": "left_right",
-                "claim_scope": "headline",
-            },
-            {
-                "name": "coverage_breach_rates_simplified_left_tail",
-                "path": "latex/figures/coverage_breach_rates_simplified_left_tail.png",
-                "format": "png",
-                "source_artifacts": ["metrics/ml_tail_metrics.parquet"],
-                "tail_side": "left_tail",
-                "claim_scope": "headline",
-            },
-            {
-                "name": "tailrisk_information_ladder",
-                "path": "latex/figures/tailrisk_information_ladder.png",
-                "format": "png",
-                "source_artifacts": ["metrics/ml_tail_metrics.parquet"],
                 "tail_side": "left_right",
                 "claim_scope": "headline",
             },
@@ -1515,6 +1362,14 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
                 "claim_scope": "target_distribution_motivation_not_forecast_validation",
             },
             {
+                "name": "lgbm_24check_murphy_left_tail",
+                "path": "latex/figures/lgbm_24check_murphy_left_tail.png",
+                "format": "png",
+                "source_artifacts": ["metrics/lgbm_24check_murphy.parquet"],
+                "tail_side": "left_tail",
+                "claim_scope": "murphy_diagnostic_lgbm_24check_robust_ladder",
+            },
+            {
                 "name": "coverage_breach_rates_left_tail",
                 "path": "latex/figures/coverage_breach_rates_left_tail.png",
                 "format": "png",
@@ -1531,8 +1386,8 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
                 "claim_scope": "appendix",
             },
             {
-                "name": "dm_mcs_heatmap_left_tail",
-                "path": "latex/figures/dm_mcs_heatmap_left_tail.png",
+                "name": "dm_heatmap_left_tail",
+                "path": "latex/figures/dm_heatmap_left_tail.png",
                 "format": "png",
                 "source_artifacts": ["metrics/ml_tail_dm.parquet"],
                 "tail_side": "left_tail",
@@ -1604,14 +1459,13 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
     )
     assert "Figure 1. Market Timing Design" in gallery
     assert "Figure 2. Opening-Gap Tail Motivation" in gallery
-    assert "Figure 3. Simplified Coverage Breach-Rate Diagnostics" in gallery
-    assert "Figure 4. Information-Set Ladder" in gallery
-    assert "Figure 5. Cumulative Loss Difference" in gallery
-    assert "Figure 6. Raw Target Distribution Diagnostics" in gallery
-    assert "Figure 7. Full Coverage Breach-Rate Diagnostics" in gallery
-    assert "Figure 9. Full-Sample VaR Overlay Diagnostics" in gallery
-    assert "Figure 10. VaR/ES Stress-Window Overlays" in gallery
-    assert "Figure 11. DM/MCS Heatmaps" in gallery
+    assert "Figure 3. Cumulative Loss Difference" in gallery
+    assert "Figure 4. Raw Target Distribution Diagnostics" in gallery
+    assert "Figure 5. Full Coverage Breach-Rate Diagnostics" in gallery
+    assert "Figure 7. Full-Sample VaR Overlay Diagnostics" in gallery
+    assert "Figure 8. VaR/ES Stress-Window Overlays" in gallery
+    assert "Figure 9. DM Heatmaps" in gallery
+    assert "Figure 11. 24-Check LGBM Murphy Diagnostics" in gallery
     assert "target_gap_histogram_density.png" in gallery
     assert "coverage_breach_rates_left_tail.png" in gallery
     assert "Figure artifacts are not available" in snapshot_gallery.figure_gallery_markdown(
@@ -1620,10 +1474,6 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
     )
     assert snapshot_gallery._figure_family("market_timing_design") == "timing_design"
     assert snapshot_gallery._figure_family("target_tail_motivation") == "target_motivation"
-    assert (
-        snapshot_gallery._figure_family("coverage_breach_rates_simplified_left_tail")
-        == "coverage_simplified"
-    )
     assert snapshot_gallery._figure_family("tailrisk_information_ladder") == "information_ladder"
     assert (
         snapshot_gallery._figure_family("cumulative_loss_difference_left_tail") == "cumulative_loss"
@@ -1632,13 +1482,11 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
         snapshot_gallery._figure_family("full_sample_var_overlay_left_tail") == "full_var_overlay"
     )
     assert snapshot_gallery._figure_family("var_es_stress_overlay_left_tail") == "stress_overlay"
-    assert snapshot_gallery._figure_family("dm_mcs_heatmap_left_tail") == "dm_mcs"
+    assert snapshot_gallery._figure_family("dm_heatmap_left_tail") == "dm"
     assert snapshot_gallery._figure_family("target_gap_histogram_density") == "target_distribution"
     assert snapshot_gallery._figure_family("benchmark_murphy_left_tail") == "benchmark_murphy"
-    assert snapshot_gallery._figure_family("ml_tail_murphy_left_tail") == "ml_tail_murphy"
-    assert snapshot_gallery._figure_family("dst_attenuation_left_tail") == "dst"
+    assert snapshot_gallery._figure_family("lgbm_24check_murphy_left_tail") == "lgbm_24check_murphy"
     assert snapshot_gallery._figure_family("es_severity_left_tail") == "severity"
-    assert snapshot_gallery._figure_family("trigger_diagnostics_left_tail") == "trigger"
     assert snapshot_gallery._figure_family("unknown") == "other"
     assert "generated diagnostic figure" in " ".join(snapshot_gallery._figure_key_readings("x"))
     assert "LightGBM+EVT forecasts" in " ".join(
@@ -1680,11 +1528,7 @@ def _assert_no_unsupported_affirmative_claims(rendered: str) -> None:
         if not_claimed_end == -1
         else rendered[not_claimed_start:not_claimed_end]
     )
-    approved_disclaimers = (
-        "This is a pre-open risk-monitoring diagnostic, not hedge PnL, "
-        "transaction-cost, or trading-alpha evidence.",
-    )
-    allowed_lines = set(not_claimed.splitlines()) | set(approved_disclaimers)
+    allowed_lines = set(not_claimed.splitlines())
     for line in rendered.splitlines():
         for phrase in restricted_disclaimer_terms:
             if phrase.lower() in line.lower():
@@ -1703,7 +1547,7 @@ def _assert_no_forbidden_promotional_terms(rendered: str) -> None:
         assert phrase.lower() not in rendered.lower()
 
     assert re.search(
-        r"DM|MCS|unconditional evaluation sample",
+        r"DM|unconditional evaluation sample",
         rendered,
         flags=re.IGNORECASE,
     )

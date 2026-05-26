@@ -1,0 +1,14 @@
+% run_id: tailrisk_20160719_20260522_20260525T142611Z_commit_bf63b13d
+% git_commit: bf63b13d5fb5d87b0529d1ec0f8c562e5bfae845
+% config_hash: 185d7a164462eecacd189001ec2815e2ff9f5fff0051ad922d4c346b7f97d584
+% table_scope: side_specific_ml_tail_promotion_gate
+\begin{tabular}{lll lrrrrll}
+\toprule
+role & model & info & side & N & breach & q_loss & fz_loss & DM q & DM FZ \\
+\midrule
+left promoted & LGBM median/IQR POT-GPD plain MLE & JP + US close core + JP proxy + Asia proxy & left\_tail & 526 & 0.053232 & 0.000935 & -4.170277 & -0.000218; p=0.028; rej10 & -0.438; p=0.057; rej10 \\
+right promoted & LGBM location-scale empirical & JP + US close core + JP proxy & right\_tail & 493 & 0.052738 & 0.001069 & -3.931922 & -0.000191; p=0.035; rej10 & -0.407; p=0.015; rej10 \\
+\midrule
+\multicolumn{10}{l}{\footnotesize Visible notes: side-specific promotion rows must pass N and VaR-coverage gates and are read with restricted common-sample DM evidence versus the direct-quantile anchor. Negative DM loss differences favor the promoted candidate. This is not a universal model-family ranking.} \\
+\bottomrule
+\end{tabular}

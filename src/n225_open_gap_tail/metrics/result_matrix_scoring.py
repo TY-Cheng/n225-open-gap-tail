@@ -8,14 +8,11 @@ from n225_open_gap_tail.config.runtime import (
     INFERENCE_RANDOM_SEED,
     json,
     Mapping,
-    MCS_ALPHA,
     np,
     PIPELINE_CONFIG,
     PRIMARY_TAIL_SIDE,
     RESULT_MATRIX_MIN_DM_EXCEPTIONS,
     RESULT_MATRIX_MIN_DM_ROWS,
-    RESULT_MATRIX_MIN_MCS_EXCEPTIONS,
-    RESULT_MATRIX_MIN_MCS_ROWS,
     RESULT_MATRIX_MIN_METRIC_ROWS,
     _optional_float,
     _required_float,
@@ -24,7 +21,6 @@ from n225_open_gap_tail.metrics.stat_utils import (
     _safe_mean,
     christoffersen_independence_test,
     fz_loss,
-    hln_tmax_mcs_step,
     kupiec_pof_test,
     moving_block_one_sided_pvalue,
     quantile_loss,
@@ -157,16 +153,9 @@ def _result_matrix_sample_audit_record(
         )
         if not missing_entities
         else "unavailable_missing_registered_model",
-        "mcs_gate_status": _result_matrix_mcs_gate_status(
-            loss_family, common_n, joint_exception_count
-        )
-        if not missing_entities
-        else "unavailable_missing_registered_model",
         "minimum_common_rows_for_metrics": RESULT_MATRIX_MIN_METRIC_ROWS,
         "minimum_common_rows_for_dm": RESULT_MATRIX_MIN_DM_ROWS,
         "minimum_joint_exceptions_for_dm": RESULT_MATRIX_MIN_DM_EXCEPTIONS,
-        "minimum_common_rows_for_mcs": RESULT_MATRIX_MIN_MCS_ROWS,
-        "minimum_joint_exceptions_for_mcs": RESULT_MATRIX_MIN_MCS_EXCEPTIONS,
     }
 
 
@@ -406,135 +395,6 @@ def _build_result_matrix_dm_records(
     return records
 
 
-def _build_result_matrix_mcs_records(
-    *,
-    group: Mapping[str, object],
-    loss_family: str,
-    comparison_family: str,
-    comparison_axis: str,
-) -> list[dict[str, object]]:
-    entities = cast(list[str], group["entities"])
-    common_dates = cast(list[str], group["common_dates"])
-    entity_rows = cast(dict[str, dict[str, dict[str, object]]], group["entity_rows"])
-    common_n = len(common_dates)
-    joint_exception_count = _joint_exception_count(entity_rows, entities, common_dates)
-    losses_by_entity = {
-        entity: _result_matrix_loss_values(
-            [entity_rows[entity][forecast_date] for forecast_date in common_dates],
-            loss_family=loss_family,
-        )
-        for entity in entities
-    }
-    finite_mask = np.ones(common_n, dtype=bool)
-    for values in losses_by_entity.values():
-        finite_mask &= np.isfinite(values)
-    effective_n = int(np.sum(finite_mask))
-    gate_status = _result_matrix_mcs_gate_status(loss_family, effective_n, joint_exception_count)
-    if gate_status != "ok_hln_tmax_mcs":
-        return [
-            {
-                "comparison_family": comparison_family,
-                "comparison_axis": comparison_axis,
-                "sample_policy": "restricted_tail_model_common_sample",
-                "loss_family": loss_family,
-                "claim_scope": "restricted_model_comparison_not_primary",
-                "primary_claim_allowed": False,
-                "target_family": group.get("target_family"),
-                "tail_side": group.get("tail_side") or PRIMARY_TAIL_SIDE,
-                "information_set": group.get("information_set"),
-                "model_name": entity,
-                "tail_level": group.get("tail_level"),
-                "refit_frequency": group.get("refit_frequency"),
-                "rows": effective_n,
-                "joint_exception_count": joint_exception_count,
-                "mean_loss": None,
-                "included_in_mcs": False,
-                "mcs_status": gate_status,
-                "method_note": None,
-                "block_length": None,
-                "bootstrap_reps": BOOTSTRAP_REPS,
-                "bootstrap_seed": INFERENCE_RANDOM_SEED,
-            }
-            for entity in entities
-        ]
-    block_length = max(5, round(effective_n ** (1.0 / 3.0)))
-    losses_by_entity = {entity: values[finite_mask] for entity, values in losses_by_entity.items()}
-    mean_losses = {entity: _safe_mean(values) for entity, values in losses_by_entity.items()}
-    active = {entity for entity, value in mean_losses.items() if value is not None}
-    if len(active) < 2:
-        return [
-            {
-                "comparison_family": comparison_family,
-                "comparison_axis": comparison_axis,
-                "sample_policy": "restricted_tail_model_common_sample",
-                "loss_family": loss_family,
-                "claim_scope": "restricted_model_comparison_not_primary",
-                "primary_claim_allowed": False,
-                "target_family": group.get("target_family"),
-                "tail_side": group.get("tail_side") or PRIMARY_TAIL_SIDE,
-                "information_set": group.get("information_set"),
-                "model_name": entity,
-                "tail_level": group.get("tail_level"),
-                "refit_frequency": group.get("refit_frequency"),
-                "rows": effective_n,
-                "joint_exception_count": joint_exception_count,
-                "mean_loss": mean_losses[entity],
-                "included_in_mcs": False,
-                "mcs_status": "unavailable_insufficient_finite_loss_models",
-                "method_note": None,
-                "block_length": None,
-                "bootstrap_reps": BOOTSTRAP_REPS,
-                "bootstrap_seed": INFERENCE_RANDOM_SEED,
-            }
-            for entity in entities
-        ]
-    rng = np.random.default_rng(INFERENCE_RANDOM_SEED)
-    eliminated: set[str] = set()
-    while len(active) > 1:
-        ordered = sorted(active)
-        matrix = np.column_stack([losses_by_entity[entity] for entity in ordered])
-        result = hln_tmax_mcs_step(
-            matrix,
-            reps=BOOTSTRAP_REPS,
-            block_length=block_length,
-            rng=rng,
-        )
-        pvalue = _optional_float(result["pvalue"])
-        if pvalue is None or pvalue > MCS_ALPHA:
-            break
-        t_values = cast(np.ndarray, result["t_values"])
-        worst = ordered[int(np.nanargmax(t_values))]
-        active.remove(worst)
-        eliminated.add(worst)
-    return [
-        {
-            "comparison_family": comparison_family,
-            "comparison_axis": comparison_axis,
-            "sample_policy": "restricted_tail_model_common_sample",
-            "loss_family": loss_family,
-            "claim_scope": "restricted_model_comparison_not_primary",
-            "primary_claim_allowed": False,
-            "target_family": group.get("target_family"),
-            "tail_side": group.get("tail_side") or PRIMARY_TAIL_SIDE,
-            "information_set": group.get("information_set"),
-            "model_name": entity,
-            "tail_level": group.get("tail_level"),
-            "refit_frequency": group.get("refit_frequency"),
-            "rows": effective_n,
-            "joint_exception_count": joint_exception_count,
-            "mean_loss": mean_losses[entity],
-            "included_in_mcs": entity in active,
-            "mcs_status": "ok",
-            "method_note": PIPELINE_CONFIG.evaluation_policy.mcs_method,
-            "block_length": block_length,
-            "bootstrap_reps": BOOTSTRAP_REPS,
-            "bootstrap_seed": INFERENCE_RANDOM_SEED,
-            "eliminated_in_restricted_mcs": entity in eliminated,
-        }
-        for entity in entities
-    ]
-
-
 def _result_matrix_loss_values(rows: list[dict[str, object]], *, loss_family: str) -> np.ndarray:
     values: list[float] = []
     for row in rows:
@@ -586,27 +446,11 @@ def _result_matrix_dm_gate_status(
     return "ok_block_bootstrap_dm"
 
 
-def _result_matrix_mcs_gate_status(
-    loss_family: str,
-    common_n: int,
-    joint_exception_count: int,
-) -> str:
-    if loss_family == "var_coverage":
-        return "unavailable_descriptive_coverage_metric"
-    if common_n < RESULT_MATRIX_MIN_MCS_ROWS:
-        return "unavailable_insufficient_common_rows_for_inference"
-    if joint_exception_count < RESULT_MATRIX_MIN_MCS_EXCEPTIONS:
-        return "unavailable_insufficient_tail_events_for_inference"
-    return "ok_hln_tmax_mcs"
-
-
 def _tail_event_power_status(joint_exception_count: int) -> str:
     if joint_exception_count <= 0:
         return "zero_joint_exceptions"
     if joint_exception_count < RESULT_MATRIX_MIN_DM_EXCEPTIONS:
         return "insufficient_tail_events_for_inference"
-    if joint_exception_count < RESULT_MATRIX_MIN_MCS_EXCEPTIONS:
-        return "limited_tail_events_dm_only"
     return "tail_events_sufficient_for_registered_inference"
 
 

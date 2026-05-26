@@ -92,11 +92,11 @@ JFM empirical-rigor checks:
 
 - Out-of-sample protocol is explicit: refit cadence, expanding or rolling
   window, training cutoff, out-of-fold construction, and forecast-origin timing.
-- Common-sample N is stated for paired DM, MCS, promoted-candidate, or
+- Common-sample N is stated for paired DM, promoted-candidate, or
   restricted comparisons. Unequal-N comparisons are flagged.
 - Block-bootstrap parameters are stated where block-bootstrap inference is used.
 - Multiple-testing risk is addressed. If many pairwise DM tests are reported,
-  MCS or another family-level interpretation is used rather than cherry-picking.
+  the manuscript avoids cherry-picking and frames them as restricted diagnostics.
 - Data-snooping risk from hundreds of predictors is handled through fixed
   information blocks, fixed hyperparameters, out-of-sample evaluation, and
   registered gates.
@@ -140,8 +140,6 @@ Market, target, and timing checks:
   is described and respected.
 - Full settlement-to-open targets are distinguished from night-close-to-open or
   U.S.-close-mark-to-open robustness targets.
-- DST is a descriptive timing diagnostic, not a structural causal identification
-  design.
 - FRED predictors are lag-controlled current historical values, with an explicit
   non-ALFRED vintage limitation.
 
@@ -167,7 +165,7 @@ Dual-audience exposition checks:
 
 - Every technical term is defined on first use when it matters to the argument:
   GARCH, GJR, ARCH, EVT, POT, GPD, Hill estimator, CAViaR, CARE, GAS-t,
-  FZ scoring, MCS, DM, pinball loss, OOF, refit window,
+  FZ scoring, DM, pinball loss, OOF, refit window,
   settlement price, day session, night session, open interest, FOMC, BOJ, EDT,
   EST.
 - Every displayed formula has a one-sentence prose gloss nearby.
@@ -188,7 +186,7 @@ Main table and figure checks:
 - Main figures should show market timing, target-tail motivation,
   information-ladder evidence, coverage-breach diagnostics, and selected
   performance only where those figures support the main claim.
-- Full matrices, residual diagnostics, Murphy, ES severity, trigger, DST,
+- Full matrices, residual diagnostics, Murphy, ES severity, trigger,
   sensitivity, and auxiliary inference material should be in the appendix unless
   the main claim depends on them directly.
 

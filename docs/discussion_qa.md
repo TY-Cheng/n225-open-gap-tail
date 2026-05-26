@@ -35,7 +35,7 @@ The primary target is the settlement-to-open gap:
 
 The open matters because it is the first OSE day-session mark after the U.S. close information set and after the Japanese night-session interval.
 
-- In the current clean primary sample (`n=1712`), the settle-to-open gap ranges from `-0.087513 log (-8.38%)` on `2020-03-13` to `0.096937 log (+10.18%)` on `2025-04-10`.
+- In the current clean primary sample (`n=1722`), the settle-to-open gap ranges from `-0.087513 log (-8.38%)` on `2020-03-13` to `0.096937 log (+10.18%)` on `2025-04-10`.
 - The largest absolute clean settle-to-open gap is `0.096937 log (+10.18%)` on `2025-04-10`; this is large enough to make opening-gap tail risk a substantive risk-management forecasting problem rather than a cosmetic return-prediction exercise.
 - The clean 1% to 99% settle-to-open range is `-0.031145 log (-3.07%)` to `0.027508 log (+2.79%)`, so the extremes are far outside the usual daily opening-gap range.
 - Even after the night-session close, the clean night-close-to-open residual ranges from `-0.038278 log (-3.76%)` to `0.042071 log (+4.30%)`, with maximum absolute residual `0.042071 log (+4.30%)`.
@@ -81,7 +81,7 @@ No. The paper compares registered point-in-time forecast specifications, not a t
 - LightGBM hyperparameters are held fixed across information sets and refit dates so information-set comparisons are not contaminated by a separate tuning search.
 - This design may leave some model-specific performance untapped, but it keeps the nested information-set experiment interpretable.
 - Appendix configuration robustness varies LightGBM capacity, EWMA lambda, and POT threshold choices after the primary run.
-- Those rows carry `primary_claim_allowed=false`: they answer reviewer concerns about sensitivity, but they do not select primary selections, promoted rows, DM/MCS gates, or selected-model figures.
+- Those rows carry `primary_claim_allowed=false`: they answer reviewer concerns about sensitivity, but they do not select primary selections, promoted rows, DM gates, or selected-model figures.
 - The primary design compares pre-specified point-in-time forecast specifications. Configuration sensitivity is reported as appendix robustness evidence and is not used to select primary selections.
 
 ## How do the LightGBM+EVT variants work?
@@ -94,7 +94,7 @@ tail fitting; it is not the reported VaR level.
 - Standardized-loss POT-GPD models fit a Generalized Pareto tail above the registered 0.90 threshold of out-of-fold standardized losses.
 - Median/MAD and median/IQR routes use more robust body filters before the POT-GPD step.
 - Plain MLE is the standard EVT comparator. Robust body-filter routes remain research-candidate diagnostics until the evidence supports promotion.
-- The current paper-facing promotion bridge is side-specific: median/IQR POT-GPD is the left-tail promoted ML-tail row, and location-scale empirical is the right-tail promoted ML-tail row. These rows are read with restricted DM/MCS evidence and do not create a universal model-family ranking.
+- The current paper-facing promotion bridge is side-specific: median/IQR POT-GPD is the left-tail promoted ML-tail row, and location-scale empirical is the right-tail promoted ML-tail row. These rows are read with restricted DM evidence and do not create a universal model-family ranking.
 
 ## How are forecasts judged?
 
@@ -107,30 +107,8 @@ The evaluation is built around tail-risk performance, not a single ranking.
 - Quantile loss: evaluates VaR forecasts.
 - Fissler-Ziegel loss: evaluates joint VaR/ES forecasts where ES is valid.
 - Mean exceedance severity: reports how large exceptions are once they happen.
-- DM and MCS are average-sample inference across the unconditional evaluation sample.
-- Murphy diagrams, DST, stress-window, ES severity, and trigger diagnostics are supporting evidence.
-
-## How should the 24-check robustness profile be framed?
-
-The 24-check idea is a risk-model validation and robust-satisficing story.
-
-- The 24-check idea asks whether a forecast specification remains admissible across evaluation scenarios: two tail sides, four nested information sets, and three calibration diagnostics such as breach-neighborhood, Kupiec unconditional coverage, and Christoffersen independence/conditional-coverage checks where sample size permits.
-- The current `model_metrics_breach_audit.md` artifact is narrower than the full 24-check concept: it reports breach-neighborhood and row-count gates across the eight LGBM/EVT tail-by-information-set scenarios. A full 24-check table should be labeled separately if Kupiec and Christoffersen pass/fail flags are added to the same grid.
-- The best label for this paper is `diagnostic admissibility across nested information sets` or `information-set robustness`.
-
-The literature support comes from five adjacent strands:
-
-- VaR backtesting: Kupiec (1995) motivates formal tail-probability accuracy checks, while Christoffersen (1998) moves beyond unconditional coverage toward interval-forecast independence and conditional validity. Links: [Kupiec 1995 SSRN](https://ssrn.com/abstract=6697), [Kupiec DOI](https://doi.org/10.3905/jod.1995.407942), [Christoffersen DOI](https://doi.org/10.2307/2527341).
-- Risk-model governance: Basel's backtesting framework and SR 11-7 treat backtesting, benchmarking, sensitivity analysis, and ongoing monitoring as validation evidence, so a pass/fail diagnostic battery is natural for risk-model adequacy. Links: [BIS MAR99](https://www.bis.org/basel_framework/chapter/MAR/99.htm), [Federal Reserve SR 11-7](https://www.federalreserve.gov/bankinforeg/srletters/sr1107.htm).
-- Proper scoring and forecast comparison: quantile loss and Fissler-Ziegel loss rank forecast quality under scoring rules; DM and MCS then provide average-sample forecast-comparison inference. These answer a different question from pass-all admissibility. Links: [Gneiting and Raftery 2007](https://doi.org/10.1198/016214506000001437), [Fissler and Ziegel 2016](https://doi.org/10.1214/16-AOS1439), [Diebold and Mariano 1995](https://doi.org/10.1080/07350015.1995.10524599), [Hansen, Lunde, and Nason 2011](https://doi.org/10.3982/ECTA5771).
-- Specification-curve or multiverse robustness: the same empirical conclusion should be checked across defensible analysis specifications, which is analogous to checking the model across tails, information sets, and diagnostics. Link: [Simonsohn, Simmons, and Nelson 2020](https://doi.org/10.1038/s41562-020-0912-z).
-- Robust satisficing: instead of maximizing one average objective, choose the specification that achieves acceptable performance across the widest set of relevant circumstances. Links: [Schwartz, Ben-Haim, and Dacso 2011](https://doi.org/10.1111/j.1468-5914.2010.00450.x), [Ben-Haim 2014](https://doi.org/10.1080/00207721.2012.684906).
-
-The paper-facing language should be:
-
-> Average quantile and Fissler-Ziegel losses rank predictive efficiency, while Kupiec and Christoffersen tests assess VaR calibration and exception dynamics. We summarize robustness through a diagnostic-admissibility profile across tails and nested information sets. A model that remains admissible with both sparse and rich information sets is more useful for risk-model deployment than one that wins only under a narrow evaluation specification.
-
-This should not be written as proof that a model is universally optimal. Non-rejection is not proof of correctness, and multiple pass/fail checks should be read as a validation profile rather than a single formal hypothesis test.
+- DM is average-sample inference across the unconditional evaluation sample.
+- Murphy diagrams, stress-window, and ES severity diagnostics are supporting evidence.
 
 ## What do the current results say?
 
@@ -152,13 +130,13 @@ The current evidence is a calibration-versus-loss tradeoff.
 | ML-tail per-model rows | No | Model-specific OOS diagnostics; samples need not match across model families. |
 | Restricted result matrix | No primary claim | Matched-date comparison for model families and within-model increments. |
 | Timing, target, information-ladder, coverage figures | Supporting main-text evidence | Design/motivation/headline visualization; still read with tables and gates. |
-| DST, stress, Murphy, DM/MCS heatmaps, hedge-trigger diagnostics | Diagnostic only | Useful for interpretation and risk monitoring, not automatic model-selection evidence. |
+| Stress, Murphy, and DM heatmaps | Diagnostic only | Useful for interpretation, not automatic model-selection evidence. |
 
 - The paper can claim a point-in-time forecast evaluation of OSE Nikkei 225 Futures opening-gap tail risk.
 - It can report that U.S. close information and proxy blocks change average loss and coverage patterns under registered information sets.
 - It can report that direct LightGBM quantile forecasts are too liberal in the current primary ML rows.
-- It can report side-specific promoted ML-tail rows after showing the promotion gate and restricted DM/MCS evidence: median/IQR POT-GPD for the left tail and location-scale empirical for the right tail.
+- It can report side-specific promoted ML-tail rows after showing the promotion gate and restricted DM evidence: median/IQR POT-GPD for the left tail and location-scale empirical for the right tail.
 - It should not claim that one model is universally strongest.
 - It should not average left-tail and right-tail evidence into one mechanism.
-- It should not present DST, trigger, or feature-block diagnostics as causal proof or realized trading performance.
+- It should not present trigger or feature-block diagnostics as causal proof or realized trading performance.
 - The current bottom line: the pipeline now produces a clean evidence set from the durable gold layer; baseline benchmark, advanced econometric benchmark, and ML-tail suites completed with zero recorded advanced-forecast failures; advanced rows are implemented evidence but remain nonblocking until author-reviewed against the same sample and inference gates.

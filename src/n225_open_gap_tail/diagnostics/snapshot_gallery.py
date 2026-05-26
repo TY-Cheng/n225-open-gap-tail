@@ -40,7 +40,7 @@ def evidence_map_mermaid() -> str:
             '  C --> D["Leakage and sample gates"]',
             '  D --> E["Baseline benchmarks and advanced econometric benchmarks"]',
             '  D --> F["Primary ML nested information sets"]',
-            '  E --> G["Metrics, DM/MCS, Murphy diagnostics"]',
+            '  E --> G["Metrics, DM, Murphy diagnostics"]',
             "  F --> G",
             '  G --> I["Tables and figures"]',
             '  I --> J["Generated results snapshot"]',
@@ -84,21 +84,17 @@ def figure_gallery_markdown(*, figure_manifest: dict[str, object], run_id: str) 
     order = [
         ("timing_design", "Figure 1. Market Timing Design"),
         ("target_motivation", "Figure 2. Opening-Gap Tail Motivation"),
-        ("coverage_simplified", "Figure 3. Simplified Coverage Breach-Rate Diagnostics"),
-        ("information_ladder", "Figure 4. Information-Set Ladder"),
-        ("cumulative_loss", "Figure 5. Cumulative Loss Difference"),
-        ("target_distribution", "Figure 6. Raw Target Distribution Diagnostics"),
-        ("coverage", "Figure 7. Full Coverage Breach-Rate Diagnostics"),
-        ("selected_performance", "Figure 8. Selected Benchmark-vs-LGBM Performance"),
-        ("full_var_overlay", "Figure 9. Full-Sample VaR Overlay Diagnostics"),
-        ("stress_overlay", "Figure 10. VaR/ES Stress-Window Overlays"),
-        ("dm_mcs", "Figure 11. DM/MCS Heatmaps"),
-        ("benchmark_murphy", "Figure 12. Benchmark Murphy Diagnostics"),
-        ("ml_tail_murphy", "Figure 13. ML-Tail Murphy Diagnostics"),
-        ("severity", "Figure 14. ES Severity Diagnostics"),
-        ("trigger", "Figure 15. Selected Trigger Diagnostics"),
-        ("evt_standardized", "Figure 16. EVT Standardized-Residual Diagnostics"),
-        ("dst", "Figure 17. DST Attenuation Diagnostics"),
+        ("cumulative_loss", "Figure 3. Cumulative Loss Difference"),
+        ("target_distribution", "Figure 4. Raw Target Distribution Diagnostics"),
+        ("coverage", "Figure 5. Full Coverage Breach-Rate Diagnostics"),
+        ("selected_performance", "Figure 6. Selected Benchmark-vs-LGBM Performance"),
+        ("full_var_overlay", "Figure 7. Full-Sample VaR Overlay Diagnostics"),
+        ("stress_overlay", "Figure 8. VaR/ES Stress-Window Overlays"),
+        ("dm", "Figure 9. DM Heatmaps"),
+        ("benchmark_murphy", "Figure 10. Benchmark Murphy Diagnostics"),
+        ("lgbm_24check_murphy", "Figure 11. 24-Check LGBM Murphy Diagnostics"),
+        ("severity", "Figure 12. ES Severity Diagnostics"),
+        ("evt_standardized", "Figure 13. EVT Standardized-Residual Diagnostics"),
     ]
     for family, title in order:
         family_entries = by_family.get(family, [])
@@ -149,8 +145,6 @@ def _figure_family(name: str) -> str:
         return "target_motivation"
     if name.startswith("target_"):
         return "target_distribution"
-    if name.startswith("coverage_breach_rates_simplified"):
-        return "coverage_simplified"
     if name.startswith("coverage_breach_rates"):
         return "coverage"
     if name == "tailrisk_information_ladder":
@@ -161,20 +155,18 @@ def _figure_family(name: str) -> str:
         return "stress_overlay"
     if name.startswith("full_sample_var_overlay"):
         return "full_var_overlay"
-    if name.startswith("dm_mcs_heatmap"):
-        return "dm_mcs"
+    if name.startswith("dm_heatmap"):
+        return "dm"
     if name.startswith("selected_model_performance"):
         return "selected_performance"
     if name.startswith("benchmark_murphy"):
         return "benchmark_murphy"
+    if name.startswith("lgbm_24check_murphy"):
+        return "lgbm_24check_murphy"
     if name.startswith("ml_tail_murphy"):
         return "ml_tail_murphy"
-    if name.startswith("dst_attenuation"):
-        return "dst"
     if name.startswith("es_severity"):
         return "severity"
-    if name.startswith("trigger_diagnostics"):
-        return "trigger"
     if name.startswith("evt_standardized"):
         return "evt_standardized"
     return "other"
@@ -208,10 +200,6 @@ def _figure_key_readings(family: str) -> list[str]:
             "- Key readings: the composite figure combines density, log survival, and mean-excess diagnostics for the raw opening-gap target.",
             "- It motivates tail-risk modeling and does not validate any forecast model.",
         ],
-        "coverage_simplified": [
-            "- Key readings: this main-text figure strips coverage diagnostics down to fixed benchmark, direct information ladder, and side-specific promoted candidates.",
-            "- Wilson intervals show exception-rate uncertainty around the nominal 5% line.",
-        ],
         "information_ladder": [
             "- Key readings: the figure is the direct visual counterpart to the nested-information-set research question.",
             "- Loss changes must still be read with coverage and inference gates.",
@@ -236,41 +224,27 @@ def _figure_key_readings(family: str) -> list[str]:
         "full_var_overlay": [
             "- Key readings: full-sample overlays show realized loss against a fixed benchmark-comparator VaR and the locked side-specific promoted ML-tail VaR.",
             "- The benchmark line uses GJR-GARCH-EVT with GJR-GARCH-t fallback; the ML line is not selected by inspecting this plot.",
-            "- Treat the plot as a visual diagnostic. Formal validation remains the coverage, loss, DM/MCS, Murphy, and EVT evidence.",
+            "- Treat the plot as a visual diagnostic. Formal validation remains the coverage, loss, DM, Murphy, and EVT evidence.",
         ],
         "stress_overlay": [
             "- Supporting diagnostic: stress-window overlays illustrate threshold behavior around fixed windows.",
             "- They do not report hedge PnL, transaction-cost evidence, or trading performance.",
         ],
-        "dm_mcs": [
+        "dm": [
             "- Supporting diagnostic: heatmap cells report one-sided DM p-values and candidate-minus-anchor loss differences.",
-            "- Negative loss differences favor the candidate; MCS markers indicate retained candidates where available.",
+            "- Negative loss differences favor the candidate.",
         ],
         "benchmark_murphy": [
-            "- Key readings: curves report benchmark elementary-score diagnostics on a common grid.",
+            "- Key readings: curves report target-history benchmark elementary-score diagnostics on a common grid.",
             "- The plot is a scoring-family diagnostic, not a pairwise ranking statement.",
         ],
-        "ml_tail_murphy": [
-            "- Key readings: curves report the ML-tail nested information sets on a common grid.",
-            "- Interpret curve separation together with the primary ML coverage warning and unconditional inference gates.",
-        ],
-        "dst": [
-            "- Supporting diagnostic: the left/right timing-regime patterns are not stable enough for a headline claim.",
-            "- Key readings: bars report loss gains from adding `JP + US close core` to `JP only`, split by EST/EDT timing regime.",
-            "- A positive gain means the expanded information set has lower average loss; a negative gain means it performs worse on that loss metric.",
-            "- This diagnostic is computed for the current primary nested-information-set anchor, `LGBM direct quantile`; it is not an average across all LightGBM/EVT variants or a model-selection exercise.",
-            "- Treat this as descriptive timing evidence; left/right patterns should not be assigned a shared structural mechanism.",
+        "lgbm_24check_murphy": [
+            "- Key readings: curves report only the LGBM families that pass the full tail-by-information-set calibration screen.",
+            "- Interpret curve separation as scoring-family sensitivity evidence, not as a standalone model-selection rule.",
         ],
         "severity": [
             "- Key readings: bars report conditional-on-exception severity diagnostics.",
             "- Severity is reported for risk interpretation but is not a standalone model-selection claim.",
-        ],
-        "trigger": [
-            "- Key readings: bars report pre-open VaR-trigger diagnostics for the same selected Benchmark-vs-LGBM candidates used in the compact performance figures.",
-            "- The trigger rule is within-model: `trigger = VaR forecast above that model's 75th-percentile VaR forecast` on the evaluation sample.",
-            "- This top-quartile rule is separate from the 95% VaR forecast target: VaR calibration is evaluated by breach rates, coverage tests, quantile loss, and FZ loss.",
-            "- Lower false-alarm and missed-exception rates are better; the trigger-rate bar is omitted because it is expected to be near 25% by construction.",
-            "- The trigger output is a monitoring diagnostic, not hedge PnL, not transaction-cost evidence, and not an execution-performance result.",
         ],
         "evt_standardized": [
             "- Key readings: figures show EVT diagnostics for LightGBM location-scale standardized residuals.",

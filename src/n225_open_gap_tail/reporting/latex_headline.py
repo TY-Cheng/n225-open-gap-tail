@@ -46,7 +46,6 @@ def _promoted_tail_model_rows(
     ml_tail_metrics: pl.DataFrame,
     *,
     dm: pl.DataFrame | None = None,
-    mcs: pl.DataFrame | None = None,
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for spec in PROMOTED_TAIL_MODEL_SPECS:
@@ -72,8 +71,6 @@ def _promoted_tail_model_rows(
                 "promotion_status": "pass" if gate_pass else "diagnostic_only",
                 "dm_quantile": _promoted_dm_row(dm, spec, "var_quantile_loss"),
                 "dm_fz": _promoted_dm_row(dm, spec, "var_es_fz_loss"),
-                "mcs_quantile": _promoted_mcs_row(mcs, spec, "var_quantile_loss"),
-                "mcs_fz": _promoted_mcs_row(mcs, spec, "var_es_fz_loss"),
             }
         )
     return rows
@@ -116,27 +113,6 @@ def _promoted_dm_row(
         & (pl.col("information_set") == spec["information_set"])
         & (pl.col("candidate_entity") == spec["model_name"])
         & (pl.col("baseline_entity") == ML_TAIL_DIRECT_QUANTILE_MODEL)
-        & (pl.col("loss_family") == loss_family)
-    )
-    if frame.is_empty():
-        return None
-    return dict(frame.row(0, named=True))
-
-
-def _promoted_mcs_row(
-    mcs: pl.DataFrame | None,
-    spec: Mapping[str, object],
-    loss_family: str,
-) -> dict[str, object] | None:
-    if mcs is None or mcs.is_empty():
-        return None
-    required = {"tail_side", "information_set", "model_name", "loss_family"}
-    if not required.issubset(mcs.columns):
-        return None
-    frame = mcs.filter(
-        (pl.col("tail_side") == spec["tail_side"])
-        & (pl.col("information_set") == spec["information_set"])
-        & (pl.col("model_name") == spec["model_name"])
         & (pl.col("loss_family") == loss_family)
     )
     if frame.is_empty():
@@ -260,7 +236,9 @@ def _predictor_block_coverage_to_latex(
         "summary, not feature admissibility. Timestamp availability and "
         "feature-matrix gates are applied before each refit."
     )
-    lines.extend(["\\midrule", f"\\multicolumn{{7}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(
+        ["\\midrule", f"\\multicolumn{{7}}{{l}}{{\\footnotesize {_latex_escape(note)}}} \\\\"]
+    )
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
 
@@ -382,59 +360,59 @@ def _model_inventory_to_latex(*, manifest: Mapping[str, object] | None = None) -
         "Visible notes: inventory table explains forecast construction and paper role. "
         "Performance belongs in selected-performance and result-matrix tables."
     )
-    lines.extend(["\\midrule", f"\\multicolumn{{6}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(
+        ["\\midrule", f"\\multicolumn{{6}}{{l}}{{\\footnotesize {_latex_escape(note)}}} \\\\"]
+    )
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
 
 
-def _dm_mcs_summary_to_latex(
+def _dm_summary_to_latex(
     dm: pl.DataFrame | None,
-    mcs: pl.DataFrame | None,
     *,
     manifest: Mapping[str, object] | None = None,
 ) -> str:
     manifest = manifest or {}
-    headers = ("comparison", "side", "loss", "diff", "DM p", "MCS", "status")
+    headers = ("comparison", "side", "loss", "diff", "DM p", "status")
     lines = [
         f"% run_id: {manifest.get('run_id', '')}",
         f"% git_commit: {manifest.get('git_commit', '')}",
         f"% config_hash: {manifest.get('config_hash', '')}",
-        "% table_scope: headline_dm_mcs_paired_inference_summary",
-        "\\begin{tabular}{lllrrll}",
+        "% table_scope: headline_dm_paired_inference_summary",
+        "\\begin{tabular}{lllrrl}",
         "\\toprule",
         " & ".join(headers) + r" \\",
         "\\midrule",
     ]
-    for row in _dm_mcs_summary_rows(dm, mcs):
+    for row in _dm_summary_rows(dm):
         lines.append(
             f"{_latex_escape(row.get('comparison'))} & "
             f"{_latex_escape(row.get('tail_side'))} & "
             f"{_latex_escape(row.get('loss_family'))} & "
             f"{_fmt(row.get('mean_loss_diff_candidate_minus_baseline'))} & "
             f"{_fmt(row.get('pvalue_one_sided'))} & "
-            f"{_latex_escape(row.get('mcs'))} & "
             f"{_latex_escape(row.get('status'))} \\\\"
         )
     note = (
         "Visible notes: negative loss differences favor the candidate. Benchmark-vs-ML "
         "cross-suite inference is reported as unavailable unless a registered "
-        "cross-suite DM/MCS artifact exists."
+        "cross-suite DM artifact exists."
     )
-    lines.extend(["\\midrule", f"\\multicolumn{{7}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(
+        ["\\midrule", f"\\multicolumn{{6}}{{l}}{{\\footnotesize {_latex_escape(note)}}} \\\\"]
+    )
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
 
 
-def _dm_mcs_summary_rows(
+def _dm_summary_rows(
     dm: pl.DataFrame | None,
-    mcs: pl.DataFrame | None,
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for tail_side in (TAIL_SIDE_LEFT, TAIL_SIDE_RIGHT):
         rows.append(
             _dm_summary_row(
                 dm,
-                mcs,
                 comparison="JP only -> +US close",
                 tail_side=tail_side,
                 family="information_set_ladder",
@@ -452,7 +430,6 @@ def _dm_mcs_summary_rows(
             rows.append(
                 _dm_summary_row(
                     dm,
-                    mcs,
                     comparison="Direct quantile -> promoted ML-tail",
                     tail_side=tail_side,
                     family="tail_model_family",
@@ -469,8 +446,7 @@ def _dm_mcs_summary_rows(
                 "loss_family": "var_es_fz_loss",
                 "mean_loss_diff_candidate_minus_baseline": None,
                 "pvalue_one_sided": None,
-                "mcs": "n/a",
-                "status": "unavailable_no_registered_cross_suite_dm_mcs",
+                "status": "unavailable_no_registered_cross_suite_dm",
             }
         )
     return rows
@@ -478,7 +454,6 @@ def _dm_mcs_summary_rows(
 
 def _dm_summary_row(
     dm: pl.DataFrame | None,
-    mcs: pl.DataFrame | None,
     *,
     comparison: str,
     tail_side: str,
@@ -495,7 +470,6 @@ def _dm_summary_row(
             "loss_family": "var_es_fz_loss",
             "mean_loss_diff_candidate_minus_baseline": None,
             "pvalue_one_sided": None,
-            "mcs": "n/a",
             "status": "missing_dm_artifact",
         }
     for loss_family in ("var_es_fz_loss", "var_quantile_loss"):
@@ -520,7 +494,6 @@ def _dm_summary_row(
                 "mean_loss_diff_candidate_minus_baseline"
             ),
             "pvalue_one_sided": row.get("pvalue_one_sided"),
-            "mcs": _summary_mcs_cell(mcs, row),
             "status": row.get("inference_status"),
         }
     return {
@@ -529,28 +502,8 @@ def _dm_summary_row(
         "loss_family": "var_es_fz_loss",
         "mean_loss_diff_candidate_minus_baseline": None,
         "pvalue_one_sided": None,
-        "mcs": "n/a",
         "status": "missing_registered_pair",
     }
-
-
-def _summary_mcs_cell(mcs: pl.DataFrame | None, dm_row: Mapping[str, object]) -> str:
-    if mcs is None or mcs.is_empty():
-        return "n/a"
-    required = {"tail_side", "loss_family", "model_name", "included_in_mcs", "mcs_status"}
-    if not required.issubset(mcs.columns):
-        return "n/a"
-    selected = mcs.filter(
-        (pl.col("tail_side") == dm_row.get("tail_side"))
-        & (pl.col("loss_family") == dm_row.get("loss_family"))
-        & (pl.col("model_name") == dm_row.get("candidate_entity"))
-    )
-    if "information_set" in selected.columns and dm_row.get("information_set") is not None:
-        selected = selected.filter(pl.col("information_set") == dm_row.get("information_set"))
-    if selected.is_empty():
-        return "n/a"
-    row = selected.row(0, named=True)
-    return _mcs_cell(row)
 
 
 def _selected_model_performance_to_latex(
@@ -590,7 +543,9 @@ def _selected_model_performance_to_latex(
         "quantile loss within each broad group and tail side. Full per-model "
         "results are exported separately for appendix use."
     )
-    lines.extend(["\\midrule", f"\\multicolumn{{9}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(
+        ["\\midrule", f"\\multicolumn{{9}}{{l}}{{\\footnotesize {_latex_escape(note)}}} \\\\"]
+    )
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
 
@@ -599,7 +554,6 @@ def _promoted_tail_models_to_latex(
     ml_tail_metrics: pl.DataFrame,
     *,
     dm: pl.DataFrame | None = None,
-    mcs: pl.DataFrame | None = None,
     manifest: Mapping[str, object] | None = None,
 ) -> str:
     manifest = manifest or {}
@@ -614,19 +568,18 @@ def _promoted_tail_models_to_latex(
         "fz_loss",
         "DM q",
         "DM FZ",
-        "MCS q/FZ",
     )
     lines = [
         f"% run_id: {manifest.get('run_id', '')}",
         f"% git_commit: {manifest.get('git_commit', '')}",
         f"% config_hash: {manifest.get('config_hash', '')}",
         "% table_scope: side_specific_ml_tail_promotion_gate",
-        "\\begin{tabular}{lll lrrrrlll}",
+        "\\begin{tabular}{lll lrrrrll}",
         "\\toprule",
         " & ".join(headers) + r" \\",
         "\\midrule",
     ]
-    for row in _promoted_tail_model_rows(ml_tail_metrics, dm=dm, mcs=mcs):
+    for row in _promoted_tail_model_rows(ml_tail_metrics, dm=dm):
         lines.append(
             f"{_latex_escape(row.get('promotion_role'))} & "
             f"{_latex_escape(display_model_label(row.get('model_name')))} & "
@@ -637,16 +590,17 @@ def _promoted_tail_models_to_latex(
             f"{_fmt(row.get('mean_quantile_loss'))} & "
             f"{_fmt(row.get('mean_fz_loss'))} & "
             f"{_latex_escape(_dm_cell(row.get('dm_quantile')))} & "
-            f"{_latex_escape(_dm_cell(row.get('dm_fz')))} & "
-            f"{_latex_escape(_mcs_pair_cell(row.get('mcs_quantile'), row.get('mcs_fz')))} \\\\"
+            f"{_latex_escape(_dm_cell(row.get('dm_fz')))} \\\\"
         )
     note = (
         "Visible notes: side-specific promotion rows must pass N and VaR-coverage "
-        "gates and are read with restricted common-sample DM/MCS evidence versus "
+        "gates and are read with restricted common-sample DM evidence versus "
         "the direct-quantile anchor. Negative DM loss differences favor the "
         "promoted candidate. This is not a universal model-family ranking."
     )
-    lines.extend(["\\midrule", f"\\multicolumn{{11}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(
+        ["\\midrule", f"\\multicolumn{{10}}{{l}}{{\\footnotesize {_latex_escape(note)}}} \\\\"]
+    )
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
 
@@ -662,19 +616,3 @@ def _dm_cell(row: object) -> str:
     if diff is None or pvalue is None:
         return status
     return f"{diff:.3g}; p={pvalue:.3g}; {reject_mark}"
-
-
-def _mcs_pair_cell(q_row: object, fz_row: object) -> str:
-    return f"{_mcs_cell(q_row)}/{_mcs_cell(fz_row)}"
-
-
-def _mcs_cell(row: object) -> str:
-    if not isinstance(row, dict):
-        return "n/a"
-    status = str(row.get("mcs_status") or "n/a")
-    included = row.get("included_in_mcs")
-    if included is True:
-        return "in"
-    if included is False and status == "ok":
-        return "out"
-    return status

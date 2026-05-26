@@ -120,9 +120,9 @@ def _claim_scope_markdown_table() -> str:
                 "Design/motivation/headline visualization; still read with tables and gates.",
             ),
             (
-                "DST, stress, Murphy, DM/MCS heatmaps, hedge-trigger diagnostics",
+                "Stress, Murphy, and DM heatmaps",
                 "Diagnostic only",
-                "Useful for interpretation and risk monitoring, not automatic model-selection evidence.",
+                "Useful for interpretation, not automatic model-selection evidence.",
             ),
         ],
     )

@@ -18,7 +18,12 @@ from n225_open_gap_tail.config.runtime import (
     Mapping,
     ML_TAIL_DIRECT_QUANTILE_MODEL,
     ML_TAIL_LOCATION_SCALE_MODEL,
+    ML_TAIL_MEDIAN_IQR_POT_GPD_UNIBM_MODEL,
+    ML_TAIL_MEDIAN_MAD_POT_GPD_PLAIN_MLE_MODEL,
+    ML_TAIL_MEDIAN_MAD_POT_GPD_UNIBM_MODEL,
     ML_TAIL_MEDIAN_IQR_POT_GPD_PLAIN_MLE_MODEL,
+    ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
+    ML_TAIL_POT_GPD_UNIBM_MODEL,
     np,
     pl,
     PRIMARY_TAIL_SIDE,
@@ -29,9 +34,9 @@ from n225_open_gap_tail.config.model_labels import (
     display_information_set_label,
     display_model_label,
 )
+from n225_open_gap_tail.inference.core import build_murphy_records
 from n225_open_gap_tail.reporting.latex import (
     PROMOTED_TAIL_MODEL_SPECS,
-    _hedge_trigger_rows,
     _selected_model_performance_rows,
     _severity_rows,
 )
@@ -44,6 +49,18 @@ INFORMATION_LADDER_ORDER = (
     "japan_only_plus_us_close_core_plus_japan_proxy",
     "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy",
 )
+COVERAGE_GATE_ROBUST_MODEL_ORDER = (
+    ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
+    ML_TAIL_POT_GPD_UNIBM_MODEL,
+    ML_TAIL_LOCATION_SCALE_MODEL,
+    ML_TAIL_MEDIAN_IQR_POT_GPD_PLAIN_MLE_MODEL,
+    ML_TAIL_MEDIAN_IQR_POT_GPD_UNIBM_MODEL,
+    ML_TAIL_MEDIAN_MAD_POT_GPD_PLAIN_MLE_MODEL,
+    ML_TAIL_MEDIAN_MAD_POT_GPD_UNIBM_MODEL,
+)
+COVERAGE_GATE_MIN_ROWS = 450
+COVERAGE_GATE_TOLERANCE = 0.025
+COVERAGE_GATE_TEST_ALPHA = 0.05
 BENCHMARK_STRESS_PRIMARY_MODEL = "gjr_garch_evt"
 BENCHMARK_STRESS_FALLBACK_MODEL = "gjr_garch_t"
 
@@ -63,18 +80,15 @@ def export_figures(*, run_dir: Path, manifest: Mapping[str, object]) -> FigureEx
     entries.extend(_market_timing_design_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_target_tail_motivation_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_target_distribution_figures(run_dir=run_dir, figure_dir=figure_dir))
-    entries.extend(_coverage_simplified_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_coverage_figures(run_dir=run_dir, figure_dir=figure_dir))
-    entries.extend(_information_ladder_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_cumulative_loss_difference_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_selected_model_performance_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_full_sample_var_overlay_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_murphy_figures(run_dir=run_dir, figure_dir=figure_dir))
-    entries.extend(_dst_figures(run_dir=run_dir, figure_dir=figure_dir))
+    entries.extend(_lgbm_24check_murphy_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_severity_figures(run_dir=run_dir, figure_dir=figure_dir))
-    entries.extend(_trigger_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_stress_overlay_figures(run_dir=run_dir, figure_dir=figure_dir))
-    entries.extend(_dm_mcs_heatmap_figures(run_dir=run_dir, figure_dir=figure_dir))
+    entries.extend(_dm_heatmap_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_evt_standardized_residual_figures(run_dir=run_dir, figure_dir=figure_dir))
     _ = manifest
     return FigureExportResult(figure_dir=figure_dir, figure_entries=entries)
@@ -550,142 +564,69 @@ def _hill_curve(values: object) -> tuple[object, object]:
     return np.asarray(kept), np.asarray(xi)
 
 
-def _coverage_simplified_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object]]:
-    frame = _coverage_simplified_frame(run_dir)
-    if frame.is_empty() or "tail_side" not in frame.columns:
-        return []
-    entries: list[dict[str, object]] = []
-    for tail_side in _available_tail_sides(frame):
-        side = frame.filter(pl.col("tail_side") == tail_side).sort(["display_order", "model_label"])
-        if side.is_empty():
+def _coverage_robust_model_names(frame: pl.DataFrame) -> tuple[str, ...]:
+    required = {
+        "model_name",
+        "tail_side",
+        "information_set",
+        "rows",
+        "var_breach_rate",
+        "expected_breach_rate",
+        "kupiec_pvalue",
+        "christoffersen_pvalue",
+    }
+    if frame.is_empty() or not required.issubset(frame.columns):
+        return ()
+    expected_scenarios = {
+        (tail_side, information_set)
+        for tail_side in (TAIL_SIDE_LEFT, TAIL_SIDE_RIGHT)
+        for information_set in INFORMATION_LADDER_ORDER
+    }
+    passed_by_model: dict[str, set[tuple[str, str]]] = {}
+    for row in frame.iter_rows(named=True):
+        model = str(row.get("model_name") or "")
+        if model == ML_TAIL_DIRECT_QUANTILE_MODEL:
             continue
-        labels = [
-            _short_label(str(row["group_label"]) + " | " + str(row["model_label"]), max_len=48)
-            for row in side.iter_rows(named=True)
-        ]
-        values = [float(row["var_breach_rate"]) * 100.0 for row in side.iter_rows(named=True)]
-        errors = [
-            _wilson_error_bar(
-                int(_optional_float(row.get("exceedance_count")) or 0),
-                int(_optional_float(row.get("rows")) or 0),
-            )
-            for row in side.iter_rows(named=True)
-        ]
-        lower = [error[0] * 100.0 for error in errors]
-        upper = [error[1] * 100.0 for error in errors]
-        colors = [str(row.get("color") or "#64748b") for row in side.iter_rows(named=True)]
-        y = np.arange(len(labels))
-        fig, ax = plt.subplots(figsize=(10.8, max(5.0, len(labels) * 0.38)))
-        ax.barh(
-            y,
-            values,
-            xerr=np.asarray([lower, upper]),
-            color=colors,
-            alpha=0.86,
-            ecolor="#111827",
-            capsize=3,
+        scenario = (str(row.get("tail_side") or ""), str(row.get("information_set") or ""))
+        if scenario not in expected_scenarios:
+            continue
+        if not _coverage_robust_row_passes(row):
+            continue
+        passed_by_model.setdefault(model, set()).add(scenario)
+    return tuple(
+        sorted(
+            (
+                model
+                for model, scenarios in passed_by_model.items()
+                if scenarios == expected_scenarios
+            ),
+            key=_coverage_robust_model_order,
         )
-        expected = _first_float(side, "expected_breach_rate") or 0.05
-        ax.axvline(expected * 100.0, color="#111827", linestyle="--", linewidth=1.25)
-        ax.text(
-            expected * 100.0,
-            -0.65,
-            f"nominal {expected * 100.0:.1f}%",
-            ha="center",
-            va="bottom",
-            fontsize=8,
-            color="#111827",
-        )
-        ax.set_yticks(y, labels)
-        ax.set_xlabel("VaR breach rate (%) with Wilson 95% CI")
-        ax.set_title(f"Simplified coverage diagnostics ({_label_tail_side(tail_side)})")
-        _style_axes(ax)
-        entries.extend(
-            _save_figure(
-                fig,
-                run_dir=run_dir,
-                figure_dir=figure_dir,
-                name=f"coverage_breach_rates_simplified_{tail_side}",
-                source_artifacts=[
-                    "metrics/benchmark_metrics_per_model.parquet",
-                    "metrics/ml_tail_metrics.parquet",
-                    "metrics/ml_tail_metrics_per_model.parquet",
-                ],
-                tail_side=tail_side,
-                caption=(
-                    f"Simplified main-text coverage diagnostic for {tail_side}. Rows are "
-                    "restricted to the fixed benchmark comparator, direct LightGBM "
-                    "information ladder, and side-specific promoted ML-tail candidate; "
-                    "full coverage plots remain appendix diagnostics."
-                ),
-                claim_scope="headline_coverage_diagnostic_simplified_main_text",
-            )
-        )
-    return entries
+    )
 
 
-def _coverage_simplified_frame(run_dir: Path) -> pl.DataFrame:
-    rows: list[dict[str, object]] = []
-    benchmark = _read_optional_parquet(run_dir / "metrics" / "benchmark_metrics_per_model.parquet")
-    ml_primary = _read_optional_parquet(run_dir / "metrics" / "ml_tail_metrics.parquet")
-    ml_per_model = _read_optional_parquet(run_dir / "metrics" / "ml_tail_metrics_per_model.parquet")
-    for tail_side in (TAIL_SIDE_LEFT, TAIL_SIDE_RIGHT):
-        benchmark_row = _metric_row_for_model(
-            benchmark,
-            tail_side=tail_side,
-            model_names=(BENCHMARK_STRESS_PRIMARY_MODEL, BENCHMARK_STRESS_FALLBACK_MODEL),
-        )
-        if benchmark_row is not None:
-            rows.append(
-                {
-                    **benchmark_row,
-                    "group_label": "Benchmark",
-                    "display_order": 0,
-                    "model_label": display_model_label(benchmark_row.get("model_name")),
-                    "color": "#475569",
-                }
-            )
-        if not ml_primary.is_empty() and {"model_name", "information_set", "tail_side"}.issubset(
-            ml_primary.columns
-        ):
-            ladder = ml_primary.filter(
-                (pl.col("tail_side") == tail_side)
-                & (pl.col("model_name") == ML_TAIL_DIRECT_QUANTILE_MODEL)
-                & pl.col("information_set").is_in(list(INFORMATION_LADDER_ORDER))
-            )
-            if not ladder.is_empty():
-                for row in ladder.sort(
-                    pl.col("information_set").map_elements(
-                        lambda value: _information_order(str(value)), return_dtype=pl.Int64
-                    )
-                ).iter_rows(named=True):
-                    rows.append(
-                        {
-                            **row,
-                            "group_label": "Direct ladder",
-                            "display_order": 10 + _information_order(row.get("information_set")),
-                            "model_label": display_information_set_label(
-                                row.get("information_set")
-                            ),
-                            "color": "#2563eb",
-                        }
-                    )
-        promoted = _promoted_metric_for_tail(ml_per_model, tail_side)
-        if promoted is not None:
-            rows.append(
-                {
-                    **promoted,
-                    "group_label": "Promoted ML-tail",
-                    "display_order": 40,
-                    "model_label": (
-                        display_model_label(promoted.get("model_name"))
-                        + " / "
-                        + display_information_set_label(promoted.get("information_set"))
-                    ),
-                    "color": "#7c3aed",
-                }
-            )
-    return pl.DataFrame(rows) if rows else pl.DataFrame()
+def _coverage_robust_row_passes(row: Mapping[str, object]) -> bool:
+    rows = int(_optional_float(row.get("rows")) or 0)
+    breach = _optional_float(row.get("var_breach_rate"))
+    expected = _optional_float(row.get("expected_breach_rate")) or 0.05
+    kupiec = _optional_float(row.get("kupiec_pvalue"))
+    christoffersen = _optional_float(row.get("christoffersen_pvalue"))
+    if breach is None or kupiec is None or christoffersen is None:
+        return False
+    return (
+        rows >= COVERAGE_GATE_MIN_ROWS
+        and abs(breach - expected) <= COVERAGE_GATE_TOLERANCE
+        and kupiec >= COVERAGE_GATE_TEST_ALPHA
+        and christoffersen >= COVERAGE_GATE_TEST_ALPHA
+    )
+
+
+def _coverage_robust_model_order(value: object) -> int:
+    text = str(value or "")
+    try:
+        return COVERAGE_GATE_ROBUST_MODEL_ORDER.index(text)
+    except ValueError:
+        return len(COVERAGE_GATE_ROBUST_MODEL_ORDER) + 1
 
 
 def _coverage_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object]]:
@@ -813,77 +754,6 @@ def _coverage_frame(run_dir: Path) -> pl.DataFrame:
     if not frames:
         return pl.DataFrame()
     return pl.concat(frames, how="diagonal_relaxed")
-
-
-def _information_ladder_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object]]:
-    frame = _read_optional_parquet(run_dir / "metrics" / "ml_tail_metrics.parquet")
-    required = {"model_name", "information_set", "tail_side", "mean_quantile_loss"}
-    if frame.is_empty() or not required.issubset(frame.columns):
-        return []
-    direct = frame.filter(
-        (pl.col("model_name") == ML_TAIL_DIRECT_QUANTILE_MODEL)
-        & pl.col("information_set").is_in(list(INFORMATION_LADDER_ORDER))
-    )
-    if direct.is_empty():
-        return []
-    use_fz = "mean_fz_loss" in direct.columns and direct["mean_fz_loss"].drop_nulls().len() > 0
-    y_column = "mean_fz_loss" if use_fz else "mean_quantile_loss"
-    fig, ax = plt.subplots(figsize=(9.6, 5.4))
-    plotted = False
-    for tail_side, color, marker in (
-        (TAIL_SIDE_LEFT, "#dc2626", "o"),
-        (TAIL_SIDE_RIGHT, "#2563eb", "s"),
-    ):
-        side = direct.filter(pl.col("tail_side") == tail_side)
-        if side.is_empty() or y_column not in side.columns:
-            continue
-        points = []
-        for info in INFORMATION_LADDER_ORDER:
-            row = side.filter(pl.col("information_set") == info)
-            if row.is_empty():
-                points.append(np.nan)
-            else:
-                points.append(_optional_float(row[y_column][0]) or np.nan)
-        if not any(np.isfinite(np.asarray(points, dtype=float))):
-            continue
-        x = np.arange(len(INFORMATION_LADDER_ORDER))
-        ax.plot(
-            x,
-            points,
-            color=color,
-            marker=marker,
-            linewidth=1.8,
-            label=_label_tail_side(tail_side),
-        )
-        plotted = True
-    if not plotted:
-        plt.close(fig)
-        return []
-    ax.set_xticks(
-        np.arange(len(INFORMATION_LADDER_ORDER)),
-        [display_information_set_label(info) for info in INFORMATION_LADDER_ORDER],
-        rotation=25,
-        ha="right",
-    )
-    ylabel = "Mean FZ loss (lower is better)" if use_fz else "Mean quantile loss (lower is better)"
-    ax.set_ylabel(ylabel)
-    ax.set_title("Nested U.S.-close information sets")
-    ax.legend(frameon=False, fontsize=8)
-    _style_axes(ax)
-    return _save_figure(
-        fig,
-        run_dir=run_dir,
-        figure_dir=figure_dir,
-        name="tailrisk_information_ladder",
-        source_artifacts=["metrics/ml_tail_metrics.parquet"],
-        tail_side="left_right",
-        caption=(
-            "Headline nested information-set comparison. The x-axis follows the "
-            "pre-specified nested information sets from JP only to U.S. close, Japan "
-            "proxy, and Asia proxy; lower plotted loss is better."
-        ),
-        claim_scope="headline_nested_information_set_ladder",
-    )
 
 
 def _cumulative_loss_difference_figures(
@@ -1058,18 +928,10 @@ def _murphy_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object
         (
             "benchmark_murphy",
             run_dir / "metrics" / "benchmark_murphy.parquet",
-            "Baseline benchmark Murphy diagnostics",
+            "Benchmark target-history Murphy diagnostics",
             "model_name",
             "metrics/benchmark_murphy.parquet",
             "murphy_diagnostic_benchmark_baseline_common_grid",
-        ),
-        (
-            "ml_tail_murphy",
-            run_dir / "metrics" / "ml_tail_murphy.parquet",
-            "ML-tail nested-information-set Murphy diagnostics",
-            "information_set",
-            "metrics/ml_tail_murphy.parquet",
-            "murphy_diagnostic_ml_tail_nested_information_sets_common_grid",
         ),
     ]
     for prefix, path, title, label_column, source, claim_scope in specs:
@@ -1099,9 +961,10 @@ def _murphy_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object
             ax.legend(fontsize=7, frameon=False)
             _style_axes(ax)
             caption = (
-                f"Murphy diagnostic curves for {tail_side} on the artifact's common "
-                "threshold grid and recorded sample policy. The curves are descriptive "
-                "forecast-evaluation diagnostics and are not pairwise dominance claims."
+                f"Benchmark Murphy diagnostic curves for {tail_side} on the artifact's "
+                "common threshold grid and target-history baseline sample. The curves "
+                "are descriptive forecast-evaluation diagnostics and are not pairwise "
+                "dominance claims."
             )
             entries.extend(
                 _save_figure(
@@ -1118,62 +981,96 @@ def _murphy_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object
     return entries
 
 
-def _dst_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object]]:
-    frame = _read_optional_parquet(run_dir / "metrics" / "ml_tail_dst_attenuation.parquet")
-    required = {"tail_side", "dst_regime", "mean_quantile_gain", "mean_fz_gain"}
-    if frame.is_empty() or not required.issubset(frame.columns):
+def _lgbm_24check_murphy_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object]]:
+    frame = _lgbm_24check_murphy_frame(run_dir)
+    if frame.is_empty():
         return []
+    artifact_path = run_dir / "metrics" / "lgbm_24check_murphy.parquet"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    frame.write_parquet(artifact_path)
     entries: list[dict[str, object]] = []
+    required = {"tail_side", "threshold_value", "mean_elementary_score", "curve_label"}
+    if not required.issubset(frame.columns):
+        return []
     for tail_side in _available_tail_sides(frame):
         side = frame.filter(pl.col("tail_side") == tail_side)
-        rows = [
-            row
-            for row in side.iter_rows(named=True)
-            if row.get("dst_regime") != "absorption_coefficient"
-            and _optional_float(row.get("mean_quantile_gain")) is not None
-        ]
-        if not rows:
+        if side.is_empty():
             continue
-        labels = [
-            f"{row.get('dst_regime')} / {float(row.get('tail_level') or 0.0):.3f}" for row in rows
-        ]
-        q_gain = [float(row["mean_quantile_gain"]) for row in rows]
-        fz_gain = [
-            float(row["mean_fz_gain"])
-            if _optional_float(row.get("mean_fz_gain")) is not None
-            else 0.0
-            for row in rows
-        ]
-        x = np.arange(len(labels))
-        fig, axes = plt.subplots(2, 1, figsize=(9, 6.5), sharex=True)
-        axes[0].bar(x, q_gain, color="#2563eb", alpha=0.85)
-        axes[0].axhline(0.0, color="#1f2937", linewidth=1.0)
-        axes[0].set_ylabel("Quantile-loss gain")
-        axes[1].bar(x, fz_gain, color="#059669", alpha=0.85)
-        axes[1].axhline(0.0, color="#1f2937", linewidth=1.0)
-        axes[1].set_ylabel("FZ-loss gain")
-        axes[1].set_xticks(x, labels, rotation=35, ha="right")
-        fig.suptitle(f"DST attenuation diagnostics ({_label_tail_side(tail_side)})")
-        for ax in axes:
-            _style_axes(ax)
+        fig, ax = plt.subplots(figsize=(10.4, 6.2))
+        for key, group in side.group_by("curve_label", maintain_order=True):
+            label = str(key[0] if isinstance(key, tuple) else key)
+            curve = group.sort("threshold_value")
+            ax.plot(
+                curve["threshold_value"].to_list(),
+                curve["mean_elementary_score"].to_list(),
+                linewidth=1.35,
+                label=_short_label(label, max_len=48),
+            )
+        ax.set_title(f"24-check robust LGBM Murphy diagnostics ({_label_tail_side(tail_side)})")
+        ax.set_xlabel("Elementary-score threshold")
+        ax.set_ylabel("Mean elementary score")
+        ax.legend(fontsize=6.5, frameon=False, ncol=1)
+        _style_axes(ax)
         caption = (
-            f"DST attenuation diagnostic for {tail_side}; bars report registered "
-            "forecast-loss gain summaries by timing regime. This is descriptive "
-            "forecast evidence, not structural causal identification."
+            f"Murphy diagnostic curves for {tail_side} restricted to LGBM families that "
+            "pass the full tail-by-information-set calibration screen. Each curve is a "
+            "model-by-information-set pair on the shared 24-check robust sample grid; "
+            "the diagnostic is descriptive and not a pairwise dominance claim."
         )
         entries.extend(
             _save_figure(
                 fig,
                 run_dir=run_dir,
                 figure_dir=figure_dir,
-                name=f"dst_attenuation_{tail_side}",
-                source_artifacts=["metrics/ml_tail_dst_attenuation.parquet"],
+                name=f"lgbm_24check_murphy_{tail_side}",
+                source_artifacts=[
+                    "metrics/lgbm_24check_murphy.parquet",
+                    "metrics/ml_tail_metrics_per_model.parquet",
+                    "forecasts/ml_tail_forecasts.parquet",
+                ],
                 tail_side=tail_side,
                 caption=caption,
-                claim_scope="descriptive_dst_attenuation_not_structural_causal_identification",
+                claim_scope="murphy_diagnostic_lgbm_24check_robust_ladder",
             )
         )
     return entries
+
+
+def _lgbm_24check_murphy_frame(run_dir: Path) -> pl.DataFrame:
+    metrics = _read_optional_parquet(run_dir / "metrics" / "ml_tail_metrics_per_model.parquet")
+    forecasts = _read_optional_parquet(run_dir / "forecasts" / "ml_tail_forecasts.parquet")
+    robust_models = _coverage_robust_model_names(metrics)
+    required = {"model_name", "information_set", "tail_side"}
+    if forecasts.is_empty() or not robust_models or not required.issubset(forecasts.columns):
+        return pl.DataFrame()
+    filtered = forecasts.filter(
+        pl.col("model_name").is_in(list(robust_models))
+        & pl.col("information_set").is_in(list(INFORMATION_LADDER_ORDER))
+    )
+    if filtered.is_empty():
+        return pl.DataFrame()
+    rows = build_murphy_records(filtered.to_dicts(), suite="lgbm_24check")
+    if not rows:
+        return pl.DataFrame()
+    frame = pl.DataFrame(rows).with_columns(
+        (
+            pl.col("model_name").map_elements(display_model_label, return_dtype=pl.Utf8)
+            + pl.lit(" / ")
+            + pl.col("information_set").map_elements(
+                display_information_set_label,
+                return_dtype=pl.Utf8,
+            )
+        ).alias("curve_label"),
+        pl.col("model_name")
+        .map_elements(lambda value: _coverage_robust_model_order(value), return_dtype=pl.Int64)
+        .alias("_model_order"),
+        pl.col("information_set")
+        .map_elements(lambda value: _information_order(value), return_dtype=pl.Int64)
+        .alias("_information_order"),
+    )
+    return frame.sort(["tail_side", "_model_order", "_information_order", "threshold_index"]).drop(
+        ["_model_order", "_information_order"]
+    )
 
 
 def _severity_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object]]:
@@ -1229,80 +1126,6 @@ def _severity_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, obje
                 tail_side=tail_side,
                 caption=caption,
                 claim_scope="es_severity_diagnostic_not_model_selection_claim",
-            )
-        )
-    return entries
-
-
-def _trigger_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object]]:
-    rows = _selected_trigger_rows(run_dir)
-    if not rows:
-        return []
-    frame = pl.DataFrame(rows)
-    if "tail_side" not in frame.columns:
-        frame = frame.with_columns(pl.lit(PRIMARY_TAIL_SIDE).alias("tail_side"))
-    entries: list[dict[str, object]] = []
-    for tail_side in _available_tail_sides(frame):
-        side = frame.filter(pl.col("tail_side") == tail_side)
-        if side.is_empty():
-            continue
-        selected = _trigger_plot_rows(side)
-        if selected.is_empty():
-            continue
-        labels = [
-            f"{row.get('suite')} | "
-            f"{display_model_label(row.get('model_name'))} | "
-            f"{display_information_set_label(row.get('information_set'))}"
-            for row in selected.iter_rows(named=True)
-        ]
-        x = np.arange(len(labels))
-        false_alarm_rate = _series_percent(selected, "false_alarm_rate")
-        missed_rate = _series_percent(selected, "missed_exception_rate")
-        fig, ax = plt.subplots(figsize=(12, 6.5))
-        width = 0.34
-        ax.bar(
-            x - width / 2,
-            false_alarm_rate,
-            width,
-            label="false alarm / trigger",
-            color="#dc2626",
-            alpha=0.75,
-        )
-        ax.bar(
-            x + width / 2,
-            missed_rate,
-            width,
-            label="missed exception / exception",
-            color="#f59e0b",
-            alpha=0.8,
-        )
-        ax.set_ylabel("Rate (%)")
-        ax.set_title(f"VaR trigger diagnostics ({_label_tail_side(tail_side)})")
-        ax.set_xticks(
-            x, [_short_label(label, max_len=34) for label in labels], rotation=35, ha="right"
-        )
-        ax.legend(frameon=False, fontsize=8)
-        _style_axes(ax)
-        caption = (
-            f"VaR trigger diagnostic for selected Benchmark-vs-LGBM candidates in "
-            f"{tail_side}. Trigger is the within-model 75th-percentile VaR rule; "
-            "the trigger rate is therefore near 25% by construction and is omitted "
-            "from the compact plot. This is not hedge PnL, not transaction-cost "
-            "evidence, and not trading-alpha evidence."
-        )
-        entries.extend(
-            _save_figure(
-                fig,
-                run_dir=run_dir,
-                figure_dir=figure_dir,
-                name=f"trigger_diagnostics_{tail_side}",
-                source_artifacts=[
-                    "forecasts/benchmark_forecasts.parquet",
-                    "forecasts/ml_tail_forecasts.parquet",
-                ],
-                tail_side=tail_side,
-                caption=caption,
-                claim_scope="trigger_diagnostic_not_pnl_cost_or_alpha",
             )
         )
     return entries
@@ -1381,9 +1204,8 @@ def _full_sample_var_overlay_figures(*, run_dir: Path, figure_dir: Path) -> list
     return entries
 
 
-def _dm_mcs_heatmap_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object]]:
+def _dm_heatmap_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object]]:
     dm = _read_optional_parquet(run_dir / "metrics" / "ml_tail_result_matrix_dm.parquet")
-    mcs = _read_optional_parquet(run_dir / "metrics" / "ml_tail_result_matrix_mcs.parquet")
     required = {
         "tail_side",
         "baseline_entity",
@@ -1403,7 +1225,6 @@ def _dm_mcs_heatmap_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str
         candidates = _ordered_unique(rows["candidate_entity"].to_list())
         pvalues = np.full((len(baselines), len(candidates)), np.nan)
         diffs = np.full_like(pvalues, np.nan, dtype=float)
-        statuses: dict[tuple[int, int], str] = {}
         for row in rows.iter_rows(named=True):
             i = baselines.index(str(row["baseline_entity"]))
             j = candidates.index(str(row["candidate_entity"]))
@@ -1411,7 +1232,6 @@ def _dm_mcs_heatmap_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str
             diffs[i, j] = (
                 _optional_float(row.get("mean_loss_diff_candidate_minus_baseline")) or np.nan
             )
-            statuses[(i, j)] = _mcs_marker(mcs, row)
         fig, ax = plt.subplots(
             figsize=(max(7.0, len(candidates) * 1.15), max(4.8, len(baselines) * 0.8))
         )
@@ -1433,17 +1253,16 @@ def _dm_mcs_heatmap_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str
                 if not np.isfinite(pvalues[i, j]):
                     continue
                 diff = diffs[i, j]
-                marker = statuses.get((i, j), "")
                 ax.text(
                     j,
                     i,
-                    f"p={pvalues[i, j]:.3f}\nΔ={diff:.2g}{marker}",
+                    f"p={pvalues[i, j]:.3f}\nΔ={diff:.2g}",
                     ha="center",
                     va="center",
                     fontsize=7,
                     color="#111827",
                 )
-        ax.set_title(f"Compact DM/MCS heatmap ({_label_tail_side(tail_side)})")
+        ax.set_title(f"Compact DM heatmap ({_label_tail_side(tail_side)})")
         ax.set_xlabel("Candidate")
         ax.set_ylabel("Anchor")
         entries.extend(
@@ -1451,19 +1270,15 @@ def _dm_mcs_heatmap_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str
                 fig,
                 run_dir=run_dir,
                 figure_dir=figure_dir,
-                name=f"dm_mcs_heatmap_{tail_side}",
-                source_artifacts=[
-                    "metrics/ml_tail_result_matrix_dm.parquet",
-                    "metrics/ml_tail_result_matrix_mcs.parquet",
-                ],
+                name=f"dm_heatmap_{tail_side}",
+                source_artifacts=["metrics/ml_tail_result_matrix_dm.parquet"],
                 tail_side=tail_side,
                 caption=(
-                    f"Compact appendix DM/MCS heatmap for {tail_side}. Cells report "
+                    f"Compact appendix DM heatmap for {tail_side}. Cells report "
                     "one-sided DM p-values and candidate-minus-anchor mean loss "
-                    "differences; negative differences favor the candidate. A dagger "
-                    "marks candidates retained in the matching restricted MCS record."
+                    "differences; negative differences favor the candidate."
                 ),
-                claim_scope="appendix_dm_mcs_visual_diagnostic",
+                claim_scope="appendix_dm_visual_diagnostic",
             )
         )
     return entries
@@ -1864,19 +1679,6 @@ def _information_order(value: object) -> int:
         return INFORMATION_LADDER_ORDER.index(text)
     except ValueError:
         return len(INFORMATION_LADDER_ORDER) + 1
-
-
-def _wilson_error_bar(exceedances: int, rows: int) -> tuple[float, float]:
-    if rows <= 0:
-        return (0.0, 0.0)
-    z = 1.96
-    p = exceedances / rows
-    denominator = 1.0 + z * z / rows
-    center = (p + z * z / (2.0 * rows)) / denominator
-    half = z * np.sqrt((p * (1.0 - p) + z * z / (4.0 * rows)) / rows) / denominator
-    low = max(0.0, center - half)
-    high = min(1.0, center + half)
-    return (max(0.0, p - low), max(0.0, high - p))
 
 
 def _metric_row_for_model(
@@ -2468,23 +2270,6 @@ def _compact_dm_rows(dm: pl.DataFrame, tail_side: str) -> pl.DataFrame:
     return pl.DataFrame(rows) if rows else pl.DataFrame()
 
 
-def _mcs_marker(mcs: pl.DataFrame, row: Mapping[str, object]) -> str:
-    required = {"tail_side", "loss_family", "model_name", "included_in_mcs"}
-    if mcs.is_empty() or not required.issubset(mcs.columns):
-        return ""
-    selected = mcs.filter(
-        (pl.col("tail_side") == row.get("tail_side"))
-        & (pl.col("loss_family") == row.get("loss_family"))
-        & (pl.col("model_name") == row.get("candidate_entity"))
-    )
-    if "information_set" in selected.columns and row.get("information_set") is not None:
-        selected = selected.filter(pl.col("information_set") == row.get("information_set"))
-    if selected.is_empty():
-        return ""
-    included = selected.row(0, named=True).get("included_in_mcs")
-    return "†" if included is True else ""
-
-
 def _ordered_unique(values: list[object]) -> list[str]:
     output: list[str] = []
     for value in values:
@@ -2566,67 +2351,6 @@ def _combined_forecasts(run_dir: Path) -> pl.DataFrame:
     if not frames:
         return pl.DataFrame()
     return pl.concat(frames, how="diagonal_relaxed")
-
-
-def _all_forecasts_for_trigger(run_dir: Path) -> pl.DataFrame:
-    frames: list[pl.DataFrame] = []
-    benchmark_path = run_dir / "forecasts" / "benchmark_forecasts.parquet"
-    if benchmark_path.exists():
-        benchmark = pl.read_parquet(benchmark_path)
-        if not benchmark.is_empty():
-            frames.append(benchmark.with_columns(pl.lit("Benchmark").alias("suite")))
-    ml_tail_path = run_dir / "forecasts" / "ml_tail_forecasts.parquet"
-    if ml_tail_path.exists():
-        ml_tail = pl.read_parquet(ml_tail_path)
-        if not ml_tail.is_empty():
-            frames.append(ml_tail.with_columns(pl.lit("LGBM").alias("suite")))
-    if not frames:
-        return pl.DataFrame()
-    return pl.concat(frames, how="diagonal_relaxed")
-
-
-def _selected_trigger_rows(run_dir: Path) -> list[dict[str, object]]:
-    selected = _selected_performance_frame(run_dir)
-    forecasts = _all_forecasts_for_trigger(run_dir)
-    if selected.is_empty() or forecasts.is_empty():
-        return []
-    selected_keys = {
-        _trigger_identity_key(row, suite_key="suite_group")
-        for row in selected.iter_rows(named=True)
-    }
-    rows = _hedge_trigger_rows(forecasts)
-    return [row for row in rows if _trigger_identity_key(row, suite_key="suite") in selected_keys]
-
-
-def _trigger_identity_key(
-    row: dict[str, object],
-    *,
-    suite_key: str,
-) -> tuple[str, str, str, str, str, str, str]:
-    tail_level = _optional_float(row.get("tail_level"))
-    return (
-        str(row.get(suite_key) or ""),
-        str(row.get("model_name") or ""),
-        str(row.get("information_set") or ""),
-        str(row.get("tail_side") or PRIMARY_TAIL_SIDE),
-        "" if tail_level is None else f"{tail_level:.6f}",
-        str(row.get("target_family") or ""),
-        str(row.get("refit_frequency") or ""),
-    )
-
-
-def _trigger_plot_rows(frame: pl.DataFrame) -> pl.DataFrame:
-    if frame.is_empty():
-        return frame
-    selected = frame
-    if "tail_level" in selected.columns:
-        selected = selected.filter(
-            pl.col("tail_level") == selected.select(pl.col("tail_level").min()).item()
-        )
-    return _limit_rows_for_plot(
-        selected.sort(["suite", "model_name", "information_set"]),
-        max_rows=18,
-    )
 
 
 def _limit_rows_for_plot(frame: pl.DataFrame, *, max_rows: int) -> pl.DataFrame:

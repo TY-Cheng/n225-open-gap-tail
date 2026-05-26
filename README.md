@@ -16,7 +16,7 @@ U.S. information may be partially incorporated before the Japanese opening aucti
   Japan proxy ETFs, and Asia proxy ETFs.
 - Compares benchmark econometric models, advanced tail-risk benchmarks, and LightGBM tail
   specifications.
-- Reports VaR coverage, quantile loss, Fissler-Ziegel VaR-ES loss, DM/MCS inference,
+- Reports VaR coverage, quantile loss, Fissler-Ziegel VaR-ES loss, DM inference,
   Murphy diagrams, and supporting risk diagnostics.
 
 The repository does not implement a live trading system, portfolio allocation rule, or
@@ -25,13 +25,13 @@ execution-cost study.
 ## Current Empirical Snapshot
 
 The current clean snapshot is based on the completed run
-`tailrisk_20160719_20260508_20260512T131041Z_commit_f420c4fa`.
+`tailrisk_20160719_20260522_20260525T142611Z_commit_bf63b13d`.
 
-- Clean evaluation window: `2018-06-20` to `2026-05-08`.
-- Forecast sample: `1712` trading-day observations.
+- Clean evaluation window: `2018-06-20` to `2026-05-22`.
+- Forecast sample: `1722` trading-day observations.
 - Primary risk level: 95% VaR, corresponding to a nominal 5% exception rate.
-- Baseline benchmark median breach rate: about 5.9%.
-- ML direct-quantile breach rates across nested information sets: about 8.7% to 12.2%.
+- Baseline benchmark median breach rate: about 5.8%.
+- ML direct-quantile breach rates across nested information sets: about 8.9% to 12.3%.
 
 This means lower average loss values for the ML tail models must be read together with
 coverage diagnostics. In the current evidence, the direct-quantile LightGBM models often
@@ -209,8 +209,6 @@ just docs
 
 - The contribution is a forecast-evaluation design for Nikkei 225 Futures opening-gap
   VaR/ES, not a new machine-learning algorithm.
-- DST results are descriptive timing-regime evidence, not structural identification.
-- Trigger diagnostics are risk-monitoring summaries, not trading-strategy evidence.
 - The U.S.-close-mark target is deferred until licensed intraday Nikkei futures marks are
   available.
 - EVT results are judged within the registered 95% VaR/ES design and its common

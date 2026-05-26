@@ -1162,13 +1162,11 @@ def test_evaluate_ml_tail_suite_writes_lightgbm_ladder_artifacts(
     assert forecasts["information_set"].n_unique() == 4
     assert set(forecasts["tail_side"].to_list()) == {"left_tail", "right_tail"}
     assert (run_dir / "metrics" / "ml_tail_incremental_information.parquet").exists()
-    assert (run_dir / "metrics" / "ml_tail_dst_attenuation.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_feature_unavailability.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_feature_unavailability_dates.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_result_matrix.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_result_matrix_sample_audit.parquet").exists()
     assert (run_dir / "metrics" / "ml_tail_result_matrix_dm.parquet").exists()
-    assert (run_dir / "metrics" / "ml_tail_result_matrix_mcs.parquet").exists()
     assert (run_dir / "metrics" / "evt_shape_stability.parquet").exists()
     assert (run_dir / "metrics" / "extremal_index_diagnostics.parquet").exists()
     assert (run_dir / "metrics" / "evt_cap_sensitivity.parquet").exists()

@@ -292,9 +292,6 @@ def _full_run_results_markdown(
     result_matrix_dm = _filter_current_ml_tail_models(
         _read_parquet_optional(paths["ml_tail_result_matrix_dm"])
     )
-    result_matrix_mcs = _filter_current_ml_tail_models(
-        _read_parquet_optional(paths["ml_tail_result_matrix_mcs"])
-    )
     benchmark_stress = _read_parquet_optional(paths["benchmark_stress_windows"])
     ml_tail_stress = _read_parquet_optional(paths["ml_tail_stress_windows"])
     results_discussion = _demote_markdown_headings(
@@ -409,7 +406,6 @@ def _full_run_results_markdown(
     promoted_tail_model_table = _promoted_tail_model_markdown_table(
         ml_tail_metrics_per_model,
         dm=result_matrix_dm,
-        mcs=result_matrix_mcs,
     )
     benchmark_status_label = (
         manifest.get("benchmark_eval_status")
@@ -481,7 +477,7 @@ design lives in [Paper Plan](paper_plan.md).
 
 - The left branch binds vendor and calendar inputs into a timestamp-audited gold panel.
 - The middle branch compares baseline benchmarks, advanced econometric benchmarks, and ML-tail forecasts on registered loss units.
-- The right branch separates primary ML nested information sets, diagnostic model-family comparisons, unconditional DM/MCS inference, and supporting figures.
+- The right branch separates primary ML nested information sets, diagnostic model-family comparisons, unconditional DM inference, and supporting figures.
 
 ## Results Context: Data, Target, And Timing
 
@@ -540,7 +536,7 @@ design lives in [Paper Plan](paper_plan.md).
 | 3 | Gold modeling panel | Join targets, calendar map, feature coverage, and leakage-bound signatures. |
 | 4 | Leakage and coverage gates | Enforce timestamp ordering and sample eligibility before evaluation. |
 | 5 | Baseline benchmarks and ML-tail registry | Run target-history/econometric baseline benchmarks and LightGBM tail-model families. |
-| 6 | Metrics, inference, diagnostics | Build loss matrices, DM/MCS/Murphy diagnostics, stress windows, and result matrix artifacts. |
+| 6 | Metrics, inference, diagnostics | Build loss matrices, DM/Murphy diagnostics, stress windows, and result matrix artifacts. |
 | 7 | Results snapshot | Summarize run-specific evidence and claim boundaries for reader review. |
 
 - Data-access and cache artifacts live under `data/bronze` and `data/silver`.
@@ -555,11 +551,11 @@ design lives in [Paper Plan](paper_plan.md).
   apply Basel green/yellow/red traffic-light capital zones.
 - Forecast evaluation is based on coverage diagnostics, Kupiec/Christoffersen
   tests where available, quantile loss, Fissler-Ziegel joint VaR-ES loss, and
-  DM/MCS inference.
+  DM inference.
 - Benchmarks use target-history information only. ML-tail models add predictors through fixed nested information sets.
 - Most specifications use expanding pre-forecast training histories. The rolling-quantile benchmark is the designed exception and uses the most recent 1,000 clean observations.
 - LightGBM hyperparameters are held fixed across information sets and refit dates; the snapshot reports model-family evidence rather than tuning-search evidence.
-- DM/MCS inference is read on average across the unconditional evaluation sample.
+- DM inference is read on average across the unconditional evaluation sample.
 
 ## Results And Discussion
 
@@ -613,7 +609,7 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 
 - This table joins `benchmark_metrics_per_model.parquet` and `ml_tail_metrics_per_model.parquet` so all benchmark and LGBM tail-model variants are visible in one place.
 - Mean and standard deviation are computed across registered metric rows for the same suite/model/information-set configuration; for most rows this summarizes left- and right-tail metrics.
-- It is a diagnostic scan, not the formal cross-model comparison table. Cross-model claims still require common-sample result-matrix, DM, and MCS evidence because valid dates and model gates can differ.
+- It is a diagnostic scan, not the formal cross-model comparison table. Cross-model claims still require common-sample result-matrix and DM evidence because valid dates and model gates can differ.
 
 #### Restricted Common-Sample Result Matrix
 
@@ -622,7 +618,7 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 - The result matrix is the right place to compare direct quantile, location-scale empirical, plain POT-GPD, and the robust plain POT-GPD routes on their restricted common dates.
 - It separates VaR-only losses from VaR-ES joint scoring, so VaR-only claims are not confused with ES claims.
 - Restricted direct-quantile performance is only a comparison anchor for the tail-model family; it does not replace the primary direct-quantile evidence.
-- DM and MCS records are emitted only where registered row-count and exception-count gates pass; otherwise the result matrix remains descriptive.
+- DM records are emitted only where registered row-count and exception-count gates pass; otherwise the result matrix remains descriptive.
 
 #### Stress And Diagnostic Windows
 
@@ -718,7 +714,7 @@ def _configuration_sensitivity_markdown(run_dir: Path) -> str:
                 "0.90/0.925 settings and mark 0.95 as a boundary diagnostic at the "
                 "95% VaR level.\n"
                 "- Robustness classes describe conclusion stability versus the "
-                "registered primary specification. They do not feed DM/MCS gates, "
+                "registered primary specification. They do not feed DM gates, "
                 "promoted-model logic, or selected-model figures."
             ),
         )
@@ -784,8 +780,8 @@ def _table_interpretation_markdown(run_id: str) -> str:
             "Restricted common-sample model-family comparison and summary.",
         ),
         (
-            "Compact DM/MCS summary",
-            f"[tailrisk_dm_mcs_summary_table.tex]({root}/tailrisk_dm_mcs_summary_table.tex)",
+            "Compact DM summary",
+            f"[tailrisk_dm_summary_table.tex]({root}/tailrisk_dm_summary_table.tex)",
             "Headline paired inference table; negative loss differences favor the candidate.",
         ),
         (
@@ -794,34 +790,9 @@ def _table_interpretation_markdown(run_id: str) -> str:
             "Conditional-on-exception severity diagnostic; not standalone model selection.",
         ),
         (
-            "Pre-open trigger diagnostics",
-            f"[tailrisk_hedge_trigger_diagnostics_table.tex]({root}/tailrisk_hedge_trigger_diagnostics_table.tex)",
-            "Risk-monitoring diagnostic; not hedge PnL, transaction-cost, alpha, or execution evidence.",
-        ),
-        (
             "Claim boundary",
             f"[tailrisk_claim_scope_table.tex]({root}/tailrisk_claim_scope_table.tex)",
             "Reference table separating headline, restricted, diagnostic, and robustness claims.",
-        ),
-        (
-            "DST attenuation",
-            f"[ml_tail_dst_attenuation_table.tex]({root}/ml_tail_dst_attenuation_table.tex)",
-            "Descriptive timing-regime table; not structural causality.",
-        ),
-        (
-            "LGBM capacity robustness",
-            f"[appendix_lgbm_configuration_sensitivity_table.tex]({root}/appendix_lgbm_configuration_sensitivity_table.tex)",
-            "Configuration robustness only; rows do not select headline models.",
-        ),
-        (
-            "Benchmark robustness",
-            f"[appendix_benchmark_configuration_sensitivity_table.tex]({root}/appendix_benchmark_configuration_sensitivity_table.tex)",
-            "EWMA/benchmark robustness evidence, separate from primary selection.",
-        ),
-        (
-            "EVT threshold robustness",
-            f"[appendix_evt_threshold_sensitivity_table.tex]({root}/appendix_evt_threshold_sensitivity_table.tex)",
-            "POT threshold robustness and boundary diagnostics at the 95% VaR level.",
         ),
     ]
     return _markdown_table(("Results/Discussion role", "Artifact", "How to read it"), rows)
@@ -925,10 +896,9 @@ def _promoted_tail_model_markdown_table(
     metrics: pl.DataFrame,
     *,
     dm: pl.DataFrame | None = None,
-    mcs: pl.DataFrame | None = None,
 ) -> str:
     rows = []
-    for row in _promoted_tail_model_rows(metrics, dm=dm, mcs=mcs):
+    for row in _promoted_tail_model_rows(metrics, dm=dm):
         rows.append(
             (
                 row.get("promotion_role"),
@@ -941,7 +911,6 @@ def _promoted_tail_model_markdown_table(
                 _fmt_float(row.get("mean_fz_loss")),
                 _snapshot_dm_cell(row.get("dm_quantile")),
                 _snapshot_dm_cell(row.get("dm_fz")),
-                _snapshot_mcs_pair_cell(row.get("mcs_quantile"), row.get("mcs_fz")),
                 row.get("promotion_status"),
             )
         )
@@ -957,10 +926,9 @@ def _promoted_tail_model_markdown_table(
             "FZ loss",
             "DM q",
             "DM FZ",
-            "MCS q/FZ",
             "Gate",
         ),
-        rows or [("missing", "missing", "", "", "", "", "", "", "", "", "", "")],
+        rows or [("missing", "missing", "", "", "", "", "", "", "", "", "")],
     )
 
 
@@ -974,18 +942,3 @@ def _snapshot_dm_cell(row: object) -> str:
         return str(row.get("inference_status") or "n/a")
     reject_text = "reject10" if reject is True else "no reject"
     return f"{_fmt_float(diff)}; p={_fmt_float(pvalue)}; {reject_text}"
-
-
-def _snapshot_mcs_pair_cell(q_row: object, fz_row: object) -> str:
-    return f"{_snapshot_mcs_cell(q_row)} / {_snapshot_mcs_cell(fz_row)}"
-
-
-def _snapshot_mcs_cell(row: object) -> str:
-    if not isinstance(row, dict):
-        return "n/a"
-    status = str(row.get("mcs_status") or "n/a")
-    if row.get("included_in_mcs") is True:
-        return "in"
-    if row.get("included_in_mcs") is False and status == "ok":
-        return "out"
-    return status

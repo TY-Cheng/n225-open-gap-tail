@@ -68,7 +68,7 @@ Current implementation status:
   loss POT-GPD variants over the registered nested information ladder.
 - Result governance is implemented for primary ML metrics, per-model diagnostics, result
   matrix artifacts, feature-unavailability diagnostics, paired-loss inference,
-  confidence-set inference, Murphy diagnostics, stress windows, and DST attenuation.
+  Murphy diagnostics and stress windows.
 - Reporting utilities generate manuscript-facing discussion, evidence maps, table
   manifests, and figure galleries from artifacts. These outputs summarize evidence;
   they do not create new empirical evidence.
@@ -141,11 +141,8 @@ Evaluation and manuscript gates:
 - Additional forecast-distribution scoring extensions are not current evidence. Do not
   add them to the current paper unless a later review requires stable definitions,
   artifact schemas, tests, and manuscript wording.
-- DST attenuation is descriptive forecast evidence, not a structural causal mechanism.
 - ES severity is conditional on VaR exceptions and must be reviewed before being
   converted into manuscript prose.
-- VaR-trigger diagnostics are pre-open risk-monitoring diagnostics. They do not
-  estimate hedge PnL, costs, turnover, or loss avoided.
 - Do not make trading-alpha, live-deployment, price-discovery, structural-causality,
   or hedge-PnL claims without a separate registered design and evidence layer.
 

@@ -9,11 +9,7 @@ from typing import Any, cast
 import polars as pl
 
 from n225_open_gap_tail.config.model_labels import display_model_label
-from n225_open_gap_tail.config.runtime import (
-    BENCHMARK_BASELINE_MODEL_NAMES,
-    ML_TAIL_DIRECT_QUANTILE_MODEL,
-    ML_TAIL_MODEL_NAMES,
-)
+from n225_open_gap_tail.config.runtime import ML_TAIL_MODEL_NAMES
 
 
 def generate_results_discussion(
@@ -34,23 +30,13 @@ def generate_results_discussion(
     ml_tail_stress: pl.DataFrame,
 ) -> str:
     benchmark_forecasts = _read_parquet_optional(paths["benchmark_forecasts"])
-    ml_tail_forecasts = _read_parquet_optional(paths["ml_tail_forecasts"])
     benchmark_dm = _read_parquet_optional(paths["benchmark_dm_inference"])
-    benchmark_mcs = _read_parquet_optional(paths["benchmark_mcs"])
     ml_tail_dm = _read_parquet_optional(paths["ml_tail_dm_inference"])
-    ml_tail_mcs = _read_parquet_optional(paths["ml_tail_mcs"])
     result_matrix_dm = _read_parquet_optional(paths["ml_tail_result_matrix_dm"])
-    result_matrix_mcs = _read_parquet_optional(paths["ml_tail_result_matrix_mcs"])
     ml_tail_eviction = _read_parquet_optional(paths["ml_tail_model_eviction"])
     ml_tail_metrics_per_model = _read_parquet_optional(paths["ml_tail_metrics_per_model"])
-    ml_tail_dst = _read_parquet_optional(paths["ml_tail_dst_attenuation"])
-    ml_tail_murphy = _read_parquet_optional(paths["ml_tail_murphy"])
+    lgbm_24check_murphy = _read_parquet_optional(paths["lgbm_24check_murphy"])
     feature_unavailability = _read_parquet_optional(paths["ml_tail_feature_unavailability"])
-    combined_forecasts = _combine_forecasts_for_snapshot(
-        benchmark_forecasts=benchmark_forecasts,
-        ml_tail_forecasts=ml_tail_forecasts,
-    )
-
     return f"""## Results And Discussion
 
 <!-- generated: results_discussion -->
@@ -92,7 +78,6 @@ def generate_results_discussion(
         _results_restricted_model_family_discussion(
             result_matrix=result_matrix,
             result_matrix_dm=result_matrix_dm,
-            result_matrix_mcs=result_matrix_mcs,
         )
     }
 
@@ -103,7 +88,7 @@ def generate_results_discussion(
             ml_tail_metrics=ml_tail_metrics,
             result_matrix=result_matrix,
             ml_tail_eviction=ml_tail_eviction,
-            inference_frames=(benchmark_dm, benchmark_mcs, ml_tail_dm, ml_tail_mcs),
+            inference_frames=(benchmark_dm, ml_tail_dm),
         )
     }
 
@@ -116,20 +101,17 @@ def generate_results_discussion(
             ml_tail_metrics=ml_tail_metrics,
             ml_tail_metrics_per_model=ml_tail_metrics_per_model,
             result_matrix=result_matrix,
-            ml_tail_dst=ml_tail_dst,
-            ml_tail_murphy=ml_tail_murphy,
+            lgbm_24check_murphy=lgbm_24check_murphy,
             benchmark_stress=benchmark_stress,
             ml_tail_stress=ml_tail_stress,
             feature_unavailability=feature_unavailability,
-            combined_forecasts=combined_forecasts,
             figure_manifest=figure_manifest,
         )
     }
 
 ### Not yet claimed
 
-- DST attenuation rows are descriptive forecast evidence; structural DST causal identification is not claimed.
-- No hedge PnL, transaction-cost, or trading-alpha analysis is performed. The trigger table is a pre-open risk-monitoring diagnostic only.
+- No hedge PnL, transaction-cost, or trading-alpha analysis is performed.
 - Left-tail and right-tail outputs are both economic tail-risk surfaces for futures positions; neither side should be promoted beyond the sample, coverage, and inference gates without author review.
 - The current evidence does not create an automatic model-selection statement; any manuscript claim still requires author review of sample gates, coverage, loss metrics, and inference diagnostics.
 """
@@ -254,7 +236,6 @@ def _results_restricted_model_family_discussion(
     *,
     result_matrix: pl.DataFrame,
     result_matrix_dm: pl.DataFrame,
-    result_matrix_mcs: pl.DataFrame,
 ) -> str:
     if result_matrix.is_empty():
         return _analysis_not_available("The restricted ML-tail result matrix")
@@ -272,7 +253,6 @@ def _results_restricted_model_family_discussion(
         lines.append(f"- {short_sample_sentence}")
     inference_sentence = _result_matrix_inference_sentence(
         result_matrix_dm=result_matrix_dm,
-        result_matrix_mcs=result_matrix_mcs,
     )
     if inference_sentence:
         lines.append(f"- {inference_sentence}")
@@ -296,7 +276,7 @@ def _results_coverage_inference_discussion(
         [
             f"- {coverage_sentence}",
             f"- {eviction_sentence}",
-            "- Block-bootstrap DM and HLN Tmax MCS artifacts are unconditional forecast-comparison diagnostics; any p-value should be read on average across the unconditional evaluation sample, not as condition-specific evidence.",
+            "- Block-bootstrap DM artifacts are unconditional forecast-comparison diagnostics; any p-value should be read on average across the unconditional evaluation sample, not as condition-specific evidence.",
             "- Loss differentials alone do not constitute an improvement claim; coverage, exception counts, sample gates, and inference status must be reviewed together.",
             f"- {power_sentence}",
         ]
@@ -310,12 +290,10 @@ def _results_supporting_diagnostics_discussion(
     ml_tail_metrics: pl.DataFrame,
     ml_tail_metrics_per_model: pl.DataFrame,
     result_matrix: pl.DataFrame,
-    ml_tail_dst: pl.DataFrame,
-    ml_tail_murphy: pl.DataFrame,
+    lgbm_24check_murphy: pl.DataFrame,
     benchmark_stress: pl.DataFrame,
     ml_tail_stress: pl.DataFrame,
     feature_unavailability: pl.DataFrame,
-    combined_forecasts: pl.DataFrame,
     figure_manifest: Mapping[str, object],
 ) -> str:
     table_sentence = _diagnostic_table_sentence(paths)
@@ -324,16 +302,10 @@ def _results_supporting_diagnostics_discussion(
         ml_tail_metrics=ml_tail_metrics,
         ml_tail_metrics_per_model=ml_tail_metrics_per_model,
     )
-    trigger_sentence = _trigger_discussion_sentence(combined_forecasts)
-    dst_sentence = (
-        f"`ml_tail_dst_attenuation.parquet` contains `{ml_tail_dst.height}` DST attenuation rows; these are descriptive timing-regime forecast diagnostics."
-        if not ml_tail_dst.is_empty()
-        else "DST attenuation analysis has not yet been performed for this run."
-    )
     murphy_sentence = (
-        f"Murphy diagnostics contain `{ml_tail_murphy.height}` ML-tail rows."
-        if not ml_tail_murphy.is_empty()
-        else "Murphy diagnostics are not available in this snapshot."
+        f"24-check LGBM Murphy diagnostics contain `{lgbm_24check_murphy.height}` rows."
+        if not lgbm_24check_murphy.is_empty()
+        else "24-check LGBM Murphy diagnostics are not available in this snapshot."
     )
     stress_rows = benchmark_stress.height + ml_tail_stress.height
     feature_sentence = (
@@ -345,9 +317,7 @@ def _results_supporting_diagnostics_discussion(
     return "\n".join(
         [
             f"- {table_sentence}",
-            f"- {dst_sentence} They do not establish a structural timing mechanism.",
             f"- {severity_sentence}",
-            f"- {trigger_sentence}",
             f"- Stress-window diagnostics contain `{stress_rows}` rows, and {murphy_sentence}",
             f"- {feature_sentence}",
             figure_sentence,
@@ -520,7 +490,7 @@ def _tail_event_power_sentence(
     for frame in inference_frames:
         if frame.is_empty():
             continue
-        status_column = _first_present_column(frame, ("inference_status", "mcs_status"))
+        status_column = _first_present_column(frame, ("inference_status",))
         if status_column is None:
             continue
         total += frame.height
@@ -529,7 +499,7 @@ def _tail_event_power_sentence(
         ).height
     if not total and not power_flags:
         return "Formal inference gate status is not available in this snapshot."
-    return f"Result-matrix tail-event power flags and suite-level inference gates report `{power_flags}` restricted rows with insufficient tail-event power and `{unavailable}/{total}` unavailable DM/MCS inference rows."
+    return f"Result-matrix tail-event power flags and suite-level inference gates report `{power_flags}` restricted rows with insufficient tail-event power and `{unavailable}/{total}` unavailable DM inference rows."
 
 
 def _first_present_column(frame: pl.DataFrame, columns: Sequence[str]) -> str | None:
@@ -539,9 +509,8 @@ def _first_present_column(frame: pl.DataFrame, columns: Sequence[str]) -> str | 
 def _result_matrix_inference_sentence(
     *,
     result_matrix_dm: pl.DataFrame,
-    result_matrix_mcs: pl.DataFrame,
 ) -> str | None:
-    if result_matrix_dm.is_empty() and result_matrix_mcs.is_empty():
+    if result_matrix_dm.is_empty():
         return None
     parts: list[str] = []
     if not result_matrix_dm.is_empty() and "inference_status" in result_matrix_dm.columns:
@@ -558,24 +527,10 @@ def _result_matrix_inference_sentence(
         parts.append(
             f"restricted DM records include `{ok}` gate-pass rows and `{unavailable}` unavailable rows"
         )
-    if not result_matrix_mcs.is_empty() and "mcs_status" in result_matrix_mcs.columns:
-        ok = int(
-            result_matrix_mcs.filter(
-                pl.col("mcs_status").cast(pl.Utf8).str.starts_with("ok")
-            ).height
-        )
-        unavailable = int(
-            result_matrix_mcs.filter(
-                pl.col("mcs_status").cast(pl.Utf8).str.contains("unavailable")
-            ).height
-        )
-        parts.append(
-            f"restricted MCS records include `{ok}` gate-pass rows and `{unavailable}` unavailable rows"
-        )
     if not parts:
         return None
     return (
-        "Result-matrix inference is recorded separately from the primary suite-level DM/MCS: "
+        "Result-matrix inference is recorded separately from the primary suite-level DM: "
         + "; ".join(parts)
         + ". These entries are restricted common-sample diagnostics, not primary model-family rankings."
     )
@@ -583,9 +538,7 @@ def _result_matrix_inference_sentence(
 
 def _diagnostic_table_sentence(paths: Mapping[str, Path]) -> str:
     table_keys = (
-        "dst_attenuation_table",
         "es_severity_table",
-        "hedge_trigger_table",
         "result_matrix_summary_table",
     )
     existing = [key for key in table_keys if paths[key].exists()]
@@ -618,84 +571,6 @@ def _severity_discussion_sentence(
         pl.col("mean_exceedance_severity").max().alias("max"),
     ).row(0, named=True)
     return f"ES severity diagnostics contain `{rows.height}` finite rows with mean exceedance severity ranging from `{_fmt_float(values['min'])}` to `{_fmt_float(values['max'])}`; this is conditional-on-exception evidence."
-
-
-def _combine_forecasts_for_snapshot(
-    *,
-    benchmark_forecasts: pl.DataFrame,
-    ml_tail_forecasts: pl.DataFrame,
-) -> pl.DataFrame:
-    frames: list[pl.DataFrame] = []
-    if not benchmark_forecasts.is_empty():
-        benchmark = benchmark_forecasts
-        if "model_name" in benchmark.columns:
-            benchmark = benchmark.filter(
-                pl.col("model_name").is_in(list(BENCHMARK_BASELINE_MODEL_NAMES))
-            )
-        if not benchmark.is_empty():
-            frames.append(benchmark.with_columns(pl.lit("benchmark").alias("suite")))
-    if not ml_tail_forecasts.is_empty():
-        ml_tail = ml_tail_forecasts
-        if "model_name" in ml_tail.columns:
-            ml_tail = ml_tail.filter(pl.col("model_name") == ML_TAIL_DIRECT_QUANTILE_MODEL)
-        if not ml_tail.is_empty():
-            frames.append(ml_tail.with_columns(pl.lit("ml_tail").alias("suite")))
-    if not frames:
-        return pl.DataFrame()
-    return pl.concat(frames, how="diagonal_relaxed")
-
-
-def _trigger_discussion_sentence(forecasts: pl.DataFrame) -> str:
-    required = {"model_name", "information_set", "tail_level", "var_forecast", "realized_loss"}
-    if forecasts.is_empty() or not required.issubset(forecasts.columns):
-        return "The hedge-trigger diagnostic has not yet been performed for this run; it would be descriptive trigger evidence only."
-    valid_expr = pl.col("var_forecast").is_not_null() & pl.col("realized_loss").is_not_null()
-    if "is_valid_forecast" in forecasts.columns:
-        valid_expr = valid_expr & pl.col("is_valid_forecast").fill_null(True)
-    valid = forecasts.filter(valid_expr)
-    if valid.is_empty():
-        return "The hedge-trigger diagnostic has no valid forecast rows; it remains descriptive trigger evidence only."
-    group_columns = [
-        column
-        for column in (
-            "suite",
-            "target_family",
-            "tail_side",
-            "model_name",
-            "information_set",
-            "tail_level",
-            "refit_frequency",
-        )
-        if column in valid.columns
-    ]
-    trigger_count = 0
-    triggered_exception_count = 0
-    exception_count = 0
-    severities: list[float] = []
-    for _, group in valid.group_by(group_columns, maintain_order=True):
-        threshold = group.select(pl.col("var_forecast").quantile(0.75)).item()
-        if threshold is None:
-            continue
-        diagnostic = group.with_columns(
-            (pl.col("var_forecast") >= float(threshold)).alias("_trigger"),
-            (pl.col("realized_loss") > pl.col("var_forecast")).alias("_exception"),
-            (pl.col("realized_loss") - pl.col("var_forecast")).alias("_severity"),
-        )
-        trigger_count += int(diagnostic.select(pl.col("_trigger").sum()).item() or 0)
-        exception_count += int(diagnostic.select(pl.col("_exception").sum()).item() or 0)
-        triggered = diagnostic.filter(pl.col("_trigger") & pl.col("_exception"))
-        triggered_exception_count += triggered.height
-        if not triggered.is_empty():
-            severities.extend(
-                float(value)
-                for value in triggered["_severity"].drop_nulls().to_list()
-                if math.isfinite(float(value))
-            )
-    severity_text = _fmt_float(sum(severities) / len(severities)) if severities else "not available"
-    return (
-        f"The diagnostic 75th-percentile VaR trigger rule marks `{trigger_count}` model-date rows; `{triggered_exception_count}` of those rows coincide with VaR exceptions out of `{exception_count}` total exceptions, and mean triggered exception severity is `{severity_text}`. "
-        "This is a pre-open risk-monitoring diagnostic, not hedge PnL, transaction-cost, or trading-alpha evidence."
-    )
 
 
 def _join_list(value: object) -> str:

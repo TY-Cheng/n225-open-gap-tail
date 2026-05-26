@@ -40,7 +40,6 @@ from n225_open_gap_tail.inference.core import build_common_sample_artifacts
 from n225_open_gap_tail.metrics.information import (
     _assert_run_config_compatible,
     _gold_artifact_path,
-    build_dst_attenuation_records,
     build_incremental_information_records,
 )
 from n225_open_gap_tail.metrics.result_matrix import build_ml_tail_result_matrix_artifacts
@@ -182,11 +181,6 @@ def evaluate_ml_tail_suite(
         primary_forecasts,
         baseline_information_set=PIPELINE_CONFIG.feature_sets.ml_tail_model_a_information_set,
     )
-    dst_attenuation = build_dst_attenuation_records(
-        primary_forecasts,
-        baseline_information_set=PIPELINE_CONFIG.feature_sets.ml_tail_model_a_information_set,
-        expanded_information_set=PIPELINE_CONFIG.feature_sets.ml_tail_model_b_information_set,
-    )
     feature_unavailability = build_ml_tail_feature_unavailability_records(forecasts)
     feature_unavailability_dates = build_ml_tail_feature_unavailability_date_records(forecasts)
     result_matrix_artifacts = build_ml_tail_result_matrix_artifacts(forecasts)
@@ -218,10 +212,6 @@ def evaluate_ml_tail_suite(
         cast(list[dict[str, object]], artifacts["dm_inference"]),
     )
     _write_parquet(
-        metrics_root / "ml_tail_mcs.parquet",
-        cast(list[dict[str, object]], artifacts["mcs"]),
-    )
-    _write_parquet(
         metrics_root / "ml_tail_murphy.parquet",
         cast(list[dict[str, object]], artifacts["murphy"]),
     )
@@ -230,7 +220,6 @@ def evaluate_ml_tail_suite(
         cast(list[dict[str, object]], artifacts["stress_windows"]),
     )
     _write_parquet(metrics_root / "ml_tail_incremental_information.parquet", incremental)
-    _write_parquet(metrics_root / "ml_tail_dst_attenuation.parquet", dst_attenuation)
     _write_parquet(
         metrics_root / "ml_tail_feature_unavailability.parquet",
         feature_unavailability,
@@ -250,10 +239,6 @@ def evaluate_ml_tail_suite(
     _write_parquet(
         metrics_root / "ml_tail_result_matrix_dm.parquet",
         cast(list[dict[str, object]], result_matrix_artifacts["dm"]),
-    )
-    _write_parquet(
-        metrics_root / "ml_tail_result_matrix_mcs.parquet",
-        cast(list[dict[str, object]], result_matrix_artifacts["mcs"]),
     )
     _write_parquet(metrics_root / "evt_shape_stability.parquet", evt_shape_stability)
     _write_parquet(

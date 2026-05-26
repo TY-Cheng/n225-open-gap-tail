@@ -14,7 +14,6 @@ from n225_open_gap_tail.config.runtime import (
     PRIMARY_TAIL_SIDE,
     shutil,
     TAIL_LEVELS,
-    _optional_float,
     _required_float,
 )
 from n225_open_gap_tail.data_lake.artifacts import _read_manifest, _update_manifest
@@ -67,72 +66,6 @@ def build_incremental_information_records(
                             dst_regime=None,
                         )
                     )
-    return records
-
-
-def build_dst_attenuation_records(
-    forecasts: list[dict[str, object]],
-    *,
-    baseline_information_set: str,
-    expanded_information_set: str,
-) -> list[dict[str, object]]:
-    records: list[dict[str, object]] = []
-    model_names = sorted(
-        {str(row.get("model_name") or "") for row in forecasts if row.get("model_name")}
-    )
-    tail_sides = sorted({str(row.get("tail_side") or PRIMARY_TAIL_SIDE) for row in forecasts})
-    for model_name in model_names:
-        for tail_side in tail_sides:
-            for tail_level in TAIL_LEVELS:
-                regime_records: dict[str, dict[str, object]] = {}
-                for regime in ("EST", "EDT"):
-                    paired = _paired_forecast_rows(
-                        forecasts,
-                        model_name=model_name,
-                        tail_side=tail_side,
-                        tail_level=tail_level,
-                        base_information_set=baseline_information_set,
-                        expanded_information_set=expanded_information_set,
-                        dst_regime=regime,
-                    )
-                    row = _incremental_record_from_pairs(
-                        paired,
-                        model_name=model_name,
-                        tail_side=tail_side,
-                        tail_level=tail_level,
-                        base_information_set=baseline_information_set,
-                        expanded_information_set=expanded_information_set,
-                        dst_regime=regime,
-                    )
-                    regime_records[regime] = row
-                    records.append(row)
-                est_gain = _optional_float(regime_records.get("EST", {}).get("mean_fz_gain"))
-                edt_gain = _optional_float(regime_records.get("EDT", {}).get("mean_fz_gain"))
-                stable = est_gain is not None and est_gain > 0 and edt_gain is not None
-                alpha_absorb: float | None = None
-                if est_gain is not None and est_gain > 0 and edt_gain is not None:
-                    alpha_absorb = float(1.0 - edt_gain / est_gain)
-                records.append(
-                    {
-                        "model_name": model_name,
-                        "tail_side": tail_side,
-                        "tail_level": tail_level,
-                        "base_information_set": baseline_information_set,
-                        "expanded_information_set": expanded_information_set,
-                        "dst_regime": "absorption_coefficient",
-                        "paired_rows": None,
-                        "mean_quantile_gain": None,
-                        "mean_fz_gain": None,
-                        "alpha_absorb": alpha_absorb,
-                        "alpha_absorb_status": "ok" if stable else "unavailable_unstable_est_gain",
-                        "inference_status": "diagnostic_ratio_no_direct_dm_test",
-                        "dm_method": None,
-                        "dm_pvalue_one_sided": None,
-                        "dm_block_length": None,
-                        "dm_reps": None,
-                        "dm_seed": None,
-                    }
-                )
     return records
 
 

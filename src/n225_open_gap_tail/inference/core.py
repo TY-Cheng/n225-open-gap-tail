@@ -8,10 +8,8 @@ from n225_open_gap_tail.config.runtime import (
     COMMON_SAMPLE_MIN_ANCHOR_COVERAGE,
     common_sample_status,
     INFERENCE_RANDOM_SEED,
-    json,
     Mapping,
     math,
-    MCS_ALPHA,
     ML_TAIL_PRIMARY_MODEL_NAMES,
     MODEL_EVICTION_COVERAGE_THRESHOLD,
     np,
@@ -19,8 +17,6 @@ from n225_open_gap_tail.config.runtime import (
     PRIMARY_TAIL_SIDE,
     RESULT_MATRIX_MIN_DM_EXCEPTIONS,
     RESULT_MATRIX_MIN_DM_ROWS,
-    RESULT_MATRIX_MIN_MCS_EXCEPTIONS,
-    RESULT_MATRIX_MIN_MCS_ROWS,
     stats,
     _optional_float,
     _required_float,
@@ -168,7 +164,6 @@ def build_common_sample_artifacts(
             anchor_model=anchor_model,
             anchor_information_set=anchor_information_set,
         ),
-        "mcs": build_mcs_records(loss_matrix, suite=suite),
         "murphy": build_murphy_records(primary_forecasts, suite=suite),
         "stress_windows": build_stress_window_records(primary_forecasts, suite=suite),
         "common_sample_status": _combined_common_sample_status(status_by_tail),
@@ -320,278 +315,6 @@ def build_block_bootstrap_dm_records(
                 }
             )
     return records
-
-
-def build_mcs_records(
-    loss_matrix: list[dict[str, object]],
-    *,
-    suite: str,
-    seed: int = INFERENCE_RANDOM_SEED,
-    alpha: float = MCS_ALPHA,
-    reps: int = BOOTSTRAP_REPS,
-) -> list[dict[str, object]]:
-    grouped = _group_loss_matrix_by_key(loss_matrix)
-    rng = np.random.default_rng(seed)
-    records: list[dict[str, object]] = []
-    for target_family, tail_side, tail_level, refit_frequency in sorted(
-        {(key[0], key[5], key[3], key[4]) for key in grouped}
-    ):
-        keys = sorted(
-            key
-            for key in grouped
-            if key[0] == target_family
-            and key[5] == tail_side
-            and key[3] == tail_level
-            and key[4] == refit_frequency
-        )
-        if not keys:
-            continue
-        common_dates = sorted(set.intersection(*(set(grouped[key]) for key in keys)))
-        joint_exception_count = _loss_matrix_joint_exception_count(grouped, keys, common_dates)
-        gate_status = _primary_mcs_gate_status(len(common_dates), joint_exception_count)
-        if gate_status != "ok_hln_tmax_mcs":
-            for key in keys:
-                records.append(
-                    _mcs_record(
-                        suite=suite,
-                        key=key,
-                        rows=len(common_dates),
-                        mean_fz_loss=None,
-                        included=False,
-                        alpha=alpha,
-                        reps=reps,
-                        seed=seed,
-                        block_length=None,
-                        status=gate_status,
-                        method_note=None,
-                        joint_exception_count=joint_exception_count,
-                    )
-                )
-            continue
-        losses_by_key = {
-            key: np.array(
-                [
-                    _required_float(grouped[key][forecast_date]["fz_loss"])
-                    for forecast_date in common_dates
-                ],
-                dtype=float,
-            )
-            for key in keys
-        }
-        mean_losses = {key: _safe_mean(values) for key, values in losses_by_key.items()}
-        active = {key for key, value in mean_losses.items() if value is not None}
-        if len(active) < 2:
-            for key in keys:
-                records.append(
-                    _mcs_record(
-                        suite=suite,
-                        key=key,
-                        rows=len(common_dates),
-                        mean_fz_loss=mean_losses[key],
-                        included=False,
-                        alpha=alpha,
-                        reps=reps,
-                        seed=seed,
-                        block_length=None,
-                        status="unavailable_insufficient_finite_loss_models",
-                        method_note=None,
-                        joint_exception_count=joint_exception_count,
-                    )
-                )
-            continue
-        eliminated_step: dict[tuple[str, str, str, float, str, str], int] = {}
-        elimination_pvalue: dict[tuple[str, str, str, float, str, str], float | None] = {}
-        elimination_tmax: dict[tuple[str, str, str, float, str, str], float | None] = {}
-        elimination_active_set: dict[tuple[str, str, str, float, str, str], str | None] = {}
-        model_tmax_component: dict[tuple[str, str, str, float, str, str], float | None] = {}
-        final_tmax_stat: float | None = None
-        final_pvalue: float | None = None
-        block_length = max(5, round(len(common_dates) ** (1.0 / 3.0)))
-        step = 0
-        while len(active) > 1:
-            ordered_active = sorted(active)
-            active_loss_matrix = np.column_stack([losses_by_key[key] for key in ordered_active])
-            result = _hln_tmax_mcs_step(
-                active_loss_matrix,
-                reps=reps,
-                block_length=block_length,
-                rng=rng,
-            )
-            t_values = cast(np.ndarray, result["t_values"])
-            for key, t_value in zip(ordered_active, t_values, strict=True):
-                model_tmax_component[key] = (
-                    float(t_value) if math.isfinite(float(t_value)) else None
-                )
-            pvalue = _optional_float(result["pvalue"])
-            final_tmax_stat = _optional_float(result["tmax_stat"])
-            final_pvalue = pvalue
-            if pvalue is None or pvalue > alpha:
-                break
-            worst_index = int(np.nanargmax(t_values))
-            worst_key = ordered_active[worst_index]
-            step += 1
-            eliminated_step[worst_key] = step
-            elimination_pvalue[worst_key] = pvalue
-            elimination_tmax[worst_key] = _optional_float(result["tmax_stat"])
-            elimination_active_set[worst_key] = _mcs_key_set_json(ordered_active)
-            active.remove(worst_key)
-        final_active_set = _mcs_key_set_json(sorted(active))
-        for key in keys:
-            records.append(
-                _mcs_record(
-                    suite=suite,
-                    key=key,
-                    rows=len(common_dates),
-                    mean_fz_loss=mean_losses[key],
-                    included=key in active,
-                    alpha=alpha,
-                    reps=reps,
-                    seed=seed,
-                    block_length=block_length,
-                    status="ok" if active else "unavailable_empty_loss_matrix",
-                    method_note=PIPELINE_CONFIG.evaluation_policy.mcs_method,
-                    elimination_step=eliminated_step.get(key),
-                    elimination_pvalue=elimination_pvalue.get(key),
-                    tmax_stat=elimination_tmax.get(key)
-                    if key in eliminated_step
-                    else final_tmax_stat,
-                    final_pvalue=final_pvalue,
-                    model_t_stat=model_tmax_component.get(key),
-                    active_model_set=elimination_active_set.get(key)
-                    if key in eliminated_step
-                    else final_active_set,
-                    joint_exception_count=joint_exception_count,
-                )
-            )
-    return records
-
-
-def _mcs_record(
-    *,
-    suite: str,
-    key: tuple[str, str, str, float, str, str],
-    rows: int,
-    mean_fz_loss: float | None,
-    included: bool,
-    alpha: float,
-    reps: int,
-    seed: int,
-    block_length: int | None,
-    status: str,
-    method_note: str,
-    elimination_step: int | None = None,
-    elimination_pvalue: float | None = None,
-    tmax_stat: float | None = None,
-    final_pvalue: float | None = None,
-    model_t_stat: float | None = None,
-    active_model_set: str | None = None,
-    joint_exception_count: int | None = None,
-) -> dict[str, object]:
-    return {
-        "suite": suite,
-        "target_family": key[0],
-        "tail_side": key[5],
-        "tail_level": key[3],
-        "refit_frequency": key[4] or None,
-        "model_name": key[1],
-        "information_set": key[2],
-        "rows": rows,
-        "joint_exception_count": joint_exception_count,
-        "mean_fz_loss": mean_fz_loss,
-        "included_in_mcs": included,
-        "elimination_step": elimination_step,
-        "elimination_pvalue": elimination_pvalue,
-        "model_t_stat": model_t_stat,
-        "tmax_stat": tmax_stat,
-        "final_pvalue": final_pvalue,
-        "active_model_set": active_model_set,
-        "mcs_alpha": alpha,
-        "bootstrap_reps": reps,
-        "bootstrap_seed": seed,
-        "block_length": block_length,
-        "mcs_status": status,
-        "method_note": method_note,
-    }
-
-
-def _hln_tmax_mcs_step(
-    losses: np.ndarray,
-    *,
-    reps: int,
-    block_length: int,
-    rng: np.random.Generator,
-) -> dict[str, object]:
-    if losses.ndim != 2 or min(losses.shape) < 2:
-        return {"tmax_stat": None, "pvalue": None, "t_values": np.array([])}
-    centered_against_cross_section = losses - np.mean(losses, axis=1, keepdims=True)
-    dbar = np.mean(centered_against_cross_section, axis=0)
-    null_centered = centered_against_cross_section - dbar
-    bootstrap_means = _moving_block_bootstrap_mean_matrix(
-        null_centered,
-        reps=reps,
-        block_length=block_length,
-        rng=rng,
-    )
-    se = np.std(bootstrap_means, axis=0, ddof=1)
-    tiny_se = se <= 1e-12
-    t_values = np.divide(dbar, se, out=np.zeros_like(dbar), where=~tiny_se)
-    t_values = np.where(tiny_se & (dbar > 1e-12), 1e12, t_values)
-    t_values = np.where(tiny_se & (dbar < -1e-12), -1e12, t_values)
-    if np.all(np.isnan(t_values)):
-        return {"tmax_stat": None, "pvalue": None, "t_values": t_values}
-    tmax_stat = float(np.nanmax(t_values))
-    bootstrap_scaled = np.divide(
-        bootstrap_means,
-        se,
-        out=np.zeros_like(bootstrap_means),
-        where=~tiny_se,
-    )
-    bootstrap_tmax = np.nanmax(bootstrap_scaled, axis=1)
-    bootstrap_tmax = bootstrap_tmax[np.isfinite(bootstrap_tmax)]
-    if bootstrap_tmax.size == 0:
-        return {"tmax_stat": tmax_stat, "pvalue": None, "t_values": t_values}
-    pvalue = float((np.sum(bootstrap_tmax >= tmax_stat) + 1) / (bootstrap_tmax.size + 1))
-    return {"tmax_stat": tmax_stat, "pvalue": pvalue, "t_values": t_values}
-
-
-def _mcs_key_set_json(keys: list[tuple[str, str, str, float, str, str]]) -> str:
-    return json.dumps(
-        [
-            {
-                "target_family": key[0],
-                "tail_side": key[5],
-                "model_name": key[1],
-                "information_set": key[2],
-                "tail_level": key[3],
-                "refit_frequency": key[4] or None,
-            }
-            for key in keys
-        ],
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
-def _moving_block_bootstrap_mean_matrix(
-    matrix: np.ndarray,
-    *,
-    reps: int,
-    block_length: int,
-    rng: np.random.Generator,
-) -> np.ndarray:
-    n, m = matrix.shape
-    starts = np.arange(n)
-    output = np.empty((reps, m), dtype=float)
-    for rep in range(reps):
-        indices: list[int] = []
-        while len(indices) < n:
-            start = int(rng.choice(starts))
-            for offset in range(block_length):
-                indices.append((start + offset) % n)
-                if len(indices) == n:
-                    break
-        output[rep, :] = np.mean(matrix[indices, :], axis=0)
-    return output
 
 
 def build_murphy_records(
@@ -766,14 +489,6 @@ def _primary_dm_gate_status(common_n: int, joint_exception_count: int) -> str:
     if joint_exception_count < RESULT_MATRIX_MIN_DM_EXCEPTIONS:
         return "unavailable_insufficient_tail_events_for_inference"
     return "ok_block_bootstrap_dm"
-
-
-def _primary_mcs_gate_status(common_n: int, joint_exception_count: int) -> str:
-    if common_n < RESULT_MATRIX_MIN_MCS_ROWS:
-        return "unavailable_insufficient_common_rows_for_inference"
-    if joint_exception_count < RESULT_MATRIX_MIN_MCS_EXCEPTIONS:
-        return "unavailable_insufficient_tail_events_for_inference"
-    return "ok_hln_tmax_mcs"
 
 
 def _model_eviction_record(

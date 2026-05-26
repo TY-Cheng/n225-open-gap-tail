@@ -33,21 +33,17 @@ from n225_open_gap_tail.reporting.latex_headline import (
     SELECTED_MODEL_MAX_PER_GROUP as SELECTED_MODEL_MAX_PER_GROUP,
     SELECTED_MODEL_MIN_ROWS as SELECTED_MODEL_MIN_ROWS,
     _dm_cell as _dm_cell,
-    _dm_mcs_summary_to_latex as _dm_mcs_summary_to_latex,
-    _mcs_cell as _mcs_cell,
-    _mcs_pair_cell as _mcs_pair_cell,
+    _dm_summary_to_latex as _dm_summary_to_latex,
     _model_inventory_to_latex as _model_inventory_to_latex,
     _predictor_block_coverage_rows as _predictor_block_coverage_rows,
     _predictor_block_coverage_to_latex as _predictor_block_coverage_to_latex,
     _promoted_dm_row as _promoted_dm_row,
-    _promoted_mcs_row as _promoted_mcs_row,
     _promoted_tail_model_rows as _promoted_tail_model_rows,
     _promoted_tail_models_to_latex as _promoted_tail_models_to_latex,
     _selected_model_performance_rows as _selected_model_performance_rows,
     _selected_model_performance_to_latex as _selected_model_performance_to_latex,
     _selection_candidates as _selection_candidates,
     _source_block_role as _source_block_role,
-    _summary_mcs_cell as _summary_mcs_cell,
 )
 
 
@@ -91,11 +87,14 @@ def _metrics_to_latex(
         )
     note = (
         "Visible notes: candidate artifact; lower FZ loss is better; "
-        "inference artifacts use block-bootstrap DM and HLN Tmax MCS; "
+        "inference artifacts use block-bootstrap DM; "
         "common-sample status is recorded in metrics metadata."
     )
     lines.extend(
-        ["\\midrule", f"\\multicolumn{{{len(headers)}}}{{l}}{{\\footnotesize {note}}} \\\\"]
+        [
+            "\\midrule",
+            f"\\multicolumn{{{len(headers)}}}{{l}}{{\\footnotesize {_latex_escape(note)}}} \\\\",
+        ]
     )
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
@@ -142,7 +141,9 @@ def _full_per_model_metrics_to_latex(
         "exceedance severity are better, while VaR breach should be read relative "
         "to the nominal 5% exception rate."
     )
-    lines.extend(["\\midrule", f"\\multicolumn{{9}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(
+        ["\\midrule", f"\\multicolumn{{9}}{{l}}{{\\footnotesize {_latex_escape(note)}}} \\\\"]
+    )
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
 
@@ -206,12 +207,14 @@ def _configuration_sensitivity_to_latex(
     note = (
         "Visible notes: appendix-only configuration robustness diagnostics. "
         "Rows carry primary_claim_allowed=false and are not used to select "
-        "primary selections, promoted rows, DM/MCS gates, or selected-model figures. "
+        "primary selections, promoted rows, DM gates, or selected-model figures. "
         "Lower quantile/FZ loss is better; breach should be read against the 5% "
         "nominal exception rate. Boundary EVT rows at u=0.95 are diagnostics at "
         "the 95% VaR level, not alternative forecasts."
     )
-    lines.extend(["\\midrule", f"\\multicolumn{{10}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(
+        ["\\midrule", f"\\multicolumn{{10}}{{l}}{{\\footnotesize {_latex_escape(note)}}} \\\\"]
+    )
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
 
@@ -226,7 +229,7 @@ def _result_matrix_to_latex(
         f"% git_commit: {manifest.get('git_commit', '')}",
         f"% config_hash: {manifest.get('config_hash', '')}",
         "% claim_scope: restricted_model_comparison_not_primary unless stated otherwise",
-        "\\begin{tabular}{lllllrrrr}",
+        "\\begin{tabular}{lllllrrr}",
         "\\toprule",
         " & ".join(headers) + r" \\",
         "\\midrule",
@@ -265,10 +268,12 @@ def _result_matrix_to_latex(
     note = (
         "Visible notes: restricted result matrix; lower metric is better for "
         "quantile loss, FZ loss, and absolute coverage error; block-bootstrap DM "
-        "and HLN Tmax MCS appear only when registered sample and exception gates pass; "
+        "appears only when registered sample and exception gates pass; "
         "these rows do not replace the primary ML table."
     )
-    lines.extend(["\\midrule", f"\\multicolumn{{9}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(
+        ["\\midrule", f"\\multicolumn{{9}}{{l}}{{\\footnotesize {_latex_escape(note)}}} \\\\"]
+    )
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
 
@@ -305,85 +310,9 @@ def _es_severity_to_latex(
         "means lower mean exceedance severity than the same-model anchor information "
         "set. This is an ES severity diagnostic, not a model-win claim."
     )
-    lines.extend(["\\midrule", f"\\multicolumn{{9}}{{l}}{{\\footnotesize {note}}} \\\\"])
-    lines.extend(["\\bottomrule", "\\end{tabular}", ""])
-    return "\n".join(lines)
-
-
-def _hedge_trigger_to_latex(
-    forecasts: pl.DataFrame, *, manifest: Mapping[str, object] | None = None
-) -> str:
-    manifest = manifest or {}
-    headers = ("suite", "model", "info", "side", "tail", "N", "trig", "false", "miss", "sev")
-    lines = [
-        f"% run_id: {manifest.get('run_id', '')}",
-        f"% git_commit: {manifest.get('git_commit', '')}",
-        f"% config_hash: {manifest.get('config_hash', '')}",
-        "% table_scope: diagnostic_var_trigger_not_hedge_pnl",
-        "\\begin{tabular}{lllllrrrrr}",
-        "\\toprule",
-        " & ".join(headers) + r" \\",
-        "\\midrule",
-    ]
-    for row in _hedge_trigger_rows(forecasts):
-        lines.append(
-            f"{_latex_escape(row.get('suite'))} & "
-            f"{_latex_escape(display_model_label(row.get('model_name')))} & "
-            f"{_latex_escape(display_information_set_label(row.get('information_set')))} & "
-            f"{_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
-            f"{_fmt(row.get('tail_level'))} & "
-            f"{int(_optional_float(row.get('rows')) or 0)} & "
-            f"{int(_optional_float(row.get('trigger_count')) or 0)} & "
-            f"{int(_optional_float(row.get('false_alarm_count')) or 0)} & "
-            f"{int(_optional_float(row.get('missed_exception_count')) or 0)} & "
-            f"{_fmt(row.get('mean_triggered_exception_severity'))} \\\\"
-        )
-    note = (
-        "Visible notes: trigger is a within-model 75th-percentile VaR diagnostic "
-        "computed on the evaluation sample. False alarms are triggers without a VaR "
-        "exception; misses are exceptions without a trigger. This is not hedge PnL, "
-        "not turnover, and not a trading-alpha result."
+    lines.extend(
+        ["\\midrule", f"\\multicolumn{{9}}{{l}}{{\\footnotesize {_latex_escape(note)}}} \\\\"]
     )
-    lines.extend(["\\midrule", f"\\multicolumn{{10}}{{l}}{{\\footnotesize {note}}} \\\\"])
-    lines.extend(["\\bottomrule", "\\end{tabular}", ""])
-    return "\n".join(lines)
-
-
-def _dst_attenuation_to_latex(
-    attenuation: pl.DataFrame, *, manifest: Mapping[str, object] | None = None
-) -> str:
-    manifest = manifest or {}
-    headers = ("model", "tail", "regime", "pairs", "q_gain", "fz_gain", "p", "alpha")
-    lines = [
-        f"% run_id: {manifest.get('run_id', '')}",
-        f"% git_commit: {manifest.get('git_commit', '')}",
-        f"% config_hash: {manifest.get('config_hash', '')}",
-        "% table_scope: descriptive_dst_attenuation",
-        "\\begin{tabular}{lllrrrrr}",
-        "\\toprule",
-        " & ".join(headers) + r" \\",
-        "\\midrule",
-    ]
-    frame = attenuation
-    if {"model_name", "tail_level", "dst_regime"}.issubset(frame.columns):
-        frame = frame.sort(["model_name", "tail_level", "dst_regime"])
-    for row in frame.iter_rows(named=True):
-        lines.append(
-            f"{_latex_escape(display_model_label(row.get('model_name')))} & "
-            f"{_fmt(row.get('tail_level'))} & "
-            f"{_latex_escape(row.get('dst_regime'))} & "
-            f"{int(_optional_float(row.get('paired_rows')) or 0)} & "
-            f"{_fmt(row.get('mean_quantile_gain'))} & "
-            f"{_fmt(row.get('mean_fz_gain'))} & "
-            f"{_fmt(row.get('dm_pvalue_one_sided'))} & "
-            f"{_fmt(row.get('alpha_absorb'))} \\\\"
-        )
-    note = (
-        "Visible notes: DST attenuation rows compare forecast gains by timing regime. "
-        "They are descriptive forecast evidence, not a structural causal mechanism; "
-        "ratio rows are diagnostics when direct block-bootstrap DM is not defined."
-    )
-    lines.extend(["\\midrule", f"\\multicolumn{{8}}{{l}}{{\\footnotesize {note}}} \\\\"])
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
 
@@ -392,11 +321,10 @@ def _result_matrix_summary_to_latex(
     matrix: pl.DataFrame,
     *,
     dm: pl.DataFrame | None = None,
-    mcs: pl.DataFrame | None = None,
     manifest: Mapping[str, object] | None = None,
 ) -> str:
     manifest = manifest or {}
-    headers = ("family", "axis", "loss", "side", "sample", "N", "joint exc", "DM", "MCS")
+    headers = ("family", "axis", "loss", "side", "sample", "N", "joint exc", "DM")
     lines = [
         f"% run_id: {manifest.get('run_id', '')}",
         f"% git_commit: {manifest.get('git_commit', '')}",
@@ -407,7 +335,7 @@ def _result_matrix_summary_to_latex(
         " & ".join(headers) + r" \\",
         "\\midrule",
     ]
-    for row in _result_matrix_summary_rows(matrix, dm=dm, mcs=mcs):
+    for row in _result_matrix_summary_rows(matrix, dm=dm):
         lines.append(
             f"{_latex_escape(row.get('comparison_family'))} & "
             f"{_latex_escape(row.get('comparison_axis'))} & "
@@ -417,16 +345,16 @@ def _result_matrix_summary_to_latex(
             f"{_latex_escape(row.get('common_n_range'))} & "
             f"{_latex_escape(row.get('joint_exception_range'))} & "
             f"{int(_optional_float(row.get('dm_ok')) or 0)}/"
-            f"{int(_optional_float(row.get('dm_total')) or 0)} & "
-            f"{int(_optional_float(row.get('mcs_ok')) or 0)}/"
-            f"{int(_optional_float(row.get('mcs_total')) or 0)} \\\\"
+            f"{int(_optional_float(row.get('dm_total')) or 0)} \\\\"
         )
     note = (
         "Visible notes: VaR-only and VaR-ES loss families are separated. "
-        "Restricted samples are not primary evidence. DM/MCS counts show how many "
+        "Restricted samples are not primary evidence. DM counts show how many "
         "registered inference records passed their sample and exception gates."
     )
-    lines.extend(["\\midrule", f"\\multicolumn{{9}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(
+        ["\\midrule", f"\\multicolumn{{8}}{{l}}{{\\footnotesize {_latex_escape(note)}}} \\\\"]
+    )
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
 
@@ -454,16 +382,6 @@ def _claim_scope_to_latex(*, manifest: Mapping[str, object] | None = None) -> st
             "restricted model-family and increment comparisons",
             "no; restricted sample evidence only",
         ),
-        (
-            "ml_tail_dst_attenuation.parquet",
-            "DST attenuation diagnostics",
-            "no structural causal claim",
-        ),
-        (
-            "hedge-trigger table",
-            "VaR trigger diagnostic",
-            "no hedge PnL or trading-alpha claim",
-        ),
     ]
     lines = [
         f"% run_id: {manifest.get('run_id', '')}",
@@ -484,7 +402,9 @@ def _claim_scope_to_latex(*, manifest: Mapping[str, object] | None = None) -> st
         "artifacts may support discussion, but they do not replace primary common-sample "
         "evidence."
     )
-    lines.extend(["\\midrule", f"\\multicolumn{{3}}{{l}}{{\\footnotesize {note}}} \\\\"])
+    lines.extend(
+        ["\\midrule", f"\\multicolumn{{3}}{{l}}{{\\footnotesize {_latex_escape(note)}}} \\\\"]
+    )
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
 
@@ -537,100 +457,10 @@ def _severity_claim_scope(row: Mapping[str, object]) -> str:
     return "diagnostic"
 
 
-def _hedge_trigger_rows(forecasts: pl.DataFrame) -> list[dict[str, object]]:
-    required = {
-        "suite",
-        "model_name",
-        "information_set",
-        "tail_level",
-        "var_forecast",
-        "realized_loss",
-    }
-    if forecasts.is_empty() or not required.issubset(forecasts.columns):
-        return []
-    rows: list[dict[str, object]] = []
-    group_columns = [
-        column
-        for column in (
-            "suite",
-            "target_family",
-            "tail_side",
-            "model_name",
-            "information_set",
-            "tail_level",
-            "refit_frequency",
-        )
-        if column in forecasts.columns
-    ]
-    frame = forecasts.filter(
-        pl.col("var_forecast").is_not_null()
-        & pl.col("realized_loss").is_not_null()
-        & pl.col("is_valid_forecast").fill_null(True)
-    )
-    for key, group in frame.group_by(group_columns, maintain_order=True):
-        if group.is_empty():  # pragma: no cover
-            continue
-        key_values = key if isinstance(key, tuple) else (key,)
-        row_key = dict(zip(group_columns, key_values, strict=False))
-        threshold = group.select(pl.col("var_forecast").quantile(0.75)).item()
-        if threshold is None:  # pragma: no cover
-            continue
-        diagnostic = group.with_columns(
-            (pl.col("var_forecast") >= float(threshold)).alias("_trigger"),
-            (pl.col("realized_loss") > pl.col("var_forecast")).alias("_exception"),
-            (pl.col("realized_loss") - pl.col("var_forecast")).alias("_severity"),
-        )
-        trigger_count = int(diagnostic.select(pl.col("_trigger").sum()).item() or 0)
-        exception_count = int(diagnostic.select(pl.col("_exception").sum()).item() or 0)
-        false_alarm_count = int(
-            diagnostic.filter(pl.col("_trigger") & ~pl.col("_exception")).height
-        )
-        missed_exception_count = int(
-            diagnostic.filter(~pl.col("_trigger") & pl.col("_exception")).height
-        )
-        triggered_exceptions = diagnostic.filter(pl.col("_trigger") & pl.col("_exception"))
-        rows.append(
-            {
-                **row_key,
-                "rows": diagnostic.height,
-                "trigger_threshold_quantile": 0.75,
-                "trigger_threshold_var": float(threshold),
-                "trigger_count": trigger_count,
-                "trigger_rate": trigger_count / diagnostic.height if diagnostic.height else None,
-                "exception_count": exception_count,
-                "false_alarm_count": false_alarm_count,
-                "false_alarm_rate": false_alarm_count / trigger_count if trigger_count else None,
-                "missed_exception_count": missed_exception_count,
-                "missed_exception_rate": missed_exception_count / exception_count
-                if exception_count
-                else None,
-                "mean_triggered_exception_severity": _group_mean(triggered_exceptions, "_severity"),
-                "trigger_rule": "within_model_var_forecast_q75_diagnostic",
-            }
-        )
-    return sorted(
-        rows,
-        key=lambda row: (
-            str(row.get("suite")),
-            str(row.get("model_name")),
-            str(row.get("information_set")),
-            float(_optional_float(row.get("tail_level")) or 0.0),
-        ),
-    )
-
-
-def _group_mean(frame: pl.DataFrame, column: str) -> float | None:
-    if frame.is_empty() or column not in frame.columns:
-        return None
-    value = frame.select(pl.col(column).mean()).item()
-    return _optional_float(value)
-
-
 def _result_matrix_summary_rows(
     matrix: pl.DataFrame,
     *,
     dm: pl.DataFrame | None,
-    mcs: pl.DataFrame | None,
 ) -> list[dict[str, object]]:
     required = {"comparison_family", "comparison_axis", "sample_policy", "loss_family"}
     if matrix.is_empty() or not required.issubset(matrix.columns):
@@ -662,7 +492,6 @@ def _result_matrix_summary_rows(
         .sort(["comparison_family", "comparison_axis", "loss_family"])
     )
     dm_counts = _inference_status_counts(dm, "inference_status", "ok_block_bootstrap_dm")
-    mcs_counts = _inference_status_counts(mcs, "mcs_status", "ok")
     for row in grouped.iter_rows(named=True):
         key = _result_summary_key(row)
         rows.append(
@@ -675,8 +504,6 @@ def _result_matrix_summary_rows(
                 ),
                 "dm_ok": dm_counts.get(key, {}).get("ok", 0),
                 "dm_total": dm_counts.get(key, {}).get("total", 0),
-                "mcs_ok": mcs_counts.get(key, {}).get("ok", 0),
-                "mcs_total": mcs_counts.get(key, {}).get("total", 0),
             }
         )
     return rows

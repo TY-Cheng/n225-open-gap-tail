@@ -1,0 +1,90 @@
+% run_id: tailrisk_20160719_20260522_20260525T142611Z_commit_bf63b13d
+% git_commit: bf63b13d5fb5d87b0529d1ec0f8c562e5bfae845
+% config_hash: 185d7a164462eecacd189001ec2815e2ff9f5fff0051ad922d4c346b7f97d584
+% table_scope: exceedance_severity_diagnostic
+\begin{tabular}{lllllrrrr}
+\toprule
+suite & scope & model & side & info & N & exc & severity & delta \\
+\midrule
+benchmark & primary & ewma\_vol\_scaled & left\_tail & Target history & 722 & 38 & 0.008636 & 0.000000 \\
+benchmark & primary & ewma\_vol\_scaled & right\_tail & Target history & 722 & 33 & 0.009787 & 0.000000 \\
+benchmark & primary & garch\_t & left\_tail & Target history & 722 & 44 & 0.008609 & 0.000000 \\
+benchmark & primary & garch\_t & right\_tail & Target history & 722 & 30 & 0.010888 & 0.000000 \\
+benchmark & primary & gas\_t\_location\_scale & left\_tail & Target history & 722 & 46 & 0.008670 & 0.000000 \\
+benchmark & primary & gas\_t\_location\_scale & right\_tail & Target history & 722 & 36 & 0.010514 & 0.000000 \\
+benchmark & primary & gjr\_garch\_evt & left\_tail & Target history & 722 & 44 & 0.007631 & 0.000000 \\
+benchmark & primary & gjr\_garch\_evt & right\_tail & Target history & 722 & 42 & 0.008988 & 0.000000 \\
+benchmark & primary & gjr\_garch\_t & left\_tail & Target history & 722 & 51 & 0.007359 & 0.000000 \\
+benchmark & primary & gjr\_garch\_t & right\_tail & Target history & 722 & 31 & 0.010272 & 0.000000 \\
+benchmark & primary & historical\_quantile & left\_tail & Target history & 722 & 40 & 0.012140 & 0.000000 \\
+benchmark & primary & historical\_quantile & right\_tail & Target history & 722 & 50 & 0.012003 & 0.000000 \\
+benchmark & primary & rolling\_quantile & left\_tail & Target history & 722 & 42 & 0.011683 & 0.000000 \\
+benchmark & primary & rolling\_quantile & right\_tail & Target history & 722 & 52 & 0.011480 & 0.000000 \\
+ml\_tail & primary & LGBM direct quantile & left\_tail & JP only & 527 & 47 & 0.008187 & 0.000000 \\
+ml\_tail & primary & LGBM direct quantile & left\_tail & JP + US close core & 527 & 59 & 0.006051 & 0.002136 \\
+ml\_tail & primary & LGBM direct quantile & left\_tail & JP + US close core + JP proxy & 527 & 56 & 0.006061 & 0.002126 \\
+ml\_tail & primary & LGBM direct quantile & left\_tail & JP + US close core + JP proxy + Asia proxy & 527 & 56 & 0.006150 & 0.002037 \\
+ml\_tail & primary & LGBM direct quantile & right\_tail & JP only & 527 & 47 & 0.007858 & 0.000000 \\
+ml\_tail & primary & LGBM direct quantile & right\_tail & JP + US close core & 527 & 59 & 0.007115 & 0.000743 \\
+ml\_tail & primary & LGBM direct quantile & right\_tail & JP + US close core + JP proxy & 527 & 65 & 0.006113 & 0.001745 \\
+ml\_tail & primary & LGBM direct quantile & right\_tail & JP + US close core + JP proxy + Asia proxy & 527 & 65 & 0.006019 & 0.001839 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM location-scale empirical & left\_tail & JP only & 508 & 31 & 0.008976 & 0.000000 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM location-scale empirical & left\_tail & JP + US close core & 506 & 36 & 0.005292 & 0.003684 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM location-scale empirical & left\_tail & JP + US close core + JP proxy & 490 & 24 & 0.006063 & 0.002913 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM location-scale empirical & left\_tail & JP + US close core + JP proxy + Asia proxy & 488 & 21 & 0.006897 & 0.002079 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM location-scale empirical & right\_tail & JP only & 508 & 23 & 0.009275 & 0.000000 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM location-scale empirical & right\_tail & JP + US close core & 504 & 33 & 0.007667 & 0.001608 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM location-scale empirical & right\_tail & JP + US close core + JP proxy & 493 & 26 & 0.007860 & 0.001415 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM location-scale empirical & right\_tail & JP + US close core + JP proxy + Asia proxy & 490 & 33 & 0.007311 & 0.001964 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/IQR POT-GPD plain MLE & left\_tail & JP only & 554 & 21 & 0.010578 & 0.000000 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/IQR POT-GPD plain MLE & left\_tail & JP + US close core & 554 & 27 & 0.007472 & 0.003106 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/IQR POT-GPD plain MLE & left\_tail & JP + US close core + JP proxy & 527 & 24 & 0.006401 & 0.004177 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/IQR POT-GPD plain MLE & left\_tail & JP + US close core + JP proxy + Asia proxy & 526 & 28 & 0.006113 & 0.004465 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/IQR POT-GPD plain MLE & right\_tail & JP only & 554 & 16 & 0.011012 & 0.000000 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/IQR POT-GPD plain MLE & right\_tail & JP + US close core & 554 & 34 & 0.006284 & 0.004728 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/IQR POT-GPD plain MLE & right\_tail & JP + US close core + JP proxy & 527 & 27 & 0.006714 & 0.004298 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/IQR POT-GPD plain MLE & right\_tail & JP + US close core + JP proxy + Asia proxy & 527 & 22 & 0.007746 & 0.003265 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/IQR POT-GPD UniBM block-maxima shape & left\_tail & JP only & 554 & 22 & 0.010116 & 0.000000 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/IQR POT-GPD UniBM block-maxima shape & left\_tail & JP + US close core & 554 & 28 & 0.007420 & 0.002696 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/IQR POT-GPD UniBM block-maxima shape & left\_tail & JP + US close core + JP proxy & 527 & 23 & 0.006574 & 0.003542 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/IQR POT-GPD UniBM block-maxima shape & left\_tail & JP + US close core + JP proxy + Asia proxy & 526 & 29 & 0.006030 & 0.004086 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/IQR POT-GPD UniBM block-maxima shape & right\_tail & JP only & 554 & 17 & 0.010966 & 0.000000 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/IQR POT-GPD UniBM block-maxima shape & right\_tail & JP + US close core & 554 & 33 & 0.006599 & 0.004367 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/IQR POT-GPD UniBM block-maxima shape & right\_tail & JP + US close core + JP proxy & 527 & 26 & 0.006969 & 0.003997 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/IQR POT-GPD UniBM block-maxima shape & right\_tail & JP + US close core + JP proxy + Asia proxy & 527 & 22 & 0.007892 & 0.003074 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/MAD POT-GPD plain MLE & left\_tail & JP only & 484 & 30 & 0.009689 & 0.000000 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/MAD POT-GPD plain MLE & left\_tail & JP + US close core & 484 & 32 & 0.008093 & 0.001597 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/MAD POT-GPD plain MLE & left\_tail & JP + US close core + JP proxy & 474 & 35 & 0.006537 & 0.003153 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/MAD POT-GPD plain MLE & left\_tail & JP + US close core + JP proxy + Asia proxy & 473 & 32 & 0.007052 & 0.002637 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/MAD POT-GPD plain MLE & right\_tail & JP only & 484 & 24 & 0.009930 & 0.000000 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/MAD POT-GPD plain MLE & right\_tail & JP + US close core & 482 & 35 & 0.007656 & 0.002274 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/MAD POT-GPD plain MLE & right\_tail & JP + US close core + JP proxy & 474 & 37 & 0.006928 & 0.003002 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/MAD POT-GPD plain MLE & right\_tail & JP + US close core + JP proxy + Asia proxy & 473 & 33 & 0.007756 & 0.002173 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/MAD POT-GPD UniBM block-maxima shape & left\_tail & JP only & 484 & 30 & 0.009727 & 0.000000 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/MAD POT-GPD UniBM block-maxima shape & left\_tail & JP + US close core & 484 & 36 & 0.007429 & 0.002298 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/MAD POT-GPD UniBM block-maxima shape & left\_tail & JP + US close core + JP proxy & 474 & 37 & 0.006448 & 0.003279 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/MAD POT-GPD UniBM block-maxima shape & left\_tail & JP + US close core + JP proxy + Asia proxy & 473 & 36 & 0.006521 & 0.003207 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/MAD POT-GPD UniBM block-maxima shape & right\_tail & JP only & 484 & 27 & 0.009338 & 0.000000 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/MAD POT-GPD UniBM block-maxima shape & right\_tail & JP + US close core & 483 & 36 & 0.007563 & 0.001776 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/MAD POT-GPD UniBM block-maxima shape & right\_tail & JP + US close core + JP proxy & 474 & 37 & 0.007015 & 0.002323 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM median/MAD POT-GPD UniBM block-maxima shape & right\_tail & JP + US close core + JP proxy + Asia proxy & 473 & 34 & 0.007580 & 0.001758 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM POT-GPD plain MLE & left\_tail & JP only & 484 & 31 & 0.008741 & 0.000000 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM POT-GPD plain MLE & left\_tail & JP + US close core & 483 & 34 & 0.005521 & 0.003220 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM POT-GPD plain MLE & left\_tail & JP + US close core + JP proxy & 472 & 24 & 0.005877 & 0.002864 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM POT-GPD plain MLE & left\_tail & JP + US close core + JP proxy + Asia proxy & 469 & 21 & 0.006926 & 0.001814 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM POT-GPD plain MLE & right\_tail & JP only & 484 & 21 & 0.008965 & 0.000000 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM POT-GPD plain MLE & right\_tail & JP + US close core & 480 & 27 & 0.008916 & 0.000049 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM POT-GPD plain MLE & right\_tail & JP + US close core + JP proxy & 473 & 23 & 0.008450 & 0.000515 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM POT-GPD plain MLE & right\_tail & JP + US close core + JP proxy + Asia proxy & 470 & 29 & 0.007890 & 0.001075 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM POT-GPD UniBM block-maxima shape & left\_tail & JP only & 484 & 30 & 0.008986 & 0.000000 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM POT-GPD UniBM block-maxima shape & left\_tail & JP + US close core & 484 & 34 & 0.005719 & 0.003267 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM POT-GPD UniBM block-maxima shape & left\_tail & JP + US close core + JP proxy & 472 & 26 & 0.005645 & 0.003341 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM POT-GPD UniBM block-maxima shape & left\_tail & JP + US close core + JP proxy + Asia proxy & 469 & 23 & 0.006381 & 0.002605 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM POT-GPD UniBM block-maxima shape & right\_tail & JP only & 484 & 22 & 0.008783 & 0.000000 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM POT-GPD UniBM block-maxima shape & right\_tail & JP + US close core & 481 & 28 & 0.008650 & 0.000133 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM POT-GPD UniBM block-maxima shape & right\_tail & JP + US close core + JP proxy & 473 & 24 & 0.007960 & 0.000822 \\
+ml\_tail\_per\_model & restricted\_diagnostic & LGBM POT-GPD UniBM block-maxima shape & right\_tail & JP + US close core + JP proxy + Asia proxy & 470 & 29 & 0.007858 & 0.000924 \\
+\midrule
+\multicolumn{9}{l}{\footnotesize Visible notes: severity is conditional on VaR exceptions; positive delta means lower mean exceedance severity than the same-model anchor information set. This is an ES severity diagnostic, not a model-win claim.} \\
+\bottomrule
+\end{tabular}

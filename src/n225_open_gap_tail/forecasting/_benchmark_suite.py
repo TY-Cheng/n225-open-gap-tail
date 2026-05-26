@@ -172,10 +172,6 @@ def evaluate_benchmark_suite(
         cast(list[dict[str, object]], artifacts["dm_inference"]),
     )
     _write_parquet(
-        metrics_root / "benchmark_mcs.parquet",
-        cast(list[dict[str, object]], artifacts["mcs"]),
-    )
-    _write_parquet(
         metrics_root / "benchmark_murphy.parquet",
         cast(list[dict[str, object]], artifacts["murphy"]),
     )

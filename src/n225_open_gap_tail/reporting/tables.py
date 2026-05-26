@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from n225_open_gap_tail.config.runtime import (
-    BENCHMARK_BASELINE_MODEL_NAMES,
     CLAIMS_LEVEL,
     ML_TAIL_DIRECT_QUANTILE_MODEL,
     Path,
@@ -16,11 +15,9 @@ from n225_open_gap_tail.reporting.figures import export_figures
 from n225_open_gap_tail.reporting.latex import (
     _claim_scope_to_latex,
     _configuration_sensitivity_to_latex,
-    _dm_mcs_summary_to_latex,
-    _dst_attenuation_to_latex,
+    _dm_summary_to_latex,
     _es_severity_to_latex,
     _full_per_model_metrics_to_latex,
-    _hedge_trigger_to_latex,
     _model_inventory_to_latex,
     _metrics_to_latex,
     _predictor_block_coverage_to_latex,
@@ -126,15 +123,12 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
         table_files.append(table_path.name)
     if not ml_tail_per_model.is_empty():
         dm_path = run_dir / "metrics" / "ml_tail_result_matrix_dm.parquet"
-        mcs_path = run_dir / "metrics" / "ml_tail_result_matrix_mcs.parquet"
         dm = pl.read_parquet(dm_path) if dm_path.exists() else None
-        mcs = pl.read_parquet(mcs_path) if mcs_path.exists() else None
         table_path = latex_dir / "ml_tail_promoted_tail_models_table.tex"
         table_path.write_text(
             _promoted_tail_models_to_latex(
                 ml_tail_per_model,
                 dm=dm,
-                mcs=mcs,
                 manifest=manifest,
             ),
             encoding="utf-8",
@@ -161,16 +155,7 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
         )
         tables += 1
         table_files.append(table_path.name)
-    trigger_forecasts = _combined_forecasts(run_dir)
-    if not trigger_forecasts.is_empty():
-        table_path = latex_dir / "tailrisk_hedge_trigger_diagnostics_table.tex"
-        table_path.write_text(
-            _hedge_trigger_to_latex(trigger_forecasts, manifest=manifest),
-            encoding="utf-8",
-        )
-        tables += 1
-        table_files.append(table_path.name)
-    if severity_metrics.is_empty() is False or trigger_forecasts.is_empty() is False:
+    if severity_metrics.is_empty() is False:
         table_path = latex_dir / "tailrisk_claim_scope_table.tex"
         table_path.write_text(_claim_scope_to_latex(manifest=manifest), encoding="utf-8")
         tables += 1
@@ -184,39 +169,26 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
         tables += 1
         table_files.append(table_path.name)
         dm_path = run_dir / "metrics" / "ml_tail_result_matrix_dm.parquet"
-        mcs_path = run_dir / "metrics" / "ml_tail_result_matrix_mcs.parquet"
         dm = pl.read_parquet(dm_path) if dm_path.exists() else None
-        mcs = pl.read_parquet(mcs_path) if mcs_path.exists() else None
         table_path = latex_dir / "ml_tail_result_matrix_summary_table.tex"
         table_path.write_text(
             _result_matrix_summary_to_latex(
                 result_matrix,
                 dm=dm,
-                mcs=mcs,
                 manifest=manifest,
             ),
             encoding="utf-8",
         )
         tables += 1
         table_files.append(table_path.name)
-        if (dm is not None and not dm.is_empty()) or (mcs is not None and not mcs.is_empty()):
-            table_path = latex_dir / "tailrisk_dm_mcs_summary_table.tex"
+        if dm is not None and not dm.is_empty():
+            table_path = latex_dir / "tailrisk_dm_summary_table.tex"
             table_path.write_text(
-                _dm_mcs_summary_to_latex(dm, mcs, manifest=manifest),
+                _dm_summary_to_latex(dm, manifest=manifest),
                 encoding="utf-8",
             )
             tables += 1
             table_files.append(table_path.name)
-    dst_path = run_dir / "metrics" / "ml_tail_dst_attenuation.parquet"
-    if dst_path.exists():
-        dst_attenuation = pl.read_parquet(dst_path)
-        table_path = latex_dir / "ml_tail_dst_attenuation_table.tex"
-        table_path.write_text(
-            _dst_attenuation_to_latex(dst_attenuation, manifest=manifest),
-            encoding="utf-8",
-        )
-        tables += 1
-        table_files.append(table_path.name)
     sensitivity_files = _export_sensitivity_tables(run_dir=run_dir, manifest=manifest)
     tables += len(sensitivity_files)
     table_files.extend(sensitivity_files)
@@ -414,7 +386,6 @@ def _table_manifest_entry(table_file: str) -> dict[str, object]:
             [
                 "metrics/ml_tail_metrics_per_model.parquet",
                 "metrics/ml_tail_result_matrix_dm.parquet",
-                "metrics/ml_tail_result_matrix_mcs.parquet",
             ],
             "side_specific_ml_tail_promotion_gate",
             None,
@@ -429,12 +400,6 @@ def _table_manifest_entry(table_file: str) -> dict[str, object]:
             "appendix_lgbm_all_models",
             ["metrics/ml_tail_metrics_per_model.parquet"],
             "appendix_full_lgbm_results",
-            None,
-        ),
-        "tailrisk_hedge_trigger_diagnostics_table.tex": (
-            "tailrisk_trigger_diagnostics",
-            ["forecasts/benchmark_forecasts.parquet", "forecasts/ml_tail_forecasts.parquet"],
-            "trigger_diagnostic_table",
             None,
         ),
         "tailrisk_claim_scope_table.tex": (
@@ -454,24 +419,14 @@ def _table_manifest_entry(table_file: str) -> dict[str, object]:
             [
                 "metrics/ml_tail_result_matrix.parquet",
                 "metrics/ml_tail_result_matrix_dm.parquet",
-                "metrics/ml_tail_result_matrix_mcs.parquet",
             ],
             "restricted_result_matrix_summary_table",
             None,
         ),
-        "tailrisk_dm_mcs_summary_table.tex": (
-            "tailrisk_dm_mcs_summary",
-            [
-                "metrics/ml_tail_result_matrix_dm.parquet",
-                "metrics/ml_tail_result_matrix_mcs.parquet",
-            ],
-            "main_text_compact_dm_mcs_summary",
-            None,
-        ),
-        "ml_tail_dst_attenuation_table.tex": (
-            "ml_tail_dst_attenuation",
-            ["metrics/ml_tail_dst_attenuation.parquet"],
-            "descriptive_dst_attenuation_table",
+        "tailrisk_dm_summary_table.tex": (
+            "tailrisk_dm_summary",
+            ["metrics/ml_tail_result_matrix_dm.parquet"],
+            "main_text_compact_dm_summary",
             None,
         ),
         "appendix_lgbm_configuration_sensitivity_table.tex": (
@@ -533,18 +488,16 @@ def _table_caption(name: str) -> str:
             "Selected Benchmark-vs-LGBM rows used for compact main performance figures."
         ),
         "ml_tail_promoted_tail_models": (
-            "Side-specific promoted ML-tail rows with restricted DM/MCS evidence."
+            "Side-specific promoted ML-tail rows with restricted DM evidence."
         ),
         "appendix_benchmark_all_models": "Appendix table with all benchmark model results.",
         "appendix_lgbm_all_models": "Appendix table with all LightGBM model results.",
-        "tailrisk_trigger_diagnostics": "Pre-open risk-trigger diagnostic table.",
         "tailrisk_claim_scope": "Claim-boundary reference table for manuscript review.",
         "ml_tail_result_matrix": "Restricted common-sample model-family comparison table.",
         "ml_tail_result_matrix_summary": (
             "Restricted result-matrix inference and gate summary table."
         ),
-        "tailrisk_dm_mcs_summary": "Compact headline DM/MCS paired-inference summary table.",
-        "ml_tail_dst_attenuation": "Descriptive DST timing-regime diagnostic table.",
+        "tailrisk_dm_summary": "Compact headline DM paired-inference summary table.",
         "appendix_lgbm_configuration_sensitivity": (
             "Appendix LightGBM configuration sensitivity table."
         ),
@@ -635,39 +588,3 @@ def _combined_severity_metrics(run_dir: Path) -> pl.DataFrame:
     if not frames:
         return pl.DataFrame()
     return pl.concat(frames, how="diagonal_relaxed")
-
-
-def _combined_forecasts(run_dir: Path) -> pl.DataFrame:
-    frames: list[pl.DataFrame] = []
-    benchmark_path = run_dir / "forecasts" / "benchmark_forecasts.parquet"
-    if benchmark_path.exists():
-        benchmark = pl.read_parquet(benchmark_path)
-        if "model_name" in benchmark.columns:
-            benchmark = benchmark.filter(
-                pl.col("model_name").is_in(list(BENCHMARK_BASELINE_MODEL_NAMES))
-            )
-        benchmark = _valid_forecast_rows(benchmark)
-        if not benchmark.is_empty():
-            frames.append(benchmark.with_columns(pl.lit("benchmark").alias("suite")))
-    ml_tail_path = run_dir / "forecasts" / "ml_tail_forecasts.parquet"
-    if ml_tail_path.exists():
-        ml_tail = pl.read_parquet(ml_tail_path)
-        if "model_name" in ml_tail.columns:
-            ml_tail = ml_tail.filter(pl.col("model_name") == ML_TAIL_DIRECT_QUANTILE_MODEL)
-        ml_tail = _valid_forecast_rows(ml_tail)
-        if not ml_tail.is_empty():
-            frames.append(ml_tail.with_columns(pl.lit("ml_tail").alias("suite")))
-    if not frames:
-        return pl.DataFrame()
-    return pl.concat(frames, how="diagonal_relaxed")
-
-
-def _valid_forecast_rows(frame: pl.DataFrame) -> pl.DataFrame:
-    if frame.is_empty():
-        return frame
-    filtered = frame
-    if "fit_status" in filtered.columns:
-        filtered = filtered.filter(pl.col("fit_status") == "ok")
-    if "is_valid_forecast" in filtered.columns:
-        filtered = filtered.filter(pl.col("is_valid_forecast") == True)  # noqa: E712
-    return filtered

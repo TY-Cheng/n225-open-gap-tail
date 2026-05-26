@@ -27,7 +27,6 @@ from n225_open_gap_tail.metrics.result_matrix_notes import _result_matrix_notes
 from n225_open_gap_tail.metrics.result_matrix_scoring import (
     _build_result_matrix_dm_records,
     _build_result_matrix_group,
-    _build_result_matrix_mcs_records,
 )
 
 
@@ -88,7 +87,6 @@ def build_metric_records(
                 "christoffersen_lr_ind": christoffersen.get("lr_stat"),
                 "christoffersen_pvalue": christoffersen.get("pvalue"),
                 "dq_status": "unavailable_not_implemented",
-                "mcs_status": "available_in_loss_matrix_artifact",
                 "mean_quantile_loss": _safe_mean(
                     np.array(
                         [
@@ -125,7 +123,6 @@ def build_ml_tail_result_matrix_artifacts(
     matrix: list[dict[str, object]] = []
     sample_audit: list[dict[str, object]] = []
     dm_records: list[dict[str, object]] = []
-    mcs_records: list[dict[str, object]] = []
     for loss_family in RESULT_MATRIX_LOSS_FAMILIES:
         for group in _result_matrix_tail_model_groups(valid_rows, loss_family=loss_family):
             group_rows, audit = _build_result_matrix_group(
@@ -146,14 +143,6 @@ def build_ml_tail_result_matrix_artifacts(
                     comparison_axis="model_family",
                     baseline_entity=ML_TAIL_DIRECT_QUANTILE_MODEL,
                     entity_field="model_name",
-                )
-            )
-            mcs_records.extend(
-                _build_result_matrix_mcs_records(
-                    group=group,
-                    loss_family=loss_family,
-                    comparison_family="tail_model_family",
-                    comparison_axis="model_family",
                 )
             )
         for group in _result_matrix_information_increment_groups(
@@ -183,6 +172,5 @@ def build_ml_tail_result_matrix_artifacts(
         "matrix": matrix,
         "sample_audit": sample_audit,
         "dm": dm_records,
-        "mcs": mcs_records,
-        "notes": _result_matrix_notes(matrix, sample_audit, dm_records, mcs_records),
+        "notes": _result_matrix_notes(matrix, sample_audit, dm_records),
     }

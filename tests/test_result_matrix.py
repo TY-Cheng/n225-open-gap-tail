@@ -98,12 +98,6 @@ def _patch_paper_module(monkeypatch: pytest.MonkeyPatch, name: str, value: objec
         "PIPELINE_CONFIG": pipeline_runtime,
         "BOOTSTRAP_REPS": pipeline_runtime,
         "BOOTSTRAP_SEED": pipeline_runtime,
-        "MCS_ALPHA": pipeline_runtime,
-        "MCS_MAX_MODELS": pipeline_runtime,
-        "MCS_MIN_MODELS": pipeline_runtime,
-        "MCS_MIN_OBS": pipeline_runtime,
-        "MCS_BLOCK_LENGTH": pipeline_runtime,
-        "MCS_REPS": pipeline_runtime,
         "MIN_TAIL_EXCEPTIONS_FOR_INFERENCE": pipeline_runtime,
         "MIN_COMMON_ROWS_FOR_INFERENCE": pipeline_runtime,
         "MODEL_CONFIDENCE_LEVEL": pipeline_runtime,
@@ -157,7 +151,6 @@ def test_ml_tail_result_matrix_separates_var_and_var_es_layers() -> None:
 
     matrix = cast(list[dict[str, object]], artifacts["matrix"])
     dm = cast(list[dict[str, object]], artifacts["dm"])
-    mcs = cast(list[dict[str, object]], artifacts["mcs"])
     notes = cast(str, artifacts["notes"])
 
     tail_var_rows = [
@@ -175,16 +168,6 @@ def test_ml_tail_result_matrix_separates_var_and_var_es_layers() -> None:
     assert any(row["comparison_axis"] == "information_set_increment" for row in matrix)
     assert any(row["comparison_family"] == "information_set_ladder" for row in matrix)
     assert any(row["inference_status"] == "ok_block_bootstrap_dm" for row in dm)
-    assert all(
-        row["mcs_status"] == "unavailable_insufficient_common_rows_for_inference"
-        for row in mcs
-        if row["loss_family"] != "var_coverage"
-    )
-    assert all(
-        row["mcs_status"] == "unavailable_descriptive_coverage_metric"
-        for row in mcs
-        if row["loss_family"] == "var_coverage"
-    )
     assert "dominates" not in notes
     assert "significantly outperforms" not in notes
     assert "best" not in notes.lower()
@@ -288,26 +271,3 @@ def test_ml_tail_result_matrix_audits_missing_registered_family_model() -> None:
         for row in audit
     )
     assert any(row["metric_status"] == "unavailable_missing_registered_model" for row in matrix)
-
-
-def test_ml_tail_result_matrix_runs_registered_mcs_when_gates_pass(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    dates = [
-        (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=index)).date().isoformat()
-        for index in range(260)
-    ]
-    _patch_paper_module(monkeypatch, "BOOTSTRAP_REPS", 19)
-    artifacts = paper_module.build_ml_tail_result_matrix_artifacts(
-        _ml_tail_result_matrix_forecasts(dates=dates, information_sets=("japan_only",))
-    )
-    mcs = cast(list[dict[str, object]], artifacts["mcs"])
-
-    assert any(row["mcs_status"] == "ok" for row in mcs)
-    assert any(row["method_note"] == "hln_tmax_moving_block_bootstrap" for row in mcs)
-    assert any(row["included_in_mcs"] is True for row in mcs)
-    assert any(
-        row["mcs_status"] == "unavailable_descriptive_coverage_metric"
-        for row in mcs
-        if row["loss_family"] == "var_coverage"
-    )

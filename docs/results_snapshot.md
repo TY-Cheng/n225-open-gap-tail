@@ -3,95 +3,112 @@ hide:
   - navigation
 ---
 
-# Results And Discussion
+# Results Snapshot
 
-> **Research-candidate full-run artifact.** This page is generated from `tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4`.
-> It summarizes the durable gold modeling sample and run outputs, not the older
-> bounded access-check snapshot. It is still a research-candidate artifact:
-> final manuscript claims require a clean committed run and author review of the
-> tables and notes. It is organized as the paper's Results and Discussion
-> section: sample and timing results, model setup, forecasting outcomes,
-> diagnostics, tables, figures, and claim boundaries.
+> **Research-candidate evidence map.** This page interprets the locked run
+> `tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4`.
+> It is a paper-facing guide to the figures, tables, and diagnostics rather
+> than manuscript prose or a raw artifact dump. The empirical source is the
+> May 27 locked evidence package only.
 
-## 1. Overview And Link To Paper Plan
+!!! warning "Claim boundary"
+    The current evidence supports a 95% point-in-time VaR/ES forecast-evaluation
+    design for the OSE Nikkei 225 Futures settlement-to-open opening gap. It
+    does not support a trading rule, a production margin system, a structural
+    price-discovery claim, a universal best-model ranking, or 97.5%/99% tail
+    claims.
 
-This page is the generated Results and Discussion companion to
-[Paper Plan](paper_plan.md). It carries forward the planned manuscript sections:
-data/timing evidence, model/evaluation setup, benchmark results, ML nested
-information-set results, post-24-check comparisons, supporting diagnostics, and
-claim boundaries. Full data-source detail lives in [Data](data.md).
+## 1. How To Read The Evidence
 
-### Evidence Map
+The results are easiest to read as a hierarchy.
 
-```mermaid
-flowchart LR
-  A["Vendor and calendar inputs"] --> B["Bronze / silver caches"]
-  B --> C["Gold panel and timing map"]
-  C --> D["Leakage and sample gates"]
-  D --> E["Baseline benchmarks and advanced econometric benchmarks"]
-  D --> F["Primary ML nested information sets"]
-  E --> G["Metrics, DM, Murphy diagnostics"]
-  F --> G
-  G --> I["Tables and figures"]
-  I --> J["Generated results snapshot"]
-```
+1. **Target and timing.** The risk object is the total OSE settlement-to-open
+   gap, forecast from the U.S.-close forecast origin under a row-by-row
+   feature-availability audit.
+2. **Direct information-set ladder.** Direct LightGBM quantile rows test how
+   nested information sets change loss and coverage. These rows are the clean
+   information-set experiment.
+3. **Coverage-loss tension.** Lower average quantile or Fissler-Ziegel joint
+   VaR-ES loss (FZ loss) is not enough for a risk forecast if VaR exceptions
+   move away from the nominal 5% rate.
+4. **Filtered-tail calibration.** Filtered-tail specifications are a separate
+   calibration layer. Side-specific promoted rows are gated candidates under
+   the locked evaluation, not universal winners across the full model universe.
+5. **Diagnostics.** DM heatmaps, Murphy diagrams, severity plots, stress
+   overlays, and sensitivity checks support interpretation and robustness.
+   They do not replace the main loss-plus-coverage evidence.
 
-- The left branch binds vendor and calendar inputs into a timestamp-audited gold panel.
-- The middle branch compares baseline benchmarks, advanced econometric benchmarks, and ML-tail forecasts on registered loss units.
-- The right branch separates primary ML nested information sets, diagnostic model-family comparisons, unconditional DM inference, and supporting figures.
+The main empirical reading is therefore not "U.S.-close information always
+improves forecasts." The reading is narrower: U.S.-close and proxy information
+changes loss and coverage; usable opening-gap VaR/ES forecasts require
+filtered-tail calibration and exception discipline.
 
-## 2. Data, Target, And Timing Results
-
-### Run Metadata
+## 2. Locked Run And Sample
 
 | Field | Value |
 | --- | --- |
 | Run ID | `tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4` |
 | Artifact root | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4` |
 | Claim level | `research_candidate` |
-| Requested window | `['2016-07-19', '2026-05-22']` |
+| Requested window | `2016-07-19` to `2026-05-22` |
 | Combined clean start | `2018-06-20` |
-| Gold panel dates | `2016-07-19 to 2026-05-22` |
-| Forecast sample dates | `2018-06-20 to 2026-05-22 (1722 rows)` |
-| Git commit | `7f628ff4f66258a36314f492b652cdf7ef594b7e` |
-| Git dirty | `False` |
-| FRED vintage safe | `False` |
+| Forecast sample | 1,722 observations, `2018-06-20` to `2026-05-22` |
+| Gold panel | 2,403 rows and 1,428 columns |
+| Git commit in run | `7f628ff4f66258a36314f492b652cdf7ef594b7e` |
+| Git dirty in run | `False` |
+| Config hash | `874b7125bfae77a6fb261d40af0f987d89e5bae1e5ebc54a3958be66f9c17b4c` |
+| Panel signature | `8094755ffc96b01af6fb904876e0abdd3920370fa1b07e44c2c95681cd3e5431` |
 
-- `combined_clean_start` is the modeling lower bound; dates before it remain audit history rather than forecast evidence.
-- `git_dirty` is recorded so dirty runs can be rejected before manuscript tables are frozen.
-- `fred_vintage_safe=False` is an explicit limitation: FRED data are current historical values with conservative release lag, not real-time vintage observations.
+The 1,722-row sample is the clean forecast sample after timing alignment,
+opening-gap cleaning, and source-coverage checks. Model comparison samples are
+smaller because each comparison is made on dates where the relevant forecasts,
+VaR, ES, and losses are all available. The headline common samples are:
 
-### Target Distribution And Tail Diagnostics
+| Evidence surface | Common sample |
+| --- | ---: |
+| Benchmark floor metrics | 722 |
+| Direct LightGBM information-set rows | 527 |
+| Downside promoted row metrics | 527 |
+| Upside promoted row metrics | 493 |
+| Downside direct-anchor restricted DM | 472 |
+| Upside direct-anchor restricted DM | 473 |
+| Coverage-admissible heatmaps | 473 left, 474 right |
 
-- These diagnostics are computed from the raw clean settlement-to-open target `gap_t`; left loss is `-gap_t`, and right loss is `gap_t`.
-- The purpose is to show why the dependent variable is a tail-risk object before comparing VaR/ES forecasts.
-- Positive tail-shape estimates, heavy empirical tails, and upward mean-excess patterns are empirical support for using heavy-tail approximations such as POT-GPD; they are not a finite-sample proof of Frechet max-domain attraction.
-- Raw target diagnostics motivate VaR/ES and EVT modeling. They do not validate LightGBM+EVT forecasts; forecast validity must be read from out-of-sample VaR/ES backtests and loss comparisons.
+Read loss comparisons only on their stated common sample. A row-level metric
+sample and a paired-DM matched sample can differ because paired tests require
+both forecasts to exist on the same dates.
 
-#### Target Summary
+## 3. Target, Timing, And Feature Audit
 
-| Measure | Value |
-| --- | --- |
-| Clean forecast observations | `1722` |
-| Date range | `2018-06-20 to 2026-05-22` |
-| Mean gap | 0.000599 log (+0.06%) |
-| Standard deviation | 0.011039 log (+1.11%) |
+### 3.1 Target Distribution And EVT Evidence
+
+The opening-gap target is fat-tailed on both sides. This is empirical support
+for the paper's starting point: the settlement-to-open gap is a conditional
+tail-risk object, not merely a conditional mean or variance forecasting target.
+
+| Target fact | Value |
+| --- | ---: |
+| Mean log gap | 0.000599 |
+| Standard deviation | 0.011039 |
 | Skewness | -0.066817 |
-| Excess kurtosis | 11.159 |
+| Excess kurtosis | 11.2 |
 | 1% quantile | -0.031062 log (-3.06%) |
 | 5% quantile | -0.015606 log (-1.55%) |
 | Median | 0.001031 log (+0.10%) |
 | 95% quantile | 0.015357 log (+1.55%) |
 | 99% quantile | 0.027480 log (+2.79%) |
-| Max drawdown gap | -0.087513 log (-8.38%) on `2020-03-13` |
-| Max upside gap | 0.096937 log (+10.18%) on `2025-04-10` |
-| Jarque-Bera p-value | 0 |
+| 1% to 99% quantile range | -3.06% to +2.79% |
+| Largest downside gap | -8.38% on 13 March 2020 |
+| Largest upside gap | +10.18% on 10 April 2025 |
 | Jarque-Bera statistic | 8962.16 |
+| Jarque-Bera p-value | 0 |
 
-#### Raw-Tail EVT Diagnostics
+The raw-tail EVT diagnostics are part of the target evidence. They are not
+forecast backtests, but they document empirical tail behavior consistent with
+using VaR/ES and tail calibration.
 
 | Tail | Threshold probability | Threshold | Exceedances | Mean excess | GPD xi | GPD scale | Hill xi |
-| --- | --- | --- | --- | --- | --- | --- | --- |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | left_tail_loss | 0.900 | 0.0160237 | 78 | 0.0104227 | 0.148364 | 0.00886263 | 0.432871 |
 | left_tail_loss | 0.925 | 0.0195554 | 59 | 0.00979449 | 0.318986 | 0.00680111 | 0.342056 |
 | left_tail_loss | 0.950 | 0.0223228 | 39 | 0.0114201 | 0.232349 | 0.0088172 | 0.354783 |
@@ -108,611 +125,610 @@ flowchart LR
 | absolute_gap | 0.975 | 0.0269986 | 43 | 0.0144273 | 0.164437 | 0.0120976 | 0.372398 |
 | absolute_gap | 0.990 | 0.0371795 | 17 | 0.0183049 | 0.0605131 | 0.0172189 | 0.353301 |
 
-- The GPD threshold table is computed on raw left loss, raw right loss, and the absolute gap; it should not be read as a forecast-model diagnostic.
-- The Hill and GPD shape estimates are deliberately reported over multiple thresholds because tail-index estimates are sensitive in samples of this length.
+Both loss sides show positive GPD shape estimates over the main 90% to 97.5%
+thresholds, and the absolute-gap tail also remains positive over the same
+range. The 99% threshold has few exceedances and should be treated as a
+sensitivity point. Reporting both Hill and GPD estimates over multiple
+thresholds is deliberate because tail-index estimates are sample-sensitive.
 
-#### Target Distribution Figures
+**Interpretation.** These diagnostics are evidence that the opening gap has
+tail-risk content. They support the paper's move from variance forecasting to
+VaR/ES and filtered-tail calibration. They do not, by themselves, choose the
+forecast model.
 
-| Figure | Tail side | Source | Claim scope | Docs file |
-| --- | --- | --- | --- | --- |
-| `target_tail_motivation` | `left_right_target_distribution` | `panel/modeling_panel.parquet` | `target_distribution_motivation_not_forecast_validation` | `figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/target_tail_motivation.png` |
+### 3.2 Timing Audit
 
-### Gold Panel Construction
+The timing audit records 783,378 feature-date checks, zero hard leakage
+failures, and 611,790 warnings. The warnings are not timestamp violations. They
+cover conservative release-lag handling, missing/source-coverage flags, and
+vendor timestamp granularity. The manuscript should keep the zero-failure
+result prominent while explaining that `pass_with_warnings` is a conservative
+audit status, not evidence of leakage.
+
+The calendar map also records the institutional timing environment: EDT/EST
+status is handled row by row, NYSE early closes are identified, and U.S./Japan
+desynchronization days are flagged. This supports the point-in-time forecast
+origin; it is not a DST subsample result.
+
+### 3.3 Predictor Coverage
+
+The predictor coverage table is a data-transparency artifact. Most market-data
+families are close to complete on the forecast sample, while some macro/credit
+and option-state series have higher missingness. Coverage is not admissibility:
+a predictor must also pass the timestamp audit and feature-availability cutoff.
+
+| Source family | Information set / role | Features | Mean missing | Max missing |
+| --- | --- | ---: | ---: | ---: |
+| Asia proxy | Asia proxy | 10 | 0.000% | 0.000% |
+| CBOE volatility | FRED/core volatility | 2 | 0.000% | 0.000% |
+| cross-market derived | Asia proxy | 1 | 0.000% | 0.000% |
+| cross-market derived | FRED/core | 2 | 0.000% | 0.000% |
+| cross-market derived | Japan proxy | 2 | 0.000% | 0.000% |
+| cross-market derived | U.S. core | 2 | 0.000% | 0.000% |
+| event calendar | calendar controls | 7 | 0.000% | 0.000% |
+| FRED core | FRED/core | 9 | 0.000% | 0.000% |
+| FRED credit enriched | FRED credit enriched | 4 | 62.398% | 62.427% |
+| FX core | FX core | 4 | 0.000% | 0.000% |
+| Japan history | Japan-only | 37 | 0.005% | 0.058% |
+| Japan proxy | Japan proxy | 8 | 0.000% | 0.000% |
+| J-Quants N225 options | Japan-only | 30 | 1.605% | 14.634% |
+| Massive daily | U.S. core | 40 | 0.001% | 0.058% |
+| Massive minute | Asia proxy | 60 | 0.000% | 0.000% |
+| Massive minute | Japan proxy | 24 | 0.348% | 4.181% |
+| Massive minute | U.S. late session | 84 | 0.000% | 0.000% |
+| Massive optional | optional diagnostics | 2 | 0.000% | 0.000% |
+
+### 3.4 Gold Panel And Sample Gates
 
 | Measure | Value |
-| --- | --- |
-| Gold modeling rows | 2403 |
-| Gold columns | 1428 |
-| Target-audit rows | 2403 |
-| Clean target rows | 2206 |
-| Forecast-sample rows | 1722 |
+| --- | ---: |
+| Gold modeling rows | 2,403 |
+| Gold columns | 1,428 |
+| Target-audit rows | 2,403 |
+| Clean target rows | 2,206 |
+| Forecast-sample rows | 1,722 |
 | Rows before combined clean start | 420 |
 | Target-not-clean rows | 197 |
 | Mapping excluded rows | 64 |
 
 | Target audit reason | Rows |
-| --- | --- |
-| None | 2206 |
-| roll_sq_excluded | 195 |
-| missing_previous_jpx_session | 1 |
-| missing_reference_price | 1 |
+| --- | ---: |
+| None | 2,206 |
+| roll/SQ excluded | 195 |
+| missing previous JPX session | 1 |
+| missing reference price | 1 |
 
-- The cache lower bound is 2016-07-19, but XLC/core predictor coverage pushes the actual forecast sample to the combined clean start.
-- Target exclusion is explicit: roll/SQ windows and the single missing reference price are carried as audit evidence, not silently dropped.
-- The forecast-sample reason column makes the sample boundary reproducible row by row.
+The cache lower bound is 2016-07-19, but the actual forecast evidence begins
+at the combined clean start on 2018-06-20. Roll/SQ windows and missing
+reference rows are carried as explicit exclusions rather than silent drops.
 
-### Calendar And Timing Map
+### 3.5 Calendar And Leakage Summary
 
-| Measure | Value |
-| --- | --- |
-| Normal trading mappings | 2333 |
+| Calendar / audit item | Value |
+| --- | ---: |
+| Normal trading mappings | 2,333 |
 | U.S./Japan desync mappings | 1 |
 | NYSE early-close mappings | 32 |
-| EDT rows | 1563 |
+| EDT rows | 1,563 |
 | EST rows | 840 |
+| Leakage audit status | pass_with_warnings |
+| Rows audited | 783,378 |
+| Hard timestamp failures | 0 |
+| Warnings | 611,790 |
+| Panel row count | 2,403 |
 
-- The map covers EST/EDT, early closes, U.S./Japan holiday desynchronization, and normal trading alignments.
-- Desync rows are not treated as normal forecast rows.
-- The timing map is part of the leakage-bound gold artifact, not ad hoc evaluation logic.
+The calendar map covers EST/EDT, NYSE early closes, U.S./Japan holiday
+desynchronization, and normal trading alignments. Desynchronization rows are
+not treated as normal forecast rows. The leakage summary is tied to the same
+panel signature reported in the locked run metadata.
 
-### Feature Coverage
-
-| Source family | Block | Features | Mean missing | Max missing |
-| --- | --- | --- | --- | --- |
-| Asia proxy | Asia proxy | 10 | 0.000% | 0.000% |
-| cboe_volatility | fred_core | 2 | 0.000% | 0.000% |
-| cross_market_derived | Asia proxy | 1 | 0.000% | 0.000% |
-| cross_market_derived | fred_core | 2 | 0.000% | 0.000% |
-| cross_market_derived | JP proxy | 2 | 0.000% | 0.000% |
-| cross_market_derived | US core | 2 | 0.000% | 0.000% |
-| event_calendar | calendar_controls | 7 | 0.000% | 0.000% |
-| fred_core | fred_core | 9 | 0.000% | 0.000% |
-| FRED credit enriched | FRED credit enriched | 4 | 62.398% | 62.427% |
-| fx_core | fx_core | 4 | 0.000% | 0.000% |
-| JP history | JP only | 37 | 0.005% | 0.058% |
-| JP proxy | JP proxy | 8 | 0.000% | 0.000% |
-| J-Quants N225 options | JP only | 30 | 1.605% | 14.634% |
-| massive_daily | US core | 40 | 0.001% | 0.058% |
-| massive_minute | Asia proxy | 60 | 0.000% | 0.000% |
-| massive_minute | JP proxy | 24 | 0.348% | 4.181% |
-| massive_minute | US late session | 84 | 0.000% | 0.000% |
-| massive_optional | massive_optional | 2 | 0.000% | 0.000% |
-
-- U.S. core, proxy ETFs, minute late-session features, CBOE VIX, FRED rates, FRED H.10 FX, and any audit-gated options-risk fields are separated by source family and block.
-- Credit-spread FRED features are enriched/optional and visibly late-starting, so they do not move the core clean start.
-- Feature coverage should be read together with the leakage summary; high coverage alone is not enough without timestamp validity.
-
-### Leakage Audit
-
-| Field | Value |
-| --- | --- |
-| Status | `pass_with_warnings` |
-| Rows audited | `783378` |
-| Failures | `0` |
-| Warnings | `611790` |
-| Panel row count | `2403` |
-| Panel signature seed | `42` |
-| Panel signature | `8094755ffc96b01af6fb904876e0abdd3920370fa1b07e44c2c95681cd3e5431` |
-
-- Zero failures means no audited row violated the hard timestamp invariant.
-- Warnings are retained because they identify conservative-lag or missing-feature situations that may matter for interpretation.
-- The panel signature is deterministic and binds the leakage check to the current gold panel/config.
-
-## 3. Model And Evaluation Setup
-
-### Pipeline Structure
+## 4. Model And Evaluation Setup
 
 | Step | Layer | Purpose |
 | --- | --- | --- |
-| 1 | Vendor and calendar sources | Pull or read J-Quants, Massive, FRED, CBOE, and exchange-calendar inputs. |
-| 2 | Bronze and silver cache | Preserve typed vendor/cache rows, then normalize point-in-time research features. |
+| 1 | Vendor and calendar sources | Read J-Quants, Massive, FRED, CBOE, and exchange-calendar inputs. |
+| 2 | Bronze/silver cache | Preserve typed vendor rows, then normalize point-in-time research features. |
 | 3 | Gold modeling panel | Join targets, calendar map, feature coverage, and leakage-bound signatures. |
 | 4 | Leakage and coverage gates | Enforce timestamp ordering and sample eligibility before evaluation. |
-| 5 | Baseline benchmarks and ML-tail registry | Run target-history/econometric baseline benchmarks and LightGBM tail-model families. |
-| 6 | Metrics, inference, diagnostics | Build loss matrices, DM/Murphy diagnostics, stress windows, and result matrix artifacts. |
-| 7 | Results snapshot | Summarize run-specific evidence and claim boundaries for reader review. |
+| 5 | Benchmark and ML-tail registry | Run target-history/econometric benchmarks and LightGBM tail-model families. |
+| 6 | Metrics and inference | Build loss matrices, DM/Murphy diagnostics, stress windows, and result matrices. |
+| 7 | Results snapshot | Summarize run-specific evidence and claim boundaries for review. |
 
-- Data-access and cache artifacts live under `data/bronze` and `data/silver`.
-- Durable modeling evidence lives under `data/gold`; forecast/evaluation/reporting read from gold and reports.
-- Run-specific forecasts, metrics, diagnostics, and LaTeX tables live under `reports/runs/<run_id>`.
+The registered risk level is 95% VaR. Exceptions are counted when realized
+loss exceeds the VaR forecast. Forecast evaluation is based on exception
+rates, Kupiec and Christoffersen checks, quantile loss, FZ loss, and
+block-bootstrap Diebold-Mariano comparisons where registered. Benchmark rows
+use target-history information only. LightGBM rows add predictors through fixed
+nested information sets.
 
-### Model And Evaluation Protocol
+## 5. Forecast Evidence
 
-- The registered risk level is `tail_level = 0.95`; the nominal VaR exception rate is 5%.
-- A VaR exception is counted when `realized_loss > var_forecast`; this follows the
-  standard exception-counting logic of VaR backtesting, but the snapshot does not
-  apply Basel green/yellow/red traffic-light capital zones.
-- Forecast evaluation is based on coverage diagnostics, Kupiec/Christoffersen
-  tests where available, quantile loss, Fissler-Ziegel joint VaR-ES loss, and
-  DM inference.
-- Benchmarks use target-history information only. ML-tail models add predictors through fixed nested information sets.
-- Most specifications use expanding pre-forecast training histories. The rolling-quantile benchmark is the designed exception and uses the most recent 1,000 clean observations.
-- LightGBM hyperparameters are held fixed across information sets and refit dates; the snapshot reports model-family evidence rather than tuning-search evidence.
-- DM inference is read on average across the unconditional evaluation sample.
+### 5.1 Benchmark Floor
 
-## 4. Forecasting Results And Discussion
+The benchmark floor is credible. It includes historical quantile, rolling
+quantile, EWMA, GARCH-type, Student-t, and GJR-GARCH-EVT rows rather than only
+naive baselines.
 
-### 4.1 Benchmark results
+Status: completed. Forecast rows: 15,173. Metric rows: 14. Failures: 0.
 
-Status: `completed`; forecast rows: `15173`; metric rows: `14`; failures: `0`.
+| Model | Tail side | N | Breach rate | Exceptions | Quantile loss | FZ loss |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| EWMA volatility-scaled | left_tail | 722 | 5.263% | 38 | 0.001409 | -3.647 |
+| EWMA volatility-scaled | right_tail | 722 | 4.571% | 33 | 0.001342 | -3.657 |
+| GARCH-t | left_tail | 722 | 6.094% | 44 | 0.001368 | -3.701 |
+| GARCH-t | right_tail | 722 | 4.155% | 30 | 0.001278 | -3.703 |
+| GAS-t location-scale | left_tail | 722 | 6.371% | 46 | 0.001352 | -3.694 |
+| GAS-t location-scale | right_tail | 722 | 4.986% | 36 | 0.001307 | -3.668 |
+| GJR-GARCH-EVT | left_tail | 722 | 6.094% | 44 | 0.001330 | -3.746 |
+| GJR-GARCH-EVT | right_tail | 722 | 5.817% | 42 | 0.001233 | -3.709 |
+| GJR-GARCH-t | left_tail | 722 | 7.064% | 51 | 0.001338 | -3.723 |
+| GJR-GARCH-t | right_tail | 722 | 4.294% | 31 | 0.001222 | -3.740 |
+| Historical quantile | left_tail | 722 | 5.540% | 40 | 0.001476 | -3.541 |
+| Historical quantile | right_tail | 722 | 6.925% | 50 | 0.001502 | -3.407 |
+| Rolling quantile | left_tail | 722 | 5.817% | 42 | 0.001481 | -3.525 |
+| Rolling quantile | right_tail | 722 | 7.202% | 52 | 0.001496 | -3.427 |
 
-| Benchmark layer | Status | Forecast rows | Diagnostic rows | Failures | How to read it |
-| --- | --- | --- | --- | --- | --- |
-| baseline | `completed` | `8664` | `12` | `0` | Implemented evidence for target-history and econometric baseline benchmark models. |
-| advanced econometric | `completed_nonblocking` | `6509` | `2526` | `0` | Implemented nonblocking advanced econometric benchmark forecasts; review with common-sample gates. |
+The benchmark results matter for two reasons. First, the flexible forecasts are
+not being compared against a weak strawman. Second, some conventional
+conditional-tail rows have near-nominal exception behavior, so later loss
+improvements must still pass coverage discipline.
 
-| Model | Information set | Tail side | Rows | VaR breach rate | Exceptions | Mean quantile loss | Mean FZ loss |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| ewma_vol_scaled | Target history | left_tail | 722 | 5.263% | 38 | 0.00140906 | -3.64746 |
-| ewma_vol_scaled | Target history | right_tail | 722 | 4.571% | 33 | 0.00134173 | -3.65662 |
-| garch_t | Target history | left_tail | 722 | 6.094% | 44 | 0.00136831 | -3.70108 |
-| garch_t | Target history | right_tail | 722 | 4.155% | 30 | 0.00127794 | -3.70337 |
-| gas_t_location_scale | Target history | left_tail | 722 | 6.371% | 46 | 0.00135225 | -3.69351 |
-| gas_t_location_scale | Target history | right_tail | 722 | 4.986% | 36 | 0.00130686 | -3.66834 |
-| gjr_garch_evt | Target history | left_tail | 722 | 6.094% | 44 | 0.00133021 | -3.74623 |
-| gjr_garch_evt | Target history | right_tail | 722 | 5.817% | 42 | 0.00123302 | -3.70857 |
-| gjr_garch_t | Target history | left_tail | 722 | 7.064% | 51 | 0.00133844 | -3.72346 |
-| gjr_garch_t | Target history | right_tail | 722 | 4.294% | 31 | 0.00122154 | -3.73971 |
-| historical_quantile | Target history | left_tail | 722 | 5.540% | 40 | 0.00147622 | -3.54066 |
-| historical_quantile | Target history | right_tail | 722 | 6.925% | 50 | 0.00150215 | -3.40678 |
-| rolling_quantile | Target history | left_tail | 722 | 5.817% | 42 | 0.00148114 | -3.52468 |
-| rolling_quantile | Target history | right_tail | 722 | 7.202% | 52 | 0.00149558 | -3.42732 |
+The best benchmark by FZ loss is GJR-GARCH-EVT on the downside and GJR-GARCH-t
+on the upside. The GJR-GARCH-EVT row also provides the main EVT-style
+econometric benchmark against which flexible filtered-tail forecasts are
+interpreted.
 
-- Baseline benchmark rows set the target-history/econometric reference that ML models should be interpreted against.
-- Advanced econometric benchmark families are nonblocking; rows with valid forecasts are empirical evidence subject to the same sample and inference gates, while unavailable rows remain diagnostics.
-- The table is not a leaderboard by itself; coverage, exception counts, quantile loss, and FZ loss must be read together.
-- Common-sample rows are reported directly so readers can see the effective evidence size.
+### 5.2 Direct Information-Set Ladder
 
-### 4.2 Primary ML specifications across nested information sets
+The direct LightGBM quantile rows isolate the information-set experiment. Each
+row uses the same direct conditional-quantile family while the information set
+is expanded from Japan-only history to U.S.-close core variables, U.S.-traded
+Japan proxies, and regional Asia proxies.
 
-Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quantile`, `LGBM location-scale empirical`, `LGBM POT-GPD plain MLE`, `LGBM POT-GPD UniBM block-maxima shape`, `LGBM median/MAD POT-GPD plain MLE`, `LGBM median/MAD POT-GPD UniBM block-maxima shape`, `LGBM median/IQR POT-GPD plain MLE`, `LGBM median/IQR POT-GPD UniBM block-maxima shape`; forecast rows: `43088`; failures: `0`.
+| Tail side | Information set | N | Exceptions | Breach rate | Quantile loss | FZ loss |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Left/downside | Japan-only | 527 | 43 | 8.159% | 0.001412 | -3.489 |
+| Left/downside | +U.S.-close core | 527 | 59 | 11.195% | 0.001158 | -3.668 |
+| Left/downside | +Japan proxy | 527 | 62 | 11.765% | 0.001114 | -3.869 |
+| Left/downside | +Asia proxy | 527 | 62 | 11.765% | 0.001119 | -3.808 |
+| Right/upside | Japan-only | 527 | 51 | 9.677% | 0.001310 | -3.487 |
+| Right/upside | +U.S.-close core | 527 | 63 | 11.954% | 0.001252 | -3.486 |
+| Right/upside | +Japan proxy | 527 | 61 | 11.575% | 0.001211 | -3.557 |
+| Right/upside | +Asia proxy | 527 | 68 | 12.903% | 0.001222 | -3.559 |
 
-| Model | Information set | Tail side | Rows | VaR breach rate | Exceptions | Mean quantile loss | Mean FZ loss |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| LGBM direct quantile | JP only | left_tail | 527 | 8.159% | 43 | 0.00141174 | -3.48935 |
-| LGBM direct quantile | JP + US close core | left_tail | 527 | 11.195% | 59 | 0.00115754 | -3.6684 |
-| LGBM direct quantile | JP + US close core + JP proxy | left_tail | 527 | 11.765% | 62 | 0.00111393 | -3.86888 |
-| LGBM direct quantile | JP + US close core + JP proxy + Asia proxy | left_tail | 527 | 11.765% | 62 | 0.00111901 | -3.8076 |
-| LGBM direct quantile | JP only | right_tail | 527 | 9.677% | 51 | 0.00130995 | -3.48743 |
-| LGBM direct quantile | JP + US close core | right_tail | 527 | 11.954% | 63 | 0.00125168 | -3.48624 |
-| LGBM direct quantile | JP + US close core + JP proxy | right_tail | 527 | 11.575% | 61 | 0.00121124 | -3.55746 |
-| LGBM direct quantile | JP + US close core + JP proxy + Asia proxy | right_tail | 527 | 12.903% | 68 | 0.00122247 | -3.55915 |
+The direct rows show the coverage-loss tension. On the downside, external
+information lowers average loss, but the U.S.-close and proxy layers also push
+95% VaR exceptions well above the nominal 5% rate. On the upside, the
+U.S.-close core layer changes the row, but the FZ-loss movement is small and
+coverage also deteriorates. All eight direct rows breach the 2.5 percentage
+point coverage band around the nominal 5% rate.
 
-- This primary ML table remains strict and reports only ML-tail rows that pass the registered common-sample and forecast-validity gates; coverage is reviewed separately.
-- Location-scale empirical and plain POT-GPD are primary candidates only after their valid OOS coverage, standardized-loss, exceedance, and ES-validity gates pass.
-- Differences across information blocks are candidate forecast evidence only after the common-sample, coverage, and inference diagnostics are reviewed.
-- Coverage review: `8/8` primary ML rows differ from the expected breach rate by more than 2.5 percentage points, so quantile/FZ loss differences alone must not be read as forecast improvement.
+### 5.3 Incremental Information Tests
 
-### 4.3 Side-specific ML-tail promotion gate
+The paired information-ladder tests should be read as information-set evidence,
+not as broad model-family ranking.
 
-| Role | Model | Information set | Tail side | Rows | Breach | Q loss | FZ loss | DM q | DM FZ | Gate |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| left promoted | LGBM median/IQR POT-GPD plain MLE | JP + US close core + JP proxy + Asia proxy | left_tail | 527 | 5.882% | 0.000917119 | -4.22247 | -0.000235864; p=0.028; reject10 | -0.488666; p=0.049; reject10 | pass |
-| right promoted | LGBM location-scale empirical | JP + US close core + JP proxy | right_tail | 493 | 6.085% | 0.00102336 | -4.02729 | -0.000238584; p=0.026; reject10 | -0.529731; p=0.003; reject10 | pass |
+| Tail side | Transition | FZ-loss gain | DM p-value | Reading |
+| --- | --- | ---: | ---: | --- |
+| Left/downside | Japan-only to +U.S.-close core | 0.179 | 0.194 | Descriptive loss movement |
+| Left/downside | +U.S.-close core to +Japan proxy | 0.200 | 0.045 | Stronger paired evidence, but coverage remains poor |
+| Left/downside | +Japan proxy to +Asia proxy | -0.061 | 0.894 | Asia layer gives back FZ loss |
+| Left/downside | Japan-only to all layers | 0.318 | 0.019 | Direct-ladder cumulative evidence, still coverage-limited |
+| Right/upside | Japan-only to +U.S.-close core | -0.001 | 0.510 | No meaningful FZ improvement |
+| Right/upside | +U.S.-close core to +Japan proxy | 0.071 | 0.054 | Borderline loss movement, coverage-limited |
+| Right/upside | +Japan proxy to +Asia proxy | 0.002 | 0.480 | Little incremental content |
+| Right/upside | Japan-only to all layers | 0.072 | 0.316 | Not a strong cumulative result |
 
-- This paper-facing bridge promotes side-specific ML-tail candidates only after the N/coverage gate and restricted common-sample inference are visible.
-- The current run's promoted rows are exactly the rows shown above; read them as side-specific paper candidates, not as a universal family ranking.
-- This is not a universal model-family ranking and does not replace the strict primary nested-information-set table above.
+The U.S.-close direct layer is therefore not the strongest statistical step.
+The defensible claim is that U.S.-close and proxy information changes the
+loss/coverage profile; it is not that the U.S.-close block alone delivers a
+coverage-admissible improvement.
 
-### 4.4 ML-tail artifact relationship
+### 5.4 Promoted Filtered-Tail Rows
+
+The promoted rows are side-specific gated candidates. They combine loss,
+coverage, sample-size, and model-validity screens. They should not be described
+as universal best models.
+
+| Tail side | Promoted row | Information set | N | Exceptions | Breach rate | Q loss | FZ loss | Kupiec p | Christoffersen p |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Left/downside | LightGBM median/IQR POT-GPD plain MLE | all layers | 527 | 31 | 5.882% | 0.000917 | -4.222 | 0.365 | 0.481 |
+| Right/upside | LightGBM location-scale empirical | Japan-only + U.S.-close core + Japan proxy | 493 | 30 | 6.085% | 0.001023 | -4.027 | 0.284 | 0.393 |
+
+Restricted paired comparisons against the direct-quantile anchors favor these
+promoted rows on their matched samples:
+
+| Tail side | Candidate-minus-anchor FZ difference | Matched N | DM p-value | Reading |
+| --- | ---: | ---: | ---: | --- |
+| Left/downside | -0.489 | 472 | 0.049 | Candidate has lower FZ loss, screened evidence |
+| Right/upside | -0.530 | 473 | 0.003 | Candidate has lower FZ loss, screened evidence |
+
+Negative FZ-loss differences favor the candidate. These p-values are restricted
+comparisons after screening; they are not multiplicity-adjusted evidence for a
+universal best model across the full candidate universe.
+
+### 5.5 Screening Audit And Filtered-Tail Diagnostics
+
+The LightGBM candidate universe is 8 forecast families times 4 information
+sets times 2 tails. Per tail, that gives 32 candidate rows before gates.
+
+| Gate | Left/downside rows remaining | Right/upside rows remaining |
+| --- | ---: | ---: |
+| Initial LightGBM universe | 32 | 32 |
+| Valid VaR/ES/FZ | 32 | 32 |
+| N >= 450 | 32 | 32 |
+| Within 2.5 percentage point breach band | 28 | 24 |
+| Kupiec and Christoffersen screens | 25 | 20 |
+| Side-specific promoted row | 1 | 1 |
+
+The downside promoted POT-GPD row also has a filtered-tail diagnostic trail:
+41 monthly POT refits, median exceedance count 111, exceedance-count IQR
+92-128, median fitted shape xi 0.238, xi IQR 0.163-0.292, and 100% ES-valid
+refits under the finite-ES condition. The upside promoted row uses empirical
+location-scale calibration, so POT-GPD shape diagnostics are not applicable.
+
+These diagnostics support the finite-ES and sample-support reading for the
+promoted downside row. They do not prove EVT stability in a formal asymptotic
+sense.
+
+### 5.6 ML-Tail Artifact Relationship
 
 | Artifact | Rows | Role | Claim boundary |
-| --- | --- | --- | --- |
-| `ml_tail_metrics.parquet` | 8 | Primary ML nested-information-set comparison | Eligible for primary discussion after author review. |
-| `ml_tail_metrics_per_model.parquet` | 64 | Per-model diagnostics on each model's own valid OOS rows | Not a cross-model comparison and not a replacement primary ML table. |
-| `ml_tail_result_matrix.parquet` | 384 | Restricted common-sample VaR-only and VaR-ES comparisons | Restricted evidence; direct quantile rows here are comparison anchors. |
+| --- | ---: | --- | --- |
+| `ml_tail_metrics.parquet` | 8 | Primary direct information-set comparison | Eligible for primary discussion after author review. |
+| `ml_tail_metrics_per_model.parquet` | 64 | Per-model diagnostics on each model's own valid OOS rows | Not a cross-model comparison. |
+| `ml_tail_result_matrix.parquet` | 384 | Restricted common-sample VaR-only and VaR/ES comparisons | Restricted evidence; direct quantile rows are anchors. |
 
-- `ml_tail_metrics.parquet` is the primary nested-information-set artifact. It contains the ML-tail rows that survived the strict common-sample gate in this run.
-- `ml_tail_metrics_per_model.parquet` reports each implemented ML-tail model on its own valid OOS rows; it is useful for debugging coverage but is not a cross-model comparison table.
-- `ml_tail_result_matrix.parquet` creates restricted common samples for VaR-only and VaR-ES comparisons across model families and within-model information-set increments.
+The primary direct information-set table, the promoted-row table, and the
+restricted result matrix answer different questions. Keeping those artifacts
+separate prevents an all-model scan from becoming a leaderboard.
 
-### 4.5 All-model diagnostic scan
+### 5.7 All-Model Diagnostic Scan
+
+The all-model scan makes the full benchmark and LightGBM universe visible. It
+is useful for auditability and for seeing why promoted rows are gated. It is
+not the formal cross-model comparison table because valid samples differ.
+
+<details>
+<summary>Full all-model diagnostic scan</summary>
 
 | Suite | Model | Information set | Metric rows | OOS N mean+-sd | Breach mean+-sd | Abs cov err mean+-sd | Q loss mean+-sd | FZ loss mean+-sd | ES severity mean+-sd |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| benchmark_advanced | care_expectile_asymmetric_slope | Target history | 2 | 653 +/- 36.7696 | 7.884% +/- 0.097% | 2.884% +/- 0.097% | 0.00138317 +/- 8.00061e-05 | -3.57653 +/- 0.0638322 | 0.0082744 +/- 0.000559256 |
-| benchmark_advanced | care_expectile_sav | Target history | 2 | 649.5 +/- 41.7193 | 7.658% +/- 1.250% | 2.658% +/- 1.250% | 0.00141367 +/- 5.95611e-05 | -3.54112 +/- 0.0938805 | 0.00857223 +/- 0.000528859 |
-| benchmark_advanced | caviar_asymmetric_slope | Target history | 2 | 506 +/- 2.82843 | 6.916% +/- 0.241% | 1.916% +/- 0.241% | 0.00152915 +/- 4.9109e-05 | -3.49931 +/- 0.0468367 | 0.0100652 +/- 0.000926358 |
-| benchmark_advanced | caviar_sav | Target history | 2 | 501 +/- 4.24264 | 6.086% +/- 0.372% | 1.086% +/- 0.372% | 0.00156273 +/- 6.81431e-06 | -3.47395 +/- 0.093514 | 0.0116523 +/- 3.28833e-05 |
-| benchmark_advanced | gas_t_location_scale | Target history | 2 | 722 +/- 0 | 5.679% +/- 0.979% | 0.693% +/- 0.960% | 0.00132955 +/- 3.20964e-05 | -3.68092 +/- 0.0177958 | 0.00959201 +/- 0.00130427 |
-| benchmark_advanced | gas_t_pot_gpd | Target history | 2 | 223 +/- 0 | 6.502% +/- 2.854% | 2.018% +/- 2.124% | 0.00153061 +/- 0.000359334 | -3.41151 +/- 0.534257 | 0.009774 +/- 0.00427048 |
-| benchmark_baseline | ewma_vol_scaled | Target history | 2 | 722 +/- 0 | 4.917% +/- 0.490% | 0.346% +/- 0.118% | 0.00137539 +/- 4.76049e-05 | -3.65204 +/- 0.00647254 | 0.00921114 +/- 0.000813727 |
-| benchmark_baseline | garch_t | Target history | 2 | 722 +/- 0 | 5.125% +/- 1.371% | 0.970% +/- 0.176% | 0.00132312 +/- 6.39034e-05 | -3.70223 +/- 0.00162002 | 0.00974876 +/- 0.00161122 |
-| benchmark_baseline | gjr_garch_evt | Target history | 2 | 722 +/- 0 | 5.956% +/- 0.196% | 0.956% +/- 0.196% | 0.00128162 +/- 6.87209e-05 | -3.7274 +/- 0.0266288 | 0.00830943 +/- 0.000959208 |
-| benchmark_baseline | gjr_garch_t | Target history | 2 | 722 +/- 0 | 5.679% +/- 1.959% | 1.385% +/- 0.960% | 0.00127999 +/- 8.26617e-05 | -3.73159 +/- 0.0114919 | 0.00881549 +/- 0.00205961 |
-| benchmark_baseline | historical_quantile | Target history | 2 | 722 +/- 0 | 6.233% +/- 0.979% | 1.233% +/- 0.979% | 0.00148919 +/- 1.83406e-05 | -3.47372 +/- 0.0946715 | 0.0120717 +/- 9.68084e-05 |
-| benchmark_baseline | rolling_quantile | Target history | 2 | 722 +/- 0 | 6.510% +/- 0.979% | 1.510% +/- 0.979% | 0.00148836 +/- 1.02111e-05 | -3.476 +/- 0.068848 | 0.0115817 +/- 0.000143645 |
-| ml_tail | LGBM POT-GPD UniBM block-maxima shape | JP only | 2 | 484 +/- 0 | 4.855% +/- 1.023% | 0.723% +/- 0.205% | 0.00143954 +/- 0.000108633 | -3.54743 +/- 0.050522 | 0.0101296 +/- 0.000667455 |
-| ml_tail | LGBM POT-GPD UniBM block-maxima shape | JP + US close core | 2 | 483 +/- 0 | 5.901% +/- 0.732% | 0.901% +/- 0.732% | 0.00102253 +/- 3.45998e-05 | -4.02862 +/- 0.0642791 | 0.00630662 +/- 0.000886595 |
-| ml_tail | LGBM POT-GPD UniBM block-maxima shape | JP + US close core + JP proxy | 2 | 473.5 +/- 0.707107 | 6.019% +/- 0.457% | 1.019% +/- 0.457% | 0.00101481 +/- 2.40341e-05 | -4.07568 +/- 0.0784556 | 0.0063269 +/- 0.000530558 |
-| ml_tail | LGBM POT-GPD UniBM block-maxima shape | JP + US close core + JP proxy + Asia proxy | 2 | 473.5 +/- 0.707107 | 6.125% +/- 0.606% | 1.125% +/- 0.606% | 0.00104182 +/- 6.17669e-05 | -3.99333 +/- 0.0899169 | 0.00643634 +/- 0.00132792 |
-| ml_tail | LGBM POT-GPD plain MLE | JP only | 2 | 484 +/- 0 | 4.649% +/- 1.315% | 0.930% +/- 0.497% | 0.00144417 +/- 0.000106677 | -3.55083 +/- 0.03612 | 0.0106097 +/- 0.00111591 |
-| ml_tail | LGBM POT-GPD plain MLE | JP + US close core | 2 | 482 +/- 0 | 5.498% +/- 0.440% | 0.498% +/- 0.440% | 0.00102429 +/- 3.8851e-05 | -4.03154 +/- 0.069105 | 0.00653613 +/- 0.000836497 |
-| ml_tail | LGBM POT-GPD plain MLE | JP + US close core + JP proxy | 2 | 473.5 +/- 0.707107 | 5.808% +/- 0.158% | 0.808% +/- 0.158% | 0.00101213 +/- 3.0664e-05 | -4.0908 +/- 0.0864067 | 0.00623547 +/- 0.000519173 |
-| ml_tail | LGBM POT-GPD plain MLE | JP + US close core + JP proxy + Asia proxy | 2 | 473 +/- 0 | 6.131% +/- 0.598% | 1.131% +/- 0.598% | 0.00103841 +/- 7.23005e-05 | -4.00776 +/- 0.117572 | 0.00622715 +/- 0.0016854 |
-| ml_tail | LGBM direct quantile | JP only | 2 | 554 +/- 0 | 8.664% +/- 1.021% | 3.664% +/- 1.021% | 0.00133825 +/- 9.25573e-05 | -3.50275 +/- 0.0392189 | 0.00813676 +/- 0.00113574 |
-| ml_tail | LGBM direct quantile | JP + US close core | 2 | 554 +/- 0 | 11.101% +/- 0.383% | 6.101% +/- 0.383% | 0.00118022 +/- 4.32589e-05 | -3.61364 +/- 0.0922633 | 0.0064386 +/- 0.000247838 |
-| ml_tail | LGBM direct quantile | JP + US close core + JP proxy | 2 | 527 +/- 0 | 11.670% +/- 0.134% | 6.670% +/- 0.134% | 0.00116259 +/- 6.88028e-05 | -3.71317 +/- 0.220204 | 0.0059796 +/- 0.000662772 |
-| ml_tail | LGBM direct quantile | JP + US close core + JP proxy + Asia proxy | 2 | 527 +/- 0 | 12.334% +/- 0.805% | 7.334% +/- 0.805% | 0.00117074 +/- 7.31616e-05 | -3.68337 +/- 0.17568 | 0.00571666 +/- 0.000192238 |
-| ml_tail | LGBM location-scale empirical | JP only | 2 | 508 +/- 0 | 4.823% +/- 0.696% | 0.492% +/- 0.251% | 0.00141628 +/- 9.98491e-05 | -3.56404 +/- 0.0139556 | 0.00998686 +/- 0.000171526 |
-| ml_tail | LGBM location-scale empirical | JP + US close core | 2 | 505.5 +/- 0.707107 | 6.133% +/- 0.009% | 1.133% +/- 0.009% | 0.00101756 +/- 4.15541e-05 | -4.01111 +/- 0.0557055 | 0.00604578 +/- 0.000458165 |
-| ml_tail | LGBM location-scale empirical | JP + US close core + JP proxy | 2 | 492.5 +/- 0.707107 | 6.295% +/- 0.296% | 1.295% +/- 0.296% | 0.00100557 +/- 2.51561e-05 | -4.08481 +/- 0.0813422 | 0.0059098 +/- 0.000533713 |
-| ml_tail | LGBM location-scale empirical | JP + US close core + JP proxy + Asia proxy | 2 | 492 +/- 0 | 6.707% +/- 0.575% | 1.707% +/- 0.575% | 0.00103557 +/- 7.0027e-05 | -3.98452 +/- 0.104636 | 0.00590198 +/- 0.00152973 |
-| ml_tail | LGBM median/IQR POT-GPD UniBM block-maxima shape | JP only | 2 | 554 +/- 0 | 3.430% +/- 0.255% | 1.570% +/- 0.255% | 0.00129247 +/- 0.000128665 | -3.72329 +/- 0.0553233 | 0.0103895 +/- 0.000332801 |
-| ml_tail | LGBM median/IQR POT-GPD UniBM block-maxima shape | JP + US close core | 2 | 553.5 +/- 0.707107 | 5.420% +/- 0.249% | 0.420% +/- 0.249% | 0.001005 +/- 6.42702e-05 | -4.03849 +/- 0.105695 | 0.00680349 +/- 2.92911e-05 |
-| ml_tail | LGBM median/IQR POT-GPD UniBM block-maxima shape | JP + US close core + JP proxy | 2 | 527 +/- 0 | 4.934% +/- 0.268% | 0.190% +/- 0.094% | 0.000977369 +/- 9.96524e-05 | -4.07223 +/- 0.267913 | 0.00722562 +/- 0.000739001 |
-| ml_tail | LGBM median/IQR POT-GPD UniBM block-maxima shape | JP + US close core + JP proxy + Asia proxy | 2 | 527 +/- 0 | 5.882% +/- 0.000% | 0.882% +/- 0.000% | 0.000981983 +/- 9.6245e-05 | -4.07821 +/- 0.191496 | 0.00617459 +/- 0.00100583 |
-| ml_tail | LGBM median/IQR POT-GPD plain MLE | JP only | 2 | 554 +/- 0 | 3.339% +/- 0.383% | 1.661% +/- 0.383% | 0.00129732 +/- 0.000121471 | -3.71766 +/- 0.0543739 | 0.0104723 +/- 0.000488415 |
-| ml_tail | LGBM median/IQR POT-GPD plain MLE | JP + US close core | 2 | 553.5 +/- 0.707107 | 5.330% +/- 0.121% | 0.330% +/- 0.121% | 0.00100641 +/- 5.8567e-05 | -4.05822 +/- 0.117346 | 0.00677553 +/- 9.19624e-05 |
-| ml_tail | LGBM median/IQR POT-GPD plain MLE | JP + US close core + JP proxy | 2 | 526 +/- 0 | 4.753% +/- 0.000% | 0.247% +/- 0.000% | 0.000972485 +/- 9.62715e-05 | -4.06369 +/- 0.190447 | 0.00717965 +/- 0.000903805 |
-| ml_tail | LGBM median/IQR POT-GPD plain MLE | JP + US close core + JP proxy + Asia proxy | 2 | 527 +/- 0 | 5.977% +/- 0.134% | 0.977% +/- 0.134% | 0.000981802 +/- 9.14751e-05 | -4.07318 +/- 0.21113 | 0.00595077 +/- 0.000647845 |
-| ml_tail | LGBM median/MAD POT-GPD UniBM block-maxima shape | JP only | 2 | 484 +/- 0 | 5.579% +/- 0.584% | 0.579% +/- 0.584% | 0.0014127 +/- 0.000111137 | -3.60619 +/- 0.0108432 | 0.0101188 +/- 0.00167497 |
-| ml_tail | LGBM median/MAD POT-GPD UniBM block-maxima shape | JP + US close core | 2 | 484 +/- 0 | 6.921% +/- 0.438% | 1.921% +/- 0.438% | 0.00109506 +/- 3.41604e-05 | -4.06831 +/- 0.110891 | 0.00792169 +/- 0.000308992 |
-| ml_tail | LGBM median/MAD POT-GPD UniBM block-maxima shape | JP + US close core + JP proxy | 2 | 473.5 +/- 0.707107 | 7.603% +/- 0.310% | 2.603% +/- 0.310% | 0.00103226 +/- 7.39019e-05 | -4.16953 +/- 0.157826 | 0.00660286 +/- 0.000522774 |
-| ml_tail | LGBM median/MAD POT-GPD UniBM block-maxima shape | JP + US close core + JP proxy + Asia proxy | 2 | 473.5 +/- 0.707107 | 7.497% +/- 0.161% | 2.497% +/- 0.161% | 0.00106577 +/- 8.54015e-05 | -4.09025 +/- 0.239148 | 0.00711434 +/- 0.000949755 |
-| ml_tail | LGBM median/MAD POT-GPD plain MLE | JP only | 2 | 484 +/- 0 | 5.165% +/- 0.000% | 0.165% +/- 0.000% | 0.00141016 +/- 0.000113401 | -3.60412 +/- 0.009619 | 0.0105104 +/- 0.00101589 |
-| ml_tail | LGBM median/MAD POT-GPD plain MLE | JP + US close core | 2 | 484 +/- 0 | 6.818% +/- 0.584% | 1.818% +/- 0.584% | 0.00109354 +/- 3.73982e-05 | -4.05872 +/- 0.0856922 | 0.00790369 +/- 0.000394935 |
-| ml_tail | LGBM median/MAD POT-GPD plain MLE | JP + US close core + JP proxy | 2 | 473.5 +/- 0.707107 | 7.287% +/- 0.758% | 2.287% +/- 0.758% | 0.00102391 +/- 8.23481e-05 | -4.19814 +/- 0.158674 | 0.00660111 +/- 0.000331299 |
-| ml_tail | LGBM median/MAD POT-GPD plain MLE | JP + US close core + JP proxy + Asia proxy | 2 | 473.5 +/- 0.707107 | 7.076% +/- 0.757% | 2.076% +/- 0.757% | 0.00105943 +/- 9.34222e-05 | -4.09633 +/- 0.245078 | 0.0073057 +/- 0.000570338 |
+| --- | --- | --- | ---: | --- | --- | --- | --- | --- | --- |
+| benchmark_advanced | CARE asymmetric slope | Target history | 2 | 653 +/- 36.770 | 7.884% +/- 0.097% | 2.884% +/- 0.097% | 0.001383 +/- 0.000080 | -3.577 +/- 0.064 | 0.008274 +/- 0.000559 |
+| benchmark_advanced | CARE SAV | Target history | 2 | 649.5 +/- 41.719 | 7.658% +/- 1.250% | 2.658% +/- 1.250% | 0.001414 +/- 0.000060 | -3.541 +/- 0.094 | 0.008572 +/- 0.000529 |
+| benchmark_advanced | CAViaR asymmetric slope | Target history | 2 | 506 +/- 2.828 | 6.916% +/- 0.241% | 1.916% +/- 0.241% | 0.001529 +/- 0.000049 | -3.499 +/- 0.047 | 0.010065 +/- 0.000926 |
+| benchmark_advanced | CAViaR SAV | Target history | 2 | 501 +/- 4.243 | 6.086% +/- 0.372% | 1.086% +/- 0.372% | 0.001563 +/- 0.000007 | -3.474 +/- 0.094 | 0.011652 +/- 0.000033 |
+| benchmark_advanced | GAS-t location-scale | Target history | 2 | 722 +/- 0 | 5.679% +/- 0.979% | 0.693% +/- 0.960% | 0.001330 +/- 0.000032 | -3.681 +/- 0.018 | 0.009592 +/- 0.001304 |
+| benchmark_advanced | GAS-t POT-GPD | Target history | 2 | 223 +/- 0 | 6.502% +/- 2.854% | 2.018% +/- 2.124% | 0.001531 +/- 0.000359 | -3.412 +/- 0.534 | 0.009774 +/- 0.004270 |
+| benchmark_baseline | EWMA volatility-scaled | Target history | 2 | 722 +/- 0 | 4.917% +/- 0.490% | 0.346% +/- 0.118% | 0.001375 +/- 0.000048 | -3.652 +/- 0.006 | 0.009211 +/- 0.000814 |
+| benchmark_baseline | GARCH-t | Target history | 2 | 722 +/- 0 | 5.125% +/- 1.371% | 0.970% +/- 0.176% | 0.001323 +/- 0.000064 | -3.702 +/- 0.002 | 0.009749 +/- 0.001611 |
+| benchmark_baseline | GJR-GARCH-EVT | Target history | 2 | 722 +/- 0 | 5.956% +/- 0.196% | 0.956% +/- 0.196% | 0.001282 +/- 0.000069 | -3.727 +/- 0.027 | 0.008309 +/- 0.000959 |
+| benchmark_baseline | GJR-GARCH-t | Target history | 2 | 722 +/- 0 | 5.679% +/- 1.959% | 1.385% +/- 0.960% | 0.001280 +/- 0.000083 | -3.732 +/- 0.011 | 0.008815 +/- 0.002060 |
+| benchmark_baseline | Historical quantile | Target history | 2 | 722 +/- 0 | 6.233% +/- 0.979% | 1.233% +/- 0.979% | 0.001489 +/- 0.000018 | -3.474 +/- 0.095 | 0.012072 +/- 0.000097 |
+| benchmark_baseline | Rolling quantile | Target history | 2 | 722 +/- 0 | 6.510% +/- 0.979% | 1.510% +/- 0.979% | 0.001488 +/- 0.000010 | -3.476 +/- 0.069 | 0.011582 +/- 0.000144 |
+| ml_tail | LGBM direct quantile | Japan-only | 2 | 554 +/- 0 | 8.664% +/- 1.021% | 3.664% +/- 1.021% | 0.001338 +/- 0.000093 | -3.503 +/- 0.039 | 0.008137 +/- 0.001136 |
+| ml_tail | LGBM direct quantile | +U.S.-close core | 2 | 554 +/- 0 | 11.101% +/- 0.383% | 6.101% +/- 0.383% | 0.001180 +/- 0.000043 | -3.614 +/- 0.092 | 0.006439 +/- 0.000248 |
+| ml_tail | LGBM direct quantile | +Japan proxy | 2 | 527 +/- 0 | 11.670% +/- 0.134% | 6.670% +/- 0.134% | 0.001163 +/- 0.000069 | -3.713 +/- 0.220 | 0.005980 +/- 0.000663 |
+| ml_tail | LGBM direct quantile | +Asia proxy | 2 | 527 +/- 0 | 12.334% +/- 0.805% | 7.334% +/- 0.805% | 0.001171 +/- 0.000073 | -3.683 +/- 0.176 | 0.005717 +/- 0.000192 |
+| ml_tail | LGBM location-scale empirical | Japan-only | 2 | 508 +/- 0 | 4.823% +/- 0.696% | 0.492% +/- 0.251% | 0.001416 +/- 0.000100 | -3.564 +/- 0.014 | 0.009987 +/- 0.000172 |
+| ml_tail | LGBM location-scale empirical | +U.S.-close core | 2 | 505.5 +/- 0.707 | 6.133% +/- 0.009% | 1.133% +/- 0.009% | 0.001018 +/- 0.000042 | -4.011 +/- 0.056 | 0.006046 +/- 0.000458 |
+| ml_tail | LGBM location-scale empirical | +Japan proxy | 2 | 492.5 +/- 0.707 | 6.295% +/- 0.296% | 1.295% +/- 0.296% | 0.001006 +/- 0.000025 | -4.085 +/- 0.081 | 0.005910 +/- 0.000534 |
+| ml_tail | LGBM location-scale empirical | +Asia proxy | 2 | 492 +/- 0 | 6.707% +/- 0.575% | 1.707% +/- 0.575% | 0.001036 +/- 0.000070 | -3.985 +/- 0.105 | 0.005902 +/- 0.001530 |
+| ml_tail | LGBM POT-GPD plain MLE | Japan-only | 2 | 484 +/- 0 | 4.649% +/- 1.315% | 0.930% +/- 0.497% | 0.001444 +/- 0.000107 | -3.551 +/- 0.036 | 0.010610 +/- 0.001116 |
+| ml_tail | LGBM POT-GPD plain MLE | +U.S.-close core | 2 | 482 +/- 0 | 5.498% +/- 0.440% | 0.498% +/- 0.440% | 0.001024 +/- 0.000039 | -4.032 +/- 0.069 | 0.006536 +/- 0.000836 |
+| ml_tail | LGBM POT-GPD plain MLE | +Japan proxy | 2 | 473.5 +/- 0.707 | 5.808% +/- 0.158% | 0.808% +/- 0.158% | 0.001012 +/- 0.000031 | -4.091 +/- 0.086 | 0.006235 +/- 0.000519 |
+| ml_tail | LGBM POT-GPD plain MLE | +Asia proxy | 2 | 473 +/- 0 | 6.131% +/- 0.598% | 1.131% +/- 0.598% | 0.001038 +/- 0.000072 | -4.008 +/- 0.118 | 0.006227 +/- 0.001685 |
+| ml_tail | LGBM POT-GPD UniBM | Japan-only | 2 | 484 +/- 0 | 4.855% +/- 1.023% | 0.723% +/- 0.205% | 0.001440 +/- 0.000109 | -3.547 +/- 0.051 | 0.010130 +/- 0.000667 |
+| ml_tail | LGBM POT-GPD UniBM | +U.S.-close core | 2 | 483 +/- 0 | 5.901% +/- 0.732% | 0.901% +/- 0.732% | 0.001023 +/- 0.000035 | -4.029 +/- 0.064 | 0.006307 +/- 0.000887 |
+| ml_tail | LGBM POT-GPD UniBM | +Japan proxy | 2 | 473.5 +/- 0.707 | 6.019% +/- 0.457% | 1.019% +/- 0.457% | 0.001015 +/- 0.000024 | -4.076 +/- 0.078 | 0.006327 +/- 0.000531 |
+| ml_tail | LGBM POT-GPD UniBM | +Asia proxy | 2 | 473.5 +/- 0.707 | 6.125% +/- 0.606% | 1.125% +/- 0.606% | 0.001042 +/- 0.000062 | -3.993 +/- 0.090 | 0.006436 +/- 0.001328 |
+| ml_tail | LGBM median/MAD POT-GPD plain MLE | Japan-only | 2 | 484 +/- 0 | 5.165% +/- 0.000% | 0.165% +/- 0.000% | 0.001410 +/- 0.000113 | -3.604 +/- 0.010 | 0.010510 +/- 0.001016 |
+| ml_tail | LGBM median/MAD POT-GPD plain MLE | +U.S.-close core | 2 | 484 +/- 0 | 6.818% +/- 0.584% | 1.818% +/- 0.584% | 0.001094 +/- 0.000037 | -4.059 +/- 0.086 | 0.007904 +/- 0.000395 |
+| ml_tail | LGBM median/MAD POT-GPD plain MLE | +Japan proxy | 2 | 473.5 +/- 0.707 | 7.287% +/- 0.758% | 2.287% +/- 0.758% | 0.001024 +/- 0.000082 | -4.198 +/- 0.159 | 0.006601 +/- 0.000331 |
+| ml_tail | LGBM median/MAD POT-GPD plain MLE | +Asia proxy | 2 | 473.5 +/- 0.707 | 7.076% +/- 0.757% | 2.076% +/- 0.757% | 0.001059 +/- 0.000093 | -4.096 +/- 0.245 | 0.007306 +/- 0.000570 |
+| ml_tail | LGBM median/MAD POT-GPD UniBM | Japan-only | 2 | 484 +/- 0 | 5.579% +/- 0.584% | 0.579% +/- 0.584% | 0.001413 +/- 0.000111 | -3.606 +/- 0.011 | 0.010119 +/- 0.001675 |
+| ml_tail | LGBM median/MAD POT-GPD UniBM | +U.S.-close core | 2 | 484 +/- 0 | 6.921% +/- 0.438% | 1.921% +/- 0.438% | 0.001095 +/- 0.000034 | -4.068 +/- 0.111 | 0.007922 +/- 0.000309 |
+| ml_tail | LGBM median/MAD POT-GPD UniBM | +Japan proxy | 2 | 473.5 +/- 0.707 | 7.603% +/- 0.310% | 2.603% +/- 0.310% | 0.001032 +/- 0.000074 | -4.170 +/- 0.158 | 0.006603 +/- 0.000523 |
+| ml_tail | LGBM median/MAD POT-GPD UniBM | +Asia proxy | 2 | 473.5 +/- 0.707 | 7.497% +/- 0.161% | 2.497% +/- 0.161% | 0.001066 +/- 0.000085 | -4.090 +/- 0.239 | 0.007114 +/- 0.000950 |
+| ml_tail | LGBM median/IQR POT-GPD plain MLE | Japan-only | 2 | 554 +/- 0 | 3.339% +/- 0.383% | 1.661% +/- 0.383% | 0.001297 +/- 0.000121 | -3.718 +/- 0.054 | 0.010472 +/- 0.000488 |
+| ml_tail | LGBM median/IQR POT-GPD plain MLE | +U.S.-close core | 2 | 553.5 +/- 0.707 | 5.330% +/- 0.121% | 0.330% +/- 0.121% | 0.001006 +/- 0.000059 | -4.058 +/- 0.117 | 0.006776 +/- 0.000092 |
+| ml_tail | LGBM median/IQR POT-GPD plain MLE | +Japan proxy | 2 | 526 +/- 0 | 4.753% +/- 0.000% | 0.247% +/- 0.000% | 0.000972 +/- 0.000096 | -4.064 +/- 0.190 | 0.007180 +/- 0.000904 |
+| ml_tail | LGBM median/IQR POT-GPD plain MLE | +Asia proxy | 2 | 527 +/- 0 | 5.977% +/- 0.134% | 0.977% +/- 0.134% | 0.000982 +/- 0.000091 | -4.073 +/- 0.211 | 0.005951 +/- 0.000648 |
+| ml_tail | LGBM median/IQR POT-GPD UniBM | Japan-only | 2 | 554 +/- 0 | 3.430% +/- 0.255% | 1.570% +/- 0.255% | 0.001292 +/- 0.000129 | -3.723 +/- 0.055 | 0.010390 +/- 0.000333 |
+| ml_tail | LGBM median/IQR POT-GPD UniBM | +U.S.-close core | 2 | 553.5 +/- 0.707 | 5.420% +/- 0.249% | 0.420% +/- 0.249% | 0.001005 +/- 0.000064 | -4.038 +/- 0.106 | 0.006803 +/- 0.000029 |
+| ml_tail | LGBM median/IQR POT-GPD UniBM | +Japan proxy | 2 | 527 +/- 0 | 4.934% +/- 0.268% | 0.190% +/- 0.094% | 0.000977 +/- 0.000100 | -4.072 +/- 0.268 | 0.007226 +/- 0.000739 |
+| ml_tail | LGBM median/IQR POT-GPD UniBM | +Asia proxy | 2 | 527 +/- 0 | 5.882% +/- 0.000% | 0.882% +/- 0.000% | 0.000982 +/- 0.000096 | -4.078 +/- 0.191 | 0.006175 +/- 0.001006 |
 
-- This table joins `benchmark_metrics_per_model.parquet` and `ml_tail_metrics_per_model.parquet` so all benchmark and LGBM tail-model variants are visible in one place.
-- Mean and standard deviation are computed across registered metric rows for the same suite/model/information-set configuration; for most rows this summarizes left- and right-tail metrics.
-- It is a diagnostic scan, not the formal cross-model comparison table. Cross-model claims still require common-sample result-matrix and DM evidence because valid dates and model gates can differ.
+</details>
 
-### 4.6 Restricted common-sample result matrix and DM evidence
+This scan shows why the promoted-row gate is needed. Several filtered-tail rows
+have better FZ loss than direct quantile rows, but coverage and valid-sample
+support differ by family. The promoted rows are selected only after the
+coverage and inference gates are applied.
+
+## 6. Restricted Diagnostics
+
+### 6.1 Result Matrix And DM Evidence
+
+The result matrix provides common-date comparisons for registered loss and
+coverage surfaces. Coverage metrics are descriptive in the DM table, while FZ
+loss and quantile loss have block-bootstrap Diebold-Mariano diagnostics where
+registered.
 
 | Family | Axis | Loss | Rows | Common N | Date range | Joint exceptions |
-| --- | --- | --- | --- | --- | --- | --- |
-| nested information sets | information_set_increment | var_coverage | 64 | 471 to 527 | 2023-01-26 to 2026-05-21 | 34 to 80 |
-| nested information sets | information_set_increment | var_es_fz_loss | 64 | 471 to 527 | 2023-01-26 to 2026-05-21 | 34 to 80 |
-| nested information sets | information_set_increment | var_quantile_loss | 64 | 471 to 527 | 2023-01-26 to 2026-05-21 | 34 to 80 |
-| tail_model_family | model_family | var_coverage | 64 | 472 to 484 | 2023-06-16 to 2026-05-21 | 47 to 70 |
-| tail_model_family | model_family | var_es_fz_loss | 64 | 472 to 484 | 2023-06-16 to 2026-05-21 | 47 to 70 |
-| tail_model_family | model_family | var_quantile_loss | 64 | 472 to 484 | 2023-06-16 to 2026-05-21 | 47 to 70 |
+| --- | --- | --- | ---: | --- | --- | --- |
+| nested information sets | information-set increment | VaR coverage | 64 | 471 to 527 | 2023-01-26 to 2026-05-21 | 34 to 80 |
+| nested information sets | information-set increment | FZ loss | 64 | 471 to 527 | 2023-01-26 to 2026-05-21 | 34 to 80 |
+| nested information sets | information-set increment | quantile loss | 64 | 471 to 527 | 2023-01-26 to 2026-05-21 | 34 to 80 |
+| tail-model family | model family | VaR coverage | 64 | 472 to 484 | 2023-06-16 to 2026-05-21 | 47 to 70 |
+| tail-model family | model family | FZ loss | 64 | 472 to 484 | 2023-06-16 to 2026-05-21 | 47 to 70 |
+| tail-model family | model family | quantile loss | 64 | 472 to 484 | 2023-06-16 to 2026-05-21 | 47 to 70 |
 
-- The result matrix is the right place to compare direct quantile, location-scale empirical, plain POT-GPD, and the robust plain POT-GPD routes on their restricted common dates.
-- It separates VaR-only losses from VaR-ES joint scoring, so VaR-only claims are not confused with ES claims.
-- Restricted direct-quantile performance is only a comparison anchor for the tail-model family; it does not replace the primary direct-quantile evidence.
-- DM records are emitted only where registered row-count and exception-count gates pass; otherwise the result matrix remains descriptive.
+| Comparison object | Tail side | Candidate-minus-anchor FZ difference | DM p-value | Reading |
+| --- | --- | ---: | ---: | --- |
+| Japan-only to +U.S.-close core direct row | left_tail | -0.179 | 0.194 | Descriptive U.S.-close loss movement |
+| Japan-only to +U.S.-close core direct row | right_tail | 0.001 | 0.510 | No FZ improvement |
+| Direct quantile anchor to promoted row | left_tail | -0.489 | 0.049 | Screened restricted evidence |
+| Direct quantile anchor to promoted row | right_tail | -0.530 | 0.003 | Screened restricted evidence |
 
-### 4.7 Stress and diagnostic windows
+The compact DM summary should be the first inference table read from the full
+matrix. It separates three objects:
 
-| Suite | Rows | Window labels |
-| --- | --- | --- |
-| benchmark | 146 | `loss_top_decile` |
-| ml_tail | 212 | `loss_top_decile`, `vix_top_decile` |
+- direct information-set transitions;
+- direct-quantile anchor versus promoted filtered-tail row;
+- unsupported benchmark-floor versus promoted-row dominance claims.
 
-- Stress windows identify high-loss or high-volatility subsamples for two-sided risk diagnostics.
-- These rows use reproducible full-sample classifiers in this first pass, so they should be described as diagnostics rather than a live stress classifier.
-- They are useful for finding whether model behavior changes in difficult regimes before writing manuscript discussion.
+The benchmark-floor to promoted-row comparison is not registered as a headline
+cross-suite DM claim in the compact table. Separate heatmaps visualize the
+coverage-admissible comparison set, but they should be read as restricted
+diagnostics rather than replacement evidence for the promoted-row gates.
 
-### 4.8 Integrated interpretation and claim boundaries
+### 6.2 Murphy, Severity, And Stress Diagnostics
 
-<!-- generated: results_discussion -->
+| Diagnostic family | Rows | Main reading |
+| --- | ---: | --- |
+| Benchmark Murphy | 2,800 | Benchmark scoring-family sensitivity on a common grid. |
+| LightGBM 24-check Murphy | 3,200 | Scoring sensitivity among rows that pass the 24-check screen. |
+| ES severity | 86 finite rows | Conditional-on-exception loss severity, not standalone selection. |
+| Benchmark stress windows | 146 | High-loss diagnostic windows. |
+| ML-tail stress windows | 212 | High-loss and high-VIX diagnostic windows. |
 
-#### Data and timing audit
+Murphy diagrams check how conclusions vary across scoring-function
+decompositions. They help assess scoring robustness but do not override VaR
+coverage or FZ loss.
 
-- The gold timing map covers `2016-07-19 to 2026-05-22` and the combined clean start is `2018-06-20`.
-- No forecast-sample rows before `2018-06-20` enter the modeling evidence.
-- The leakage check reports status `pass_with_warnings` with zero leakage failures and `611790` warnings.
-- FRED vintage safety is recorded as `False`; FRED values use conservative release timing but remain current historical observations rather than ALFRED real-time vintages.
+ES severity plots condition on exceptions and compare realized losses beyond
+the VaR threshold. They are useful for understanding exception size, not for
+selecting a model by themselves.
 
-#### Baseline benchmarks and advanced econometric benchmarks
+Stress overlays for 2024 and 2025 show how selected VaR/ES paths behave around
+named high-loss windows. They are visual diagnostics, not trading backtests or
+stress-window validation claims. The stress-window classifier is fixed as a
+full-sample reproducible decile diagnostic; rolling stress-window validation is
+future work and is not part of the first-round evidence.
 
-- `benchmark_metrics.parquet` reports `14` common-sample rows across `7` baseline benchmark model families and `2` tail side(s), while benchmark forecasts contain `15173` model-date rows.
-- Baseline benchmark models are external target-history and econometric references; this section does not rank them.
-- Advanced econometric benchmark rows are implemented for `6` model families and contribute `6509` nonblocking forecast rows; these rows are claim-gated diagnostics unless a manuscript table explicitly promotes them through the same sample and inference review.
-- Baseline benchmark breach rates have a median of `0.0581717`, within 2.5 percentage points of the nominal level, indicating reasonable coverage calibration relative to the ML-tail models whose breach rates are reported in the nested-information-set section.
+### 6.3 Sensitivity Evidence
 
-#### Primary ML specifications across nested information sets
+Sensitivity outputs are explicitly not primary-claim evidence. Threshold
+perturbations around POT-GPD are useful for checking whether the selected
+filtered-tail conclusions are fragile to nearby threshold choices. LightGBM
+capacity sensitivity is a robustness check on specification dependence. Neither
+surface is used to reselect the headline sample, information set, or model.
 
-- `ml_tail_metrics.parquet` defines the primary ML specification comparison across nested information sets for this run.
-- The primary ML artifact contains `4` information sets, `1` tail level(s), and `2` tail side(s); the retained primary ML rows are `LGBM direct quantile`.
-- The implemented ML-tail registry is `LGBM direct quantile`, `LGBM location-scale empirical`, `LGBM POT-GPD plain MLE`, `LGBM POT-GPD UniBM block-maxima shape`, `LGBM median/MAD POT-GPD plain MLE`, `LGBM median/MAD POT-GPD UniBM block-maxima shape`, `LGBM median/IQR POT-GPD plain MLE`, `LGBM median/IQR POT-GPD UniBM block-maxima shape`, but the primary nested-information-set comparison should be read only from `ml_tail_metrics.parquet`.
-- The nested information sets report downside-risk and upside-risk surfaces separately. The registered artifacts show different left/right patterns, and the generator does not assume that the two sides share the same economic mechanism.
-- Coverage warning: all `8` primary ML rows exhibit VaR breach rates (`0.0815939` to `0.129032`) that exceed the nominal level by more than 2.5 percentage points. Quantile-loss and FZ-loss differences across the nested information sets must be interpreted in this context; lower loss scores may partly reflect less conservative VaR estimates rather than better conditional tail calibration.
-- For `left_tail / LGBM direct quantile / tail=0.950`, the largest quantile-loss change occurs at the first information-set augmentation (adding U.S. close core); subsequent additions of Japan proxy and Asia proxy ETFs contribute diminishing incremental loss changes. This saturation pattern is descriptive and does not automatically reduce the value of the broader information set.
-- The nested information sets are used to assess candidate incremental U.S.-close information under strict common-sample rules; they do not by themselves establish forecast improvement.
-
-#### Restricted model-family comparison
-
-- `ml_tail_result_matrix.parquet` contains restricted common-sample comparisons for `8` LightGBM tail-model families.
-- The restricted common-N range is `471 to 527` and the joint-exception range is `34 to 80`.
-- Recorded claim scopes are `restricted_model_comparison_not_primary`; these rows are restricted evidence and cannot replace the primary ML nested-information-set comparison.
-- The tail-model family comparison is severely sample-limited: the largest restricted common-N is `484` rows. No model-family ranking claim is supportable from this restricted sample; extended OOS coverage is needed before tail-model family ranking becomes meaningful.
-- Result-matrix inference is recorded separately from the primary suite-level DM: restricted DM records include `208` gate-pass rows and `104` unavailable rows. These entries are restricted common-sample diagnostics, not primary model-family rankings.
-- The result matrix is a matched-date diagnostic layer. It should not be worded as one family being better than another.
-
-#### Coverage and inference gates
-
-- Coverage review flags `8/8` primary ML rows with breach rates more than 2.5 percentage points from nominal coverage; Kupiec p-values fall below 0.05 in `8/8` reported rows and Christoffersen p-values fall below 0.05 in `0/8` reported rows.
-- Model-eviction artifacts record `8` retained rows and `56` non-retained rows under the primary ML sample policy.
-- Block-bootstrap DM artifacts are unconditional forecast-comparison diagnostics; any p-value should be read on average across the unconditional evaluation sample, not as condition-specific evidence.
-- Loss differentials alone do not constitute an improvement claim; coverage, exception counts, sample gates, and inference status must be reviewed together.
-- Result-matrix tail-event power flags and suite-level inference gates report `0` restricted rows with insufficient tail-event power and `0/18` unavailable DM inference rows.
-
-#### Supporting diagnostics
-
-- Supporting LaTeX diagnostic table files are present for `2/2` registered diagnostic families.
-- ES severity diagnostics contain `86` finite rows with mean exceedance severity ranging from `0.00482029` to `0.0121402`; this is conditional-on-exception evidence.
-- Stress-window diagnostics contain `358` rows, and 24-check LGBM Murphy diagnostics contain `3200` rows.
-- Feature-unavailability diagnostics contain `384` rows.
-- Figure manifest references:
-  - Figure: market_timing_design (Source: manifest.json, config/research_config.json, panel/calendar_map.parquet; Claim scope: design_forecast_origin_not_causal_price_discovery; File: latex/figures/market_timing_design.png).
-  - Figure: coverage_breach_rates_left_tail (Source: metrics/benchmark_metrics.parquet, metrics/benchmark_metrics_per_model.parquet, metrics/ml_tail_metrics.parquet, metrics/ml_tail_metrics_per_model.parquet; Claim scope: coverage_diagnostic_not_primary_claim; File: latex/figures/coverage_breach_rates_left_tail.png).
-  - Figure: coverage_breach_rates_right_tail (Source: metrics/benchmark_metrics.parquet, metrics/benchmark_metrics_per_model.parquet, metrics/ml_tail_metrics.parquet, metrics/ml_tail_metrics_per_model.parquet; Claim scope: coverage_diagnostic_not_primary_claim; File: latex/figures/coverage_breach_rates_right_tail.png).
-  - Figure: cumulative_lgbm_a_anchor_fz_gain (Source: metrics/benchmark_loss_matrix.parquet, metrics/ml_tail_loss_matrix.parquet, forecasts/benchmark_forecasts.parquet, forecasts/ml_tail_forecasts.parquet; Claim scope: headline_lgbm_a_anchor_gjr_evt_and_information_increment_fz_gain; File: latex/figures/cumulative_lgbm_a_anchor_fz_gain.png).
-  - Figure: selected_model_performance_left_tail (Source: metrics/benchmark_metrics_per_model.parquet, metrics/ml_tail_metrics_per_model.parquet; Claim scope: selected_benchmark_vs_lgbm_main_figure_not_full_result_set; File: latex/figures/selected_model_performance_left_tail.png).
-  - Figure: selected_model_performance_right_tail (Source: metrics/benchmark_metrics_per_model.parquet, metrics/ml_tail_metrics_per_model.parquet; Claim scope: selected_benchmark_vs_lgbm_main_figure_not_full_result_set; File: latex/figures/selected_model_performance_right_tail.png).
-  - Figure: full_sample_var_overlay_left_tail (Source: forecasts/benchmark_forecasts.parquet, forecasts/ml_tail_forecasts.parquet; Claim scope: full_sample_var_overlay_fixed_selection_visual_diagnostic; File: latex/figures/full_sample_var_overlay_left_tail.png).
-  - Figure: full_sample_var_overlay_right_tail (Source: forecasts/benchmark_forecasts.parquet, forecasts/ml_tail_forecasts.parquet; Claim scope: full_sample_var_overlay_fixed_selection_visual_diagnostic; File: latex/figures/full_sample_var_overlay_right_tail.png).
-  - Figure: benchmark_murphy_left_tail (Source: metrics/benchmark_murphy.parquet; Claim scope: murphy_diagnostic_benchmark_baseline_common_grid; File: latex/figures/benchmark_murphy_left_tail.png).
-  - Figure: benchmark_murphy_right_tail (Source: metrics/benchmark_murphy.parquet; Claim scope: murphy_diagnostic_benchmark_baseline_common_grid; File: latex/figures/benchmark_murphy_right_tail.png).
-  - Figure: lgbm_24check_murphy_left_tail (Source: metrics/lgbm_24check_murphy.parquet, metrics/ml_tail_metrics_per_model.parquet, forecasts/ml_tail_forecasts.parquet; Claim scope: murphy_diagnostic_lgbm_24check_robust_ladder; File: latex/figures/lgbm_24check_murphy_left_tail.png).
-  - Figure: lgbm_24check_murphy_right_tail (Source: metrics/lgbm_24check_murphy.parquet, metrics/ml_tail_metrics_per_model.parquet, forecasts/ml_tail_forecasts.parquet; Claim scope: murphy_diagnostic_lgbm_24check_robust_ladder; File: latex/figures/lgbm_24check_murphy_right_tail.png).
-  - Figure: es_severity_left_tail (Source: metrics/benchmark_metrics.parquet, metrics/ml_tail_metrics.parquet, metrics/ml_tail_metrics_per_model.parquet; Claim scope: es_severity_diagnostic_not_model_selection_claim; File: latex/figures/es_severity_left_tail.png).
-  - Figure: es_severity_right_tail (Source: metrics/benchmark_metrics.parquet, metrics/ml_tail_metrics.parquet, metrics/ml_tail_metrics_per_model.parquet; Claim scope: es_severity_diagnostic_not_model_selection_claim; File: latex/figures/es_severity_right_tail.png).
-  - Figure: var_es_stress_overlay_2024_stress_episode (Source: forecasts/benchmark_forecasts.parquet, forecasts/ml_tail_forecasts.parquet; Claim scope: appendix_stress_overlay_illustration_not_validation; File: latex/figures/var_es_stress_overlay_2024_stress_episode.png).
-  - Figure: var_es_stress_overlay_2025_stress_episode (Source: forecasts/benchmark_forecasts.parquet, forecasts/ml_tail_forecasts.parquet; Claim scope: appendix_stress_overlay_illustration_not_validation; File: latex/figures/var_es_stress_overlay_2025_stress_episode.png).
-  - Figure: dm_heatmap_left_tail (Source: forecasts/benchmark_forecasts.parquet, forecasts/ml_tail_forecasts.parquet; Claim scope: post_24check_cross_suite_fz_dm_diagnostic; File: latex/figures/dm_heatmap_left_tail.png).
-  - Figure: dm_heatmap_right_tail (Source: forecasts/benchmark_forecasts.parquet, forecasts/ml_tail_forecasts.parquet; Claim scope: post_24check_cross_suite_fz_dm_diagnostic; File: latex/figures/dm_heatmap_right_tail.png).
-
-#### Not yet claimed
-
-- No hedge PnL, transaction-cost, or trading-alpha analysis is performed.
-- Left-tail and right-tail outputs are both economic tail-risk surfaces for futures positions; neither side should be promoted beyond the sample, coverage, and inference gates without author review.
-- The current evidence does not create an automatic model-selection statement; any manuscript claim still requires author review of sample gates, coverage, loss metrics, and inference diagnostics.
-
-## 5. Figures, Tables, And Source Artifacts
-
-This section merges the former figure/table placement page into the results
-snapshot. All generated figures and tables are listed with their intended
-interpretation. The words "supporting" and "diagnostic" describe claim scope;
-they do not mean the artifact is missing from this page.
-
-### 5.1 Configuration robustness evidence
-
-| Field | Value |
+| Sensitivity item | Value |
 | --- | --- |
-| Source primary run | `tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4` |
-| Scope | `paper` |
+| Primary run | `tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4` |
 | Primary-claim allowed | `False` |
-| Selected LGBM models | `LGBM POT-GPD plain MLE`, `LGBM POT-GPD UniBM block-maxima shape` |
-| Selected benchmark models | `gjr_garch_evt` |
-| Selected information sets | `JP + US close core + JP proxy` |
-| Job counts | `evt_boundary_rows=6, evt_threshold=12, lgbm_capacity=8` |
-| Forecast rows | `13096` |
-| Metric rows | `26` |
-| Status | `ok` |
+| Selected LGBM models | POT-GPD plain MLE and POT-GPD UniBM |
+| Selected benchmark model | GJR-GARCH-EVT |
+| Selected information set | +U.S.-close core + Japan proxy |
+| Forecast rows | 13,096 |
+| Metric rows | 26 |
+| LGBM capacity classifications | 8 robust rows |
+| POT threshold classifications | 12 robust rows, 6 boundary-diagnostic rows |
+| Status | ok |
 
-| Sensitivity family | Rows / classifications |
-| --- | --- |
-| LGBM capacity | 8 rows (robust=8) |
-| POT threshold | 18 rows (boundary_diagnostic=6, robust=12) |
+## 7. Figure Interpretation Guide
 
-- The primary design compares pre-specified point-in-time forecast specifications. Configuration sensitivity is post-24-check robustness evidence and is not used for model selection or the cross-suite FZ DM heatmap.
-- The run is fixed to the post-24-check paper set. LGBM rows perturb capacity only for the pass-all C-information LGBM+EVT families, and POT threshold rows perturb those rows plus GJR-GARCH-EVT.
-- Robustness classes describe conclusion stability versus the registered primary specification. They do not feed DM gates, promoted-model logic, or selected-model figures.
+The figure guide includes every generated figure in the docs bundle. Each
+figure appears with a short interpretation and the boundary on what it can
+support.
 
-### 5.2 Generated table manifest
+| Figure | Source artifacts | Claim scope | Tail side |
+| --- | --- | --- | --- |
+| market_timing_design | `manifest.json`, `config/research_config.json`, `panel/calendar_map.parquet` | design forecast origin, not causal price discovery | design |
+| target_tail_motivation | `panel/modeling_panel.parquet` | target distribution motivation, not forecast validation | left/right target distribution |
+| coverage_breach_rates_left_tail | benchmark and ML-tail metric artifacts | coverage diagnostic, not primary claim alone | left_tail |
+| coverage_breach_rates_right_tail | benchmark and ML-tail metric artifacts | coverage diagnostic, not primary claim alone | right_tail |
+| cumulative_lgbm_a_anchor_fz_gain | benchmark/ML loss matrices and forecasts | headline LGBM A-anchor FZ-gain diagnostic | left/right |
+| selected_model_performance_left_tail | benchmark and ML per-model metrics | selected benchmark-vs-LGBM summary, not full result set | left_tail |
+| selected_model_performance_right_tail | benchmark and ML per-model metrics | selected benchmark-vs-LGBM summary, not full result set | right_tail |
+| full_sample_var_overlay_left_tail | benchmark and ML forecasts | fixed-selection visual diagnostic | left_tail |
+| full_sample_var_overlay_right_tail | benchmark and ML forecasts | fixed-selection visual diagnostic | right_tail |
+| var_es_stress_overlay_2024_stress_episode | benchmark and ML forecasts | appendix stress illustration, not validation | left/right |
+| var_es_stress_overlay_2025_stress_episode | benchmark and ML forecasts | appendix stress illustration, not validation | left/right |
+| dm_heatmap_left_tail | benchmark and ML forecasts | coverage-admissible FZ DM diagnostic | left_tail |
+| dm_heatmap_right_tail | benchmark and ML forecasts | coverage-admissible FZ DM diagnostic | right_tail |
+| benchmark_murphy_left_tail | `metrics/benchmark_murphy.parquet` | benchmark Murphy diagnostic | left_tail |
+| benchmark_murphy_right_tail | `metrics/benchmark_murphy.parquet` | benchmark Murphy diagnostic | right_tail |
+| lgbm_24check_murphy_left_tail | LGBM Murphy and ML-tail artifacts | LightGBM 24-check Murphy diagnostic | left_tail |
+| lgbm_24check_murphy_right_tail | LGBM Murphy and ML-tail artifacts | LightGBM 24-check Murphy diagnostic | right_tail |
+| es_severity_left_tail | benchmark and ML-tail metrics | ES severity diagnostic, not model selection | left_tail |
+| es_severity_right_tail | benchmark and ML-tail metrics | ES severity diagnostic, not model selection | right_tail |
 
-| Table | Source artifacts | Claim scope | Tail side | File |
-| --- | --- | --- | --- | --- |
-| tailrisk_predictor_block_coverage | `panel/feature_coverage.parquet` | `main_text_predictor_block_coverage_information_transparency` | `None` | `latex/tables/tailrisk_predictor_block_coverage_table.tex` |
-| benchmark_metrics | `metrics/benchmark_metrics.parquet` | `benchmark_common_sample_metric_table` | `None` | `latex/tables/benchmark_metrics_table.tex` |
-| benchmark_left_tail_risk | `metrics/benchmark_metrics.parquet` | `left_tail_benchmark_risk_table` | `left_tail` | `latex/tables/benchmark_left_tail_risk_table.tex` |
-| benchmark_right_tail_risk | `metrics/benchmark_metrics.parquet` | `right_tail_benchmark_risk_table` | `right_tail` | `latex/tables/benchmark_right_tail_risk_table.tex` |
-| ml_tail_metrics | `metrics/ml_tail_metrics.parquet` | `ml_tail_nested_information_set_table` | `None` | `latex/tables/ml_tail_metrics_table.tex` |
-| ml_tail_left_tail_risk | `metrics/ml_tail_metrics.parquet` | `left_tail_ml_tail_primary_risk_table` | `left_tail` | `latex/tables/ml_tail_left_tail_risk_table.tex` |
-| ml_tail_right_tail_risk | `metrics/ml_tail_metrics.parquet` | `right_tail_ml_tail_primary_risk_table` | `right_tail` | `latex/tables/ml_tail_right_tail_risk_table.tex` |
-| tailrisk_model_inventory | `config/research_config.json`, `metrics/benchmark_metrics_per_model.parquet`, `metrics/ml_tail_metrics_per_model.parquet` | `main_text_model_inventory_forecast_construction` | `None` | `latex/tables/tailrisk_model_inventory_table.tex` |
-| tailrisk_selected_model_performance | `metrics/benchmark_metrics_per_model.parquet`, `metrics/ml_tail_metrics_per_model.parquet` | `selected_benchmark_vs_lgbm_main_figure_rows` | `None` | `latex/tables/tailrisk_selected_model_performance_table.tex` |
-| appendix_benchmark_all_models | `metrics/benchmark_metrics_per_model.parquet` | `appendix_full_benchmark_results` | `None` | `latex/tables/appendix_benchmark_all_models_table.tex` |
-| ml_tail_promoted_tail_models | `metrics/ml_tail_metrics_per_model.parquet`, `metrics/ml_tail_result_matrix_dm.parquet` | `side_specific_ml_tail_promotion_gate` | `None` | `latex/tables/ml_tail_promoted_tail_models_table.tex` |
-| appendix_lgbm_all_models | `metrics/ml_tail_metrics_per_model.parquet` | `appendix_full_lgbm_results` | `None` | `latex/tables/appendix_lgbm_all_models_table.tex` |
-| tailrisk_es_severity | `metrics/benchmark_metrics.parquet`, `metrics/ml_tail_metrics.parquet`, `metrics/ml_tail_metrics_per_model.parquet` | `es_severity_diagnostic_table` | `None` | `latex/tables/tailrisk_es_severity_table.tex` |
-| tailrisk_claim_scope | `manifest.json`, `config/research_config.json` | `claim_boundary_reference_table` | `None` | `latex/tables/tailrisk_claim_scope_table.tex` |
-| ml_tail_result_matrix | `metrics/ml_tail_result_matrix.parquet` | `restricted_model_comparison_table` | `None` | `latex/tables/ml_tail_result_matrix_table.tex` |
-| ml_tail_result_matrix_summary | `metrics/ml_tail_result_matrix.parquet`, `metrics/ml_tail_result_matrix_dm.parquet` | `restricted_result_matrix_summary_table` | `None` | `latex/tables/ml_tail_result_matrix_summary_table.tex` |
-| tailrisk_dm_summary | `metrics/ml_tail_result_matrix_dm.parquet` | `main_text_compact_dm_summary` | `None` | `latex/tables/tailrisk_dm_summary_table.tex` |
-| appendix_lgbm_configuration_sensitivity | `sensitivity/metrics/lgbm_configuration_sensitivity_metrics.parquet` | `appendix_configuration_robustness_lgbm` | `None` | `sensitivity/latex/tables/appendix_lgbm_configuration_sensitivity_table.tex` |
-| appendix_evt_threshold_sensitivity | `sensitivity/metrics/evt_threshold_sensitivity_metrics.parquet` | `appendix_configuration_robustness_evt_threshold` | `None` | `sensitivity/latex/tables/appendix_evt_threshold_sensitivity_table.tex` |
+### Figure 1. Timing Design
 
-- The table manifest records the generated LaTeX table files, their source artifacts, and their claim scopes.
-- Tables are paper-facing exports; the Markdown tables above are snapshot summaries for browser review.
+**Use for:** target timing, U.S.-close forecast origin, OSE night/day-session
+structure, and point-in-time cutoff logic.
 
-### 5.3 Table interpretation guide
-
-| Results/Discussion role | Artifact | How to read it |
-| --- | --- | --- |
-| Predictor block and coverage | [tailrisk_predictor_block_coverage_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/tailrisk_predictor_block_coverage_table.tex) | Data/Methods table showing source families, feature counts, examples, missingness, and model role; coverage is not timestamp admissibility. |
-| Model inventory | [tailrisk_model_inventory_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/tailrisk_model_inventory_table.tex) | Methods table explaining model families, information sets, VaR construction, ES construction, and role; performance belongs elsewhere. |
-| Benchmark floor summary | [benchmark_metrics_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/benchmark_metrics_table.tex) | Results table for target-history and econometric benchmark calibration and loss evidence. |
-| Benchmark tail-side details | [benchmark_left_tail_risk_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/benchmark_left_tail_risk_table.tex), [benchmark_right_tail_risk_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/benchmark_right_tail_risk_table.tex) | Tail-specific benchmark rows for left and right risk surfaces. |
-| ML information ladder | [ml_tail_metrics_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/ml_tail_metrics_table.tex) | Core nested-information-set table for direct LightGBM; read loss changes with coverage gates. |
-| ML tail-side details | [ml_tail_left_tail_risk_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/ml_tail_left_tail_risk_table.tex), [ml_tail_right_tail_risk_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/ml_tail_right_tail_risk_table.tex) | Tail-specific direct LightGBM information-set rows. |
-| Selected model performance | [tailrisk_selected_model_performance_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/tailrisk_selected_model_performance_table.tex) | Deterministic selected-row summary after sample-size, coverage, FZ-loss, and quantile-loss gates. |
-| Promoted tail rows | [ml_tail_promoted_tail_models_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/ml_tail_promoted_tail_models_table.tex) | Locked side-specific promotion-gate rows; not a universal model-family ranking. |
-| Full benchmark scan | [appendix_benchmark_all_models_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/appendix_benchmark_all_models_table.tex) | Complete benchmark inventory supporting benchmark breadth. |
-| Full LGBM scan | [appendix_lgbm_all_models_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/appendix_lgbm_all_models_table.tex) | Complete per-model LightGBM scan; do not use as a raw leaderboard. |
-| Restricted result matrix | [ml_tail_result_matrix_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/ml_tail_result_matrix_table.tex), [ml_tail_result_matrix_summary_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/ml_tail_result_matrix_summary_table.tex) | Restricted common-sample model-family comparison and summary. |
-| Compact DM summary | [tailrisk_dm_summary_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/tailrisk_dm_summary_table.tex) | Headline paired inference table; negative loss differences favor the candidate. |
-| ES severity | [tailrisk_es_severity_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/tailrisk_es_severity_table.tex) | Conditional-on-exception severity diagnostic; not standalone model selection. |
-| Claim boundary | [tailrisk_claim_scope_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/tailrisk_claim_scope_table.tex) | Reference table separating headline, restricted, diagnostic, and robustness claims. |
-
-#### Figure 1. Market Timing Design
-
-- Key readings: the diagram defines JST event timing, the matched U.S.-close cutoff, and the OSE day-open target.
-- OSE schedule note: pre-2024-11-05 hours use day close 15:15 JST and night session 16:30-05:30 JST; from 2024-11-05, JPX uses day close 15:45 JST and night session 17:00-06:00 JST, with day open still 08:45 JST.
-- The OSE night close is timing context; the forecast origin is the matched U.S. cash close plus the data-availability lag.
-- It is a session-alignment schematic, not a structural market-transmission diagram.
+**Do not use for:** price discovery, causal market transmission, or a claim
+that the night session fully absorbs U.S. information.
 
 ![market_timing_design](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/market_timing_design.png)
 
-_Figure: `market_timing_design`. Source: `manifest.json`, `config/research_config.json`, `panel/calendar_map.parquet`. Claim scope: `design_forecast_origin_not_causal_price_discovery`. Tail side: `design`. Run file: `latex/figures/market_timing_design.png`._
+### Figure 2. Target Tail Motivation
 
-#### Figure 2. Opening-Gap Tail Motivation
+**Use for:** why the settlement-to-open gap is a tail-risk target. The figure
+shows heavy tails, tail-index evidence, and threshold diagnostics for the raw
+target.
 
-- Key readings: the composite figure combines density, log survival, mean-excess, and Hill tail-index diagnostics for the raw opening-gap target.
-- It motivates tail-risk modeling and does not validate any forecast model.
+**Do not use for:** forecast superiority or model selection.
 
 ![target_tail_motivation](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/target_tail_motivation.png)
 
-_Figure: `target_tail_motivation`. Source: `panel/modeling_panel.parquet`. Claim scope: `target_distribution_motivation_not_forecast_validation`. Tail side: `left_right_target_distribution`. Run file: `latex/figures/target_tail_motivation.png`._
+### Figure 3. Coverage Breach Rates
 
-#### Figure 3. Cumulative FZ-Gain Diagnostics
+**Use for:** coverage-first reading of all major forecast families. The direct
+LightGBM rows over-breach, which is the main reason raw loss improvement cannot
+be read as forecast admissibility.
 
-- Key readings: upward movement means the candidate has lower cumulative FZ loss under the fixed anchor-loss-minus-candidate-loss convention.
-- Each panel uses the corresponding A-only LGBM+EVT forecast as anchor.
-- The GJR-GARCH-EVT line is an own-history benchmark reference; B/C/D lines show same-family information increments.
-
-![cumulative_lgbm_a_anchor_fz_gain](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/cumulative_lgbm_a_anchor_fz_gain.png)
-
-_Figure: `cumulative_lgbm_a_anchor_fz_gain`. Source: `metrics/benchmark_loss_matrix.parquet`, `metrics/ml_tail_loss_matrix.parquet`, `forecasts/benchmark_forecasts.parquet`, `forecasts/ml_tail_forecasts.parquet`. Claim scope: `headline_lgbm_a_anchor_gjr_evt_and_information_increment_fz_gain`. Tail side: `left_right`. Run file: `latex/figures/cumulative_lgbm_a_anchor_fz_gain.png`._
-
-#### Figure 4. Full Coverage Breach-Rate Diagnostics
-
-- Key readings: bars report realized VaR exception rates against the nominal line.
-- Read this first: exception-rate deviations set the boundary for any loss-based interpretation.
+**Do not use for:** ranking models by breach rate alone; loss and ES behavior
+also matter.
 
 ![coverage_breach_rates_left_tail](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/coverage_breach_rates_left_tail.png)
 
-_Figure: `coverage_breach_rates_left_tail`. Source: `metrics/benchmark_metrics.parquet`, `metrics/benchmark_metrics_per_model.parquet`, `metrics/ml_tail_metrics.parquet`, `metrics/ml_tail_metrics_per_model.parquet`. Claim scope: `coverage_diagnostic_not_primary_claim`. Tail side: `left_tail`. Run file: `latex/figures/coverage_breach_rates_left_tail.png`._
-
 ![coverage_breach_rates_right_tail](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/coverage_breach_rates_right_tail.png)
 
-_Figure: `coverage_breach_rates_right_tail`. Source: `metrics/benchmark_metrics.parquet`, `metrics/benchmark_metrics_per_model.parquet`, `metrics/ml_tail_metrics.parquet`, `metrics/ml_tail_metrics_per_model.parquet`. Claim scope: `coverage_diagnostic_not_primary_claim`. Tail side: `right_tail`. Run file: `latex/figures/coverage_breach_rates_right_tail.png`._
+### Figure 4. Cumulative Direct-Ladder FZ Gain
 
-#### Figure 5. Selected Benchmark-vs-LGBM Performance
+**Use for:** visualizing cumulative FZ-loss movements as information sets are
+expanded from Japan-only to +U.S.-close core, +Japan proxy, and +Asia proxy.
+Upward movement means the candidate has lower cumulative FZ loss under the
+anchor-loss-minus-candidate-loss convention.
 
-- Key readings: compact main-figure rows split models into two broad groups, Benchmark and LGBM.
-- Within each tail and group, rows are selected by sufficient sample size, VaR coverage near 5%, then lower FZ loss and quantile loss.
-- Full benchmark and LGBM per-model results are exported in full-result tables, so this figure is a readable summary rather than the full result set.
+**Do not use for:** coverage admissibility. This figure must be read with the
+breach-rate figures and promoted-row gates.
+
+![cumulative_lgbm_a_anchor_fz_gain](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/cumulative_lgbm_a_anchor_fz_gain.png)
+
+### Figure 5. Selected Model Performance
+
+**Use for:** compact selected-row performance after sample-size and coverage
+screens. It is a reader-friendly view of rows that survive the major gates.
+
+**Do not use for:** a full model universe ranking. The appendix LGBM scan gives
+the full candidate inventory.
 
 ![selected_model_performance_left_tail](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/selected_model_performance_left_tail.png)
 
-_Figure: `selected_model_performance_left_tail`. Source: `metrics/benchmark_metrics_per_model.parquet`, `metrics/ml_tail_metrics_per_model.parquet`. Claim scope: `selected_benchmark_vs_lgbm_main_figure_not_full_result_set`. Tail side: `left_tail`. Run file: `latex/figures/selected_model_performance_left_tail.png`._
-
 ![selected_model_performance_right_tail](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/selected_model_performance_right_tail.png)
 
-_Figure: `selected_model_performance_right_tail`. Source: `metrics/benchmark_metrics_per_model.parquet`, `metrics/ml_tail_metrics_per_model.parquet`. Claim scope: `selected_benchmark_vs_lgbm_main_figure_not_full_result_set`. Tail side: `right_tail`. Run file: `latex/figures/selected_model_performance_right_tail.png`._
+### Figure 6. Full-Sample VaR Overlays
 
-#### Figure 6. Full-Sample VaR Overlay Diagnostics
+**Use for:** visual inspection of realized losses relative to selected VaR
+paths across the full evaluation sample.
 
-- Key readings: full-sample overlays show realized loss against a fixed benchmark-comparator VaR and the locked side-specific promoted ML-tail VaR.
-- The benchmark line uses GJR-GARCH-EVT with GJR-GARCH-t fallback; the ML line is not selected by inspecting this plot.
-- Treat the plot as a visual diagnostic. Formal validation remains the coverage, loss, DM, Murphy, and EVT evidence.
+**Do not use for:** model selection, trading timing, or realized stress-window
+performance claims.
 
 ![full_sample_var_overlay_left_tail](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/full_sample_var_overlay_left_tail.png)
 
-_Figure: `full_sample_var_overlay_left_tail`. Source: `forecasts/benchmark_forecasts.parquet`, `forecasts/ml_tail_forecasts.parquet`. Claim scope: `full_sample_var_overlay_fixed_selection_visual_diagnostic`. Tail side: `left_tail`. Run file: `latex/figures/full_sample_var_overlay_left_tail.png`._
-
 ![full_sample_var_overlay_right_tail](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/full_sample_var_overlay_right_tail.png)
 
-_Figure: `full_sample_var_overlay_right_tail`. Source: `forecasts/benchmark_forecasts.parquet`, `forecasts/ml_tail_forecasts.parquet`. Claim scope: `full_sample_var_overlay_fixed_selection_visual_diagnostic`. Tail side: `right_tail`. Run file: `latex/figures/full_sample_var_overlay_right_tail.png`._
+### Figure 7. Stress Episode VaR/ES Overlays
 
-#### Figure 7. VaR/ES Stress-Window Overlays
+**Use for:** stress-window illustration of selected VaR/ES paths in 2024 and
+2025 episodes.
 
-- Supporting diagnostic: stress-window overlays illustrate threshold behavior in broad OOS stress episodes with left/right tails sharing each episode's x-axis.
-- The LGBM overlays use information set C, the best-FZ row within the two 24-check LGBM+EVT families.
-- They do not report hedge PnL, transaction-cost evidence, or trading performance.
+**Do not use for:** stress backtesting or capital-savings claims.
 
 ![var_es_stress_overlay_2024_stress_episode](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/var_es_stress_overlay_2024_stress_episode.png)
 
-_Figure: `var_es_stress_overlay_2024_stress_episode`. Source: `forecasts/benchmark_forecasts.parquet`, `forecasts/ml_tail_forecasts.parquet`. Claim scope: `appendix_stress_overlay_illustration_not_validation`. Tail side: `left_right_tail`. Run file: `latex/figures/var_es_stress_overlay_2024_stress_episode.png`._
-
 ![var_es_stress_overlay_2025_stress_episode](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/var_es_stress_overlay_2025_stress_episode.png)
 
-_Figure: `var_es_stress_overlay_2025_stress_episode`. Source: `forecasts/benchmark_forecasts.parquet`, `forecasts/ml_tail_forecasts.parquet`. Claim scope: `appendix_stress_overlay_illustration_not_validation`. Tail side: `left_right_tail`. Run file: `latex/figures/var_es_stress_overlay_2025_stress_episode.png`._
+### Figure 8. DM Heatmaps
 
-#### Figure 8. DM Heatmaps
+**Use for:** restricted pairwise FZ-loss diagnostics within the
+coverage-admissible comparison set.
 
-- Supporting diagnostic: heatmap cells report pairwise FZ-loss differences and one-sided DM p-values for the pass-all cross-suite model set.
-- Rows are candidates, columns are anchors, and negative candidate-minus-anchor differences favor the row model.
-- Each tail uses a strict global common sample across GJR-GARCH-EVT, LGBM plain MLE C, and LGBM UniBM C.
+**Do not use for:** universal model ranking or benchmark-floor versus promoted
+row dominance unless that paired comparison is explicitly registered in the
+table being cited.
 
 ![dm_heatmap_left_tail](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/dm_heatmap_left_tail.png)
 
-_Figure: `dm_heatmap_left_tail`. Source: `forecasts/benchmark_forecasts.parquet`, `forecasts/ml_tail_forecasts.parquet`. Claim scope: `post_24check_cross_suite_fz_dm_diagnostic`. Tail side: `left_tail`. Run file: `latex/figures/dm_heatmap_left_tail.png`._
-
 ![dm_heatmap_right_tail](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/dm_heatmap_right_tail.png)
 
-_Figure: `dm_heatmap_right_tail`. Source: `forecasts/benchmark_forecasts.parquet`, `forecasts/ml_tail_forecasts.parquet`. Claim scope: `post_24check_cross_suite_fz_dm_diagnostic`. Tail side: `right_tail`. Run file: `latex/figures/dm_heatmap_right_tail.png`._
+### Figure 9. Benchmark Murphy Diagrams
 
-#### Figure 9. Benchmark Murphy Diagnostics
+**Use for:** checking benchmark scoring robustness across Murphy-style
+evaluation surfaces.
 
-- Key readings: curves report target-history benchmark elementary-score diagnostics on a common grid.
-- The plot is a scoring-family diagnostic, not a pairwise ranking statement.
+**Do not use for:** replacing the benchmark metrics table or coverage tests.
 
 ![benchmark_murphy_left_tail](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/benchmark_murphy_left_tail.png)
 
-_Figure: `benchmark_murphy_left_tail`. Source: `metrics/benchmark_murphy.parquet`. Claim scope: `murphy_diagnostic_benchmark_baseline_common_grid`. Tail side: `left_tail`. Run file: `latex/figures/benchmark_murphy_left_tail.png`._
-
 ![benchmark_murphy_right_tail](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/benchmark_murphy_right_tail.png)
 
-_Figure: `benchmark_murphy_right_tail`. Source: `metrics/benchmark_murphy.parquet`. Claim scope: `murphy_diagnostic_benchmark_baseline_common_grid`. Tail side: `right_tail`. Run file: `latex/figures/benchmark_murphy_right_tail.png`._
+### Figure 10. LightGBM 24-Check Murphy Diagrams
 
-#### Figure 10. 24-Check LGBM Murphy Diagnostics
+**Use for:** diagnostic scoring comparison among LightGBM rows that pass the
+24-check screen.
 
-- Key readings: curves report only the LGBM families that pass the full tail-by-information-set calibration screen.
-- Interpret curve separation as scoring-family sensitivity evidence, not as a standalone model-selection rule.
+**Do not use for:** introducing a new main-text model-selection rule. The
+24-check screen is a coverage-admissibility screen, not a replacement for the
+promoted-row table.
 
 ![lgbm_24check_murphy_left_tail](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/lgbm_24check_murphy_left_tail.png)
 
-_Figure: `lgbm_24check_murphy_left_tail`. Source: `metrics/lgbm_24check_murphy.parquet`, `metrics/ml_tail_metrics_per_model.parquet`, `forecasts/ml_tail_forecasts.parquet`. Claim scope: `murphy_diagnostic_lgbm_24check_robust_ladder`. Tail side: `left_tail`. Run file: `latex/figures/lgbm_24check_murphy_left_tail.png`._
-
 ![lgbm_24check_murphy_right_tail](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/lgbm_24check_murphy_right_tail.png)
 
-_Figure: `lgbm_24check_murphy_right_tail`. Source: `metrics/lgbm_24check_murphy.parquet`, `metrics/ml_tail_metrics_per_model.parquet`, `forecasts/ml_tail_forecasts.parquet`. Claim scope: `murphy_diagnostic_lgbm_24check_robust_ladder`. Tail side: `right_tail`. Run file: `latex/figures/lgbm_24check_murphy_right_tail.png`._
+### Figure 11. ES Severity
 
-#### Figure 11. ES Severity Diagnostics
+**Use for:** conditional-on-exception severity diagnostics. These plots show
+how losses behave once the VaR threshold is breached.
 
-- Key readings: bars report conditional-on-exception severity diagnostics.
-- Severity is reported for risk interpretation but is not a standalone model-selection claim.
+**Do not use for:** standalone model selection.
 
 ![es_severity_left_tail](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/es_severity_left_tail.png)
 
-_Figure: `es_severity_left_tail`. Source: `metrics/benchmark_metrics.parquet`, `metrics/ml_tail_metrics.parquet`, `metrics/ml_tail_metrics_per_model.parquet`. Claim scope: `es_severity_diagnostic_not_model_selection_claim`. Tail side: `left_tail`. Run file: `latex/figures/es_severity_left_tail.png`._
-
 ![es_severity_right_tail](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/es_severity_right_tail.png)
 
-_Figure: `es_severity_right_tail`. Source: `metrics/benchmark_metrics.parquet`, `metrics/ml_tail_metrics.parquet`, `metrics/ml_tail_metrics_per_model.parquet`. Claim scope: `es_severity_diagnostic_not_model_selection_claim`. Tail side: `right_tail`. Run file: `latex/figures/es_severity_right_tail.png`._
+## 8. Table Artifact Guide
 
-### 5.4 Source artifact index
+The table guide includes every generated table in the docs bundle. The first
+table is the manifest-level routing; the second table gives the reader-facing
+interpretation.
 
-| Artifact | Path | Exists |
+| Table | Source artifacts | Claim scope | Tail side |
+| --- | --- | --- | --- |
+| tailrisk_predictor_block_coverage | `panel/feature_coverage.parquet` | main text predictor-block coverage and information transparency | None |
+| benchmark_metrics | `metrics/benchmark_metrics.parquet` | benchmark common-sample metric table | None |
+| benchmark_left_tail_risk | `metrics/benchmark_metrics.parquet` | left-tail benchmark risk table | left_tail |
+| benchmark_right_tail_risk | `metrics/benchmark_metrics.parquet` | right-tail benchmark risk table | right_tail |
+| ml_tail_metrics | `metrics/ml_tail_metrics.parquet` | ML-tail nested information-set table | None |
+| ml_tail_left_tail_risk | `metrics/ml_tail_metrics.parquet` | left-tail ML-tail primary risk table | left_tail |
+| ml_tail_right_tail_risk | `metrics/ml_tail_metrics.parquet` | right-tail ML-tail primary risk table | right_tail |
+| tailrisk_model_inventory | config and per-model metric artifacts | model inventory and forecast construction | None |
+| tailrisk_selected_model_performance | benchmark and ML per-model metrics | selected benchmark-vs-LGBM figure rows | None |
+| appendix_benchmark_all_models | `metrics/benchmark_metrics_per_model.parquet` | appendix full benchmark results | None |
+| ml_tail_promoted_tail_models | ML per-model metrics and result-matrix DM | side-specific ML-tail promotion gate | None |
+| appendix_lgbm_all_models | `metrics/ml_tail_metrics_per_model.parquet` | appendix full LightGBM results | None |
+| tailrisk_es_severity | benchmark and ML metric artifacts | ES severity diagnostic table | None |
+| tailrisk_claim_scope | `manifest.json`, `config/research_config.json` | claim-boundary reference table | None |
+| ml_tail_result_matrix | `metrics/ml_tail_result_matrix.parquet` | restricted model-comparison table | None |
+| ml_tail_result_matrix_summary | result matrix and result-matrix DM | restricted result-matrix summary table | None |
+| tailrisk_dm_summary | `metrics/ml_tail_result_matrix_dm.parquet` | compact DM summary | None |
+| appendix_lgbm_configuration_sensitivity | LGBM capacity sensitivity metrics | appendix configuration robustness, LightGBM | None |
+| appendix_evt_threshold_sensitivity | EVT threshold sensitivity metrics | appendix configuration robustness, EVT threshold | None |
+
+| Result object | Table artifact | How to read it |
 | --- | --- | --- |
-| manifest | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/manifest.json` | yes |
-| data_vintage | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/data_vintage.json` | yes |
-| modeling_panel | `/Volumes/ExternalSSD/data/n225-open-gap-tail/gold/tp/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/modeling_panel.parquet` | yes |
-| target_audit | `/Volumes/ExternalSSD/data/n225-open-gap-tail/gold/tp/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/target_audit.parquet` | yes |
-| calendar_map | `/Volumes/ExternalSSD/data/n225-open-gap-tail/gold/tp/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/calendar_map.parquet` | yes |
-| feature_coverage | `/Volumes/ExternalSSD/data/n225-open-gap-tail/gold/tp/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/feature_coverage.parquet` | yes |
-| leakage_summary | `/Volumes/ExternalSSD/data/n225-open-gap-tail/gold/ls/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/summary.json` | yes |
-| benchmark_status | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/metrics/benchmark_status.json` | yes |
-| benchmark_metrics | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/metrics/benchmark_metrics.parquet` | yes |
-| benchmark_metrics_per_model | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/metrics/benchmark_metrics_per_model.parquet` | yes |
-| benchmark_forecasts | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/forecasts/benchmark_forecasts.parquet` | yes |
-| benchmark_dm_inference | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/metrics/benchmark_dm_inference.parquet` | yes |
-| ml_tail_status | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/metrics/ml_tail_status.json` | yes |
-| ml_tail_metrics | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/metrics/ml_tail_metrics.parquet` | yes |
-| ml_tail_metrics_per_model | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/metrics/ml_tail_metrics_per_model.parquet` | yes |
-| ml_tail_forecasts | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/forecasts/ml_tail_forecasts.parquet` | yes |
-| ml_tail_result_matrix | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/metrics/ml_tail_result_matrix.parquet` | yes |
-| ml_tail_result_matrix_dm | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/metrics/ml_tail_result_matrix_dm.parquet` | yes |
-| ml_tail_dm_inference | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/metrics/ml_tail_dm_inference.parquet` | yes |
-| ml_tail_model_eviction | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/metrics/ml_tail_model_eviction.parquet` | yes |
-| lgbm_24check_murphy | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/metrics/lgbm_24check_murphy.parquet` | yes |
-| ml_tail_feature_unavailability | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/metrics/ml_tail_feature_unavailability.parquet` | yes |
-| benchmark_stress_windows | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/metrics/benchmark_stress_windows.parquet` | yes |
-| ml_tail_stress_windows | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/metrics/ml_tail_stress_windows.parquet` | yes |
-| figure_manifest | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/latex/figure_manifest.json` | yes |
-| table_manifest | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/latex/table_manifest.json` | yes |
-| latex_dir | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/latex/tables` | yes |
-| claim_scope_table | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/latex/tables/tailrisk_claim_scope_table.tex` | yes |
-| es_severity_table | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/latex/tables/tailrisk_es_severity_table.tex` | yes |
-| result_matrix_summary_table | `reports/runs/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/latex/tables/ml_tail_result_matrix_summary_table.tex` | yes |
-
-- All paths above are local ignored artifacts; they are reproducible outputs, not tracked source files.
-- Forecast/reporting rebuilds should read these artifacts and must not call vendor APIs.
-- If this page is stale, rerun `just snapshot` after a completed `just full` or pass an explicit run id to the CLI snapshot command.
+| Predictor coverage | [tailrisk_predictor_block_coverage_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/tailrisk_predictor_block_coverage_table.tex) | Data transparency by source family; coverage is not timing admissibility. |
+| Model inventory | [tailrisk_model_inventory_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/tailrisk_model_inventory_table.tex) | Methods inventory; use for model definitions, not performance claims. |
+| Benchmark floor | [benchmark_metrics_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/benchmark_metrics_table.tex) | Main benchmark calibration and loss table. |
+| Benchmark tail details | [benchmark_left_tail_risk_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/benchmark_left_tail_risk_table.tex), [benchmark_right_tail_risk_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/benchmark_right_tail_risk_table.tex) | Tail-specific benchmark rows. |
+| Direct information ladder | [ml_tail_metrics_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/ml_tail_metrics_table.tex) | Direct LightGBM information-set experiment; read loss with coverage. |
+| Direct tail details | [ml_tail_left_tail_risk_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/ml_tail_left_tail_risk_table.tex), [ml_tail_right_tail_risk_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/ml_tail_right_tail_risk_table.tex) | Tail-specific direct LightGBM rows. |
+| Promoted rows | [ml_tail_promoted_tail_models_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/ml_tail_promoted_tail_models_table.tex) | Side-specific gated candidates; not a universal model ranking. |
+| Selected performance | [tailrisk_selected_model_performance_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/tailrisk_selected_model_performance_table.tex) | Compact selected-row summary after gates. |
+| Full benchmark scan | [appendix_benchmark_all_models_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/appendix_benchmark_all_models_table.tex) | Appendix inventory supporting benchmark breadth. |
+| Full LightGBM scan | [appendix_lgbm_all_models_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/appendix_lgbm_all_models_table.tex) | Full candidate inventory; do not use as a raw leaderboard. |
+| Result matrix | [ml_tail_result_matrix_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/ml_tail_result_matrix_table.tex), [ml_tail_result_matrix_summary_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/ml_tail_result_matrix_summary_table.tex) | Restricted common-sample comparison matrix. |
+| DM summary | [tailrisk_dm_summary_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/tailrisk_dm_summary_table.tex) | Headline paired inference; negative loss differences favor the candidate. |
+| ES severity | [tailrisk_es_severity_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/tailrisk_es_severity_table.tex) | Exception-size diagnostic, not model selection. |
+| Claim scope | [tailrisk_claim_scope_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/tailrisk_claim_scope_table.tex) | Reference table separating headline, restricted, diagnostic, and sensitivity claims. |
+| Breach audit | [model_metrics_breach_audit.md](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/model_metrics_breach_audit.md) | Coverage audit in plain text. |
+| Full row export | [model_metrics_full_rows.csv](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/model_metrics_full_rows.csv) | Machine-readable row export for verification. |
+| EVT threshold sensitivity | [appendix_evt_threshold_sensitivity_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/appendix_evt_threshold_sensitivity_table.tex) | Robustness only; not primary claim evidence. |
+| LightGBM capacity sensitivity | [appendix_lgbm_configuration_sensitivity_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/appendix_lgbm_configuration_sensitivity_table.tex) | Robustness only; not primary claim evidence. |

@@ -389,7 +389,7 @@ The all-model scan makes the full benchmark and LightGBM universe visible. It
 is useful for auditability and for seeing why promoted rows are gated. It is
 not the formal cross-model comparison table because valid samples differ.
 
-<details>
+<details markdown="1">
 <summary>Full all-model diagnostic scan</summary>
 
 | Suite | Model | Information set | Metric rows | OOS N mean+-sd | Breach mean+-sd | Abs cov err mean+-sd | Q loss mean+-sd | FZ loss mean+-sd | ES severity mean+-sd |
@@ -476,12 +476,14 @@ matrix. It separates three objects:
 
 - direct information-set transitions;
 - direct-quantile anchor versus promoted filtered-tail row;
-- unsupported benchmark-floor versus promoted-row dominance claims.
+- unsupported cross-suite dominance claims between the benchmark floor and
+  promoted filtered-tail rows.
 
-The benchmark-floor to promoted-row comparison is not registered as a headline
-cross-suite DM claim in the compact table. Separate heatmaps visualize the
-coverage-admissible comparison set, but they should be read as restricted
-diagnostics rather than replacement evidence for the promoted-row gates.
+The comparison between the benchmark floor and promoted filtered-tail rows is
+not registered as a primary cross-suite DM claim in the compact table. Separate
+heatmaps visualize the coverage-admissible comparison set, but they should be
+read as restricted diagnostics rather than replacement evidence for the
+promoted-row gates.
 
 ### 6.2 Murphy, Severity, And Stress Diagnostics
 
@@ -641,9 +643,9 @@ performance claims.
 **Use for:** restricted pairwise FZ-loss diagnostics within the
 coverage-admissible comparison set.
 
-**Do not use for:** universal model ranking or benchmark-floor versus promoted
-row dominance unless that paired comparison is explicitly registered in the
-table being cited.
+**Do not use for:** universal model ranking or dominance between the benchmark
+floor and promoted filtered-tail rows unless that paired comparison is
+explicitly registered in the table being cited.
 
 ![dm_heatmap_left_tail](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/dm_heatmap_left_tail.png)
 

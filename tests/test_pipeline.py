@@ -4559,6 +4559,158 @@ def test_reporting_new_figure_helpers_lock_selection_order_and_loss_sign(
     reporting_figures.plt.close(fig)
 
 
+def test_reporting_dm_heatmap_helpers_cover_edge_cases() -> None:
+    assert (
+        reporting_figures._cross_suite_dm_gate_status(common_n=0, joint_exception_count=0)
+        == "unavailable_no_global_common_sample"
+    )
+    assert (
+        reporting_figures._cross_suite_dm_gate_status(
+            common_n=reporting_figures.RESULT_MATRIX_MIN_DM_ROWS - 1,
+            joint_exception_count=reporting_figures.RESULT_MATRIX_MIN_DM_EXCEPTIONS,
+        )
+        == "unavailable_insufficient_common_rows_for_inference"
+    )
+    assert (
+        reporting_figures._cross_suite_dm_gate_status(
+            common_n=reporting_figures.RESULT_MATRIX_MIN_DM_ROWS,
+            joint_exception_count=reporting_figures.RESULT_MATRIX_MIN_DM_EXCEPTIONS - 1,
+        )
+        == "unavailable_insufficient_tail_events_for_inference"
+    )
+    assert (
+        reporting_figures._cross_suite_dm_gate_status(
+            common_n=reporting_figures.RESULT_MATRIX_MIN_DM_ROWS,
+            joint_exception_count=reporting_figures.RESULT_MATRIX_MIN_DM_EXCEPTIONS,
+        )
+        == "ok_block_bootstrap_dm"
+    )
+    assert reporting_figures._dm_heatmap_annotation(None) == "n/a"
+    assert (
+        reporting_figures._dm_heatmap_annotation(
+            {"mean_fz_loss_diff_candidate_minus_anchor": None, "common_n": 12}
+        )
+        == "n/a\nN=12"
+    )
+    assert "***" in reporting_figures._dm_heatmap_annotation(
+        {"mean_fz_loss_diff_candidate_minus_anchor": -0.004, "pvalue_one_sided": 0.009}
+    )
+    assert reporting_figures._pvalue_stars(0.04) == "**"
+    assert reporting_figures._pvalue_stars(0.08) == "*"
+    assert reporting_figures._pvalue_stars(0.20) == ""
+    assert reporting_figures._tail_threshold([float("nan"), -1.0, 0.0]) == 0.0
+    assert (
+        reporting_figures._information_order("unknown_set")
+        == len(reporting_figures.INFORMATION_LADDER_ORDER) + 1
+    )
+    assert reporting_figures._ordered_unique(["a", "b", "a", 2]) == ["a", "b", "2"]
+    assert reporting_figures._entity_label("japan_only") == "JP only"
+
+
+def test_reporting_model_selection_helpers_cover_missing_and_promoted_cases() -> None:
+    assert (
+        reporting_figures._metric_row_for_model(
+            pl.DataFrame(), tail_side=paper_module.TAIL_SIDE_LEFT, model_names=("m",)
+        )
+        is None
+    )
+    assert (
+        reporting_figures._metric_row_for_model(
+            pl.DataFrame({"model_name": ["m"]}),
+            tail_side=paper_module.TAIL_SIDE_LEFT,
+            model_names=("m",),
+        )
+        is None
+    )
+    frame = pl.DataFrame(
+        [
+            {"tail_side": paper_module.TAIL_SIDE_LEFT, "model_name": "fallback", "value": 1},
+            {"tail_side": paper_module.TAIL_SIDE_LEFT, "model_name": "preferred", "value": 2},
+        ]
+    )
+    assert (
+        reporting_figures._metric_row_for_model(
+            frame,
+            tail_side=paper_module.TAIL_SIDE_LEFT,
+            model_names=("missing", "preferred", "fallback"),
+        )
+        or {}
+    )["value"] == 2
+    assert (
+        reporting_figures._metric_row_for_model(
+            frame, tail_side=paper_module.TAIL_SIDE_RIGHT, model_names=("preferred",)
+        )
+        is None
+    )
+
+    assert (
+        reporting_figures._promoted_metric_for_tail(pl.DataFrame(), paper_module.TAIL_SIDE_LEFT)
+        is None
+    )
+    promoted_spec = reporting_figures.PROMOTED_TAIL_MODEL_SPECS[0]
+    promoted_frame = pl.DataFrame(
+        [
+            {
+                "tail_side": promoted_spec["tail_side"],
+                "model_name": promoted_spec["model_name"],
+                "information_set": promoted_spec["information_set"],
+                "value": 3,
+            }
+        ]
+    )
+    assert (
+        reporting_figures._promoted_metric_for_tail(promoted_frame, str(promoted_spec["tail_side"]))
+        or {}
+    )["value"] == 3
+    assert (
+        reporting_figures._promoted_metric_for_tail(promoted_frame, paper_module.TAIL_SIDE_RIGHT)
+        is None
+    )
+
+
+def test_compact_dm_rows_selects_ladder_and_promoted_family_records() -> None:
+    promoted_spec = reporting_figures.PROMOTED_TAIL_MODEL_SPECS[0]
+    tail_side = str(promoted_spec["tail_side"])
+    dm = pl.DataFrame(
+        [
+            {
+                "tail_side": tail_side,
+                "comparison_family": "information_set_ladder",
+                "comparison_axis": "information_set_increment",
+                "baseline_entity": "japan_only",
+                "candidate_entity": "japan_only_plus_us_close_core",
+                "loss_family": "var_es_fz_loss",
+                "row_id": "ladder_fz",
+            },
+            {
+                "tail_side": tail_side,
+                "comparison_family": "tail_model_family",
+                "comparison_axis": "model_family",
+                "baseline_entity": paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL,
+                "candidate_entity": promoted_spec["model_name"],
+                "information_set": promoted_spec["information_set"],
+                "loss_family": "var_quantile_loss",
+                "row_id": "promoted_quantile_fallback",
+            },
+        ]
+    )
+
+    compact = reporting_figures._compact_dm_rows(dm, tail_side)
+
+    assert compact["row_id"].to_list() == ["ladder_fz", "promoted_quantile_fallback"]
+    empty_dm = pl.DataFrame(
+        schema={
+            "tail_side": pl.String,
+            "comparison_family": pl.String,
+            "comparison_axis": pl.String,
+            "baseline_entity": pl.String,
+            "candidate_entity": pl.String,
+            "loss_family": pl.String,
+        }
+    )
+    assert reporting_figures._compact_dm_rows(empty_dm, tail_side).is_empty()
+
+
 def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) -> None:
     metrics = pl.DataFrame(
         [

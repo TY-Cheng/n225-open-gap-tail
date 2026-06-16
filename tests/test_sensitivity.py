@@ -22,12 +22,15 @@ from n225_open_gap_tail.forecasting.sensitivity import (
     LGBM_CONFIGURATION_SPECS,
     PAPER_LGBM_CONFIGURATION_LABELS,
     POST_24CHECK_LGBM_FAMILIES,
+    RETIRED_EWMA_SENSITIVITY_ARTIFACTS,
     _build_evt_threshold_jobs,
     _build_lgbm_capacity_jobs,
     _cached_sensitivity_status_matches,
     _deterioration_ratio,
     _evt_boundary_metric_rows,
     _metric_rows_from_forecasts,
+    _remove_retired_ewma_sensitivity_artifacts,
+    _sensitivity_selection,
     _tag_rows,
     breach_category,
     classify_sensitivity_comparison,
@@ -110,6 +113,33 @@ def _passing_metric_row(
     }
 
 
+def _write_selection_metrics(
+    run_dir: Path,
+    *,
+    lgbm_models: tuple[str, ...] = POST_24CHECK_LGBM_FAMILIES,
+    benchmark_rows: list[dict[str, object]] | None = None,
+) -> None:
+    metrics_dir = run_dir / "metrics"
+    metrics_dir.mkdir(parents=True)
+    ml_rows = [
+        _passing_metric_row(model_name=model, tail_side=tail_side, information_set=info)
+        for model in lgbm_models
+        for tail_side in PASS_ALL_TAIL_SIDES
+        for info in PASS_ALL_INFORMATION_SETS
+    ]
+    pl.DataFrame(ml_rows).write_parquet(metrics_dir / "ml_tail_metrics_per_model.parquet")
+    if benchmark_rows is None:
+        benchmark_rows = [
+            _passing_metric_row(
+                model_name=PASS_ALL_BENCHMARK_MODEL,
+                tail_side=tail_side,
+                information_set="target_history_only",
+            )
+            for tail_side in PASS_ALL_TAIL_SIDES
+        ]
+    pl.DataFrame(benchmark_rows).write_parquet(metrics_dir / "benchmark_metrics_per_model.parquet")
+
+
 def test_pass_all_helpers_identify_admissible_lgbm_and_benchmark_models() -> None:
     ml_rows = [
         _passing_metric_row(model_name=model, tail_side=tail_side, information_set=info)
@@ -132,6 +162,88 @@ def test_pass_all_helpers_identify_admissible_lgbm_and_benchmark_models() -> Non
         for tail_side in PASS_ALL_TAIL_SIDES
     ]
     assert benchmark_model_passes(pl.DataFrame(benchmark_rows))
+
+
+def test_sensitivity_selection_uses_post24check_c_only(tmp_path: Path) -> None:
+    run_dir = tmp_path / "tailrisk_selection"
+    _write_selection_metrics(
+        run_dir,
+        lgbm_models=(
+            ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
+            ML_TAIL_POT_GPD_UNIBM_MODEL,
+            ML_TAIL_DIRECT_QUANTILE_MODEL,
+        ),
+    )
+
+    selection = _sensitivity_selection(run_dir=run_dir)
+
+    assert selection.lgbm_models == POST_24CHECK_LGBM_FAMILIES
+    assert selection.evt_lgbm_models == POST_24CHECK_LGBM_FAMILIES
+    assert selection.benchmark_models == (PASS_ALL_BENCHMARK_MODEL,)
+    assert selection.evt_benchmark_models == (PASS_ALL_BENCHMARK_MODEL,)
+    assert selection.information_sets == (
+        PIPELINE_CONFIG.feature_sets.ml_tail_model_c_information_set,
+    )
+    assert selection.lgbm_config_labels == PAPER_LGBM_CONFIGURATION_LABELS
+
+
+def test_sensitivity_selection_rejects_missing_pass_all_inputs(tmp_path: Path) -> None:
+    missing_lgbm_run = tmp_path / "missing_lgbm"
+    _write_selection_metrics(
+        missing_lgbm_run,
+        lgbm_models=(ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,),
+    )
+    with pytest.raises(PipelineRunError, match="did not pass all checks"):
+        _sensitivity_selection(run_dir=missing_lgbm_run)
+
+    failing_benchmark_run = tmp_path / "failing_benchmark"
+    benchmark_rows = [
+        _passing_metric_row(
+            model_name=PASS_ALL_BENCHMARK_MODEL,
+            tail_side=tail_side,
+            information_set="target_history_only",
+        )
+        for tail_side in PASS_ALL_TAIL_SIDES
+    ]
+    benchmark_rows[0]["kupiec_pvalue"] = 0.01
+    _write_selection_metrics(failing_benchmark_run, benchmark_rows=benchmark_rows)
+    with pytest.raises(PipelineRunError, match=PASS_ALL_BENCHMARK_MODEL):
+        _sensitivity_selection(run_dir=failing_benchmark_run)
+
+
+def test_sensitivity_cache_key_rejects_specific_stale_shapes() -> None:
+    current_status: dict[str, object] = {
+        "scope": "paper",
+        "lgbm_config_labels": list(PAPER_LGBM_CONFIGURATION_LABELS),
+        "evt_threshold_labels": list(EVT_THRESHOLD_SPECS),
+        "job_counts": {"lgbm_capacity": 8, "evt_threshold": 12, "evt_boundary_rows": 6},
+    }
+
+    assert not _cached_sensitivity_status_matches({**current_status, "scope": "full"})
+    assert not _cached_sensitivity_status_matches(
+        {**current_status, "lgbm_config_labels": "near_low"}
+    )
+    assert not _cached_sensitivity_status_matches(
+        {**current_status, "evt_threshold_labels": ["u_0_900"]}
+    )
+    assert not _cached_sensitivity_status_matches({**current_status, "ewma_config_labels": []})
+    assert not _cached_sensitivity_status_matches(
+        {**current_status, "job_counts": {"ewma_lambda": 0}}
+    )
+
+
+def test_retired_ewma_sensitivity_artifacts_are_removed(tmp_path: Path) -> None:
+    sensitivity_root = tmp_path / "sensitivity"
+    for relative_path in RETIRED_EWMA_SENSITIVITY_ARTIFACTS:
+        artifact = sensitivity_root / relative_path
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_text("stale", encoding="utf-8")
+
+    _remove_retired_ewma_sensitivity_artifacts(sensitivity_root)
+
+    assert not any(
+        (sensitivity_root / path).exists() for path in RETIRED_EWMA_SENSITIVITY_ARTIFACTS
+    )
 
 
 def test_sensitivity_job_construction_keeps_only_post24check_c_models() -> None:

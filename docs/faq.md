@@ -126,7 +126,7 @@ The current evidence is a calibration-versus-loss tradeoff.
 | Evidence layer | Can support primary claim? | How to read it |
 | --- | --- | --- |
 | Benchmark common-sample table | Yes, after review | External target-history/econometric baseline benchmark on a shared sample. |
-| ML-tail nested information sets | Yes, after review | Strict nested-information-set comparison; currently direct quantile survived the gate. |
+| ML-tail nested information sets | Yes, after review | Strict nested-information-set comparison; direct quantile is the information-set comparator, not the coverage-admissibility gate. |
 | ML-tail per-model rows | No | Model-specific OOS diagnostics; samples need not match across model families. |
 | Restricted result matrix | No primary claim | Matched-date comparison for model families and within-model increments. |
 | Timing, target, information-ladder, coverage figures | Supporting main-text evidence | Design/motivation/headline visualization; still read with tables and gates. |

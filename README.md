@@ -25,7 +25,7 @@ execution-cost study.
 ## Current Empirical Snapshot
 
 The current clean snapshot is based on the completed run
-`tailrisk_20160719_20260522_20260525T142611Z_commit_bf63b13d`.
+`tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4`.
 
 - Clean evaluation window: `2018-06-20` to `2026-05-22`.
 - Forecast sample: `1722` trading-day observations.

@@ -633,7 +633,7 @@ flowchart LR
 - Model inventory table: compact methods table explaining Historical,
   GARCH/GJR, GARCH-EVT, advanced econometric, direct LightGBM, location-scale,
   and POT-GPD constructions. Performance belongs in result tables, not here.
-- Benchmark floor table: common-sample benchmark breach rates and loss metrics,
+- Benchmark suite table: common-sample benchmark breach rates and loss metrics,
   with left/right tail detail available when page space allows.
 - ML information-ladder table: the main nested information-set table for direct
   LightGBM, reported separately for left and right tails.

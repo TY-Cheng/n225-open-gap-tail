@@ -293,7 +293,7 @@ def _model_inventory_to_latex(*, manifest: Mapping[str, object] | None = None) -
             "target history",
             "empirical quantile",
             "empirical tail mean",
-            "benchmark floor",
+            "benchmark suite",
         ),
         (
             "GARCH/GJR",
@@ -441,7 +441,7 @@ def _dm_summary_rows(
             )
         rows.append(
             {
-                "comparison": "Benchmark floor -> promoted ML-tail",
+                "comparison": "Benchmark suite -> promoted ML-tail",
                 "tail_side": tail_side,
                 "loss_family": "var_es_fz_loss",
                 "mean_loss_diff_candidate_minus_baseline": None,

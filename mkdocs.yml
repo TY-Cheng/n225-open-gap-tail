@@ -45,6 +45,8 @@ theme:
     - toc.follow
 plugins:
   - search
+not_in_nav: |
+  tables/*/model_metrics_breach_audit.md
 extra_javascript:
   - https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js
   - javascripts/mermaid-init.js

@@ -39,6 +39,10 @@ from n225_open_gap_tail.diagnostics.snapshot_formatting import (
     _panel_bounds,
     _unique_values,
 )
+from n225_open_gap_tail.diagnostics.snapshot_leakage import (
+    _format_count_mapping,
+    _with_leakage_warning_counts,
+)
 from n225_open_gap_tail.diagnostics.snapshot_paths import (
     full_run_snapshot_paths as _full_run_snapshot_paths,
 )
@@ -289,6 +293,7 @@ def _full_run_results_markdown(
     benchmark_status = _read_json_dict(paths["benchmark_status"])
     ml_tail_status = _read_json_dict(paths["ml_tail_status"])
     leakage_summary = _read_json_dict(paths["leakage_summary"])
+    leakage_summary = _with_leakage_warning_counts(run_dir, leakage_summary)
     figure_manifest = _read_json_dict(paths["figure_manifest"])
     table_manifest = _read_json_dict(paths["table_manifest"])
     panel = _read_parquet_optional(paths["modeling_panel"])
@@ -400,6 +405,10 @@ def _full_run_results_markdown(
             ("Rows audited", _code(leakage_summary.get("rows"))),
             ("Failures", _code(leakage_summary.get("failures"))),
             ("Warnings", _code(leakage_summary.get("warnings"))),
+            (
+                "Warning reasons",
+                _format_count_mapping(leakage_summary.get("warning_reason_counts")),
+            ),
             ("Panel row count", _code(leakage_summary.get("panel_row_count"))),
             ("Panel signature seed", _code(leakage_summary.get("panel_signature_hash_seed"))),
             ("Panel signature", _code(leakage_summary.get("panel_signature"))),
@@ -541,7 +550,7 @@ claim boundaries. Full data-source detail lives in [Data](data.md).
 {leakage_table}
 
 - Zero failures means no audited row violated the hard timestamp invariant.
-- Warnings are retained because they identify conservative-lag or missing-feature situations that may matter for interpretation.
+- Warnings are retained because they identify conservative-lag or missing-feature situations that may matter for interpretation; they are not hard timestamp failures.
 - The panel signature is deterministic and binds the leakage check to the current gold panel/config.
 
 ## 3. Model And Evaluation Setup
@@ -768,7 +777,7 @@ def _table_interpretation_markdown(run_id: str) -> str:
             "Methods table explaining model families, information sets, VaR construction, ES construction, and role; performance belongs elsewhere.",
         ),
         (
-            "Benchmark floor summary",
+            "Benchmark suite summary",
             f"[benchmark_metrics_table.tex]({root}/benchmark_metrics_table.tex)",
             "Results table for target-history and econometric benchmark calibration and loss evidence.",
         ),

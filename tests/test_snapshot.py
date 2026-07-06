@@ -16,6 +16,7 @@ import n225_open_gap_tail.diagnostics.results_discussion as results_discussion_m
 import n225_open_gap_tail.diagnostics.snapshot as snapshot_module
 import n225_open_gap_tail.diagnostics.snapshot_formatting as snapshot_formatting_module
 import n225_open_gap_tail.diagnostics.snapshot_gallery as snapshot_gallery
+import n225_open_gap_tail.diagnostics.snapshot_leakage as snapshot_leakage_module
 import n225_open_gap_tail.diagnostics.target_distribution as target_distribution_module
 from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.diagnostics.snapshot import (
@@ -1085,6 +1086,31 @@ def test_snapshot_private_helpers_cover_defensive_edges() -> None:
     assert "Breach mean+-sd" in all_model_table
     assert results_discussion_module._optional_float("bad") is None
     assert results_discussion_module._fmt_float(float("inf")) == "inf"
+
+
+def test_snapshot_derives_leakage_warning_counts_from_parquet(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    audit_dir = run_dir / "audits"
+    audit_dir.mkdir(parents=True)
+    pl.DataFrame(
+        [
+            {"status": "warn", "reason": "lag_below_conservative_warning_threshold"},
+            {"status": "warn", "reason": "missing_feature_value_not_evaluable"},
+            {"status": "pass", "reason": None},
+        ]
+    ).write_parquet(audit_dir / "leakage_check.parquet")
+
+    summary = snapshot_leakage_module._with_leakage_warning_counts(run_dir, {"warnings": 2})
+
+    assert summary["status_counts"] == {"warn": 2, "pass": 1}
+    assert summary["warning_reason_counts"] == {
+        "lag_below_conservative_warning_threshold": 1,
+        "missing_feature_value_not_evaluable": 1,
+    }
+    assert (
+        "lag_below_conservative_warning_threshold"
+        in snapshot_leakage_module._format_count_mapping(summary["warning_reason_counts"])
+    )
 
 
 def test_snapshot_table_asset_sync_and_sensitivity_summary_cover_docs_helpers(

@@ -49,6 +49,10 @@ def write_leakage_check(*, run_dir: Path) -> LeakageCheckResult:
         "rows": len(rows),
         "failures": failures,
         "warnings": warnings,
+        "status_counts": _count_by_key(rows, "status"),
+        "warning_reason_counts": _count_by_key(
+            [row for row in rows if row.get("status") == "warn"], "reason"
+        ),
         "status": "fail" if failures else "pass_with_warnings" if warnings else "pass",
     }
     _write_json(summary_path, summary)
@@ -83,6 +87,14 @@ def write_leakage_check(*, run_dir: Path) -> LeakageCheckResult:
         failures=failures,
         warnings=warnings,
     )
+
+
+def _count_by_key(rows: list[dict[str, object]], key: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        value = str(row.get(key) or "missing")
+        counts[value] = counts.get(value, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _current_leakage_binding(

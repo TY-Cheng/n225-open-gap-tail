@@ -340,6 +340,7 @@ def evaluate_sensitivity_suite(
             "created_utc": datetime.now(UTC).isoformat(),
             "git_commit": manifest.get("git_commit"),
             "config_hash": manifest.get("config_hash"),
+            "sensitivity_config_hash": _sensitivity_config_hash(),
             "lgbm_config_labels": list(selection.lgbm_config_labels),
             "evt_threshold_labels": list(EVT_THRESHOLD_SPECS),
         },
@@ -357,6 +358,8 @@ def evaluate_sensitivity_suite(
 def _cached_sensitivity_status_matches(status: dict[str, object]) -> bool:
     if str(status.get("scope") or "") != SENSITIVITY_SCOPE:
         return False
+    if str(status.get("sensitivity_config_hash") or "") != _sensitivity_config_hash():
+        return False
     if _status_sequence(status.get("lgbm_config_labels")) != PAPER_LGBM_CONFIGURATION_LABELS:
         return False
     if _status_sequence(status.get("evt_threshold_labels")) != tuple(EVT_THRESHOLD_SPECS):
@@ -365,6 +368,21 @@ def _cached_sensitivity_status_matches(status: dict[str, object]) -> bool:
         return False
     job_counts = status.get("job_counts")
     return not (isinstance(job_counts, dict) and "ewma_lambda" in job_counts)
+
+
+def _sensitivity_config_hash() -> str:
+    return stable_hash(
+        {
+            "scope": SENSITIVITY_SCOPE,
+            "lgbm_configuration_specs": {
+                label: LGBM_CONFIGURATION_SPECS[label] for label in PAPER_LGBM_CONFIGURATION_LABELS
+            },
+            "evt_threshold_specs": EVT_THRESHOLD_SPECS,
+            "post_24check_lgbm_families": POST_24CHECK_LGBM_FAMILIES,
+            "benchmark_model": PASS_ALL_BENCHMARK_MODEL,
+            "information_set": PIPELINE_CONFIG.feature_sets.ml_tail_model_c_information_set,
+        }
+    )
 
 
 def _status_sequence(value: object) -> tuple[str, ...]:

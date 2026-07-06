@@ -102,7 +102,7 @@ def _claim_scope_markdown_table() -> str:
             (
                 "ML-tail nested information sets",
                 "Yes, after review",
-                "Strict nested-information-set comparison; currently direct quantile survived the gate.",
+                "Strict nested-information-set comparison; direct quantile is the information-set comparator, not the coverage-admissibility gate.",
             ),
             (
                 "ML-tail per-model rows",

@@ -30,6 +30,7 @@ from n225_open_gap_tail.forecasting.sensitivity import (
     _evt_boundary_metric_rows,
     _metric_rows_from_forecasts,
     _remove_retired_ewma_sensitivity_artifacts,
+    _sensitivity_config_hash,
     _sensitivity_selection,
     _tag_rows,
     breach_category,
@@ -74,6 +75,7 @@ def test_lgbm_sensitivity_config_labels_are_exact() -> None:
 def test_sensitivity_cache_key_rejects_retired_paper_scope_artifacts() -> None:
     current_status: dict[str, object] = {
         "scope": "paper",
+        "sensitivity_config_hash": _sensitivity_config_hash(),
         "lgbm_config_labels": list(PAPER_LGBM_CONFIGURATION_LABELS),
         "evt_threshold_labels": list(EVT_THRESHOLD_SPECS),
         "job_counts": {"lgbm_capacity": 8, "evt_threshold": 12, "evt_boundary_rows": 6},
@@ -214,12 +216,19 @@ def test_sensitivity_selection_rejects_missing_pass_all_inputs(tmp_path: Path) -
 def test_sensitivity_cache_key_rejects_specific_stale_shapes() -> None:
     current_status: dict[str, object] = {
         "scope": "paper",
+        "sensitivity_config_hash": _sensitivity_config_hash(),
         "lgbm_config_labels": list(PAPER_LGBM_CONFIGURATION_LABELS),
         "evt_threshold_labels": list(EVT_THRESHOLD_SPECS),
         "job_counts": {"lgbm_capacity": 8, "evt_threshold": 12, "evt_boundary_rows": 6},
     }
 
     assert not _cached_sensitivity_status_matches({**current_status, "scope": "full"})
+    assert not _cached_sensitivity_status_matches(
+        {**current_status, "sensitivity_config_hash": "stale"}
+    )
+    assert not _cached_sensitivity_status_matches(
+        {key: value for key, value in current_status.items() if key != "sensitivity_config_hash"}
+    )
     assert not _cached_sensitivity_status_matches(
         {**current_status, "lgbm_config_labels": "near_low"}
     )

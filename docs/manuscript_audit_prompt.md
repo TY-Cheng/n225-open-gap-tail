@@ -208,7 +208,7 @@ Data and timing checks:
   loss comparison must state the matched-sample N.
 
 Model checks:
-- The benchmark floor should include historical or rolling quantiles, EWMA,
+- The benchmark suite should include historical or rolling quantiles, EWMA,
   GARCH, GJR-GARCH, Student-t variants where implemented, and GJR-GARCH-EVT as
   the compact futures-risk benchmark.
 - Advanced own-history benchmarks may appear in appendix material as CAViaR,
@@ -255,7 +255,7 @@ Current result interpretation to protect:
 - The raw settlement-to-open distribution is heavy-tailed on both sides and
   motivates VaR/ES and EVT-style tail calibration; it does not validate any
   forecast model.
-- The benchmark floor is not a straw man. It provides calibrated own-history and
+- The benchmark suite is not a straw man. It provides calibrated own-history and
   econometric risk references.
 - Direct LightGBM quantile forecasts show that U.S.-close and proxy information
   changes loss scores and exception behavior.
@@ -281,7 +281,7 @@ Manuscript structure checks:
   construction reproducible.
 - Methods: describe benchmarks, LightGBM forecasts, filtered-tail calibration,
   and evaluation metrics with enough detail for finance and ML readers.
-- Results: lead with target-tail motivation, benchmark floor, information-set
+- Results: lead with target-tail motivation, benchmark suite, information-set
   evidence, coverage-loss tension, and gated filtered-tail results.
 - Discussion: interprets economic scale, limitations, and claim boundaries.
 - Appendix: contains full scans, diagnostics, sensitivity, evidence lock, and

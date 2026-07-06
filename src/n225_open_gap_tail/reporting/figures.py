@@ -230,6 +230,12 @@ def _market_timing_design_figures(*, run_dir: Path, figure_dir: Path) -> list[di
     )
 
 
+def _legend_if_labeled(ax: object, **kwargs: object) -> None:
+    handles, _ = ax.get_legend_handles_labels()
+    if handles:
+        ax.legend(**kwargs)
+
+
 def _target_tail_motivation_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object]]:
     frame = _target_gap_frame(run_dir)
     if frame.is_empty():
@@ -247,7 +253,7 @@ def _target_tail_motivation_figures(*, run_dir: Path, figure_dir: Path) -> list[
     ax_density.set_title("A. Opening-gap density")
     ax_density.set_xlabel("gap_t, log return")
     ax_density.set_ylabel("Density")
-    ax_density.legend(frameon=False, fontsize=7)
+    _legend_if_labeled(ax_density, frameon=False, fontsize=7)
 
     for label, values, color in (
         ("left loss", left_loss, "#dc2626"),
@@ -266,7 +272,7 @@ def _target_tail_motivation_figures(*, run_dir: Path, figure_dir: Path) -> list[
     ax_survival.set_title("B. Tail log survival")
     ax_survival.set_xlabel("Positive loss magnitude")
     ax_survival.set_ylabel("Empirical survival, log scale")
-    ax_survival.legend(frameon=False, fontsize=7)
+    _legend_if_labeled(ax_survival, frameon=False, fontsize=7)
 
     for label, values, color in (
         ("left loss", left_loss, "#dc2626"),
@@ -280,7 +286,7 @@ def _target_tail_motivation_figures(*, run_dir: Path, figure_dir: Path) -> list[
     ax_excess.set_title("C. Mean excess")
     ax_excess.set_xlabel("Threshold u")
     ax_excess.set_ylabel("Mean excess over u")
-    ax_excess.legend(frameon=False, fontsize=7)
+    _legend_if_labeled(ax_excess, frameon=False, fontsize=7)
 
     for label, values, color in (
         ("left loss", left_loss, "#dc2626"),
@@ -294,7 +300,7 @@ def _target_tail_motivation_figures(*, run_dir: Path, figure_dir: Path) -> list[
     ax_hill.set_title("D. Hill tail-index path")
     ax_hill.set_xlabel("Upper order statistics k")
     ax_hill.set_ylabel("Hill estimate of GPD shape xi")
-    ax_hill.legend(frameon=False, fontsize=7)
+    _legend_if_labeled(ax_hill, frameon=False, fontsize=7)
 
     for ax in axes.ravel():
         _style_axes(ax)

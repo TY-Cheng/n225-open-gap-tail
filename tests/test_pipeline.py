@@ -4917,7 +4917,7 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
     assert "negative loss differences favor the candidate" in dm_summary_text
     assert "JP only -> +US close" in dm_summary_text
     assert "Direct quantile -> promoted ML-tail" in dm_summary_text
-    assert "Benchmark floor -> promoted ML-tail" in dm_summary_text
+    assert "Benchmark suite -> promoted ML-tail" in dm_summary_text
     assert "ok\\_block\\_bootstrap\\_dm" in dm_summary_text
     assert "missing\\_dm\\_artifact" in reporting_latex._dm_summary_to_latex(None)
     promoted_rows = reporting_latex._promoted_tail_model_rows(promoted_metric, dm=promoted_dm)
@@ -5247,6 +5247,9 @@ def test_write_leakage_check_outputs_summary(tmp_path: Path) -> None:
     assert result.failures == 0
     assert result.warnings == 1
     assert result.output_path.exists()
+    summary = json.loads((run_dir / "audits" / "leakage_check_summary.json").read_text())
+    assert summary["status_counts"] == {"warn": 1}
+    assert summary["warning_reason_counts"] == {"lag_below_conservative_warning_threshold": 1}
 
 
 def test_leakage_binding_uses_deterministic_panel_signature(tmp_path: Path) -> None:

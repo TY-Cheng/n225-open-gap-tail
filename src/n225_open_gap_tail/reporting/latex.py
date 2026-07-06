@@ -371,7 +371,7 @@ def _claim_scope_to_latex(*, manifest: Mapping[str, object] | None = None) -> st
         (
             "ml_tail_metrics.parquet",
             "primary ML nested information sets",
-            "yes; current primary comparison is direct quantile",
+            "yes; direct quantile is the information-set comparator, not the coverage gate",
         ),
         (
             "ml_tail_metrics_per_model.parquet",

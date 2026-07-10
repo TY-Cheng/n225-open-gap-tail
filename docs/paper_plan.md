@@ -148,6 +148,10 @@ and appendix/source notes.
 - Absorption robustness target:
     - Night-close-to-open gap: log day-session open minus log night-session close.
     - This is available only when the night close is observed and point-in-time valid.
+- Current evidence boundary:
+    - The current locked run evaluates only `full_gap_settle_to_open`.
+    - The close-to-open and night-close-to-open target variants remain deferred and
+      must not be described as completed robustness experiments.
 - Deferred target:
     - U.S.-close-mark-to-open gap: log day-session open minus a timestamped Nikkei futures mark at the U.S. cash close.
     - This requires licensed intraday OSE, CME, SGX, or equivalent Nikkei futures marks.
@@ -401,7 +405,7 @@ paper-facing.
     - exception count;
     - deviation from the nominal 5% exception rate;
     - Kupiec unconditional coverage test;
-    - Christoffersen independence or conditional coverage test where sample size permits.
+    - Christoffersen independence test where sample size permits.
 - Why calibration comes first:
     - VaR is a risk-limit object, so an apparently low loss is not enough if
       realized exceptions are too frequent or clustered;
@@ -442,8 +446,7 @@ paper-facing.
       under sparse and rich information sets, and on both tail sides.
     - A 24-check version combines eight tail-by-information-set scenarios with
       three calibration diagnostics: breach-neighborhood, Kupiec unconditional
-      coverage, and Christoffersen independence or conditional coverage where
-      available.
+      coverage, and Christoffersen independence where available.
     - This diagnostic battery is a validation profile, not a single formal
       hypothesis test and not proof of universal optimality.
     - The current breach-audit artifact reports the narrower breach-neighborhood
@@ -619,8 +622,8 @@ flowchart LR
   families.
 - Perturb POT thresholds at `0.875` and `0.925`, while recording `0.95` as a
   boundary diagnostic at the 95% VaR level.
-- Do not feed sensitivity rows into model selection, promoted rows, DM gates,
-  selected figures, or the cross-suite FZ DM heatmap.
+- Do not let sensitivity rows alter coverage admissibility, canonical forecasts,
+  or the cross-suite FZ DM heatmap.
 
 ## 6. Expected Results And Discussion Outputs
 
@@ -637,10 +640,11 @@ flowchart LR
   with left/right tail detail available when page space allows.
 - ML information-ladder table: the main nested information-set table for direct
   LightGBM, reported separately for left and right tails.
-- Selected model performance table: deterministic selected-row summary after
-  sample-size, coverage, FZ-loss, and quantile-loss gates.
-- Compact DM summary table: headline paired inference only. Full matrices
-  stay in the appendix.
+- Coverage-admissibility table: all eight tail-by-information-set scenarios for
+  every LGBM family, with breach-band, Kupiec, and Christoffersen-independence
+  pass counts shown separately.
+- Cross-suite FZ DM table: exact paired comparisons among GJR-GARCH-EVT,
+  LGBM plain MLE C, and LGBM UniBM C on one global common sample per tail.
 
 ### 6.2 Main Figures
 
@@ -668,8 +672,7 @@ flowchart LR
 
 - Raw target diagnostics: histogram/density, left/right QQ plots, log survival,
   mean excess, and Hill plot.
-- Full coverage diagnostics and selected performance figures: appendix checks
-  backing the main coverage and selected-performance summaries.
+- Full coverage diagnostics: appendix checks backing the 24-check summary.
 - Stress-window overlays: broad OOS stress episodes with left/right tails
   sharing the same x-axis; LGBM lines use information set C, the best-FZ row
   within the two 24-check LGBM+EVT families. Illustration only, not validation,
@@ -684,8 +687,8 @@ flowchart LR
 - EVT standardized-residual diagnostics: QQ, log survival, mean excess, Hill,
   and threshold stability for the POT-GPD route.
 - Appendix tables: full benchmark scan, full LGBM scan, tail-side risk tables,
-  promoted tail rows, restricted result matrix, ES severity diagnostics,
-  claim-scope reference, and configuration robustness.
+  restricted result matrix, ES severity diagnostics, claim-scope reference,
+  and configuration robustness.
 - The complete generated figure and table map is maintained in
   [Results Snapshot](results_snapshot.md), which now includes both result
   interpretation and artifact placement.
@@ -698,7 +701,7 @@ flowchart LR
 - POT threshold sensitivity reports forecastable thresholds `0.875` and `0.925` for the same post-24-check set, bracketing the registered primary threshold `0.90`.
 - At 95% VaR, threshold `0.95` is recorded only as a boundary diagnostic with status `not_applicable_threshold_not_below_tail_level`.
 - Sensitivity artifacts live under `reports/runs/<run_id>/sensitivity/` and carry `primary_claim_allowed=false`.
-- Robustness labels describe conclusion stability versus the registered primary specification. They do not feed the cross-suite FZ DM heatmap, promoted rows, result-matrix selection, or selected-model figures.
+- Robustness labels describe conclusion stability versus the registered primary specification. They do not alter coverage admissibility, canonical forecasts, or the cross-suite FZ DM heatmap.
 
 ## 7. Manuscript Structure
 

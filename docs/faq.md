@@ -81,8 +81,8 @@ No. The paper compares registered point-in-time forecast specifications, not a t
 - LightGBM hyperparameters are held fixed across information sets and refit dates so information-set comparisons are not contaminated by a separate tuning search.
 - This design may leave some model-specific performance untapped, but it keeps the nested information-set experiment interpretable.
 - Appendix configuration robustness varies nearby LightGBM capacity and POT threshold choices after the primary run.
-- Those rows carry `primary_claim_allowed=false`: they answer reviewer concerns about sensitivity, but they do not select primary selections, promoted rows, DM gates, or selected-model figures.
-- The primary design compares pre-specified point-in-time forecast specifications. Configuration sensitivity is reported as appendix robustness evidence and is not used to select primary selections.
+- Those rows carry `primary_claim_allowed=false`: they answer reviewer concerns about sensitivity but do not alter coverage admissibility, canonical forecasts, or the cross-suite FZ DM comparison.
+- The primary design compares pre-specified point-in-time forecast specifications. Configuration sensitivity is appendix robustness evidence, not a model-selection stage.
 
 ## How do the LightGBM+EVT variants work?
 
@@ -93,8 +93,8 @@ tail fitting; it is not the reported VaR level.
 - Location-scale models estimate a conditional center and scale, then calibrate the upper tail of standardized losses.
 - Standardized-loss POT-GPD models fit a Generalized Pareto tail above the registered 0.90 threshold of out-of-fold standardized losses.
 - Median/MAD and median/IQR routes use more robust body filters before the POT-GPD step.
-- Plain MLE is the standard EVT comparator. Robust body-filter routes remain research-candidate diagnostics until the evidence supports promotion.
-- The current paper-facing promotion bridge is side-specific: median/IQR POT-GPD is the left-tail promoted ML-tail row, and location-scale empirical is the right-tail promoted ML-tail row. These rows are read with restricted DM evidence and do not create a universal model-family ranking.
+- Plain MLE estimates the GPD tail directly; UniBM supplies the alternative block-maxima shape route.
+- The standardized-loss plain-MLE and UniBM families are coverage-admissible in the current run because each passes all 24 registered calibration checks across both tails and all four information sets.
 
 ## How are forecasts judged?
 
@@ -112,14 +112,13 @@ The evaluation is built around tail-risk performance, not a single ranking.
 
 ## What do the current results say?
 
-The current evidence is a calibration-versus-loss tradeoff.
+The current evidence supports a coverage-first, loss-second comparison.
 
-- Baseline benchmarks generally sit closer to the 5% VaR exception target.
-- Direct LightGBM quantile rows often show lower average loss on this registered sample, but their breach rates are above the nominal level.
-- That means lower loss cannot be read alone as better tail calibration.
-- Filtered EVT and location-scale models improve coverage discipline in several comparisons, but the evidence is not one model-family ranking.
-- Among the new EVT candidates, median/IQR POT-GPD has the clearest left-tail calibration diagnostics in the current run. The right-tail promoted ML-tail row is location-scale empirical, while right-tail EVT evidence is less clean and should be reported separately.
-- The paper should state the tension plainly: flexible ML information sets can change forecast loss, while VaR coverage gates determine whether that change is usable for risk claims.
+- Direct LightGBM quantile fails the breach-rate band and Kupiec test in all eight tail-by-information-set scenarios, although its Christoffersen independence checks pass. Its lower loss in some rows is therefore not sufficient for a calibrated tail-risk claim.
+- The standardized-loss POT-GPD plain-MLE and UniBM families each pass all 24 calibration checks: two tails x four information sets x breach-band, Kupiec, and Christoffersen-independence checks.
+- GJR-GARCH-EVT passes the fixed benchmark validation rows and is the traditional anchor for the post-screen comparison.
+- On strict common samples, both C-information LGBM+EVT variants have lower FZ loss than GJR-GARCH-EVT in both tails. The differences are -0.472 and -0.451 in the left tail and -0.360 and -0.350 in the right tail, with one-sided DM p-values no larger than 0.005.
+- Plain MLE C and UniBM C are close to each other: the pairwise differences are small and do not support a decisive estimator-level ranking. The defensible result is family-level.
 
 ## What can the paper claim?
 
@@ -129,13 +128,14 @@ The current evidence is a calibration-versus-loss tradeoff.
 | ML-tail nested information sets | Yes, after review | Strict nested-information-set comparison; direct quantile is the information-set comparator, not the coverage-admissibility gate. |
 | ML-tail per-model rows | No | Model-specific OOS diagnostics; samples need not match across model families. |
 | Restricted result matrix | No primary claim | Matched-date comparison for model families and within-model increments. |
+| 24-check screen and cross-suite FZ DM | Yes, conditional on the screen | Primary coverage-first comparison among the fixed coverage-admissible set on one strict common sample per tail. |
 | Timing, target, information-ladder, coverage figures | Supporting main-text evidence | Design/motivation/headline visualization; still read with tables and gates. |
-| Stress, Murphy, and DM heatmaps | Diagnostic only | Useful for interpretation, not automatic model-selection evidence. |
+| Stress, Murphy, and overlay figures | Diagnostic only | Useful for interpretation, not automatic model-selection evidence. |
 
 - The paper can claim a point-in-time forecast evaluation of OSE Nikkei 225 Futures opening-gap tail risk.
 - It can report that U.S. close information and proxy blocks change average loss and coverage patterns under registered information sets.
 - It can report that direct LightGBM quantile forecasts are too liberal in the current primary ML rows.
-- It can report side-specific promoted ML-tail rows after showing the promotion gate and restricted DM evidence: median/IQR POT-GPD for the left tail and location-scale empirical for the right tail.
+- It can report that the two standardized-loss LGBM+EVT families are coverage-admissible across all registered information sets and that their C-information forecasts outperform GJR-GARCH-EVT on paired FZ loss in both tails.
 - It should not claim that one model is universally strongest.
 - It should not average left-tail and right-tail evidence into one mechanism.
 - It should not present trigger or feature-block diagnostics as causal proof or realized trading performance.

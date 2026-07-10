@@ -10,6 +10,7 @@ from n225_open_gap_tail.config.runtime import (
     ML_TAIL_MEDIAN_IQR_POT_GPD_UNIBM_MODEL,
     ML_TAIL_MEDIAN_MAD_POT_GPD_PLAIN_MLE_MODEL,
     ML_TAIL_MEDIAN_MAD_POT_GPD_UNIBM_MODEL,
+    ML_TAIL_MODEL_NAMES,
     ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
     ML_TAIL_POT_GPD_UNIBM_MODEL,
     TAIL_SIDE_LEFT,
@@ -40,6 +41,75 @@ PASS_ALL_COVERAGE_TOLERANCE = 0.025
 PASS_ALL_TEST_ALPHA = 0.05
 
 
+def coverage_admissibility_summary_rows(
+    frame: pl.DataFrame,
+    *,
+    model_order: tuple[str, ...] = ML_TAIL_MODEL_NAMES,
+    information_sets: tuple[str, ...] = PASS_ALL_INFORMATION_SETS,
+    tail_sides: tuple[str, ...] = PASS_ALL_TAIL_SIDES,
+) -> list[dict[str, object]]:
+    required = {
+        "model_name",
+        "tail_side",
+        "information_set",
+        "rows",
+        "var_breach_rate",
+        "expected_breach_rate",
+        "kupiec_pvalue",
+        "christoffersen_pvalue",
+    }
+    if frame.is_empty() or not required.issubset(frame.columns):
+        return []
+    expected_scenarios = {
+        (tail_side, information_set)
+        for tail_side in tail_sides
+        for information_set in information_sets
+    }
+    rows_by_model: dict[str, dict[tuple[str, str], Mapping[str, object]]] = {}
+    for row in frame.iter_rows(named=True):
+        model_name = str(row.get("model_name") or "")
+        scenario = (str(row.get("tail_side") or ""), str(row.get("information_set") or ""))
+        if model_name in model_order and scenario in expected_scenarios:
+            rows_by_model.setdefault(model_name, {})[scenario] = row
+    output = []
+    for model_name in model_order:
+        model_rows = rows_by_model.get(model_name, {})
+        eligible = {
+            scenario
+            for scenario, row in model_rows.items()
+            if int(_optional_float(row.get("rows")) or 0) >= PASS_ALL_MIN_ROWS
+        }
+        breach = {scenario for scenario in eligible if _breach_band_passes(model_rows[scenario])}
+        kupiec = {
+            scenario
+            for scenario in eligible
+            if (_optional_float(model_rows[scenario].get("kupiec_pvalue")) or -1.0)
+            >= PASS_ALL_TEST_ALPHA
+        }
+        christoffersen = {
+            scenario
+            for scenario in eligible
+            if (_optional_float(model_rows[scenario].get("christoffersen_pvalue")) or -1.0)
+            >= PASS_ALL_TEST_ALPHA
+        }
+        output.append(
+            {
+                "model_name": model_name,
+                "eligible_scenarios": len(eligible),
+                "breach_passes": len(breach),
+                "kupiec_passes": len(kupiec),
+                "christoffersen_independence_passes": len(christoffersen),
+                "coverage_admissible": (
+                    eligible == expected_scenarios
+                    and breach == expected_scenarios
+                    and kupiec == expected_scenarios
+                    and christoffersen == expected_scenarios
+                ),
+            }
+        )
+    return output
+
+
 def pass_all_row_passes(
     row: Mapping[str, object],
     *,
@@ -61,6 +131,15 @@ def pass_all_row_passes(
         and kupiec >= test_alpha
         and christoffersen >= test_alpha
     )
+
+
+def _breach_band_passes(row: Mapping[str, object]) -> bool:
+    breach = _optional_float(row.get("var_breach_rate"))
+    expected = _optional_float(row.get("expected_breach_rate"))
+    if breach is None:
+        return False
+    expected = 0.05 if expected is None else expected
+    return abs(breach - expected) <= PASS_ALL_COVERAGE_TOLERANCE
 
 
 def pass_all_lgbm_model_names(

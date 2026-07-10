@@ -24,6 +24,9 @@ from n225_open_gap_tail.diagnostics.model_comparison import _all_model_compariso
 from n225_open_gap_tail.diagnostics.results_discussion import (
     generate_results_discussion as _generate_results_discussion,
 )
+from n225_open_gap_tail.diagnostics.snapshot_comparisons import (
+    comparison_evidence_markdown as _comparison_evidence_markdown,
+)
 from n225_open_gap_tail.diagnostics.snapshot_formatting import (
     _bool_sum,
     _code,
@@ -49,7 +52,9 @@ from n225_open_gap_tail.diagnostics.snapshot_paths import (
 from n225_open_gap_tail.diagnostics.snapshot_qa import (
     advanced_benchmark_qa_text as _advanced_benchmark_qa_text,
 )
-from n225_open_gap_tail.diagnostics.snapshot_qa import discussion_qa_markdown as _discussion_qa
+from n225_open_gap_tail.diagnostics.snapshot_qa import (
+    discussion_qa_markdown as _discussion_qa,
+)
 from n225_open_gap_tail.diagnostics.snapshot_tables import (
     _artifact_table as _artifact_table,
 )
@@ -74,7 +79,6 @@ from n225_open_gap_tail.diagnostics.target_distribution import (
 from n225_open_gap_tail.diagnostics.target_distribution import (
     target_tail_diagnostics_markdown as _target_tail_diagnostics_markdown,
 )
-from n225_open_gap_tail.reporting.latex import _promoted_tail_model_rows
 
 
 @dataclass(frozen=True)
@@ -309,11 +313,11 @@ def _full_run_results_markdown(
     result_matrix = _filter_current_ml_tail_models(
         _read_parquet_optional(paths["ml_tail_result_matrix"])
     )
-    result_matrix_dm = _filter_current_ml_tail_models(
-        _read_parquet_optional(paths["ml_tail_result_matrix_dm"])
-    )
     benchmark_stress = _read_parquet_optional(paths["benchmark_stress_windows"])
     ml_tail_stress = _read_parquet_optional(paths["ml_tail_stress_windows"])
+    comparison_evidence = _comparison_evidence_markdown(
+        metrics=ml_tail_metrics_per_model, run_dir=run_dir
+    )
     results_discussion = _demote_markdown_headings(
         _generate_results_discussion(
             manifest=manifest,
@@ -428,10 +432,6 @@ def _full_run_results_markdown(
         benchmark_metrics=benchmark_metrics,
         benchmark_metrics_per_model=benchmark_metrics_per_model,
         ml_tail_metrics_per_model=ml_tail_metrics_per_model,
-    )
-    promoted_tail_model_table = _promoted_tail_model_markdown_table(
-        ml_tail_metrics_per_model,
-        dm=result_matrix_dm,
     )
     benchmark_status_label = (
         manifest.get("benchmark_eval_status")
@@ -611,15 +611,7 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 - Differences across information blocks are candidate forecast evidence only after the common-sample, coverage, and inference diagnostics are reviewed.
 - {ml_coverage_review}
 
-### 4.3 Side-specific ML-tail promotion gate
-
-{promoted_tail_model_table}
-
-- This paper-facing bridge promotes side-specific ML-tail candidates only after the N/coverage gate and restricted common-sample inference are visible.
-- The current run's promoted rows are exactly the rows shown above; read them as side-specific paper candidates, not as a universal family ranking.
-- This is not a universal model-family ranking and does not replace the strict primary nested-information-set table above.
-
-### 4.4 ML-tail artifact relationship
+### 4.3 ML-tail artifact relationship
 
 {metric_artifact_table}
 
@@ -627,13 +619,15 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 - `ml_tail_metrics_per_model.parquet` reports each implemented ML-tail model on its own valid OOS rows; it is useful for debugging coverage but is not a cross-model comparison table.
 - `ml_tail_result_matrix.parquet` creates restricted common samples for VaR-only and VaR-ES comparisons across model families and within-model information-set increments.
 
-### 4.5 All-model diagnostic scan
+### 4.4 All-model diagnostic scan
 
 {all_model_comparison_table}
 
 - This table joins `benchmark_metrics_per_model.parquet` and `ml_tail_metrics_per_model.parquet` so all benchmark and LGBM tail-model variants are visible in one place.
 - Mean and standard deviation are computed across registered metric rows for the same suite/model/information-set configuration; for most rows this summarizes left- and right-tail metrics.
 - It is a diagnostic scan, not the formal cross-model comparison table. Cross-model claims still require common-sample result-matrix and DM evidence because valid dates and model gates can differ.
+
+{comparison_evidence}
 
 ### 4.6 Restricted common-sample result matrix and DM evidence
 
@@ -756,8 +750,8 @@ def _configuration_sensitivity_markdown(run_dir: Path) -> str:
                 "capacity only for the pass-all C-information LGBM+EVT families, "
                 "and POT threshold rows perturb those rows plus GJR-GARCH-EVT.\n"
                 "- Robustness classes describe conclusion stability versus the "
-                "registered primary specification. They do not feed DM gates, "
-                "promoted-model logic, or selected-model figures."
+                "registered primary specification. They do not alter coverage "
+                "admissibility, canonical forecasts, or cross-suite DM evidence."
             ),
         )
     )
@@ -797,16 +791,6 @@ def _table_interpretation_markdown(run_id: str) -> str:
             "Tail-specific direct LightGBM information-set rows.",
         ),
         (
-            "Selected model performance",
-            f"[tailrisk_selected_model_performance_table.tex]({root}/tailrisk_selected_model_performance_table.tex)",
-            "Deterministic selected-row summary after sample-size, coverage, FZ-loss, and quantile-loss gates.",
-        ),
-        (
-            "Promoted tail rows",
-            f"[ml_tail_promoted_tail_models_table.tex]({root}/ml_tail_promoted_tail_models_table.tex)",
-            "Locked side-specific promotion-gate rows; not a universal model-family ranking.",
-        ),
-        (
             "Full benchmark scan",
             f"[appendix_benchmark_all_models_table.tex]({root}/appendix_benchmark_all_models_table.tex)",
             "Complete benchmark inventory supporting benchmark breadth.",
@@ -822,9 +806,9 @@ def _table_interpretation_markdown(run_id: str) -> str:
             "Restricted common-sample model-family comparison and summary.",
         ),
         (
-            "Compact DM summary",
-            f"[tailrisk_dm_summary_table.tex]({root}/tailrisk_dm_summary_table.tex)",
-            "Headline paired inference table; negative loss differences favor the candidate.",
+            "24-check and paired DM evidence",
+            f"[tailrisk_lgbm_24check_table.tex]({root}/tailrisk_lgbm_24check_table.tex), [tailrisk_cross_suite_fz_dm_table.tex]({root}/tailrisk_cross_suite_fz_dm_table.tex)",
+            "Coverage-admissibility counts plus exact paired FZ comparisons; negative loss differences favor the candidate.",
         ),
         (
             "ES severity",
@@ -932,55 +916,3 @@ def _metrics_table(frame: pl.DataFrame) -> str:
         ),
         rows,
     )
-
-
-def _promoted_tail_model_markdown_table(
-    metrics: pl.DataFrame,
-    *,
-    dm: pl.DataFrame | None = None,
-) -> str:
-    rows = []
-    for row in _promoted_tail_model_rows(metrics, dm=dm):
-        rows.append(
-            (
-                row.get("promotion_role"),
-                display_model_label(row.get("model_name")),
-                display_information_set_label(row.get("information_set")),
-                row.get("tail_side"),
-                row.get("rows") or "missing",
-                _fmt_rate(row.get("var_breach_rate")),
-                _fmt_float(row.get("mean_quantile_loss")),
-                _fmt_float(row.get("mean_fz_loss")),
-                _snapshot_dm_cell(row.get("dm_quantile")),
-                _snapshot_dm_cell(row.get("dm_fz")),
-                row.get("promotion_status"),
-            )
-        )
-    return _markdown_table(
-        (
-            "Role",
-            "Model",
-            "Information set",
-            "Tail side",
-            "Rows",
-            "Breach",
-            "Q loss",
-            "FZ loss",
-            "DM q",
-            "DM FZ",
-            "Gate",
-        ),
-        rows or [("missing", "missing", "", "", "", "", "", "", "", "", "")],
-    )
-
-
-def _snapshot_dm_cell(row: object) -> str:
-    if not isinstance(row, dict):
-        return "n/a"
-    diff = _optional_float(row.get("mean_loss_diff_candidate_minus_baseline"))
-    pvalue = _optional_float(row.get("pvalue_one_sided"))
-    reject = row.get("reject_10pct")
-    if diff is None or pvalue is None:
-        return str(row.get("inference_status") or "n/a")
-    reject_text = "reject10" if reject is True else "no reject"
-    return f"{_fmt_float(diff)}; p={_fmt_float(pvalue)}; {reject_text}"

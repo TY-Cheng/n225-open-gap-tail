@@ -112,6 +112,7 @@ def generate_results_discussion(
 ### Not yet claimed
 
 - No hedge PnL, transaction-cost, or trading-alpha analysis is performed.
+- The current forecast artifacts evaluate only `full_gap_settle_to_open`; close-to-open and night-close-to-open target variants remain deferred.
 - Left-tail and right-tail outputs are both economic tail-risk surfaces for futures positions; neither side should be promoted beyond the sample, coverage, and inference gates without author review.
 - The current evidence does not create an automatic model-selection statement; any manuscript claim still requires author review of sample gates, coverage, loss metrics, and inference diagnostics.
 """
@@ -187,7 +188,7 @@ def _results_benchmark_discussion(
     advanced_sentence = (
         f"Advanced econometric benchmark rows are implemented for `{advanced_model_count}` model families "
         f"and contribute `{advanced_rows}` nonblocking forecast rows; these rows are claim-gated "
-        "diagnostics unless a manuscript table explicitly promotes them through the same sample and inference review."
+        "diagnostics unless a manuscript table explicitly qualifies them through the same sample and inference review."
         if advanced_rows > 0
         else "The advanced econometric benchmark registry is nonblocking, but this run does not provide advanced forecast rows for interpretation."
     )

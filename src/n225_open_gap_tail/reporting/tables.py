@@ -11,20 +11,21 @@ from n225_open_gap_tail.config.runtime import (
     TAIL_SIDE_LEFT,
     TAIL_SIDE_RIGHT,
 )
+from n225_open_gap_tail.metrics.admissibility import coverage_admissibility_summary_rows
+from n225_open_gap_tail.metrics.cross_suite_dm import cross_suite_dm_records_from_run
 from n225_open_gap_tail.reporting.figures import export_figures
 from n225_open_gap_tail.reporting.latex import (
     _claim_scope_to_latex,
     _configuration_sensitivity_to_latex,
-    _dm_summary_to_latex,
+    _coverage_admissibility_to_latex,
+    _cross_suite_dm_to_latex,
     _es_severity_to_latex,
     _full_per_model_metrics_to_latex,
     _model_inventory_to_latex,
     _metrics_to_latex,
     _predictor_block_coverage_to_latex,
-    _promoted_tail_models_to_latex,
     _result_matrix_summary_to_latex,
     _result_matrix_to_latex,
-    _selected_model_performance_to_latex,
 )
 
 
@@ -97,18 +98,6 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
         table_path.write_text(_model_inventory_to_latex(manifest=manifest), encoding="utf-8")
         tables += 1
         table_files.append(table_path.name)
-    if not benchmark_per_model.is_empty() and not ml_tail_per_model.is_empty():
-        table_path = latex_dir / "tailrisk_selected_model_performance_table.tex"
-        table_path.write_text(
-            _selected_model_performance_to_latex(
-                benchmark_per_model,
-                ml_tail_per_model,
-                manifest=manifest,
-            ),
-            encoding="utf-8",
-        )
-        tables += 1
-        table_files.append(table_path.name)
     if not benchmark_per_model.is_empty():
         table_path = latex_dir / "appendix_benchmark_all_models_table.tex"
         table_path.write_text(
@@ -122,13 +111,10 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
         tables += 1
         table_files.append(table_path.name)
     if not ml_tail_per_model.is_empty():
-        dm_path = run_dir / "metrics" / "ml_tail_result_matrix_dm.parquet"
-        dm = pl.read_parquet(dm_path) if dm_path.exists() else None
-        table_path = latex_dir / "ml_tail_promoted_tail_models_table.tex"
+        table_path = latex_dir / "tailrisk_lgbm_24check_table.tex"
         table_path.write_text(
-            _promoted_tail_models_to_latex(
-                ml_tail_per_model,
-                dm=dm,
+            _coverage_admissibility_to_latex(
+                coverage_admissibility_summary_rows(ml_tail_per_model),
                 manifest=manifest,
             ),
             encoding="utf-8",
@@ -181,14 +167,15 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
         )
         tables += 1
         table_files.append(table_path.name)
-        if dm is not None and not dm.is_empty():
-            table_path = latex_dir / "tailrisk_dm_summary_table.tex"
-            table_path.write_text(
-                _dm_summary_to_latex(dm, manifest=manifest),
-                encoding="utf-8",
-            )
-            tables += 1
-            table_files.append(table_path.name)
+    cross_suite_dm = cross_suite_dm_records_from_run(run_dir)
+    if cross_suite_dm:
+        table_path = latex_dir / "tailrisk_cross_suite_fz_dm_table.tex"
+        table_path.write_text(
+            _cross_suite_dm_to_latex(cross_suite_dm, manifest=manifest),
+            encoding="utf-8",
+        )
+        tables += 1
+        table_files.append(table_path.name)
     sensitivity_files = _export_sensitivity_tables(run_dir=run_dir, manifest=manifest)
     tables += len(sensitivity_files)
     table_files.extend(sensitivity_files)
@@ -372,24 +359,6 @@ def _table_manifest_entry(table_file: str) -> dict[str, object]:
             "es_severity_diagnostic_table",
             None,
         ),
-        "tailrisk_selected_model_performance_table.tex": (
-            "tailrisk_selected_model_performance",
-            [
-                "metrics/benchmark_metrics_per_model.parquet",
-                "metrics/ml_tail_metrics_per_model.parquet",
-            ],
-            "selected_benchmark_vs_lgbm_main_figure_rows",
-            None,
-        ),
-        "ml_tail_promoted_tail_models_table.tex": (
-            "ml_tail_promoted_tail_models",
-            [
-                "metrics/ml_tail_metrics_per_model.parquet",
-                "metrics/ml_tail_result_matrix_dm.parquet",
-            ],
-            "side_specific_ml_tail_promotion_gate",
-            None,
-        ),
         "appendix_benchmark_all_models_table.tex": (
             "appendix_benchmark_all_models",
             ["metrics/benchmark_metrics_per_model.parquet"],
@@ -423,10 +392,19 @@ def _table_manifest_entry(table_file: str) -> dict[str, object]:
             "restricted_result_matrix_summary_table",
             None,
         ),
-        "tailrisk_dm_summary_table.tex": (
-            "tailrisk_dm_summary",
-            ["metrics/ml_tail_result_matrix_dm.parquet"],
-            "main_text_compact_dm_summary",
+        "tailrisk_cross_suite_fz_dm_table.tex": (
+            "tailrisk_cross_suite_fz_dm",
+            [
+                "forecasts/benchmark_forecasts.parquet",
+                "forecasts/ml_tail_forecasts.parquet",
+            ],
+            "post_24check_cross_suite_fz_dm_table",
+            None,
+        ),
+        "tailrisk_lgbm_24check_table.tex": (
+            "tailrisk_lgbm_24check",
+            ["metrics/ml_tail_metrics_per_model.parquet"],
+            "coverage_admissibility_24check_table",
             None,
         ),
         "appendix_lgbm_configuration_sensitivity_table.tex": (
@@ -478,12 +456,6 @@ def _table_caption(name: str) -> str:
         "ml_tail_left_tail_risk": "Primary ML downside-risk table.",
         "ml_tail_right_tail_risk": "Primary ML upside-risk table.",
         "tailrisk_es_severity": "Conditional-on-exception severity diagnostic table.",
-        "tailrisk_selected_model_performance": (
-            "Selected Benchmark-vs-LGBM rows used for compact main performance figures."
-        ),
-        "ml_tail_promoted_tail_models": (
-            "Side-specific promoted ML-tail rows with restricted DM evidence."
-        ),
         "appendix_benchmark_all_models": "Appendix table with all benchmark model results.",
         "appendix_lgbm_all_models": "Appendix table with all LightGBM model results.",
         "tailrisk_claim_scope": "Claim-boundary reference table for manuscript review.",
@@ -491,7 +463,10 @@ def _table_caption(name: str) -> str:
         "ml_tail_result_matrix_summary": (
             "Restricted result-matrix inference and gate summary table."
         ),
-        "tailrisk_dm_summary": "Compact headline DM paired-inference summary table.",
+        "tailrisk_cross_suite_fz_dm": (
+            "Post-24-check cross-suite FZ DM comparisons on strict common samples."
+        ),
+        "tailrisk_lgbm_24check": ("Full LightGBM 24-check coverage-admissibility screen."),
         "appendix_lgbm_configuration_sensitivity": (
             "Appendix post-24-check LightGBM configuration sensitivity table."
         ),

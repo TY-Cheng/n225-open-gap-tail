@@ -134,8 +134,8 @@ flowchart LR
 | --- | --- |
 | None | 2206 |
 | roll_sq_excluded | 195 |
-| missing_reference_price | 1 |
 | missing_previous_jpx_session | 1 |
+| missing_reference_price | 1 |
 
 - The cache lower bound is 2016-07-19, but XLC/core predictor coverage pushes the actual forecast sample to the combined clean start.
 - Target exclusion is explicit: roll/SQ windows and the single missing reference price are carried as audit evidence, not silently dropped.
@@ -284,18 +284,7 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 - Differences across information blocks are candidate forecast evidence only after the common-sample, coverage, and inference diagnostics are reviewed.
 - Coverage review: `8/8` primary ML rows differ from the expected breach rate by more than 2.5 percentage points, so quantile/FZ loss differences alone must not be read as forecast improvement.
 
-### 4.3 Side-specific ML-tail promotion gate
-
-| Role | Model | Information set | Tail side | Rows | Breach | Q loss | FZ loss | DM q | DM FZ | Gate |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| left promoted | LGBM median/IQR POT-GPD plain MLE | JP + US close core + JP proxy + Asia proxy | left_tail | 527 | 5.882% | 0.000917119 | -4.22247 | -0.000235864; p=0.028; reject10 | -0.488666; p=0.049; reject10 | pass |
-| right promoted | LGBM location-scale empirical | JP + US close core + JP proxy | right_tail | 493 | 6.085% | 0.00102336 | -4.02729 | -0.000238584; p=0.026; reject10 | -0.529731; p=0.003; reject10 | pass |
-
-- This paper-facing bridge promotes side-specific ML-tail candidates only after the N/coverage gate and restricted common-sample inference are visible.
-- The current run's promoted rows are exactly the rows shown above; read them as side-specific paper candidates, not as a universal family ranking.
-- This is not a universal model-family ranking and does not replace the strict primary nested-information-set table above.
-
-### 4.4 ML-tail artifact relationship
+### 4.3 ML-tail artifact relationship
 
 | Artifact | Rows | Role | Claim boundary |
 | --- | --- | --- | --- |
@@ -307,7 +296,7 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 - `ml_tail_metrics_per_model.parquet` reports each implemented ML-tail model on its own valid OOS rows; it is useful for debugging coverage but is not a cross-model comparison table.
 - `ml_tail_result_matrix.parquet` creates restricted common samples for VaR-only and VaR-ES comparisons across model families and within-model information-set increments.
 
-### 4.5 All-model diagnostic scan
+### 4.4 All-model diagnostic scan
 
 | Suite | Model | Information set | Metric rows | OOS N mean+-sd | Breach mean+-sd | Abs cov err mean+-sd | Q loss mean+-sd | FZ loss mean+-sd | ES severity mean+-sd |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -360,6 +349,37 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 - Mean and standard deviation are computed across registered metric rows for the same suite/model/information-set configuration; for most rows this summarizes left- and right-tail metrics.
 - It is a diagnostic scan, not the formal cross-model comparison table. Cross-model claims still require common-sample result-matrix and DM evidence because valid dates and model gates can differ.
 
+### 4.5 Coverage-admissibility screen and cross-suite FZ DM evidence
+
+| LGBM family | Eligible / 8 | Breach band / 8 | Kupiec UC / 8 | Christoffersen independence / 8 | Coverage-admissible |
+| --- | --- | --- | --- | --- | --- |
+| LGBM direct quantile | 8/8 | 0/8 | 0/8 | 8/8 | no |
+| LGBM location-scale empirical | 8/8 | 8/8 | 7/8 | 8/8 | no |
+| LGBM POT-GPD plain MLE | 8/8 | 8/8 | 8/8 | 8/8 | yes |
+| LGBM POT-GPD UniBM block-maxima shape | 8/8 | 8/8 | 8/8 | 8/8 | yes |
+| LGBM median/MAD POT-GPD plain MLE | 8/8 | 6/8 | 5/8 | 7/8 | no |
+| LGBM median/MAD POT-GPD UniBM block-maxima shape | 8/8 | 6/8 | 3/8 | 8/8 | no |
+| LGBM median/IQR POT-GPD plain MLE | 8/8 | 8/8 | 7/8 | 8/8 | no |
+| LGBM median/IQR POT-GPD UniBM block-maxima shape | 8/8 | 8/8 | 7/8 | 8/8 | no |
+
+The 24-check screen is 2 tail sides x 4 information sets x 3 calibration checks: the +/-2.5 percentage-point breach-rate band, Kupiec unconditional coverage, and Christoffersen independence. N >= 450 is an eligibility precondition, not a twenty-fifth check.
+
+The loss comparison below is deliberately conditional on the 24-check screen.
+It compares the fixed coverage-admissible set rather than ranking every
+implemented model.
+
+| Tail | Candidate | Anchor | Common N | Mean FZ diff. | One-sided p | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| left tail | LGBM plain MLE C | GJR-GARCH-EVT | 473 | -0.471644 | 0.001 | ok_block_bootstrap_dm |
+| left tail | LGBM UniBM C | GJR-GARCH-EVT | 473 | -0.450901 | 0.001 | ok_block_bootstrap_dm |
+| left tail | LGBM plain MLE C | LGBM UniBM C | 473 | -0.020743 | 0.100 | ok_block_bootstrap_dm |
+| right tail | LGBM plain MLE C | GJR-GARCH-EVT | 474 | -0.359663 | 0.004 | ok_block_bootstrap_dm |
+| right tail | LGBM UniBM C | GJR-GARCH-EVT | 474 | -0.350165 | 0.005 | ok_block_bootstrap_dm |
+| right tail | LGBM plain MLE C | LGBM UniBM C | 474 | -0.009499 | 0.197 | ok_block_bootstrap_dm |
+
+Mean differences are FZ(candidate - anchor) on one strict global common sample per tail. Negative values mean that the candidate has lower FZ loss and better joint VaR-ES forecasts. P-values are one-sided moving-block-bootstrap DM p-values.
+
+
 ### 4.6 Restricted common-sample result matrix and DM evidence
 
 | Family | Axis | Loss | Rows | Common N | Date range | Joint exceptions |
@@ -402,7 +422,7 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 
 - `benchmark_metrics.parquet` reports `14` common-sample rows across `7` baseline benchmark model families and `2` tail side(s), while benchmark forecasts contain `15173` model-date rows.
 - Baseline benchmark models are external target-history and econometric references; this section does not rank them.
-- Advanced econometric benchmark rows are implemented for `6` model families and contribute `6509` nonblocking forecast rows; these rows are claim-gated diagnostics unless a manuscript table explicitly promotes them through the same sample and inference review.
+- Advanced econometric benchmark rows are implemented for `6` model families and contribute `6509` nonblocking forecast rows; these rows are claim-gated diagnostics unless a manuscript table explicitly qualifies them through the same sample and inference review.
 - Baseline benchmark breach rates have a median of `0.0581717`, within 2.5 percentage points of the nominal level, indicating reasonable coverage calibration relative to the ML-tail models whose breach rates are reported in the nested-information-set section.
 
 #### Primary ML specifications across nested information sets
@@ -443,10 +463,8 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
   - Figure: coverage_breach_rates_left_tail (Source: metrics/benchmark_metrics.parquet, metrics/benchmark_metrics_per_model.parquet, metrics/ml_tail_metrics.parquet, metrics/ml_tail_metrics_per_model.parquet; Claim scope: coverage_diagnostic_not_primary_claim; File: latex/figures/coverage_breach_rates_left_tail.png).
   - Figure: coverage_breach_rates_right_tail (Source: metrics/benchmark_metrics.parquet, metrics/benchmark_metrics_per_model.parquet, metrics/ml_tail_metrics.parquet, metrics/ml_tail_metrics_per_model.parquet; Claim scope: coverage_diagnostic_not_primary_claim; File: latex/figures/coverage_breach_rates_right_tail.png).
   - Figure: cumulative_lgbm_a_anchor_fz_gain (Source: metrics/benchmark_loss_matrix.parquet, metrics/ml_tail_loss_matrix.parquet, forecasts/benchmark_forecasts.parquet, forecasts/ml_tail_forecasts.parquet; Claim scope: headline_lgbm_a_anchor_gjr_evt_and_information_increment_fz_gain; File: latex/figures/cumulative_lgbm_a_anchor_fz_gain.png).
-  - Figure: selected_model_performance_left_tail (Source: metrics/benchmark_metrics_per_model.parquet, metrics/ml_tail_metrics_per_model.parquet; Claim scope: selected_benchmark_vs_lgbm_main_figure_not_full_result_set; File: latex/figures/selected_model_performance_left_tail.png).
-  - Figure: selected_model_performance_right_tail (Source: metrics/benchmark_metrics_per_model.parquet, metrics/ml_tail_metrics_per_model.parquet; Claim scope: selected_benchmark_vs_lgbm_main_figure_not_full_result_set; File: latex/figures/selected_model_performance_right_tail.png).
-  - Figure: full_sample_var_overlay_left_tail (Source: forecasts/benchmark_forecasts.parquet, forecasts/ml_tail_forecasts.parquet; Claim scope: full_sample_var_overlay_fixed_selection_visual_diagnostic; File: latex/figures/full_sample_var_overlay_left_tail.png).
-  - Figure: full_sample_var_overlay_right_tail (Source: forecasts/benchmark_forecasts.parquet, forecasts/ml_tail_forecasts.parquet; Claim scope: full_sample_var_overlay_fixed_selection_visual_diagnostic; File: latex/figures/full_sample_var_overlay_right_tail.png).
+  - Figure: full_sample_var_overlay_left_tail (Source: forecasts/benchmark_forecasts.parquet, forecasts/ml_tail_forecasts.parquet; Claim scope: full_sample_var_overlay_coverage_admissible_set_diagnostic; File: latex/figures/full_sample_var_overlay_left_tail.png).
+  - Figure: full_sample_var_overlay_right_tail (Source: forecasts/benchmark_forecasts.parquet, forecasts/ml_tail_forecasts.parquet; Claim scope: full_sample_var_overlay_coverage_admissible_set_diagnostic; File: latex/figures/full_sample_var_overlay_right_tail.png).
   - Figure: benchmark_murphy_left_tail (Source: metrics/benchmark_murphy.parquet; Claim scope: murphy_diagnostic_benchmark_baseline_common_grid; File: latex/figures/benchmark_murphy_left_tail.png).
   - Figure: benchmark_murphy_right_tail (Source: metrics/benchmark_murphy.parquet; Claim scope: murphy_diagnostic_benchmark_baseline_common_grid; File: latex/figures/benchmark_murphy_right_tail.png).
   - Figure: lgbm_24check_murphy_left_tail (Source: metrics/lgbm_24check_murphy.parquet, metrics/ml_tail_metrics_per_model.parquet, forecasts/ml_tail_forecasts.parquet; Claim scope: murphy_diagnostic_lgbm_24check_robust_ladder; File: latex/figures/lgbm_24check_murphy_left_tail.png).
@@ -461,6 +479,7 @@ Status: `completed LGBM ML-tail models`; implemented models: `LGBM direct quanti
 #### Not yet claimed
 
 - No hedge PnL, transaction-cost, or trading-alpha analysis is performed.
+- The current forecast artifacts evaluate only `full_gap_settle_to_open`; close-to-open and night-close-to-open target variants remain deferred.
 - Left-tail and right-tail outputs are both economic tail-risk surfaces for futures positions; neither side should be promoted beyond the sample, coverage, and inference gates without author review.
 - The current evidence does not create an automatic model-selection statement; any manuscript claim still requires author review of sample gates, coverage, loss metrics, and inference diagnostics.
 
@@ -493,7 +512,7 @@ they do not mean the artifact is missing from this page.
 
 - The primary design compares pre-specified point-in-time forecast specifications. Configuration sensitivity is post-24-check robustness evidence and is not used for model selection or the cross-suite FZ DM heatmap.
 - The run is fixed to the post-24-check paper set. LGBM rows perturb capacity only for the pass-all C-information LGBM+EVT families, and POT threshold rows perturb those rows plus GJR-GARCH-EVT.
-- Robustness classes describe conclusion stability versus the registered primary specification. They do not feed DM gates, promoted-model logic, or selected-model figures.
+- Robustness classes describe conclusion stability versus the registered primary specification. They do not alter coverage admissibility, canonical forecasts, or cross-suite DM evidence.
 
 ### 5.2 Generated table manifest
 
@@ -507,15 +526,14 @@ they do not mean the artifact is missing from this page.
 | ml_tail_left_tail_risk | `metrics/ml_tail_metrics.parquet` | `left_tail_ml_tail_primary_risk_table` | `left_tail` | `latex/tables/ml_tail_left_tail_risk_table.tex` |
 | ml_tail_right_tail_risk | `metrics/ml_tail_metrics.parquet` | `right_tail_ml_tail_primary_risk_table` | `right_tail` | `latex/tables/ml_tail_right_tail_risk_table.tex` |
 | tailrisk_model_inventory | `config/research_config.json`, `metrics/benchmark_metrics_per_model.parquet`, `metrics/ml_tail_metrics_per_model.parquet` | `main_text_model_inventory_forecast_construction` | `None` | `latex/tables/tailrisk_model_inventory_table.tex` |
-| tailrisk_selected_model_performance | `metrics/benchmark_metrics_per_model.parquet`, `metrics/ml_tail_metrics_per_model.parquet` | `selected_benchmark_vs_lgbm_main_figure_rows` | `None` | `latex/tables/tailrisk_selected_model_performance_table.tex` |
 | appendix_benchmark_all_models | `metrics/benchmark_metrics_per_model.parquet` | `appendix_full_benchmark_results` | `None` | `latex/tables/appendix_benchmark_all_models_table.tex` |
-| ml_tail_promoted_tail_models | `metrics/ml_tail_metrics_per_model.parquet`, `metrics/ml_tail_result_matrix_dm.parquet` | `side_specific_ml_tail_promotion_gate` | `None` | `latex/tables/ml_tail_promoted_tail_models_table.tex` |
+| tailrisk_lgbm_24check | `metrics/ml_tail_metrics_per_model.parquet` | `coverage_admissibility_24check_table` | `None` | `latex/tables/tailrisk_lgbm_24check_table.tex` |
 | appendix_lgbm_all_models | `metrics/ml_tail_metrics_per_model.parquet` | `appendix_full_lgbm_results` | `None` | `latex/tables/appendix_lgbm_all_models_table.tex` |
 | tailrisk_es_severity | `metrics/benchmark_metrics.parquet`, `metrics/ml_tail_metrics.parquet`, `metrics/ml_tail_metrics_per_model.parquet` | `es_severity_diagnostic_table` | `None` | `latex/tables/tailrisk_es_severity_table.tex` |
 | tailrisk_claim_scope | `manifest.json`, `config/research_config.json` | `claim_boundary_reference_table` | `None` | `latex/tables/tailrisk_claim_scope_table.tex` |
 | ml_tail_result_matrix | `metrics/ml_tail_result_matrix.parquet` | `restricted_model_comparison_table` | `None` | `latex/tables/ml_tail_result_matrix_table.tex` |
 | ml_tail_result_matrix_summary | `metrics/ml_tail_result_matrix.parquet`, `metrics/ml_tail_result_matrix_dm.parquet` | `restricted_result_matrix_summary_table` | `None` | `latex/tables/ml_tail_result_matrix_summary_table.tex` |
-| tailrisk_dm_summary | `metrics/ml_tail_result_matrix_dm.parquet` | `main_text_compact_dm_summary` | `None` | `latex/tables/tailrisk_dm_summary_table.tex` |
+| tailrisk_cross_suite_fz_dm | `forecasts/benchmark_forecasts.parquet`, `forecasts/ml_tail_forecasts.parquet` | `post_24check_cross_suite_fz_dm_table` | `None` | `latex/tables/tailrisk_cross_suite_fz_dm_table.tex` |
 | appendix_lgbm_configuration_sensitivity | `sensitivity/metrics/lgbm_configuration_sensitivity_metrics.parquet` | `appendix_configuration_robustness_lgbm` | `None` | `sensitivity/latex/tables/appendix_lgbm_configuration_sensitivity_table.tex` |
 | appendix_evt_threshold_sensitivity | `sensitivity/metrics/evt_threshold_sensitivity_metrics.parquet` | `appendix_configuration_robustness_evt_threshold` | `None` | `sensitivity/latex/tables/appendix_evt_threshold_sensitivity_table.tex` |
 
@@ -532,12 +550,10 @@ they do not mean the artifact is missing from this page.
 | Benchmark tail-side details | [benchmark_left_tail_risk_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/benchmark_left_tail_risk_table.tex), [benchmark_right_tail_risk_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/benchmark_right_tail_risk_table.tex) | Tail-specific benchmark rows for left and right risk surfaces. |
 | ML information ladder | [ml_tail_metrics_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/ml_tail_metrics_table.tex) | Core nested-information-set table for direct LightGBM; read loss changes with coverage gates. |
 | ML tail-side details | [ml_tail_left_tail_risk_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/ml_tail_left_tail_risk_table.tex), [ml_tail_right_tail_risk_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/ml_tail_right_tail_risk_table.tex) | Tail-specific direct LightGBM information-set rows. |
-| Selected model performance | [tailrisk_selected_model_performance_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/tailrisk_selected_model_performance_table.tex) | Deterministic selected-row summary after sample-size, coverage, FZ-loss, and quantile-loss gates. |
-| Promoted tail rows | [ml_tail_promoted_tail_models_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/ml_tail_promoted_tail_models_table.tex) | Locked side-specific promotion-gate rows; not a universal model-family ranking. |
 | Full benchmark scan | [appendix_benchmark_all_models_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/appendix_benchmark_all_models_table.tex) | Complete benchmark inventory supporting benchmark breadth. |
 | Full LGBM scan | [appendix_lgbm_all_models_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/appendix_lgbm_all_models_table.tex) | Complete per-model LightGBM scan; do not use as a raw leaderboard. |
 | Restricted result matrix | [ml_tail_result_matrix_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/ml_tail_result_matrix_table.tex), [ml_tail_result_matrix_summary_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/ml_tail_result_matrix_summary_table.tex) | Restricted common-sample model-family comparison and summary. |
-| Compact DM summary | [tailrisk_dm_summary_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/tailrisk_dm_summary_table.tex) | Headline paired inference table; negative loss differences favor the candidate. |
+| 24-check and paired DM evidence | [tailrisk_lgbm_24check_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/tailrisk_lgbm_24check_table.tex), [tailrisk_cross_suite_fz_dm_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/tailrisk_cross_suite_fz_dm_table.tex) | Coverage-admissibility counts plus exact paired FZ comparisons; negative loss differences favor the candidate. |
 | ES severity | [tailrisk_es_severity_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/tailrisk_es_severity_table.tex) | Conditional-on-exception severity diagnostic; not standalone model selection. |
 | Claim boundary | [tailrisk_claim_scope_table.tex](tables/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/tailrisk_claim_scope_table.tex) | Reference table separating headline, restricted, diagnostic, and robustness claims. |
 
@@ -584,35 +600,21 @@ _Figure: `coverage_breach_rates_left_tail`. Source: `metrics/benchmark_metrics.p
 
 _Figure: `coverage_breach_rates_right_tail`. Source: `metrics/benchmark_metrics.parquet`, `metrics/benchmark_metrics_per_model.parquet`, `metrics/ml_tail_metrics.parquet`, `metrics/ml_tail_metrics_per_model.parquet`. Claim scope: `coverage_diagnostic_not_primary_claim`. Tail side: `right_tail`. Run file: `latex/figures/coverage_breach_rates_right_tail.png`._
 
-#### Figure 5. Selected Benchmark-vs-LGBM Performance
+#### Figure 5. Full-Sample VaR Overlay Diagnostics
 
-- Key readings: compact main-figure rows split models into two broad groups, Benchmark and LGBM.
-- Within each tail and group, rows are selected by sufficient sample size, VaR coverage near 5%, then lower FZ loss and quantile loss.
-- Full benchmark and LGBM per-model results are exported in full-result tables, so this figure is a readable summary rather than the full result set.
-
-![selected_model_performance_left_tail](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/selected_model_performance_left_tail.png)
-
-_Figure: `selected_model_performance_left_tail`. Source: `metrics/benchmark_metrics_per_model.parquet`, `metrics/ml_tail_metrics_per_model.parquet`. Claim scope: `selected_benchmark_vs_lgbm_main_figure_not_full_result_set`. Tail side: `left_tail`. Run file: `latex/figures/selected_model_performance_left_tail.png`._
-
-![selected_model_performance_right_tail](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/selected_model_performance_right_tail.png)
-
-_Figure: `selected_model_performance_right_tail`. Source: `metrics/benchmark_metrics_per_model.parquet`, `metrics/ml_tail_metrics_per_model.parquet`. Claim scope: `selected_benchmark_vs_lgbm_main_figure_not_full_result_set`. Tail side: `right_tail`. Run file: `latex/figures/selected_model_performance_right_tail.png`._
-
-#### Figure 6. Full-Sample VaR Overlay Diagnostics
-
-- Key readings: full-sample overlays show realized loss against a fixed benchmark-comparator VaR and the locked side-specific promoted ML-tail VaR.
-- The benchmark line uses GJR-GARCH-EVT with GJR-GARCH-t fallback; the ML line is not selected by inspecting this plot.
-- Treat the plot as a visual diagnostic. Formal validation remains the coverage, loss, DM, Murphy, and EVT evidence.
+- Key readings: full-sample overlays compare realized loss with VaR from the fixed post-24-check set: GJR-GARCH-EVT, LGBM plain MLE C, and LGBM UniBM C.
+- Colored markers identify each model's VaR exceptions; no model is selected by inspecting this plot.
+- Treat the plot as a visual diagnostic. Formal comparison uses coverage checks and strict common-sample FZ DM evidence.
 
 ![full_sample_var_overlay_left_tail](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/full_sample_var_overlay_left_tail.png)
 
-_Figure: `full_sample_var_overlay_left_tail`. Source: `forecasts/benchmark_forecasts.parquet`, `forecasts/ml_tail_forecasts.parquet`. Claim scope: `full_sample_var_overlay_fixed_selection_visual_diagnostic`. Tail side: `left_tail`. Run file: `latex/figures/full_sample_var_overlay_left_tail.png`._
+_Figure: `full_sample_var_overlay_left_tail`. Source: `forecasts/benchmark_forecasts.parquet`, `forecasts/ml_tail_forecasts.parquet`. Claim scope: `full_sample_var_overlay_coverage_admissible_set_diagnostic`. Tail side: `left_tail`. Run file: `latex/figures/full_sample_var_overlay_left_tail.png`._
 
 ![full_sample_var_overlay_right_tail](figures/tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4/full_sample_var_overlay_right_tail.png)
 
-_Figure: `full_sample_var_overlay_right_tail`. Source: `forecasts/benchmark_forecasts.parquet`, `forecasts/ml_tail_forecasts.parquet`. Claim scope: `full_sample_var_overlay_fixed_selection_visual_diagnostic`. Tail side: `right_tail`. Run file: `latex/figures/full_sample_var_overlay_right_tail.png`._
+_Figure: `full_sample_var_overlay_right_tail`. Source: `forecasts/benchmark_forecasts.parquet`, `forecasts/ml_tail_forecasts.parquet`. Claim scope: `full_sample_var_overlay_coverage_admissible_set_diagnostic`. Tail side: `right_tail`. Run file: `latex/figures/full_sample_var_overlay_right_tail.png`._
 
-#### Figure 7. VaR/ES Stress-Window Overlays
+#### Figure 6. VaR/ES Stress-Window Overlays
 
 - Supporting diagnostic: stress-window overlays illustrate threshold behavior in broad OOS stress episodes with left/right tails sharing each episode's x-axis.
 - The LGBM overlays use information set C, the best-FZ row within the two 24-check LGBM+EVT families.
@@ -626,7 +628,7 @@ _Figure: `var_es_stress_overlay_2024_stress_episode`. Source: `forecasts/benchma
 
 _Figure: `var_es_stress_overlay_2025_stress_episode`. Source: `forecasts/benchmark_forecasts.parquet`, `forecasts/ml_tail_forecasts.parquet`. Claim scope: `appendix_stress_overlay_illustration_not_validation`. Tail side: `left_right_tail`. Run file: `latex/figures/var_es_stress_overlay_2025_stress_episode.png`._
 
-#### Figure 8. DM Heatmaps
+#### Figure 7. DM Heatmaps
 
 - Supporting diagnostic: heatmap cells report pairwise FZ-loss differences and one-sided DM p-values for the pass-all cross-suite model set.
 - Rows are candidates, columns are anchors, and negative candidate-minus-anchor differences favor the row model.
@@ -640,7 +642,7 @@ _Figure: `dm_heatmap_left_tail`. Source: `forecasts/benchmark_forecasts.parquet`
 
 _Figure: `dm_heatmap_right_tail`. Source: `forecasts/benchmark_forecasts.parquet`, `forecasts/ml_tail_forecasts.parquet`. Claim scope: `post_24check_cross_suite_fz_dm_diagnostic`. Tail side: `right_tail`. Run file: `latex/figures/dm_heatmap_right_tail.png`._
 
-#### Figure 9. Benchmark Murphy Diagnostics
+#### Figure 8. Benchmark Murphy Diagnostics
 
 - Key readings: curves report target-history benchmark elementary-score diagnostics on a common grid.
 - The plot is a scoring-family diagnostic, not a pairwise ranking statement.
@@ -653,7 +655,7 @@ _Figure: `benchmark_murphy_left_tail`. Source: `metrics/benchmark_murphy.parquet
 
 _Figure: `benchmark_murphy_right_tail`. Source: `metrics/benchmark_murphy.parquet`. Claim scope: `murphy_diagnostic_benchmark_baseline_common_grid`. Tail side: `right_tail`. Run file: `latex/figures/benchmark_murphy_right_tail.png`._
 
-#### Figure 10. 24-Check LGBM Murphy Diagnostics
+#### Figure 9. 24-Check LGBM Murphy Diagnostics
 
 - Key readings: curves report only the LGBM families that pass the full tail-by-information-set calibration screen.
 - Interpret curve separation as scoring-family sensitivity evidence, not as a standalone model-selection rule.
@@ -666,7 +668,7 @@ _Figure: `lgbm_24check_murphy_left_tail`. Source: `metrics/lgbm_24check_murphy.p
 
 _Figure: `lgbm_24check_murphy_right_tail`. Source: `metrics/lgbm_24check_murphy.parquet`, `metrics/ml_tail_metrics_per_model.parquet`, `forecasts/ml_tail_forecasts.parquet`. Claim scope: `murphy_diagnostic_lgbm_24check_robust_ladder`. Tail side: `right_tail`. Run file: `latex/figures/lgbm_24check_murphy_right_tail.png`._
 
-#### Figure 11. ES Severity Diagnostics
+#### Figure 10. ES Severity Diagnostics
 
 - Key readings: bars report conditional-on-exception severity diagnostics.
 - Severity is reported for risk interpretation but is not a standalone model-selection claim.

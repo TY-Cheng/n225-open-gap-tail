@@ -92,13 +92,12 @@ def figure_gallery_markdown(*, figure_manifest: dict[str, object], run_id: str) 
         ("target_motivation", "Figure 2. Opening-Gap Tail Motivation"),
         ("cumulative_loss", "Figure 3. Cumulative FZ-Gain Diagnostics"),
         ("coverage", "Figure 4. Full Coverage Breach-Rate Diagnostics"),
-        ("selected_performance", "Figure 5. Selected Benchmark-vs-LGBM Performance"),
-        ("full_var_overlay", "Figure 6. Full-Sample VaR Overlay Diagnostics"),
-        ("stress_overlay", "Figure 7. VaR/ES Stress-Window Overlays"),
-        ("dm", "Figure 8. DM Heatmaps"),
-        ("benchmark_murphy", "Figure 9. Benchmark Murphy Diagnostics"),
-        ("lgbm_24check_murphy", "Figure 10. 24-Check LGBM Murphy Diagnostics"),
-        ("severity", "Figure 11. ES Severity Diagnostics"),
+        ("full_var_overlay", "Figure 5. Full-Sample VaR Overlay Diagnostics"),
+        ("stress_overlay", "Figure 6. VaR/ES Stress-Window Overlays"),
+        ("dm", "Figure 7. DM Heatmaps"),
+        ("benchmark_murphy", "Figure 8. Benchmark Murphy Diagnostics"),
+        ("lgbm_24check_murphy", "Figure 9. 24-Check LGBM Murphy Diagnostics"),
+        ("severity", "Figure 10. ES Severity Diagnostics"),
     ]
     for family, title in order:
         family_entries = by_family.get(family, [])
@@ -165,8 +164,6 @@ def _figure_family(name: str) -> str:
         return "full_var_overlay"
     if name.startswith("dm_heatmap"):
         return "dm"
-    if name.startswith("selected_model_performance"):
-        return "selected_performance"
     if name.startswith("benchmark_murphy"):
         return "benchmark_murphy"
     if name.startswith("lgbm_24check_murphy"):
@@ -212,15 +209,10 @@ def _figure_key_readings(family: str) -> list[str]:
             "- Key readings: bars report realized VaR exception rates against the nominal line.",
             "- Read this first: exception-rate deviations set the boundary for any loss-based interpretation.",
         ],
-        "selected_performance": [
-            "- Key readings: compact main-figure rows split models into two broad groups, Benchmark and LGBM.",
-            "- Within each tail and group, rows are selected by sufficient sample size, VaR coverage near 5%, then lower FZ loss and quantile loss.",
-            "- Full benchmark and LGBM per-model results are exported in full-result tables, so this figure is a readable summary rather than the full result set.",
-        ],
         "full_var_overlay": [
-            "- Key readings: full-sample overlays show realized loss against a fixed benchmark-comparator VaR and the locked side-specific promoted ML-tail VaR.",
-            "- The benchmark line uses GJR-GARCH-EVT with GJR-GARCH-t fallback; the ML line is not selected by inspecting this plot.",
-            "- Treat the plot as a visual diagnostic. Formal validation remains the coverage, loss, DM, Murphy, and EVT evidence.",
+            "- Key readings: full-sample overlays compare realized loss with VaR from the fixed post-24-check set: GJR-GARCH-EVT, LGBM plain MLE C, and LGBM UniBM C.",
+            "- Colored markers identify each model's VaR exceptions; no model is selected by inspecting this plot.",
+            "- Treat the plot as a visual diagnostic. Formal comparison uses coverage checks and strict common-sample FZ DM evidence.",
         ],
         "stress_overlay": [
             "- Supporting diagnostic: stress-window overlays illustrate threshold behavior in broad OOS stress episodes with left/right tails sharing each episode's x-axis.",

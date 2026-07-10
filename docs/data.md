@@ -633,6 +633,10 @@ Absorption robustness target:
 
 - `residual_nightclose_to_day_open = log(day_open_t) - log(night_close_t)`, when `night_close_t` is available and its timestamp semantics are audited.
 
+The current locked forecast run evaluates only `full_gap_settle_to_open`.
+The close-to-open and night-close-to-open target variants remain deferred; their
+presence in the target-audit schema does not make them completed forecast experiments.
+
 Licensed-data extension:
 
 - `residual_usclosemark_to_open = log(day_open_t) - log(nikkei_futures_mark_at_us_cash_close_t)`.

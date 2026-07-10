@@ -2,15 +2,13 @@
 # ruff: noqa: F401,I001,UP035
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from n225_open_gap_tail.config.runtime import (
     Mapping,
     ML_TAIL_DIRECT_QUANTILE_MODEL,
-    ML_TAIL_LOCATION_SCALE_MODEL,
-    ML_TAIL_MEDIAN_IQR_POT_GPD_PLAIN_MLE_MODEL,
     pl,
     PRIMARY_TAIL_SIDE,
-    TAIL_SIDE_LEFT,
-    TAIL_SIDE_RIGHT,
     _optional_float,
 )
 from n225_open_gap_tail.metrics.stat_utils import _fmt
@@ -28,21 +26,9 @@ from n225_open_gap_tail.reporting.latex_utils import (
 
 
 from n225_open_gap_tail.reporting.latex_headline import (
-    PROMOTED_TAIL_MODEL_SPECS as PROMOTED_TAIL_MODEL_SPECS,
-    SELECTED_MODEL_COVERAGE_TOLERANCE as SELECTED_MODEL_COVERAGE_TOLERANCE,
-    SELECTED_MODEL_MAX_PER_GROUP as SELECTED_MODEL_MAX_PER_GROUP,
-    SELECTED_MODEL_MIN_ROWS as SELECTED_MODEL_MIN_ROWS,
-    _dm_cell as _dm_cell,
-    _dm_summary_to_latex as _dm_summary_to_latex,
     _model_inventory_to_latex as _model_inventory_to_latex,
     _predictor_block_coverage_rows as _predictor_block_coverage_rows,
     _predictor_block_coverage_to_latex as _predictor_block_coverage_to_latex,
-    _promoted_dm_row as _promoted_dm_row,
-    _promoted_tail_model_rows as _promoted_tail_model_rows,
-    _promoted_tail_models_to_latex as _promoted_tail_models_to_latex,
-    _selected_model_performance_rows as _selected_model_performance_rows,
-    _selected_model_performance_to_latex as _selected_model_performance_to_latex,
-    _selection_candidates as _selection_candidates,
     _source_block_role as _source_block_role,
 )
 
@@ -98,6 +84,106 @@ def _metrics_to_latex(
     )
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
+
+
+def _cross_suite_dm_to_latex(
+    records: Sequence[Mapping[str, object]],
+    *,
+    manifest: Mapping[str, object] | None = None,
+) -> str:
+    manifest = manifest or {}
+    displayed_pairs = {
+        ("LGBM plain MLE C", "GJR-GARCH-EVT"),
+        ("LGBM UniBM C", "GJR-GARCH-EVT"),
+        ("LGBM plain MLE C", "LGBM UniBM C"),
+    }
+    selected = [
+        row
+        for row in records
+        if (str(row.get("candidate_label")), str(row.get("anchor_label"))) in displayed_pairs
+    ]
+    lines = [
+        f"% run_id: {manifest.get('run_id', '')}",
+        f"% git_commit: {manifest.get('git_commit', '')}",
+        f"% config_hash: {manifest.get('config_hash', '')}",
+        "% table_scope: post_24check_cross_suite_fz_dm_table",
+        "\\begin{tabular}{llllrrl}",
+        "\\toprule",
+        "tail & candidate & anchor & common N & mean FZ diff. & one-sided p & status \\\\",
+        "\\midrule",
+    ]
+    for row in selected:
+        pvalue = _optional_float(row.get("pvalue_one_sided"))
+        pvalue_text = "n/a" if pvalue is None else f"{pvalue:.3f}{_dm_significance_stars(pvalue)}"
+        lines.append(
+            f"{_latex_escape(str(row.get('tail_side') or '').replace('_', ' '))} & "
+            f"{_latex_escape(row.get('candidate_label'))} & "
+            f"{_latex_escape(row.get('anchor_label'))} & "
+            f"{int(_optional_float(row.get('common_n')) or 0)} & "
+            f"{_fmt(row.get('mean_fz_loss_diff_candidate_minus_anchor'))} & "
+            f"{_latex_escape(pvalue_text)} & "
+            f"{_latex_escape(row.get('inference_status'))} \\\\"
+        )
+    note = (
+        "Mean differences are FZ(candidate - anchor) on one strict global common sample "
+        "per tail. Negative values favor the candidate because lower Fissler-Ziegel joint "
+        "VaR-ES loss is better. P-values are one-sided moving-block-bootstrap DM p-values."
+    )
+    lines.extend(
+        ["\\midrule", f"\\multicolumn{{7}}{{l}}{{\\footnotesize {_latex_escape(note)}}} \\\\"]
+    )
+    lines.extend(["\\bottomrule", "\\end{tabular}", ""])
+    return "\n".join(lines)
+
+
+def _coverage_admissibility_to_latex(
+    rows: Sequence[Mapping[str, object]],
+    *,
+    manifest: Mapping[str, object] | None = None,
+) -> str:
+    manifest = manifest or {}
+    lines = [
+        f"% run_id: {manifest.get('run_id', '')}",
+        f"% git_commit: {manifest.get('git_commit', '')}",
+        f"% config_hash: {manifest.get('config_hash', '')}",
+        "% table_scope: coverage_admissibility_24check_table",
+        "\\begin{tabular}{lrrrrl}",
+        "\\toprule",
+        (
+            "LGBM family & eligible/8 & breach/8 & Kupiec/8 & "
+            "Christoffersen independence/8 & admissible \\\\"
+        ),
+        "\\midrule",
+    ]
+    for row in rows:
+        lines.append(
+            f"{_latex_escape(display_model_label(row.get('model_name')))} & "
+            f"{int(_optional_float(row.get('eligible_scenarios')) or 0)}/8 & "
+            f"{int(_optional_float(row.get('breach_passes')) or 0)}/8 & "
+            f"{int(_optional_float(row.get('kupiec_passes')) or 0)}/8 & "
+            f"{int(_optional_float(row.get('christoffersen_independence_passes')) or 0)}/8 & "
+            f"{'yes' if row.get('coverage_admissible') else 'no'} \\\\"
+        )
+    note = (
+        "The 24-check screen is two tail sides times four information sets times "
+        "the breach-rate band, Kupiec unconditional coverage, and Christoffersen "
+        "independence. N >= 450 is an eligibility precondition."
+    )
+    lines.extend(
+        ["\\midrule", f"\\multicolumn{{6}}{{l}}{{\\footnotesize {_latex_escape(note)}}} \\\\"]
+    )
+    lines.extend(["\\bottomrule", "\\end{tabular}", ""])
+    return "\n".join(lines)
+
+
+def _dm_significance_stars(pvalue: float) -> str:
+    if pvalue < 0.01:
+        return "***"
+    if pvalue < 0.05:
+        return "**"
+    if pvalue < 0.10:
+        return "*"
+    return ""
 
 
 def _full_per_model_metrics_to_latex(
@@ -206,9 +292,8 @@ def _configuration_sensitivity_to_latex(
         )
     note = (
         "Visible notes: appendix-only post-24-check configuration robustness diagnostics. "
-        "Rows carry primary_claim_allowed=false and are not used to select "
-        "primary selections, promoted rows, DM gates, the cross-suite FZ DM heatmap, "
-        "or selected-model figures. "
+        "Rows carry primary_claim_allowed=false and do not alter coverage admissibility, "
+        "the canonical forecasts, or the cross-suite FZ DM heatmap. "
         "Lower quantile/FZ loss is better; breach should be read against the 5% "
         "nominal exception rate. Boundary EVT rows at u=0.95 are diagnostics at "
         "the 95% VaR level, not alternative forecasts."
@@ -376,12 +461,17 @@ def _claim_scope_to_latex(*, manifest: Mapping[str, object] | None = None) -> st
         (
             "ml_tail_metrics_per_model.parquet",
             "per-model OOS diagnostics",
-            "no; not a cross-model common-sample table",
+            "24-check inputs only; raw rows are not a cross-model comparison",
         ),
         (
             "ml_tail_result_matrix*.parquet",
             "restricted model-family and increment comparisons",
             "no; restricted sample evidence only",
+        ),
+        (
+            "canonical forecasts + 24-check table",
+            "coverage-admissible cross-suite FZ DM",
+            "yes; conditional on the screen and strict common dates",
         ),
     ]
     lines = [

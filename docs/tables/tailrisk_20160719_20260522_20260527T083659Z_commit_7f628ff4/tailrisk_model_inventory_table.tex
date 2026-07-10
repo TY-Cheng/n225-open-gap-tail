@@ -6,14 +6,14 @@
 \toprule
 family & examples & information & VaR & ES & role \\
 \midrule
-Historical & historical quantile; rolling quantile & target history & empirical quantile & empirical tail mean & benchmark floor \\
-GARCH/GJR & GARCH-t; GJR-GARCH-t & target history & parametric t & parametric t & econometric floor \\
+Historical & historical quantile; rolling quantile & target history & empirical quantile & empirical tail mean & benchmark suite \\
+GARCH/GJR & GARCH-t; GJR-GARCH-t & target history & parametric t & parametric t & econometric benchmark \\
 GARCH-EVT & GJR-GARCH-EVT & target history & filtered POT-GPD & GPD ES & tail benchmark \\
 Advanced econometric & CAViaR; CARE; GAS & target history & recursive/score & varies by family & nonblocking benchmark \\
 Direct LightGBM & LGBM direct quantile & nested information sets & quantile regression & empirical companion & information ladder \\
 LightGBM location-scale & LGBM location-scale empirical & nested information sets & standardized empirical tail & standardized empirical tail & filtered candidate \\
 LightGBM POT-GPD & standardized, median/MAD, median/IQR POT-GPD & nested information sets & standardized POT-GPD & GPD ES & filtered EVT candidate \\
 \midrule
-\multicolumn{6}{l}{\footnotesize Visible notes: inventory table explains forecast construction and paper role. Performance belongs in selected-performance and result-matrix tables.} \\
+\multicolumn{6}{l}{\footnotesize Visible notes: inventory table explains forecast construction and paper role. Performance belongs in the coverage-admissibility, common-sample loss, and full-result tables.} \\
 \bottomrule
 \end{tabular}

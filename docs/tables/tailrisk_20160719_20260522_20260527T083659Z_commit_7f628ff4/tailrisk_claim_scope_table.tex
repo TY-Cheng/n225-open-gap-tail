@@ -7,9 +7,10 @@
 artifact & role & allowed claim \\
 \midrule
 benchmark\_metrics.parquet & baseline benchmarks & yes after clean-run author review \\
-ml\_tail\_metrics.parquet & primary ML nested information sets & yes; current primary comparison is direct quantile \\
-ml\_tail\_metrics\_per\_model.parquet & per-model OOS diagnostics & no; not a cross-model common-sample table \\
+ml\_tail\_metrics.parquet & primary ML nested information sets & yes; direct quantile is the information-set comparator, not the coverage gate \\
+ml\_tail\_metrics\_per\_model.parquet & per-model OOS diagnostics & 24-check inputs only; raw rows are not a cross-model comparison \\
 ml\_tail\_result\_matrix*.parquet & restricted model-family and increment comparisons & no; restricted sample evidence only \\
+canonical forecasts + 24-check table & coverage-admissible cross-suite FZ DM & yes; conditional on the screen and strict common dates \\
 \midrule
 \multicolumn{3}{l}{\footnotesize Visible notes: this map governs table placement. Restricted and diagnostic artifacts may support discussion, but they do not replace primary common-sample evidence.} \\
 \bottomrule

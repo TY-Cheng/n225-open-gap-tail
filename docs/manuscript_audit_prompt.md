@@ -156,8 +156,6 @@ Terms that must stay distinct:
 - "Restricted evidence" means matched-date comparisons or gated diagnostics; it
   does not create a universal model ranking.
 - "Diagnostic evidence" supports interpretation only.
-- "Promoted row" means a side-specific gated candidate row in the locked run.
-  It is not a global winner.
 - "Coverage-admissible model family" means a model family that passes the
   24-check coverage screen. The informal shorthand "pass-all" may identify the
   code path, but manuscript prose should use the formal term.
@@ -223,16 +221,16 @@ Model checks:
   GJR-GARCH-EVT;
   LGBM POT-GPD plain MLE with information set C;
   LGBM POT-GPD UniBM with information set C.
-- Do not confuse the post-24-check comparison set with the side-specific
-  promoted rows in the compact ML table.
+- Do not broaden the post-24-check comparison set beyond the three registered
+  coverage-admissible comparison rows.
 - Verify every stated LightGBM hyperparameter and downstream EVT threshold
   against the locked research_config artifact recorded in the run manifest. Do
   not trust prose from an earlier draft.
 
 Evaluation checks:
 - The primary validation language must be coverage-first: breach rate,
-  exception count, Kupiec unconditional coverage, Christoffersen conditional
-  coverage, quantile loss, and Fissler-Ziegel joint VaR-ES loss.
+  exception count, Kupiec unconditional coverage, Christoffersen independence,
+  quantile loss, and Fissler-Ziegel joint VaR-ES loss.
 - Fissler-Ziegel loss is an evaluation score. Do not relabel it as a separate
   benchmark family.
 - Lower quantile loss or lower Fissler-Ziegel loss alone is not enough for a
@@ -244,8 +242,8 @@ Evaluation checks:
   must state or inherit the same common-sample N within a tail panel.
 - Every N, breach rate, exception count, loss value, p-value, and claim about
   significance must trace to a locked table, figure, manifest, or results
-  snapshot. Check text/table/caption consistency, including the promoted-row
-  p-values reported in the Evidence section.
+  snapshot. Check text/table/caption consistency, including the cross-suite
+  common-sample N and DM p-values reported in the Evidence section.
 - Murphy diagrams, ES severity tables, VaR/ES overlays, stress-window overlays,
   and sensitivity tables are supporting diagnostics unless the main text makes
   them claim-critical.
@@ -261,9 +259,9 @@ Current result interpretation to protect:
   changes loss scores and exception behavior.
 - The main lesson is the tension between average loss improvement and VaR
   exception discipline.
-- In the locked run, the compact ML table reports side-specific promoted rows:
-  one for downside opening-gap risk and one for upside opening-gap risk. These
-  rows are gated candidates, not a universal model ranking.
+- In the locked run, standardized-loss POT-GPD plain MLE and UniBM are the two
+  LGBM families that pass all 24 calibration checks. The paired loss comparison
+  fixes information set C for both.
 - The post-24-check Diebold-Mariano heatmaps compare GJR-GARCH-EVT with the two
   LGBM+EVT information-set-C families on strict common dates. The family-level
   claim is more defensible than declaring one LGBM tail estimator superior.
@@ -291,8 +289,8 @@ Table and figure routing:
 - Main tables and figures should be claim-critical. Avoid leaderboard sprawl.
 - The design table should anchor market timing, sample, data sources, and
   forecast cutoff.
-- Benchmark and ML tables should keep the information-ladder experiment
-  separate from side-specific promoted rows.
+- Benchmark and ML tables should keep the direct-quantile information-ladder
+  experiment separate from the coverage-admissible paired comparison.
 - The target-tail figure is descriptive motivation, not validation.
 - Coverage figures are central because they make exception discipline visible.
 - The cumulative Fissler-Ziegel gain figure should make candidate, anchor, sign
@@ -415,8 +413,8 @@ Automated terminology search:
   with "settlement-to-open opening gap" on first use, then "opening gap".
 - Replace "FZ score", "FZ loss", or "joint score" with "Fissler-Ziegel joint
   VaR-ES loss" on first use; short forms are allowed only after definition.
-- Check for inconsistent uses of "promoted", "restricted", "diagnostic",
-  "primary", "headline", "coverage-admissible", and "post-24-check".
+- Check for inconsistent uses of "restricted", "diagnostic", "primary",
+  "headline", "coverage-admissible", and "post-24-check".
 
 Report format:
 1. Overall verdict: ready for internal circulation, revise before circulation,

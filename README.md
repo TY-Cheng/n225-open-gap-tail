@@ -174,10 +174,12 @@ just snapshot latest
 
 Snapshot export also refreshes the slide-facing model metrics audit under
 `docs/tables/<run_id>/model_metrics_breach_audit.md` and
-`docs/tables/<run_id>/model_metrics_full_rows.csv`.
+`docs/tables/<run_id>/model_metrics_full_rows.csv`. This companion artifact
+covers the breach-neighborhood and sample-eligibility gates; the generated
+Results Snapshot contains the full 24-check screen.
 
 Appendix-only configuration robustness can be generated without changing
-primary/promoted results:
+coverage admissibility or canonical paired-loss results:
 
 ```bash
 just sensitivity latest

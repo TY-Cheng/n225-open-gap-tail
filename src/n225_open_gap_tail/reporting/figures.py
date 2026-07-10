@@ -15,8 +15,6 @@ from matplotlib.lines import Line2D
 
 from n225_open_gap_tail.config.runtime import (
     BENCHMARK_BASELINE_MODEL_NAMES,
-    BOOTSTRAP_REPS,
-    INFERENCE_RANDOM_SEED,
     Mapping,
     ML_TAIL_DIRECT_QUANTILE_MODEL,
     ML_TAIL_LOCATION_SCALE_MODEL,
@@ -29,8 +27,6 @@ from n225_open_gap_tail.config.runtime import (
     np,
     pl,
     PRIMARY_TAIL_SIDE,
-    RESULT_MATRIX_MIN_DM_EXCEPTIONS,
-    RESULT_MATRIX_MIN_DM_ROWS,
     TAIL_SIDE_LEFT,
     TAIL_SIDE_RIGHT,
 )
@@ -39,6 +35,12 @@ from n225_open_gap_tail.config.model_labels import (
     display_model_label,
 )
 from n225_open_gap_tail.inference.core import build_murphy_records
+from n225_open_gap_tail.metrics.cross_suite_dm import (
+    CROSS_SUITE_DM_MODEL_SPECS,
+    cross_suite_dm_gate_status as _cross_suite_dm_gate_status,
+    cross_suite_dm_loss_rows as _cross_suite_dm_loss_rows,
+    cross_suite_dm_records as _cross_suite_dm_records,
+)
 from n225_open_gap_tail.metrics.admissibility import (
     PASS_ALL_COVERAGE_TOLERANCE,
     PASS_ALL_INFORMATION_SETS,
@@ -48,14 +50,9 @@ from n225_open_gap_tail.metrics.admissibility import (
     pass_all_lgbm_model_names,
     pass_all_row_passes,
 )
-from n225_open_gap_tail.reporting.latex import (
-    PROMOTED_TAIL_MODEL_SPECS,
-    _selected_model_performance_rows,
-    _severity_rows,
-)
+from n225_open_gap_tail.reporting.latex import _severity_rows
 from n225_open_gap_tail.metrics.stat_utils import (
     fz_loss,
-    moving_block_one_sided_pvalue,
     quantile_loss,
 )
 
@@ -90,21 +87,16 @@ STRESS_OVERLAY_MARKERS = {
     "LGBM POT-GPD plain MLE (C)": "s",
     "LGBM POT-GPD UniBM (C)": "^",
 }
-CROSS_SUITE_DM_MODEL_SPECS = (
-    ("GJR-GARCH-EVT", "benchmark", BENCHMARK_STRESS_PRIMARY_MODEL, "target_history_only"),
-    (
-        "LGBM plain MLE C",
-        "ml_tail",
-        ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
-        STRESS_OVERLAY_INFORMATION_SET,
-    ),
-    (
-        "LGBM UniBM C",
-        "ml_tail",
-        ML_TAIL_POT_GPD_UNIBM_MODEL,
-        STRESS_OVERLAY_INFORMATION_SET,
-    ),
-)
+FULL_SAMPLE_OVERLAY_COLORS = {
+    "GJR-GARCH-EVT": "#2563eb",
+    "LGBM plain MLE C": "#10b981",
+    "LGBM UniBM C": "#f97316",
+}
+FULL_SAMPLE_OVERLAY_MARKERS = {
+    "GJR-GARCH-EVT": "o",
+    "LGBM plain MLE C": "s",
+    "LGBM UniBM C": "^",
+}
 
 
 @dataclass(frozen=True)
@@ -123,7 +115,6 @@ def export_figures(*, run_dir: Path, manifest: Mapping[str, object]) -> FigureEx
     entries.extend(_target_tail_motivation_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_coverage_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_cumulative_loss_difference_figures(run_dir=run_dir, figure_dir=figure_dir))
-    entries.extend(_selected_model_performance_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_full_sample_var_overlay_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_murphy_figures(run_dir=run_dir, figure_dir=figure_dir))
     entries.extend(_lgbm_24check_murphy_figures(run_dir=run_dir, figure_dir=figure_dir))
@@ -636,89 +627,6 @@ def _cumulative_loss_difference_figures(
     )
 
 
-def _selected_model_performance_figures(
-    *, run_dir: Path, figure_dir: Path
-) -> list[dict[str, object]]:
-    frame = _selected_performance_frame(run_dir)
-    if frame.is_empty() or "tail_side" not in frame.columns:
-        return []
-    entries: list[dict[str, object]] = []
-    for tail_side in _available_tail_sides(frame):
-        side = frame.filter(pl.col("tail_side") == tail_side)
-        if side.is_empty():
-            continue
-        side = side.sort(["suite_order", "selection_rank", "model_label"])
-        labels = [
-            f"{row.get('suite_group')} | {row.get('model_label')}"
-            for row in side.iter_rows(named=True)
-        ]
-        colors = [_suite_color(str(row.get("suite_key"))) for row in side.iter_rows(named=True)]
-        breach = _series_percent(side, "var_breach_rate")
-        fz_loss = [float(_optional_float(value) or 0.0) for value in side["mean_fz_loss"].to_list()]
-        fig, axes = plt.subplots(1, 2, figsize=(13.2, max(5.0, len(labels) * 0.42)))
-        y = np.arange(len(labels))
-        axes[0].barh(y, breach, color=colors, alpha=0.88)
-        expected = _first_float(side, "expected_breach_rate") or 0.05
-        axes[0].axvline(expected * 100.0, color="#111827", linestyle="--", linewidth=1.25)
-        axes[0].set_xlabel("VaR breach rate (%)")
-        axes[0].set_title("Coverage")
-        axes[0].set_yticks(y, [_short_label(label, max_len=44) for label in labels])
-        axes[1].barh(y, fz_loss, color=colors, alpha=0.88)
-        axes[1].set_xlabel("Mean FZ loss (lower is better)")
-        axes[1].set_title("VaR-ES scoring")
-        axes[1].set_yticks(y, [""] * len(labels))
-        fig.suptitle(f"Selected Benchmark-vs-LGBM performance ({_label_tail_side(tail_side)})")
-        for ax in axes:
-            _style_axes(ax)
-        caption = (
-            f"Selected Benchmark-vs-LGBM performance for {tail_side}. Rows are selected "
-            "within each broad group by a deterministic rule: sufficient rows, VaR "
-            "coverage within the tolerance band, then lower FZ loss and quantile loss. "
-            "Full per-model results remain in appendix tables."
-        )
-        entries.extend(
-            _save_figure(
-                fig,
-                run_dir=run_dir,
-                figure_dir=figure_dir,
-                name=f"selected_model_performance_{tail_side}",
-                source_artifacts=[
-                    "metrics/benchmark_metrics_per_model.parquet",
-                    "metrics/ml_tail_metrics_per_model.parquet",
-                ],
-                tail_side=tail_side,
-                caption=caption,
-                claim_scope="selected_benchmark_vs_lgbm_main_figure_not_full_result_set",
-            )
-        )
-    return entries
-
-
-def _selected_performance_frame(run_dir: Path) -> pl.DataFrame:
-    benchmark = _read_optional_parquet(run_dir / "metrics" / "benchmark_metrics_per_model.parquet")
-    ml_tail = _read_optional_parquet(run_dir / "metrics" / "ml_tail_metrics_per_model.parquet")
-    rows = _selected_model_performance_rows(benchmark, ml_tail)
-    if not rows:
-        return pl.DataFrame()
-    frame = pl.DataFrame(rows)
-    return frame.with_columns(
-        pl.when(pl.col("suite_group") == "Benchmark")
-        .then(pl.lit(0))
-        .otherwise(pl.lit(1))
-        .alias("suite_order"),
-        pl.when(pl.col("suite_group") == "Benchmark")
-        .then(pl.lit("benchmark"))
-        .otherwise(pl.lit("lgbm"))
-        .alias("suite_key"),
-        (
-            _model_label_expr()
-            + pl.when(pl.col("suite_group") == "LGBM")
-            .then(pl.lit(" / ") + _information_set_label_expr())
-            .otherwise(pl.lit(""))
-        ).alias("model_label"),
-    )
-
-
 def _coverage_select(frame: pl.DataFrame) -> pl.DataFrame:
     required = {"model_name", "tail_side", "var_breach_rate", "expected_breach_rate"}
     if frame.is_empty() or not required.issubset(frame.columns):
@@ -1027,12 +935,13 @@ def _full_sample_var_overlay_figures(*, run_dir: Path, figure_dir: Path) -> list
                 ],
                 tail_side=tail_side,
                 caption=(
-                    f"Full-sample VaR overlay for {tail_side}. The benchmark comparator "
-                    "is fixed as GJR-GARCH-EVT with GJR-GARCH-t fallback; the ML-tail "
-                    "line is the locked side-specific promoted candidate. The figure is "
-                    "a visual diagnostic and not a post-hoc best-model selection."
+                    f"Full-sample VaR overlay for {tail_side}. The fixed post-24-check "
+                    "comparison set contains GJR-GARCH-EVT, LGBM plain MLE C, and LGBM "
+                    "UniBM C. Colored markers identify each model's VaR exceptions. The "
+                    "figure is a visual diagnostic; formal comparison uses the strict "
+                    "common-sample FZ DM analysis."
                 ),
-                claim_scope="full_sample_var_overlay_fixed_selection_visual_diagnostic",
+                claim_scope="full_sample_var_overlay_coverage_admissible_set_diagnostic",
             )
         )
     return entries
@@ -1123,181 +1032,6 @@ def _dm_heatmap_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, ob
     return entries
 
 
-def _cross_suite_dm_loss_rows(run_dir: Path) -> pl.DataFrame:
-    frames: list[pl.DataFrame] = []
-    forecast_specs = (
-        (run_dir / "forecasts" / "benchmark_forecasts.parquet", "benchmark"),
-        (run_dir / "forecasts" / "ml_tail_forecasts.parquet", "ml_tail"),
-    )
-    required = {
-        "forecast_date",
-        "tail_side",
-        "model_name",
-        "information_set",
-        "tail_level",
-        "realized_loss",
-        "var_forecast",
-        "es_forecast",
-    }
-    for path, suite in forecast_specs:
-        frame = _read_optional_parquet(path)
-        if frame.is_empty() or not required.issubset(frame.columns):
-            continue
-        frame = _valid_forecast_rows(frame)
-        rows: list[dict[str, object]] = []
-        for label, spec_suite, model_name, information_set in CROSS_SUITE_DM_MODEL_SPECS:
-            if spec_suite != suite:
-                continue
-            selected = frame.filter(
-                (pl.col("model_name") == model_name)
-                & (pl.col("information_set") == information_set)
-            )
-            for row in selected.iter_rows(named=True):
-                loss = _optional_float(row.get("realized_loss"))
-                var = _optional_float(row.get("var_forecast"))
-                es = _optional_float(row.get("es_forecast"))
-                tail_level = _optional_float(row.get("tail_level"))
-                if loss is None or var is None or es is None or tail_level is None:
-                    continue
-                score = fz_loss(loss, var, es, tail_level)
-                if not np.isfinite(score):
-                    continue
-                rows.append(
-                    {
-                        "plot_label": label,
-                        "suite": suite,
-                        "model_name": model_name,
-                        "information_set": information_set,
-                        "forecast_date": str(row["forecast_date"]),
-                        "target_family": row.get("target_family"),
-                        "tail_side": row.get("tail_side"),
-                        "tail_level": tail_level,
-                        "realized_loss": loss,
-                        "var_forecast": var,
-                        "fz_loss": score,
-                    }
-                )
-        if rows:
-            frames.append(pl.from_dicts(rows, infer_schema_length=None))
-    return pl.concat(frames, how="diagonal_relaxed") if frames else pl.DataFrame()
-
-
-def _cross_suite_dm_records(loss_rows: pl.DataFrame, tail_side: str) -> list[dict[str, object]]:
-    if loss_rows.is_empty() or "tail_side" not in loss_rows.columns:
-        return []
-    tail_rows = loss_rows.filter(pl.col("tail_side") == tail_side)
-    if tail_rows.is_empty():
-        return []
-    labels = [spec[0] for spec in CROSS_SUITE_DM_MODEL_SPECS]
-    date_sets: list[set[str]] = []
-    for label in labels:
-        dates = set(
-            tail_rows.filter(pl.col("plot_label") == label)["forecast_date"].drop_nulls().to_list()
-        )
-        date_sets.append({str(value) for value in dates})
-    common_dates = sorted(set.intersection(*date_sets)) if all(date_sets) else []
-    row_by_label_date = {
-        (str(row["plot_label"]), str(row["forecast_date"])): row
-        for row in tail_rows.iter_rows(named=True)
-    }
-    records: list[dict[str, object]] = []
-    for candidate_label in labels:
-        for anchor_label in labels:
-            if candidate_label == anchor_label:
-                continue
-            records.append(
-                _cross_suite_dm_pair_record(
-                    candidate_label=candidate_label,
-                    anchor_label=anchor_label,
-                    common_dates=common_dates,
-                    row_by_label_date=row_by_label_date,
-                    tail_side=tail_side,
-                )
-            )
-    return records
-
-
-def _cross_suite_dm_pair_record(
-    *,
-    candidate_label: str,
-    anchor_label: str,
-    common_dates: list[str],
-    row_by_label_date: dict[tuple[str, str], dict[str, object]],
-    tail_side: str,
-) -> dict[str, object]:
-    diffs: list[float] = []
-    joint_exception_count = 0
-    for forecast_date in common_dates:
-        candidate = row_by_label_date.get((candidate_label, forecast_date))
-        anchor = row_by_label_date.get((anchor_label, forecast_date))
-        if candidate is None or anchor is None:
-            continue
-        candidate_fz = _optional_float(candidate.get("fz_loss"))
-        anchor_fz = _optional_float(anchor.get("fz_loss"))
-        if candidate_fz is not None and anchor_fz is not None:
-            diffs.append(candidate_fz - anchor_fz)
-        joint_exception_count += int(
-            _forecast_row_breached(candidate) or _forecast_row_breached(anchor)
-        )
-    diff_array = np.array(diffs, dtype=float)
-    diff_array = diff_array[np.isfinite(diff_array)]
-    paired_rows = int(diff_array.size)
-    mean_diff = float(np.mean(diff_array)) if paired_rows else None
-    block_length = max(5, round(paired_rows ** (1.0 / 3.0))) if paired_rows else None
-    inference_status = _cross_suite_dm_gate_status(
-        common_n=len(common_dates),
-        joint_exception_count=joint_exception_count,
-    )
-    pvalue = (
-        moving_block_one_sided_pvalue(
-            diff_array,
-            observed_mean=mean_diff,
-            reps=BOOTSTRAP_REPS,
-            block_length=int(block_length),
-            rng=np.random.default_rng(INFERENCE_RANDOM_SEED),
-        )
-        if inference_status == "ok_block_bootstrap_dm"
-        and mean_diff is not None
-        and block_length is not None
-        else None
-    )
-    return {
-        "comparison_family": "pass_all_cross_suite_pairwise",
-        "loss_family": "var_es_fz_loss",
-        "tail_side": tail_side,
-        "candidate_label": candidate_label,
-        "anchor_label": anchor_label,
-        "common_n": len(common_dates),
-        "paired_rows": paired_rows,
-        "joint_exception_count": joint_exception_count,
-        "mean_fz_loss_diff_candidate_minus_anchor": mean_diff,
-        "pvalue_one_sided": pvalue,
-        "reject_10pct": pvalue is not None and pvalue < 0.10,
-        "bootstrap_reps": BOOTSTRAP_REPS,
-        "bootstrap_seed": INFERENCE_RANDOM_SEED,
-        "block_length": block_length,
-        "alternative": "candidate_mean_fz_loss_less_than_anchor",
-        "null_hypothesis": "E[FZ_candidate_minus_anchor] >= 0",
-        "inference_status": inference_status,
-    }
-
-
-def _cross_suite_dm_gate_status(*, common_n: int, joint_exception_count: int) -> str:
-    if common_n == 0:
-        return "unavailable_no_global_common_sample"
-    if common_n < RESULT_MATRIX_MIN_DM_ROWS:
-        return "unavailable_insufficient_common_rows_for_inference"
-    if joint_exception_count < RESULT_MATRIX_MIN_DM_EXCEPTIONS:
-        return "unavailable_insufficient_tail_events_for_inference"
-    return "ok_block_bootstrap_dm"
-
-
-def _forecast_row_breached(row: dict[str, object]) -> bool:
-    loss = _optional_float(row.get("realized_loss"))
-    var = _optional_float(row.get("var_forecast"))
-    return loss is not None and var is not None and loss > var
-
-
 def _dm_heatmap_annotation(record: dict[str, object] | None) -> str:
     if record is None:
         return "n/a"
@@ -1338,41 +1072,6 @@ def _information_order(value: object) -> int:
         return INFORMATION_LADDER_ORDER.index(text)
     except ValueError:
         return len(INFORMATION_LADDER_ORDER) + 1
-
-
-def _metric_row_for_model(
-    frame: pl.DataFrame,
-    *,
-    tail_side: str,
-    model_names: tuple[str, ...],
-) -> dict[str, object] | None:
-    required = {"tail_side", "model_name"}
-    if frame.is_empty() or not required.issubset(frame.columns):
-        return None
-    for model_name in model_names:
-        selected = frame.filter(
-            (pl.col("tail_side") == tail_side) & (pl.col("model_name") == model_name)
-        )
-        if not selected.is_empty():
-            return dict(selected.row(0, named=True))
-    return None
-
-
-def _promoted_metric_for_tail(frame: pl.DataFrame, tail_side: str) -> dict[str, object] | None:
-    required = {"tail_side", "model_name", "information_set"}
-    if frame.is_empty() or not required.issubset(frame.columns):
-        return None
-    for spec in PROMOTED_TAIL_MODEL_SPECS:
-        if spec.get("tail_side") != tail_side:
-            continue
-        selected = frame.filter(
-            (pl.col("tail_side") == spec["tail_side"])
-            & (pl.col("model_name") == spec["model_name"])
-            & (pl.col("information_set") == spec["information_set"])
-        )
-        if not selected.is_empty():
-            return dict(selected.row(0, named=True))
-    return None
 
 
 def _all_loss_rows(run_dir: Path) -> pl.DataFrame:
@@ -1561,13 +1260,6 @@ def _select_loss_identity(
     return selected
 
 
-def _promoted_spec_for_tail(tail_side: str) -> Mapping[str, object] | None:
-    for spec in PROMOTED_TAIL_MODEL_SPECS:
-        if spec.get("tail_side") == tail_side:
-            return spec
-    return None
-
-
 def _stress_overlay_forecasts(run_dir: Path) -> pl.DataFrame:
     frames: list[pl.DataFrame] = []
     benchmark = _read_optional_parquet(run_dir / "forecasts" / "benchmark_forecasts.parquet")
@@ -1631,39 +1323,27 @@ def _stress_lgbm_label(model_name: str) -> str:
 
 
 def _full_sample_var_overlay_forecasts(run_dir: Path) -> pl.DataFrame:
+    sources = {
+        "benchmark": _read_optional_parquet(run_dir / "forecasts" / "benchmark_forecasts.parquet"),
+        "ml_tail": _read_optional_parquet(run_dir / "forecasts" / "ml_tail_forecasts.parquet"),
+    }
     frames: list[pl.DataFrame] = []
-    benchmark = _read_optional_parquet(run_dir / "forecasts" / "benchmark_forecasts.parquet")
-    if not benchmark.is_empty():
+    for order, (label, suite, model_name, information_set) in enumerate(CROSS_SUITE_DM_MODEL_SPECS):
+        source = sources[suite]
+        if source.is_empty():
+            continue
         for tail_side in (TAIL_SIDE_LEFT, TAIL_SIDE_RIGHT):
-            selected = _metric_forecast_for_model(
-                benchmark,
-                tail_side=tail_side,
-                model_names=(BENCHMARK_STRESS_PRIMARY_MODEL, BENCHMARK_STRESS_FALLBACK_MODEL),
-            )
-            if not selected.is_empty():
-                frames.append(
-                    selected.with_columns(
-                        pl.lit("Benchmark comparator").alias("plot_group"),
-                        pl.lit(0).alias("plot_order"),
-                    )
-                )
-    ml_tail = _read_optional_parquet(run_dir / "forecasts" / "ml_tail_forecasts.parquet")
-    if not ml_tail.is_empty():
-        for tail_side in (TAIL_SIDE_LEFT, TAIL_SIDE_RIGHT):
-            promoted = _promoted_spec_for_tail(tail_side)
-            if promoted is None:
-                continue
             selected = _metric_forecast_for_identity(
-                ml_tail,
+                source,
                 tail_side=tail_side,
-                model_name=str(promoted["model_name"]),
-                information_set=str(promoted["information_set"]),
+                model_name=model_name,
+                information_set=information_set,
             )
             if not selected.is_empty():
                 frames.append(
                     selected.with_columns(
-                        pl.lit("Promoted ML-tail").alias("plot_group"),
-                        pl.lit(1).alias("plot_order"),
+                        pl.lit(label).alias("plot_group"),
+                        pl.lit(order).alias("plot_order"),
                     )
                 )
     if not frames:
@@ -1960,10 +1640,6 @@ def _plot_full_sample_var_overlay_panel(
         alpha=0.78,
         label="realized loss",
     )
-    colors = {
-        "Benchmark comparator": "#475569",
-        "Promoted ML-tail": "#7c3aed",
-    }
     for group, group_frame in frame.sort("plot_order").group_by("plot_group", maintain_order=True):
         label = str(group[0] if isinstance(group, tuple) else group)
         series = (
@@ -1974,13 +1650,15 @@ def _plot_full_sample_var_overlay_panel(
         ax.plot(
             _plot_date_values(series["forecast_date"].to_list()),
             series["var_forecast"].to_list(),
-            color=colors.get(label, "#64748b"),
+            color=FULL_SAMPLE_OVERLAY_COLORS.get(label, "#64748b"),
             linewidth=1.35,
             label=f"{label} VaR",
         )
-    promoted = frame.filter(pl.col("plot_group") == "Promoted ML-tail")
-    if "var_breach" in promoted.columns:
-        breaches = promoted.filter(pl.col("var_breach").fill_null(False))
+        breaches = (
+            series.filter(pl.col("var_breach").fill_null(False))
+            if "var_breach" in series.columns
+            else series.filter(pl.col("realized_loss") > pl.col("var_forecast"))
+        )
         if not breaches.is_empty():
             breach_points = (
                 breaches.select(["forecast_date", "realized_loss"]).unique().sort("forecast_date")
@@ -1988,9 +1666,12 @@ def _plot_full_sample_var_overlay_panel(
             ax.scatter(
                 _plot_date_values(breach_points["forecast_date"].to_list()),
                 breach_points["realized_loss"].to_list(),
-                s=18,
-                color="#dc2626",
-                label="promoted VaR breach",
+                s=20,
+                color=FULL_SAMPLE_OVERLAY_COLORS.get(label, "#64748b"),
+                marker=FULL_SAMPLE_OVERLAY_MARKERS.get(label, "o"),
+                edgecolors="white",
+                linewidths=0.4,
+                label=f"{label} breach",
                 zorder=5,
             )
     ax.axhline(0.0, color="#111827", linewidth=0.8, linestyle="--", alpha=0.7)
@@ -1998,48 +1679,8 @@ def _plot_full_sample_var_overlay_panel(
     ax.set_ylabel("Realized loss and VaR")
     ax.set_xlabel("Forecast date")
     _set_monthly_date_ticks(ax)
-    ax.legend(frameon=False, fontsize=7, ncol=2)
+    ax.legend(frameon=False, fontsize=7, ncol=3)
     _style_axes(ax)
-
-
-def _compact_dm_rows(dm: pl.DataFrame, tail_side: str) -> pl.DataFrame:
-    rows: list[dict[str, object]] = []
-    candidates = [
-        (
-            "information_set_ladder",
-            "information_set_increment",
-            "japan_only",
-            "japan_only_plus_us_close_core",
-            None,
-        ),
-    ]
-    promoted = _promoted_spec_for_tail(tail_side)
-    if promoted is not None:
-        candidates.append(
-            (
-                "tail_model_family",
-                "model_family",
-                ML_TAIL_DIRECT_QUANTILE_MODEL,
-                str(promoted["model_name"]),
-                str(promoted["information_set"]),
-            )
-        )
-    for family, axis, baseline, candidate, information_set in candidates:
-        for loss_family in ("var_es_fz_loss", "var_quantile_loss"):
-            selected = dm.filter(
-                (pl.col("tail_side") == tail_side)
-                & (pl.col("comparison_family") == family)
-                & (pl.col("comparison_axis") == axis)
-                & (pl.col("baseline_entity") == baseline)
-                & (pl.col("candidate_entity") == candidate)
-                & (pl.col("loss_family") == loss_family)
-            )
-            if information_set is not None and "information_set" in selected.columns:
-                selected = selected.filter(pl.col("information_set") == information_set)
-            if not selected.is_empty():
-                rows.append(dict(selected.row(0, named=True)))
-                break
-    return pl.DataFrame(rows) if rows else pl.DataFrame()
 
 
 def _ordered_unique(values: list[object]) -> list[str]:

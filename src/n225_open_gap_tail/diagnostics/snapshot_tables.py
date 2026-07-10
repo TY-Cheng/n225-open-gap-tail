@@ -115,12 +115,17 @@ def _claim_scope_markdown_table() -> str:
                 "Matched-date comparison for model families and within-model increments.",
             ),
             (
+                "24-check screen and cross-suite FZ DM",
+                "Yes, conditional on the screen",
+                "Primary coverage-first comparison among the fixed coverage-admissible set on one strict common sample per tail.",
+            ),
+            (
                 "Timing, target, information-ladder, coverage figures",
                 "Supporting main-text evidence",
                 "Design/motivation/headline visualization; still read with tables and gates.",
             ),
             (
-                "Stress, Murphy, and DM heatmaps",
+                "Stress, Murphy, and overlay figures",
                 "Diagnostic only",
                 "Useful for interpretation, not automatic model-selection evidence.",
             ),

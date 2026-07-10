@@ -1,0 +1,20 @@
+% run_id: tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4
+% git_commit: 7f628ff4f66258a36314f492b652cdf7ef594b7e
+% config_hash: 874b7125bfae77a6fb261d40af0f987d89e5bae1e5ebc54a3958be66f9c17b4c
+% table_scope: coverage_admissibility_24check_table
+\begin{tabular}{lrrrrl}
+\toprule
+LGBM family & eligible/8 & breach/8 & Kupiec/8 & Christoffersen independence/8 & admissible \\
+\midrule
+LGBM direct quantile & 8/8 & 0/8 & 0/8 & 8/8 & no \\
+LGBM location-scale empirical & 8/8 & 8/8 & 7/8 & 8/8 & no \\
+LGBM POT-GPD plain MLE & 8/8 & 8/8 & 8/8 & 8/8 & yes \\
+LGBM POT-GPD UniBM block-maxima shape & 8/8 & 8/8 & 8/8 & 8/8 & yes \\
+LGBM median/MAD POT-GPD plain MLE & 8/8 & 6/8 & 5/8 & 7/8 & no \\
+LGBM median/MAD POT-GPD UniBM block-maxima shape & 8/8 & 6/8 & 3/8 & 8/8 & no \\
+LGBM median/IQR POT-GPD plain MLE & 8/8 & 8/8 & 7/8 & 8/8 & no \\
+LGBM median/IQR POT-GPD UniBM block-maxima shape & 8/8 & 8/8 & 7/8 & 8/8 & no \\
+\midrule
+\multicolumn{6}{l}{\footnotesize The 24-check screen is two tail sides times four information sets times the breach-rate band, Kupiec unconditional coverage, and Christoffersen independence. N >= 450 is an eligibility precondition.} \\
+\bottomrule
+\end{tabular}

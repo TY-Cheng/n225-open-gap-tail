@@ -598,6 +598,8 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     assert "### Evidence Map" in rendered
     assert "## 5. Figures, Tables, And Source Artifacts" in rendered
     assert "### 5.3 Table interpretation guide" in rendered
+    assert "tailrisk_cross_suite_fz_dm_table.tex" in rendered
+    assert "tailrisk_lgbm_24check_table.tex" in rendered
     assert "### 5.2 Generated table manifest" in rendered
     assert "ml_tail_nested_information_set_table" in rendered
     assert "![es_severity_right_tail]" in rendered
@@ -608,6 +610,10 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     assert "Coverage review:" in rendered
     assert "must not be read as forecast improvement" in rendered
     assert "on average across the unconditional evaluation sample" in rendered
+    assert "### 4.5 Coverage-admissibility screen and cross-suite FZ DM evidence" in rendered
+    assert "24-check evidence is unavailable" in rendered
+    assert "Cross-suite FZ DM evidence is unavailable" in rendered
+    assert "current forecast artifacts evaluate only `full_gap_settle_to_open`" in rendered
 
 
 def test_target_tail_diagnostics_markdown_reports_raw_target_boundary() -> None:
@@ -764,6 +770,43 @@ def test_results_discussion_coverage_sentence_uses_test_fields() -> None:
     assert "Kupiec p-values fall below 0.05 in `1/2`" in sentence
     assert "Christoffersen p-values fall below 0.05 in `1/2`" in sentence
     assert "Coverage review is descriptive" in missing
+
+
+def test_results_discussion_marks_secondary_targets_as_deferred() -> None:
+    rendered = results_discussion_module.generate_results_discussion(
+        manifest={},
+        paths={
+            key: Path("missing")
+            for key in (
+                "benchmark_forecasts",
+                "benchmark_dm_inference",
+                "ml_tail_dm_inference",
+                "ml_tail_result_matrix_dm",
+                "ml_tail_model_eviction",
+                "ml_tail_metrics_per_model",
+                "lgbm_24check_murphy",
+                "ml_tail_feature_unavailability",
+                "promoted_tail_diagnostics",
+                "es_severity_table",
+                "result_matrix_summary_table",
+            )
+        },
+        data_vintage={},
+        benchmark_status={},
+        ml_tail_status={},
+        leakage_summary={},
+        figure_manifest={},
+        panel=pl.DataFrame(),
+        calendar=pl.DataFrame(),
+        benchmark_metrics=pl.DataFrame(),
+        ml_tail_metrics=pl.DataFrame(),
+        result_matrix=pl.DataFrame(),
+        benchmark_stress=pl.DataFrame(),
+        ml_tail_stress=pl.DataFrame(),
+    )
+
+    assert "current forecast artifacts evaluate only `full_gap_settle_to_open`" in rendered
+    assert "close-to-open and night-close-to-open target variants remain deferred" in rendered
 
 
 def test_results_discussion_private_helpers_cover_fallbacks(tmp_path: Path) -> None:
@@ -1008,14 +1051,6 @@ def test_snapshot_private_helpers_cover_defensive_edges() -> None:
     )
     assert "benchmark_baseline" in all_model_table
     assert "LGBM POT-GPD plain MLE" in all_model_table
-    dm_ok = {
-        "mean_loss_diff_candidate_minus_baseline": -0.1,
-        "pvalue_one_sided": 0.04,
-        "reject_10pct": True,
-    }
-    assert "reject10" in snapshot_module._snapshot_dm_cell(dm_ok)
-    assert snapshot_module._snapshot_dm_cell({"inference_status": "skipped"}) == "skipped"
-    assert snapshot_module._snapshot_dm_cell(None) == "n/a"
     assert "baseline" in snapshot_module._benchmark_layer_table(
         {
             "benchmark_baseline_forecast_rows": 10,
@@ -1548,10 +1583,10 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
     assert "Figure 2. Opening-Gap Tail Motivation" in gallery
     assert "Figure 3. Cumulative FZ-Gain Diagnostics" in gallery
     assert "Figure 4. Full Coverage Breach-Rate Diagnostics" in gallery
-    assert "Figure 6. Full-Sample VaR Overlay Diagnostics" in gallery
-    assert "Figure 7. VaR/ES Stress-Window Overlays" in gallery
-    assert "Figure 8. DM Heatmaps" in gallery
-    assert "Figure 10. 24-Check LGBM Murphy Diagnostics" in gallery
+    assert "Figure 5. Full-Sample VaR Overlay Diagnostics" in gallery
+    assert "Figure 6. VaR/ES Stress-Window Overlays" in gallery
+    assert "Figure 7. DM Heatmaps" in gallery
+    assert "Figure 9. 24-Check LGBM Murphy Diagnostics" in gallery
     assert "target_tail_motivation.png" in gallery
     assert "coverage_breach_rates_left_tail.png" in gallery
     assert "Figure artifacts are not available" in snapshot_gallery.figure_gallery_markdown(

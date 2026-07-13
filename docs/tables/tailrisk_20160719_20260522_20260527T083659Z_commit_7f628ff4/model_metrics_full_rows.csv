@@ -1,89 +1,89 @@
 group,tail,info,model,N,breach,breach_pass,gate_pass,q_loss,fz_loss,severity
-Benchmark,Left,Target history,care_expectile_asymmetric_slope,627,0.07815,False,False,0.00144,-3.621661,0.007879
-Benchmark,Left,Target history,care_expectile_sav,620,0.067742,True,True,0.001456,-3.607506,0.008946
-Benchmark,Left,Target history,caviar_asymmetric_slope,508,0.070866,True,True,0.001564,-3.532426,0.00941
-Benchmark,Left,Target history,caviar_sav,498,0.058233,True,True,0.001568,-3.54007,0.011676
-Benchmark,Left,Target history,ewma_vol_scaled,722,0.052632,True,True,0.001409,-3.647462,0.008636
-Benchmark,Left,Target history,garch_t,722,0.060942,True,True,0.001368,-3.701083,0.008609
-Benchmark,Left,Target history,gas_t_location_scale,722,0.063712,True,True,0.001352,-3.693506,0.00867
-Benchmark,Left,Target history,gas_t_pot_gpd,223,0.044843,True,False,0.001277,-3.789288,0.006754
-Benchmark,Left,Target history,gjr_garch_evt,722,0.060942,True,True,0.00133,-3.746233,0.007631
-Benchmark,Left,Target history,gjr_garch_t,722,0.070637,True,True,0.001338,-3.723459,0.007359
-Benchmark,Left,Target history,historical_quantile,722,0.055402,True,True,0.001476,-3.540661,0.01214
-Benchmark,Left,Target history,rolling_quantile,722,0.058172,True,True,0.001481,-3.524684,0.011683
-Benchmark,Right,Target history,care_expectile_asymmetric_slope,679,0.079529,False,False,0.001327,-3.531389,0.00867
-Benchmark,Right,Target history,care_expectile_sav,679,0.08542,False,False,0.001372,-3.474738,0.008198
-Benchmark,Right,Target history,caviar_asymmetric_slope,504,0.06746,True,True,0.001494,-3.466189,0.01072
-Benchmark,Right,Target history,caviar_sav,504,0.063492,True,True,0.001558,-3.407822,0.011629
-Benchmark,Right,Target history,ewma_vol_scaled,722,0.045706,True,True,0.001342,-3.656615,0.009787
-Benchmark,Right,Target history,garch_t,722,0.041551,True,True,0.001278,-3.703374,0.010888
-Benchmark,Right,Target history,gas_t_location_scale,722,0.049861,True,True,0.001307,-3.668339,0.010514
-Benchmark,Right,Target history,gas_t_pot_gpd,223,0.085202,False,False,0.001785,-3.033734,0.012794
-Benchmark,Right,Target history,gjr_garch_evt,722,0.058172,True,True,0.001233,-3.708574,0.008988
-Benchmark,Right,Target history,gjr_garch_t,722,0.042936,True,True,0.001222,-3.739711,0.010272
-Benchmark,Right,Target history,historical_quantile,722,0.069252,True,True,0.001502,-3.406776,0.012003
-Benchmark,Right,Target history,rolling_quantile,722,0.072022,True,True,0.001496,-3.427318,0.01148
-LGBM,Left,JP only,LGBM direct quantile,554,0.079422,False,False,0.001404,-3.475021,0.00894
-LGBM,Left,JP + US close core,LGBM direct quantile,554,0.108303,False,False,0.00115,-3.678881,0.006263
-LGBM,Left,JP + US close core + JP proxy,LGBM direct quantile,527,0.117647,False,False,0.001114,-3.868878,0.005511
-LGBM,Left,JP + US close core + JP proxy + Asia proxy,LGBM direct quantile,527,0.117647,False,False,0.001119,-3.807595,0.005581
-LGBM,Left,JP only,LGBM location-scale empirical,508,0.05315,True,True,0.001487,-3.554176,0.009866
-LGBM,Left,JP + US close core,LGBM location-scale empirical,506,0.061265,True,True,0.000988,-4.050495,0.005722
-LGBM,Left,JP + US close core + JP proxy,LGBM location-scale empirical,492,0.065041,True,True,0.000988,-4.142323,0.005532
-LGBM,Left,JP + US close core + JP proxy + Asia proxy,LGBM location-scale empirical,492,0.071138,True,True,0.000986,-4.058506,0.00482
-LGBM,Left,JP only,LGBM median/IQR POT-GPD plain MLE,554,0.036101,True,True,0.001383,-3.679215,0.010818
-LGBM,Left,JP + US close core,LGBM median/IQR POT-GPD plain MLE,553,0.052441,True,True,0.000965,-4.1412,0.006841
-LGBM,Left,JP + US close core + JP proxy,LGBM median/IQR POT-GPD plain MLE,526,0.047529,True,True,0.000904,-4.198353,0.006541
-LGBM,Left,JP + US close core + JP proxy + Asia proxy,LGBM median/IQR POT-GPD plain MLE,527,0.058824,True,True,0.000917,-4.222471,0.005493
-LGBM,Left,JP only,LGBM median/IQR POT-GPD UniBM block-maxima shape,554,0.036101,True,True,0.001383,-3.684175,0.010625
-LGBM,Left,JP + US close core,LGBM median/IQR POT-GPD UniBM block-maxima shape,553,0.052441,True,True,0.00096,-4.113223,0.006824
-LGBM,Left,JP + US close core + JP proxy,LGBM median/IQR POT-GPD UniBM block-maxima shape,527,0.047438,True,True,0.000907,-4.261671,0.006703
-LGBM,Left,JP + US close core + JP proxy + Asia proxy,LGBM median/IQR POT-GPD UniBM block-maxima shape,527,0.058824,True,True,0.000914,-4.21362,0.005463
-LGBM,Left,JP only,LGBM median/MAD POT-GPD plain MLE,484,0.051653,True,True,0.00149,-3.597317,0.011229
-LGBM,Left,JP + US close core,LGBM median/MAD POT-GPD plain MLE,484,0.06405,True,True,0.001067,-4.119314,0.008183
-LGBM,Left,JP + US close core + JP proxy,LGBM median/MAD POT-GPD plain MLE,474,0.067511,True,True,0.000966,-4.31034,0.006367
-LGBM,Left,JP + US close core + JP proxy + Asia proxy,LGBM median/MAD POT-GPD plain MLE,474,0.065401,True,True,0.000993,-4.269625,0.006902
-LGBM,Left,JP only,LGBM median/MAD POT-GPD UniBM block-maxima shape,484,0.051653,True,True,0.001491,-3.598519,0.011303
-LGBM,Left,JP + US close core,LGBM median/MAD POT-GPD UniBM block-maxima shape,484,0.066116,True,True,0.001071,-4.14672,0.00814
-LGBM,Left,JP + US close core + JP proxy,LGBM median/MAD POT-GPD UniBM block-maxima shape,474,0.07384,True,True,0.00098,-4.28113,0.006233
-LGBM,Left,JP + US close core + JP proxy + Asia proxy,LGBM median/MAD POT-GPD UniBM block-maxima shape,474,0.07384,True,True,0.001005,-4.259353,0.006443
-LGBM,Left,JP only,LGBM POT-GPD plain MLE,484,0.055785,True,True,0.00152,-3.525293,0.009821
-LGBM,Left,JP + US close core,LGBM POT-GPD plain MLE,482,0.058091,True,True,0.000997,-4.080408,0.005945
-LGBM,Left,JP + US close core + JP proxy,LGBM POT-GPD plain MLE,473,0.059197,True,True,0.00099,-4.151901,0.005868
-LGBM,Left,JP + US close core + JP proxy + Asia proxy,LGBM POT-GPD plain MLE,473,0.065539,True,True,0.000987,-4.090892,0.005035
-LGBM,Left,JP only,LGBM POT-GPD UniBM block-maxima shape,484,0.055785,True,True,0.001516,-3.511702,0.009658
-LGBM,Left,JP + US close core,LGBM POT-GPD UniBM block-maxima shape,483,0.064182,True,True,0.000998,-4.074074,0.00568
-LGBM,Left,JP + US close core + JP proxy,LGBM POT-GPD UniBM block-maxima shape,473,0.063425,True,True,0.000998,-4.131158,0.005952
-LGBM,Left,JP + US close core + JP proxy + Asia proxy,LGBM POT-GPD UniBM block-maxima shape,473,0.065539,True,True,0.000998,-4.056911,0.005497
-LGBM,Right,JP only,LGBM direct quantile,554,0.093863,False,False,0.001273,-3.530485,0.007334
-LGBM,Right,JP + US close core,LGBM direct quantile,554,0.113718,False,False,0.001211,-3.548401,0.006614
-LGBM,Right,JP + US close core + JP proxy,LGBM direct quantile,527,0.11575,False,False,0.001211,-3.557463,0.006448
-LGBM,Right,JP + US close core + JP proxy + Asia proxy,LGBM direct quantile,527,0.129032,False,False,0.001222,-3.559147,0.005853
-LGBM,Right,JP only,LGBM location-scale empirical,508,0.043307,True,True,0.001346,-3.573913,0.010108
-LGBM,Right,JP + US close core,LGBM location-scale empirical,505,0.061386,True,True,0.001047,-3.971715,0.00637
-LGBM,Right,JP + US close core + JP proxy,LGBM location-scale empirical,493,0.060852,True,True,0.001023,-4.027288,0.006287
-LGBM,Right,JP + US close core + JP proxy + Asia proxy,LGBM location-scale empirical,492,0.063008,True,True,0.001085,-3.910528,0.006984
-LGBM,Right,JP only,LGBM median/IQR POT-GPD plain MLE,554,0.030686,True,True,0.001211,-3.756111,0.010127
-LGBM,Right,JP + US close core,LGBM median/IQR POT-GPD plain MLE,554,0.054152,True,True,0.001048,-3.975248,0.00671
-LGBM,Right,JP + US close core + JP proxy,LGBM median/IQR POT-GPD plain MLE,526,0.047529,True,True,0.001041,-3.929021,0.007819
-LGBM,Right,JP + US close core + JP proxy + Asia proxy,LGBM median/IQR POT-GPD plain MLE,527,0.060721,True,True,0.001046,-3.923889,0.006409
-LGBM,Right,JP only,LGBM median/IQR POT-GPD UniBM block-maxima shape,554,0.032491,True,True,0.001201,-3.762414,0.010154
-LGBM,Right,JP + US close core,LGBM median/IQR POT-GPD UniBM block-maxima shape,554,0.055957,True,True,0.00105,-3.963747,0.006783
-LGBM,Right,JP + US close core + JP proxy,LGBM median/IQR POT-GPD UniBM block-maxima shape,527,0.051233,True,True,0.001048,-3.882784,0.007748
-LGBM,Right,JP + US close core + JP proxy + Asia proxy,LGBM median/IQR POT-GPD UniBM block-maxima shape,527,0.058824,True,True,0.00105,-3.942804,0.006886
-LGBM,Right,JP only,LGBM median/MAD POT-GPD plain MLE,484,0.051653,True,True,0.00133,-3.61092,0.009792
-LGBM,Right,JP + US close core,LGBM median/MAD POT-GPD plain MLE,484,0.072314,True,True,0.00112,-3.998127,0.007624
-LGBM,Right,JP + US close core + JP proxy,LGBM median/MAD POT-GPD plain MLE,473,0.078224,False,False,0.001082,-4.085941,0.006835
-LGBM,Right,JP + US close core + JP proxy + Asia proxy,LGBM median/MAD POT-GPD plain MLE,473,0.07611,False,False,0.001125,-3.923032,0.007709
-LGBM,Right,JP only,LGBM median/MAD POT-GPD UniBM block-maxima shape,484,0.059917,True,True,0.001334,-3.613854,0.008934
-LGBM,Right,JP + US close core,LGBM median/MAD POT-GPD UniBM block-maxima shape,484,0.072314,True,True,0.001119,-3.989896,0.007703
-LGBM,Right,JP + US close core + JP proxy,LGBM median/MAD POT-GPD UniBM block-maxima shape,473,0.078224,False,False,0.001085,-4.05793,0.006973
-LGBM,Right,JP + US close core + JP proxy + Asia proxy,LGBM median/MAD POT-GPD UniBM block-maxima shape,473,0.07611,False,False,0.001126,-3.921147,0.007786
-LGBM,Right,JP only,LGBM POT-GPD plain MLE,484,0.03719,True,True,0.001369,-3.576374,0.011399
-LGBM,Right,JP + US close core,LGBM POT-GPD plain MLE,482,0.051867,True,True,0.001052,-3.982679,0.007128
-LGBM,Right,JP + US close core + JP proxy,LGBM POT-GPD plain MLE,474,0.056962,True,True,0.001034,-4.029703,0.006603
-LGBM,Right,JP + US close core + JP proxy + Asia proxy,LGBM POT-GPD plain MLE,473,0.057082,True,True,0.00109,-3.92462,0.007419
-LGBM,Right,JP only,LGBM POT-GPD UniBM block-maxima shape,484,0.041322,True,True,0.001363,-3.58315,0.010602
-LGBM,Right,JP + US close core,LGBM POT-GPD UniBM block-maxima shape,483,0.05383,True,True,0.001047,-3.983169,0.006934
-LGBM,Right,JP + US close core + JP proxy,LGBM POT-GPD UniBM block-maxima shape,474,0.056962,True,True,0.001032,-4.020205,0.006702
-LGBM,Right,JP + US close core + JP proxy + Asia proxy,LGBM POT-GPD UniBM block-maxima shape,474,0.056962,True,True,0.001085,-3.92975,0.007375
+Benchmark,Downside,Lagged opening-gap losses,CARE expectile asymmetric slope,627,0.07815,False,False,0.00144,-3.621661,0.007879
+Benchmark,Downside,Lagged opening-gap losses,CARE expectile SAV,620,0.067742,True,True,0.001456,-3.607506,0.008946
+Benchmark,Downside,Lagged opening-gap losses,CAViaR asymmetric slope,508,0.070866,True,True,0.001564,-3.532426,0.00941
+Benchmark,Downside,Lagged opening-gap losses,CAViaR SAV,498,0.058233,True,True,0.001568,-3.54007,0.011676
+Benchmark,Downside,Lagged opening-gap losses,EWMA volatility scaling,722,0.052632,True,True,0.001409,-3.647462,0.008636
+Benchmark,Downside,Lagged opening-gap losses,GARCH-t,722,0.060942,True,True,0.001368,-3.701083,0.008609
+Benchmark,Downside,Lagged opening-gap losses,GAS-t location-scale,722,0.063712,True,True,0.001352,-3.693506,0.00867
+Benchmark,Downside,Lagged opening-gap losses,GAS-t POT-GPD,223,0.044843,True,False,0.001277,-3.789288,0.006754
+Benchmark,Downside,Lagged opening-gap losses,GJR-GARCH-EVT,722,0.060942,True,True,0.00133,-3.746233,0.007631
+Benchmark,Downside,Lagged opening-gap losses,GJR-GARCH-t,722,0.070637,True,True,0.001338,-3.723459,0.007359
+Benchmark,Downside,Lagged opening-gap losses,Historical quantile,722,0.055402,True,True,0.001476,-3.540661,0.01214
+Benchmark,Downside,Lagged opening-gap losses,Rolling quantile,722,0.058172,True,True,0.001481,-3.524684,0.011683
+Benchmark,Upside,Lagged opening-gap losses,CARE expectile asymmetric slope,679,0.079529,False,False,0.001327,-3.531389,0.00867
+Benchmark,Upside,Lagged opening-gap losses,CARE expectile SAV,679,0.08542,False,False,0.001372,-3.474738,0.008198
+Benchmark,Upside,Lagged opening-gap losses,CAViaR asymmetric slope,504,0.06746,True,True,0.001494,-3.466189,0.01072
+Benchmark,Upside,Lagged opening-gap losses,CAViaR SAV,504,0.063492,True,True,0.001558,-3.407822,0.011629
+Benchmark,Upside,Lagged opening-gap losses,EWMA volatility scaling,722,0.045706,True,True,0.001342,-3.656615,0.009787
+Benchmark,Upside,Lagged opening-gap losses,GARCH-t,722,0.041551,True,True,0.001278,-3.703374,0.010888
+Benchmark,Upside,Lagged opening-gap losses,GAS-t location-scale,722,0.049861,True,True,0.001307,-3.668339,0.010514
+Benchmark,Upside,Lagged opening-gap losses,GAS-t POT-GPD,223,0.085202,False,False,0.001785,-3.033734,0.012794
+Benchmark,Upside,Lagged opening-gap losses,GJR-GARCH-EVT,722,0.058172,True,True,0.001233,-3.708574,0.008988
+Benchmark,Upside,Lagged opening-gap losses,GJR-GARCH-t,722,0.042936,True,True,0.001222,-3.739711,0.010272
+Benchmark,Upside,Lagged opening-gap losses,Historical quantile,722,0.069252,True,True,0.001502,-3.406776,0.012003
+Benchmark,Upside,Lagged opening-gap losses,Rolling quantile,722,0.072022,True,True,0.001496,-3.427318,0.01148
+LightGBM,Downside,A: Japan only,LightGBM direct quantile,554,0.079422,False,False,0.001404,-3.475021,0.00894
+LightGBM,Downside,B: +U.S.-close core,LightGBM direct quantile,554,0.108303,False,False,0.00115,-3.678881,0.006263
+LightGBM,Downside,C: +Japan proxy,LightGBM direct quantile,527,0.117647,False,False,0.001114,-3.868878,0.005511
+LightGBM,Downside,D: +Asia proxy,LightGBM direct quantile,527,0.117647,False,False,0.001119,-3.807595,0.005581
+LightGBM,Downside,A: Japan only,LightGBM empirical location-scale,508,0.05315,True,True,0.001487,-3.554176,0.009866
+LightGBM,Downside,B: +U.S.-close core,LightGBM empirical location-scale,506,0.061265,True,True,0.000988,-4.050495,0.005722
+LightGBM,Downside,C: +Japan proxy,LightGBM empirical location-scale,492,0.065041,True,True,0.000988,-4.142323,0.005532
+LightGBM,Downside,D: +Asia proxy,LightGBM empirical location-scale,492,0.071138,True,True,0.000986,-4.058506,0.00482
+LightGBM,Downside,A: Japan only,LightGBM mean/scale POT-GPD MLE,484,0.055785,True,True,0.00152,-3.525293,0.009821
+LightGBM,Downside,B: +U.S.-close core,LightGBM mean/scale POT-GPD MLE,482,0.058091,True,True,0.000997,-4.080408,0.005945
+LightGBM,Downside,C: +Japan proxy,LightGBM mean/scale POT-GPD MLE,473,0.059197,True,True,0.00099,-4.151901,0.005868
+LightGBM,Downside,D: +Asia proxy,LightGBM mean/scale POT-GPD MLE,473,0.065539,True,True,0.000987,-4.090892,0.005035
+LightGBM,Downside,A: Japan only,LightGBM mean/scale POT-GPD UniBM,484,0.055785,True,True,0.001516,-3.511702,0.009658
+LightGBM,Downside,B: +U.S.-close core,LightGBM mean/scale POT-GPD UniBM,483,0.064182,True,True,0.000998,-4.074074,0.00568
+LightGBM,Downside,C: +Japan proxy,LightGBM mean/scale POT-GPD UniBM,473,0.063425,True,True,0.000998,-4.131158,0.005952
+LightGBM,Downside,D: +Asia proxy,LightGBM mean/scale POT-GPD UniBM,473,0.065539,True,True,0.000998,-4.056911,0.005497
+LightGBM,Downside,A: Japan only,LightGBM median/IQR POT-GPD MLE,554,0.036101,True,True,0.001383,-3.679215,0.010818
+LightGBM,Downside,B: +U.S.-close core,LightGBM median/IQR POT-GPD MLE,553,0.052441,True,True,0.000965,-4.1412,0.006841
+LightGBM,Downside,C: +Japan proxy,LightGBM median/IQR POT-GPD MLE,526,0.047529,True,True,0.000904,-4.198353,0.006541
+LightGBM,Downside,D: +Asia proxy,LightGBM median/IQR POT-GPD MLE,527,0.058824,True,True,0.000917,-4.222471,0.005493
+LightGBM,Downside,A: Japan only,LightGBM median/IQR POT-GPD UniBM,554,0.036101,True,True,0.001383,-3.684175,0.010625
+LightGBM,Downside,B: +U.S.-close core,LightGBM median/IQR POT-GPD UniBM,553,0.052441,True,True,0.00096,-4.113223,0.006824
+LightGBM,Downside,C: +Japan proxy,LightGBM median/IQR POT-GPD UniBM,527,0.047438,True,True,0.000907,-4.261671,0.006703
+LightGBM,Downside,D: +Asia proxy,LightGBM median/IQR POT-GPD UniBM,527,0.058824,True,True,0.000914,-4.21362,0.005463
+LightGBM,Downside,A: Japan only,LightGBM median/MAD POT-GPD MLE,484,0.051653,True,True,0.00149,-3.597317,0.011229
+LightGBM,Downside,B: +U.S.-close core,LightGBM median/MAD POT-GPD MLE,484,0.06405,True,True,0.001067,-4.119314,0.008183
+LightGBM,Downside,C: +Japan proxy,LightGBM median/MAD POT-GPD MLE,474,0.067511,True,True,0.000966,-4.31034,0.006367
+LightGBM,Downside,D: +Asia proxy,LightGBM median/MAD POT-GPD MLE,474,0.065401,True,True,0.000993,-4.269625,0.006902
+LightGBM,Downside,A: Japan only,LightGBM median/MAD POT-GPD UniBM,484,0.051653,True,True,0.001491,-3.598519,0.011303
+LightGBM,Downside,B: +U.S.-close core,LightGBM median/MAD POT-GPD UniBM,484,0.066116,True,True,0.001071,-4.14672,0.00814
+LightGBM,Downside,C: +Japan proxy,LightGBM median/MAD POT-GPD UniBM,474,0.07384,True,True,0.00098,-4.28113,0.006233
+LightGBM,Downside,D: +Asia proxy,LightGBM median/MAD POT-GPD UniBM,474,0.07384,True,True,0.001005,-4.259353,0.006443
+LightGBM,Upside,A: Japan only,LightGBM direct quantile,554,0.093863,False,False,0.001273,-3.530485,0.007334
+LightGBM,Upside,B: +U.S.-close core,LightGBM direct quantile,554,0.113718,False,False,0.001211,-3.548401,0.006614
+LightGBM,Upside,C: +Japan proxy,LightGBM direct quantile,527,0.11575,False,False,0.001211,-3.557463,0.006448
+LightGBM,Upside,D: +Asia proxy,LightGBM direct quantile,527,0.129032,False,False,0.001222,-3.559147,0.005853
+LightGBM,Upside,A: Japan only,LightGBM empirical location-scale,508,0.043307,True,True,0.001346,-3.573913,0.010108
+LightGBM,Upside,B: +U.S.-close core,LightGBM empirical location-scale,505,0.061386,True,True,0.001047,-3.971715,0.00637
+LightGBM,Upside,C: +Japan proxy,LightGBM empirical location-scale,493,0.060852,True,True,0.001023,-4.027288,0.006287
+LightGBM,Upside,D: +Asia proxy,LightGBM empirical location-scale,492,0.063008,True,True,0.001085,-3.910528,0.006984
+LightGBM,Upside,A: Japan only,LightGBM mean/scale POT-GPD MLE,484,0.03719,True,True,0.001369,-3.576374,0.011399
+LightGBM,Upside,B: +U.S.-close core,LightGBM mean/scale POT-GPD MLE,482,0.051867,True,True,0.001052,-3.982679,0.007128
+LightGBM,Upside,C: +Japan proxy,LightGBM mean/scale POT-GPD MLE,474,0.056962,True,True,0.001034,-4.029703,0.006603
+LightGBM,Upside,D: +Asia proxy,LightGBM mean/scale POT-GPD MLE,473,0.057082,True,True,0.00109,-3.92462,0.007419
+LightGBM,Upside,A: Japan only,LightGBM mean/scale POT-GPD UniBM,484,0.041322,True,True,0.001363,-3.58315,0.010602
+LightGBM,Upside,B: +U.S.-close core,LightGBM mean/scale POT-GPD UniBM,483,0.05383,True,True,0.001047,-3.983169,0.006934
+LightGBM,Upside,C: +Japan proxy,LightGBM mean/scale POT-GPD UniBM,474,0.056962,True,True,0.001032,-4.020205,0.006702
+LightGBM,Upside,D: +Asia proxy,LightGBM mean/scale POT-GPD UniBM,474,0.056962,True,True,0.001085,-3.92975,0.007375
+LightGBM,Upside,A: Japan only,LightGBM median/IQR POT-GPD MLE,554,0.030686,True,True,0.001211,-3.756111,0.010127
+LightGBM,Upside,B: +U.S.-close core,LightGBM median/IQR POT-GPD MLE,554,0.054152,True,True,0.001048,-3.975248,0.00671
+LightGBM,Upside,C: +Japan proxy,LightGBM median/IQR POT-GPD MLE,526,0.047529,True,True,0.001041,-3.929021,0.007819
+LightGBM,Upside,D: +Asia proxy,LightGBM median/IQR POT-GPD MLE,527,0.060721,True,True,0.001046,-3.923889,0.006409
+LightGBM,Upside,A: Japan only,LightGBM median/IQR POT-GPD UniBM,554,0.032491,True,True,0.001201,-3.762414,0.010154
+LightGBM,Upside,B: +U.S.-close core,LightGBM median/IQR POT-GPD UniBM,554,0.055957,True,True,0.00105,-3.963747,0.006783
+LightGBM,Upside,C: +Japan proxy,LightGBM median/IQR POT-GPD UniBM,527,0.051233,True,True,0.001048,-3.882784,0.007748
+LightGBM,Upside,D: +Asia proxy,LightGBM median/IQR POT-GPD UniBM,527,0.058824,True,True,0.00105,-3.942804,0.006886
+LightGBM,Upside,A: Japan only,LightGBM median/MAD POT-GPD MLE,484,0.051653,True,True,0.00133,-3.61092,0.009792
+LightGBM,Upside,B: +U.S.-close core,LightGBM median/MAD POT-GPD MLE,484,0.072314,True,True,0.00112,-3.998127,0.007624
+LightGBM,Upside,C: +Japan proxy,LightGBM median/MAD POT-GPD MLE,473,0.078224,False,False,0.001082,-4.085941,0.006835
+LightGBM,Upside,D: +Asia proxy,LightGBM median/MAD POT-GPD MLE,473,0.07611,False,False,0.001125,-3.923032,0.007709
+LightGBM,Upside,A: Japan only,LightGBM median/MAD POT-GPD UniBM,484,0.059917,True,True,0.001334,-3.613854,0.008934
+LightGBM,Upside,B: +U.S.-close core,LightGBM median/MAD POT-GPD UniBM,484,0.072314,True,True,0.001119,-3.989896,0.007703
+LightGBM,Upside,C: +Japan proxy,LightGBM median/MAD POT-GPD UniBM,473,0.078224,False,False,0.001085,-4.05793,0.006973
+LightGBM,Upside,D: +Asia proxy,LightGBM median/MAD POT-GPD UniBM,473,0.07611,False,False,0.001126,-3.921147,0.007786

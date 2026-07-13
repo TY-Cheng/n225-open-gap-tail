@@ -226,9 +226,9 @@ rather than applied as hidden filters.
 | fred_core | fred_core | `9` | `0.000%` | `0.000%` |
 | FRED credit enriched | FRED credit enriched | `4` | `62.398%` | `62.427%` |
 | fx_core | fx_core | `4` | `0.000%` | `0.000%` |
-| JP history | JP only | `37` | `0.005%` | `0.058%` |
+| Japan history | Japan only | `37` | `0.005%` | `0.058%` |
 | JP proxy | JP proxy | `8` | `0.000%` | `0.000%` |
-| J-Quants N225 options | JP only | `30` | `1.605%` | `14.634%` |
+| J-Quants N225 options | Japan only | `30` | `1.605%` | `14.634%` |
 | massive_daily | US core | `40` | `0.001%` | `0.058%` |
 | massive_minute | Asia proxy | `60` | `0.000%` | `0.000%` |
 | massive_minute | JP proxy | `24` | `0.348%` | `4.181%` |
@@ -283,7 +283,7 @@ The clean run fetches these Massive daily symbols:
 | Broad U.S. beta | `SPY`, `QQQ`, `DIA`, `IWM` | Close-to-close log returns and high-low log ranges. |
 | U.S. sectors | `XLK`, `XLF`, `XLE`, `XLV`, `XLI`, `XLY`, `XLP`, `XLB`, `XLU`, `XLC` | Sector returns and ranges. |
 | Duration, safe-haven, commodity, semiconductor, and credit-risk proxies | `TLT`, `GLD`, `USO`, `SMH`, `HYG`, `LQD` | Returns and ranges. |
-| Dollar ETF proxy | `UUP` | Cached and audited as `massive_optional`; enters the U.S. close core information set as a dollar-risk proxy, not as USD/JPY. |
+| Dollar ETF proxy | `UUP` | Cached and audited as `massive_optional`; enters the U.S.-close core information set as a dollar-risk proxy, not as USD/JPY. |
 | Japan proxy block | `EWJ`, `DXJ` | Returns and ranges; enters the third ML information set. |
 | Japanese ADR aggregate block | `TM`, `SONY`, `MUFG`, `SMFG`, `MFG` | Aggregate-only ADR spot returns/ranges; enters the third ML information set without single-name ADR spot features. |
 | Asia proxy block | `EEM`, `FXI`, `EWY`, `EWT`, `EWH` | Returns and ranges; enters the fourth ML information set. |
@@ -390,7 +390,7 @@ The clean run fetches these FRED series:
 | --- | --- | --- |
 | Core rates and volatility | `VIXCLS`, `DGS2`, `DGS10`, `T10Y2Y` | Levels and first differences, plus `fred_rates_staleness_days`. |
 | Canonical USD/JPY FX control | `DEXJPUS` | `fx_usdjpy_level`, `fx_usdjpy_return`, `fx_observation_age_days`, `fx_release_age_days`. |
-| Credit-spread enriched block | `BAMLH0A0HYM2`, `BAMLC0A0CM` | Levels and first differences; enters the U.S. close core information set as credit-stress/risk-appetite proxies subject to coverage gates. |
+| Credit-spread enriched block | `BAMLH0A0HYM2`, `BAMLC0A0CM` | Levels and first differences; enters the U.S.-close core information set as credit-stress/risk-appetite proxies subject to coverage gates. |
 
 The clean run also uses Cboe VIX historical data:
 
@@ -487,7 +487,7 @@ The first-paper predictor universe is pre-registered by economic role rather tha
 | FX | Canonical USD/JPY from FRED `DEXJPUS` only | FRED H.10 | H.10 weekly-batch as-of release | Conservative lagged currency control without letting optional Massive FX entitlement determine the main sample. |
 | Safe-haven and commodity proxies | TLT, GLD, USO | Massive.com planned candidates | `US_CASH_CLOSE` after source audit | Flight-to-quality, dollar-rate duration, and commodity-risk channels. |
 | U.S. volatility | VIX close; VIX high/low/range when available | Cboe, FRED, Massive index probe | Historical daily close or audited index timestamp | U.S. implied volatility and volatility-of-risk regime. |
-| U.S. tail/skew proxies | Cboe SKEW, VIX9D, VIX3M, VIX6M | Cboe or licensed source | Tier 1.5/Tier 2 depending access and coverage | Option-implied left-tail and volatility-term-structure information. |
+| U.S. tail/skew proxies | Cboe SKEW, VIX9D, VIX3M, VIX6M | Cboe or licensed source | Tier 1.5/Tier 2 depending access and coverage | Option-implied downside-tail and volatility-term-structure information. |
 | Treasury rates | DGS2, DGS10, T10Y2Y | FRED | Current historical values with +1 U.S. business-day availability lag; not ALFRED/vintage-safe by default | Rate level and curve slope. SOFR/EFFR are post-2018 enriched candidates only. |
 | Credit spreads | BAMLH0A0HYM2, BAMLC0A0CM | FRED/ICE BofA | B-layer U.S. close candidate with conservative FRED lag; not ALFRED/vintage-safe | Credit-stress proxy for global downside tail risk without shortening the required core sample by default. |
 | Event flags | FOMC, CPI, payrolls/NFP, BOJ, simple major-event intensity controls; broader Japan macro releases remain planned | Official calendars | Active timestamp-safe calendar controls for the narrow registered event layer; broader macro-event expansion remains candidate work | Scheduled risk-event controls without macro feature fishing. |
@@ -534,7 +534,7 @@ combined_clean_start = max(
 
 `jquants_required_field_coverage_start` defaults to `2016-07-19` only when
 `fields_coverage_audit.parquet` supports required coverage for settlement, last-trading-day,
-SQ-day, and central-contract fields. `2008-05-07` remains available for target-history audit
+SQ-day, and central-contract fields. `2008-05-07` remains available for opening-gap-history audit
 or robustness runs, not as the default clean predictor sample. Because XLC remains a
 required U.S. sector control, the final `combined_clean_start` is expected to move to
 XLC's post-inception coverage period rather than remain at the 2016 cache lower bound.
@@ -712,7 +712,7 @@ The data lake is intentionally tiered to prevent feature fishing.
 - Massive core block additions: XLY, XLP, XLB, XLU, XLC, TLT, GLD, USO, SMH, HYG, and LQD after source and coverage audit.
 - Massive ML tail proxy blocks: Japan proxy (`EWJ`, `DXJ`) and Asia proxy (`EEM`, `FXI`, `EWY`, `EWT`, `EWH`) are cached now but interpreted separately from the core U.S. close block.
 - Cboe or FRED VIX close; VIX high, low, and range only when the source supports them.
-- FRED 2-year and 10-year Treasury yields, T10Y2Y yield-curve slope, and ICE BofA credit-spread proxies. Credit spreads enter the B-layer U.S. close core as current-historical FRED series with conservative lag controls, not ALFRED/vintage-safe series. SOFR/EFFR funding proxies are `post_2018_enriched`, not part of the current full-history primary feature set.
+- FRED 2-year and 10-year Treasury yields, T10Y2Y yield-curve slope, and ICE BofA credit-spread proxies. Credit spreads enter the B-layer U.S.-close core as current-historical FRED series with conservative lag controls, not ALFRED/vintage-safe series. SOFR/EFFR funding proxies are `post_2018_enriched`, not part of the current full-history primary feature set.
 - Event calendar controls: timestamp-safe FOMC, CPI, NFP/payroll, BOJ policy
   events, and simple major-event intensity controls are active; broader Japan
   macro releases remain planned candidates.
@@ -770,8 +770,10 @@ Core invariants:
 
 ## Tail-Risk Labels and EVT Data Requirements
 
-The main paper evaluates both downside and upside opening-gap risk under a
-positive-loss convention:
+The internal labels `left_tail` and `right_tail` refer to the corresponding
+sides of the original opening-gap return distribution. In economic terms, they
+represent downside and upside loss, respectively. Both are oriented so that
+larger values indicate more adverse outcomes:
 
 - define `left_tail` losses as `L_t = -gap_t`;
 - define `right_tail` losses as `L_t = gap_t`;
@@ -779,25 +781,26 @@ positive-loss convention:
 - store threshold, exceedance indicator, exceedance severity, VaR forecast, and ES forecast;
 - report training-window standardized-loss counts and exceedance counts before reporting POT-GPD VaR/ES forecasts.
 
-The primary tail level is `0.95`. Plain standardized-loss POT-GPD is the
-registered filtered-EVT estimator. The UniBM route is a restricted
+The primary tail level is `0.95`. `LightGBM mean/scale POT-GPD MLE` is the
+registered filtered-EVT estimator. `LightGBM mean/scale POT-GPD UniBM` is a restricted
 shape-estimator comparison: it uses the same LightGBM mean/log-scale body
 filter, the same POT threshold, and a UniBM block-maxima-derived estimate of
 the GPD shape `xi`, with scale refit conditional on that fixed `xi`. Here EVI
 means the GPD shape convention `xi`; it is the reciprocal of the Pareto tail
 index `alpha` when `P(X > x) ~ x^{-alpha}`. UniBM failures are reported as
-unavailable rather than replaced by plain MLE. Diagnostics record shape method,
+unavailable rather than replaced by the MLE route. Diagnostics record shape method,
 UniBM block-grid diagnostics, threshold sensitivity, shape/scale stability,
 shape bins, and whether ES is finite.
 
-Upper-tail labels are part of the two-sided futures risk surface. They use the
-same positive-loss convention as lower-tail labels, with `right_tail` defined as
-the original opening gap in loss units and evaluated under the same sample,
-coverage, and inference gates.
+Both transformed loss series are evaluated through the upper tail of their
+respective loss distributions under the same sample, coverage, and inference
+gates. The labels `left_tail` and
+`right_tail` continue to identify the corresponding sides of the original
+opening-gap return distribution.
 
 ## Model-Ready Loss Fields
 
-Processed model tables should carry the fields needed to audit the LightGBM-standardized-loss POT-GPD path:
+Processed model tables should carry the fields needed to audit the mean/scale LightGBM-EVT path:
 
 | Field | Meaning |
 | --- | --- |
@@ -812,7 +815,7 @@ Processed model tables should carry the fields needed to audit the LightGBM-stan
 | `evt_threshold_u` | Training-window POT threshold used for the row's forecast. |
 | `exceedance_indicator_t` | Indicator that `standardized_loss_t` exceeds the threshold. |
 | `exceedance_severity_t` | Excess over threshold for EVT severity calibration. |
-| `evt_variant` | POT-GPD variant label. The registered estimator is plain MLE; the restricted UniBM comparison is `unibm`. |
+| `evt_variant` | POT-GPD variant label. The registered estimator is MLE; the restricted UniBM comparison is `unibm`. |
 | `evt_shape_method` | Shape-estimation method recorded for the row's EVT calibration. |
 | `evt_evi_status` | Extreme-value-index status for `xi`, including unavailable or diagnostic-disagreement cases. |
 | `evt_ei_status` | Extremal-index status, including unavailable or no-discount fallbacks. |
@@ -826,8 +829,8 @@ Processed model tables should carry the fields needed to audit the LightGBM-stan
 
 The registered primary POT threshold remains fixed at `0.90`. Threshold
 sensitivity is written as a diagnostic artifact before any dynamic-threshold
-rule is promoted to the registered primary design. The location-scale
-empirical and POT-GPD variants use a common final LightGBM location-scale
+rule is promoted to the registered primary design. The empirical location-scale
+and POT-GPD variants use a common final LightGBM location-scale
 backbone by construction; diagnostic EVT variants differ in tail calibration rather than
 in a variant-specific final location/scale seed.
 

@@ -645,45 +645,6 @@ def _ml_tail_location_scale_diagnostic(
     }
 
 
-def _ml_tail_unavailable_feature_forecast(
-    *,
-    row: Mapping[str, object],
-    model_name: str,
-    information_set: str,
-    tail_level: float,
-    tail_side: str = PRIMARY_TAIL_SIDE,
-    bundle: Mapping[str, object],
-    unavailable_features: list[str],
-) -> dict[str, object]:
-    return {
-        "forecast_date": row["forecast_date"],
-        "target_family": row.get("target_family") or "full_gap_settle_to_open",
-        "tail_side": tail_side,
-        "model_name": model_name,
-        "information_set": information_set,
-        "tail_level": tail_level,
-        "refit_frequency": ML_TAIL_REFIT_FREQUENCY,
-        "var_forecast": None,
-        "es_forecast": None,
-        "es_companion_type": bundle.get("es_companion_type"),
-        "realized_loss": _required_float(row["realized_loss"]),
-        "var_breach": None,
-        "is_valid_forecast": False,
-        "invalid_reason": "unavailable_feature_not_valid_at_cutoff",
-        "train_start": bundle.get("train_start"),
-        "train_end": bundle.get("train_end"),
-        "train_n": bundle.get("train_n"),
-        "fit_status": "unavailable_feature_not_valid_at_cutoff",
-        "failure_reason": ",".join(unavailable_features),
-        "runtime_seconds": None,
-        "dst_regime": row.get("dst_regime"),
-        "absorption_regime": row.get("absorption_regime"),
-        "vix_level": row.get("vix_level"),
-        "active_feature_hash": bundle.get("active_feature_hash"),
-        **_ml_tail_extended_forecast_fields(),
-    }
-
-
 def _ml_tail_extended_forecast_fields() -> dict[str, object]:
     return {
         "location_forecast": None,
@@ -746,18 +707,6 @@ def _ml_tail_unavailable_status(exc: BaseException) -> str:
 
 def _ml_tail_seed(*values: object) -> int:
     return int(stable_hash(values)[:8], 16)
-
-
-def _unavailable_active_features(
-    row: Mapping[str, object],
-    active_features: list[str],
-) -> list[str]:
-    unavailable: list[str] = []
-    for feature in active_features:
-        value = _optional_float(row.get(feature))
-        if value is None or not math.isfinite(value):
-            unavailable.append(feature)
-    return unavailable
 
 
 def build_ml_tail_feature_unavailability_date_records(

@@ -33,10 +33,14 @@ from n225_open_gap_tail.config.runtime import (
 from n225_open_gap_tail.config.model_labels import (
     display_information_set_label,
     display_model_label,
+    display_suite_group_label,
+    display_tail_side_label,
 )
 from n225_open_gap_tail.inference.core import build_murphy_records
 from n225_open_gap_tail.metrics.cross_suite_dm import (
     CROSS_SUITE_DM_MODEL_SPECS,
+    LGBM_STANDARD_PLAIN_MLE_C_LABEL,
+    LGBM_STANDARD_UNIBM_C_LABEL,
     cross_suite_dm_gate_status as _cross_suite_dm_gate_status,
     cross_suite_dm_loss_rows as _cross_suite_dm_loss_rows,
     cross_suite_dm_records as _cross_suite_dm_records,
@@ -55,6 +59,9 @@ from n225_open_gap_tail.metrics.stat_utils import (
     fz_loss,
     quantile_loss,
 )
+
+matplotlib.rcParams["pdf.fonttype"] = 42
+matplotlib.rcParams["ps.fonttype"] = 42
 
 
 INFORMATION_LADDER_ORDER = PASS_ALL_INFORMATION_SETS
@@ -78,24 +85,24 @@ STRESS_OVERLAY_REALIZED_COLOR = "#111827"
 STRESS_OVERLAY_COLORS = {
     "GJR-GARCH-EVT": "#2563eb",
     "GJR-GARCH-t fallback": "#2563eb",
-    "LGBM POT-GPD plain MLE (C)": "#10b981",
-    "LGBM POT-GPD UniBM (C)": "#f97316",
+    LGBM_STANDARD_PLAIN_MLE_C_LABEL: "#10b981",
+    LGBM_STANDARD_UNIBM_C_LABEL: "#f97316",
 }
 STRESS_OVERLAY_MARKERS = {
     "GJR-GARCH-EVT": "o",
     "GJR-GARCH-t fallback": "o",
-    "LGBM POT-GPD plain MLE (C)": "s",
-    "LGBM POT-GPD UniBM (C)": "^",
+    LGBM_STANDARD_PLAIN_MLE_C_LABEL: "s",
+    LGBM_STANDARD_UNIBM_C_LABEL: "^",
 }
 FULL_SAMPLE_OVERLAY_COLORS = {
     "GJR-GARCH-EVT": "#2563eb",
-    "LGBM plain MLE C": "#10b981",
-    "LGBM UniBM C": "#f97316",
+    LGBM_STANDARD_PLAIN_MLE_C_LABEL: "#10b981",
+    LGBM_STANDARD_UNIBM_C_LABEL: "#f97316",
 }
 FULL_SAMPLE_OVERLAY_MARKERS = {
     "GJR-GARCH-EVT": "o",
-    "LGBM plain MLE C": "s",
-    "LGBM UniBM C": "^",
+    LGBM_STANDARD_PLAIN_MLE_C_LABEL: "s",
+    LGBM_STANDARD_UNIBM_C_LABEL: "^",
 }
 
 
@@ -142,10 +149,10 @@ def _market_timing_design_figures(*, run_dir: Path, figure_dir: Path) -> list[di
     events = [
         (0.0, "T-1\n15:15\nOSE close /\nsettlement", "#eef2ff", 0.84),
         (2.35, "T-1\n16:30\nOSE night\nopens", "#eef2ff", 0.84),
-        (4.70, "T\n05:00\nU.S. close\nif EDT", "#fef2f2", 0.84),
+        (4.70, "T\n05:00\nNYSE close\nif EDT", "#fef2f2", 0.84),
         (7.05, "T\n05:30\nOSE night\ncloses", "#eef2ff", 0.84),
-        (9.40, "T\n06:00\nU.S. close\nif EST", "#fef2f2", 0.84),
-        (11.75, "T\nmatched\nU.S. close\n+ data lag\ncutoff", "#fdf2f8", 1.02),
+        (9.40, "T\n06:00\nNYSE close\nif EST", "#fef2f2", 0.84),
+        (11.75, "T\nmatched\nNYSE close\n+ data lag\ncutoff", "#fdf2f8", 1.02),
         (14.10, "T\n08:45\nOSE day\nopen", "#f0fdf4", 0.84),
     ]
     for (x0, _label0, _face0, half_width0), (x1, _label1, _face1, half_width1) in zip(
@@ -190,7 +197,7 @@ def _market_timing_design_figures(*, run_dir: Path, figure_dir: Path) -> list[di
         color="#1d4ed8",
     )
     ax.set_title(
-        "JST timing for the settlement-to-open forecast design",
+        "Japan Standard Time (JST) timing for the settlement-to-open forecast design",
         fontsize=12.5,
     )
     caption = (
@@ -200,7 +207,8 @@ def _market_timing_design_figures(*, run_dir: Path, figure_dir: Path) -> list[di
         "day close 15:15 JST, night session 16:30-05:30 JST, and next day open "
         "08:45 JST. From 2024-11-05, JPX hours are day close 15:45 JST and night "
         "session 17:00-06:00 JST; the next day open remains 08:45 JST. The model "
-        "cutoff is the matched U.S. cash close plus the pre-specified data-availability "
+        "cutoff is the matched U.S. equity-market close plus the pre-specified "
+        "data-availability "
         "lag; the OSE night close is timing context, not the forecast origin. The "
         "figure is a forecast-origin and target-timing diagram, not a structural "
         "market-transmission diagram."
@@ -242,13 +250,13 @@ def _target_tail_motivation_figures(*, run_dir: Path, figure_dir: Path) -> list[
     _plot_normal_density(ax_density, gap)
     ax_density.axvline(0.0, color="#111827", linewidth=1.0)
     ax_density.set_title("A. Opening-gap density")
-    ax_density.set_xlabel("gap_t, log return")
+    ax_density.set_xlabel(r"$g_t$ (log return)")
     ax_density.set_ylabel("Density")
     _legend_if_labeled(ax_density, frameon=False, fontsize=7)
 
     for label, values, color in (
-        ("left loss", left_loss, "#dc2626"),
-        ("right loss", right_loss, "#2563eb"),
+        ("Downside loss", left_loss, "#dc2626"),
+        ("Upside loss", right_loss, "#2563eb"),
     ):
         x, survival = _survival_curve(values)
         if x.size:
@@ -266,8 +274,8 @@ def _target_tail_motivation_figures(*, run_dir: Path, figure_dir: Path) -> list[
     _legend_if_labeled(ax_survival, frameon=False, fontsize=7)
 
     for label, values, color in (
-        ("left loss", left_loss, "#dc2626"),
-        ("right loss", right_loss, "#2563eb"),
+        ("Downside loss", left_loss, "#dc2626"),
+        ("Upside loss", right_loss, "#2563eb"),
     ):
         thresholds, mean_excess = _mean_excess_curve(values)
         if thresholds.size:
@@ -280,9 +288,9 @@ def _target_tail_motivation_figures(*, run_dir: Path, figure_dir: Path) -> list[
     _legend_if_labeled(ax_excess, frameon=False, fontsize=7)
 
     for label, values, color in (
-        ("left loss", left_loss, "#dc2626"),
-        ("right loss", right_loss, "#2563eb"),
-        ("absolute gap", np.abs(gap), "#4b5563"),
+        ("Downside loss", left_loss, "#dc2626"),
+        ("Upside loss", right_loss, "#2563eb"),
+        ("Absolute opening gap", np.abs(gap), "#4b5563"),
     ):
         ks, xi = _hill_curve(values)
         if ks.size:
@@ -290,12 +298,12 @@ def _target_tail_motivation_figures(*, run_dir: Path, figure_dir: Path) -> list[
     ax_hill.axhline(0.0, color="#111827", linewidth=0.9, linestyle=":")
     ax_hill.set_title("D. Hill tail-index path")
     ax_hill.set_xlabel("Upper order statistics k")
-    ax_hill.set_ylabel("Hill estimate of GPD shape xi")
+    ax_hill.set_ylabel(r"Hill estimate of GPD shape $\xi$")
     _legend_if_labeled(ax_hill, frameon=False, fontsize=7)
 
     for ax in axes.ravel():
         _style_axes(ax)
-    fig.suptitle("Opening-gap distribution and raw-tail diagnostics", fontsize=12)
+    fig.suptitle("Opening-gap distribution and tail diagnostics", fontsize=12)
     return _save_figure(
         fig,
         run_dir=run_dir,
@@ -421,7 +429,7 @@ def _coverage_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, obje
             continue
         fig, ax = plt.subplots(figsize=(11, max(5, side.height * 0.32)))
         labels = [
-            f"{row['suite_group']} | {row['model_label']}"
+            f"{display_suite_group_label(row['suite_group'])} | {row['model_label']}"
             for row in side.sort(["suite_order", "model_label"]).iter_rows(named=True)
         ]
         values = [
@@ -482,7 +490,7 @@ def _coverage_frame(run_dir: Path) -> pl.DataFrame:
                 selected.with_columns(
                     pl.lit("benchmark_baseline").alias("suite_group"),
                     pl.lit(0).alias("suite_order"),
-                    pl.col("model_name").alias("model_label"),
+                    _model_label_expr().alias("model_label"),
                 )
             )
     benchmark_per_model = _read_optional_parquet(
@@ -499,7 +507,7 @@ def _coverage_frame(run_dir: Path) -> pl.DataFrame:
                     selected.with_columns(
                         pl.lit("benchmark_advanced").alias("suite_group"),
                         pl.lit(1).alias("suite_order"),
-                        pl.col("model_name").alias("model_label"),
+                        _model_label_expr().alias("model_label"),
                     )
                 )
     ml_tail_metrics = _read_optional_parquet(run_dir / "metrics" / "ml_tail_metrics.parquet")
@@ -575,7 +583,7 @@ def _cumulative_loss_difference_figures(
                 for series_tail, series_model, rows in panel_series
                 if series_tail == tail_side and series_model == model_name
             )
-            for label, frame in series:
+            for style_index, (label, frame) in enumerate(series):
                 if frame.is_empty():
                     continue
                 forecast_dates = _plot_date_values(frame["forecast_date"].to_list())
@@ -583,6 +591,7 @@ def _cumulative_loss_difference_figures(
                     forecast_dates,
                     frame["cumulative_gain"].to_list(),
                     linewidth=1.45,
+                    linestyle=("-", "--", ":", "-.")[style_index % 4],
                     label=label,
                 )
             ax.axhline(0.0, color="#111827", linewidth=0.9, linestyle="--")
@@ -593,13 +602,13 @@ def _cumulative_loss_difference_figures(
             if row_index == axes_array.shape[0] - 1:
                 ax.set_xlabel("Forecast date")
             if column_index == 0:
-                ax.set_ylabel("Cumulative FZ gain over LGBM(A)")
+                ax.set_ylabel("Cumulative FZ gain relative to A")
             if row_index == 0 and column_index == 0:
                 ax.legend(frameon=False, fontsize=7)
             _set_monthly_date_ticks(ax)
             _style_axes(ax)
     fig.suptitle(
-        "Cumulative FZ gains relative to the corresponding A-only LGBM+EVT baseline",
+        "Cumulative FZ gains relative to the corresponding Japan-only LightGBM-EVT baseline",
         fontsize=13,
     )
     return _save_figure(
@@ -615,13 +624,12 @@ def _cumulative_loss_difference_figures(
         ],
         tail_side="left_right",
         caption=(
-            "Cumulative FZ-gain diagnostic relative to the corresponding A-only "
-            "LGBM+EVT baseline. Each panel fixes a tail side and one of the two "
-            "24-check-passing LGBM+EVT families. The GJR-GARCH-EVT line is an "
-            "own-history benchmark reference, while the other lines are B/C/D "
-            "information expansions within the same LGBM family. Positive movement "
-            "means the candidate has lower cumulative FZ loss than the A-only LGBM "
-            "anchor on paired dates."
+            "Cumulative FZ-gain diagnostic relative to the corresponding Japan-only "
+            "LightGBM-EVT baseline. Each panel fixes a tail side and one of the two "
+            "mean/scale LightGBM-EVT specifications that satisfy the coverage screen. "
+            "At each date, a path is the cumulative sum over pair-specific common dates "
+            "of FZ(A) minus FZ(candidate), where A is the corresponding Japan-only "
+            "LightGBM-EVT forecast. Positive movement favors the candidate."
         ),
         claim_scope="headline_lgbm_a_anchor_gjr_evt_and_information_increment_fz_gain",
     )
@@ -663,7 +671,7 @@ def _murphy_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object
         (
             "benchmark_murphy",
             run_dir / "metrics" / "benchmark_murphy.parquet",
-            "Benchmark target-history Murphy diagnostics",
+            "Murphy diagnostics for the benchmark suite",
             "model_name",
             "metrics/benchmark_murphy.parquet",
             "murphy_diagnostic_benchmark_baseline_common_grid",
@@ -683,6 +691,8 @@ def _murphy_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object
                 label = str(key[0] if isinstance(key, tuple) else key)
                 if label_column == "information_set":
                     label = display_information_set_label(label)
+                elif label_column == "model_name":
+                    label = display_model_label(label)
                 curve = group.sort("threshold_value")
                 ax.plot(
                     curve["threshold_value"].to_list(),
@@ -696,8 +706,8 @@ def _murphy_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object
             ax.legend(fontsize=7, frameon=False)
             _style_axes(ax)
             caption = (
-                f"Benchmark Murphy diagnostic curves for {tail_side} on the artifact's "
-                "common threshold grid and target-history baseline sample. The curves "
+                f"Murphy diagnostic curves for the benchmark suite ({tail_side}) use "
+                "the artifact's common threshold grid and common sample. The curves "
                 "are descriptive forecast-evaluation diagnostics and are not pairwise "
                 "dominance claims."
             )
@@ -741,15 +751,17 @@ def _lgbm_24check_murphy_figures(*, run_dir: Path, figure_dir: Path) -> list[dic
                 linewidth=1.35,
                 label=_short_label(label, max_len=48),
             )
-        ax.set_title(f"24-check robust LGBM Murphy diagnostics ({_label_tail_side(tail_side)})")
+        ax.set_title(
+            f"LightGBM Murphy diagnostics after coverage screening ({_label_tail_side(tail_side)})"
+        )
         ax.set_xlabel("Elementary-score threshold")
         ax.set_ylabel("Mean elementary score")
         ax.legend(fontsize=6.5, frameon=False, ncol=1)
         _style_axes(ax)
         caption = (
-            f"Murphy diagnostic curves for {tail_side} restricted to LGBM families that "
-            "pass the full tail-by-information-set calibration screen. Each curve is a "
-            "model-by-information-set pair on the shared 24-check robust sample grid; "
+            f"Murphy diagnostic curves for {tail_side} restricted to LightGBM specifications "
+            "that pass the full eight-scenario VaR coverage screen. Each curve is a "
+            "model-by-information-set pair on the shared screen-qualified sample grid; "
             "the diagnostic is descriptive and not a pairwise dominance claim."
         )
         entries.extend(
@@ -826,7 +838,7 @@ def _severity_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, obje
             max_rows=28,
         )
         labels = [
-            f"{row.get('suite')} | "
+            f"{display_suite_group_label(row.get('suite'))} | "
             f"{display_model_label(row.get('model_name'))} | "
             f"{display_information_set_label(row.get('information_set'))}"
             for row in side.iter_rows(named=True)
@@ -885,7 +897,7 @@ def _stress_overlay_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str
                 window,
                 show_x_label=index == 1,
             )
-        fig.suptitle(f"VaR/ES stress-window overlay: {window['title']}")
+        fig.suptitle(f"VaR and ES paths during the {window['title']}")
         _add_stress_overlay_shared_legend(fig)
         entries.extend(
             _save_figure(
@@ -899,10 +911,11 @@ def _stress_overlay_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str
                 ],
                 tail_side="left_right_tail",
                 caption=(
-                    "Stress-window VaR/ES overlay with left and right tails sharing the "
-                    "same OOS episode window. The LGBM lines use the C information set "
-                    "(JP + US close core + JP proxy), matching the best FZ rows within "
-                    "the two 24-check LGBM+EVT families. The figure is illustrative and "
+                    "Stress-episode VaR and ES paths for downside and upside exposure on "
+                    "a shared date axis. The LightGBM lines use information set C "
+                    "(Japan + U.S.-close core + Japan proxy), matching the best FZ rows within "
+                    "the two mean/scale LightGBM-EVT specifications that satisfy the "
+                    "coverage screen. The figure is illustrative and "
                     "does not report hedge PnL, transaction costs, or trading performance."
                 ),
                 claim_scope="appendix_stress_overlay_illustration_not_validation",
@@ -935,11 +948,17 @@ def _full_sample_var_overlay_figures(*, run_dir: Path, figure_dir: Path) -> list
                 ],
                 tail_side=tail_side,
                 caption=(
-                    f"Full-sample VaR overlay for {tail_side}. The fixed post-24-check "
-                    "comparison set contains GJR-GARCH-EVT, LGBM plain MLE C, and LGBM "
-                    "UniBM C. Colored markers identify each model's VaR exceptions. The "
-                    "figure is a visual diagnostic; formal comparison uses the strict "
-                    "common-sample FZ DM analysis."
+                    f"Out-of-sample VaR paths for {_label_tail_side(tail_side)}. "
+                    "The fixed post-screen "
+                    "comparison set contains GJR-GARCH-EVT and the two standard-filter "
+                    "LightGBM-EVT specifications under information set C. After each LightGBM "
+                    "model's first valid forecast, a missing display value is the mean of "
+                    "its previous displayed VaR and the same-day GJR-GARCH-EVT VaR. "
+                    "Open markers on the realized-loss path identify exceedances of the "
+                    "displayed threshold. Carried values and their visual exceedances do not "
+                    "enter formal coverage, loss, or DM calculations. The figure "
+                    "is a visual diagnostic; formal comparison uses the strict common-sample "
+                    "FZ DM analysis."
                 ),
                 claim_scope="full_sample_var_overlay_coverage_admissible_set_diagnostic",
             )
@@ -1016,11 +1035,12 @@ def _dm_heatmap_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, ob
                 ],
                 tail_side=tail_side,
                 caption=(
-                    f"Pass-all cross-suite pairwise FZ DM heatmap for {tail_side}. "
+                    f"Post-screen pairwise FZ DM heatmap for {_label_tail_side(tail_side)}. "
                     "Rows are candidate models and columns are anchors. All cells use "
                     f"the same strict global common sample (N={common_n}) formed by "
-                    "intersecting valid forecast dates for GJR-GARCH-EVT, LGBM plain "
-                    "MLE C, and LGBM UniBM C. Mean differences are in units of the "
+                    "intersecting valid forecast dates for GJR-GARCH-EVT and the two "
+                    "mean/scale LightGBM-EVT specifications under information set C. "
+                    "Mean differences are in units of the "
                     "Fissler-Ziegel joint VaR-ES loss; FZ scores may be negative under "
                     "this scoring convention, and lower values mean better joint "
                     "VaR-ES forecasts. Negative candidate-minus-anchor values favor "
@@ -1160,7 +1180,7 @@ def _lgbm_a_anchor_cumulative_loss_pairs(
         ),
     )
     if not benchmark_pair.is_empty():
-        pairs.append(("GJR-GARCH-EVT", benchmark_pair))
+        pairs.append(("GJR-GARCH-EVT vs A", benchmark_pair))
     for information_set in INFORMATION_INCREMENT_CANDIDATE_SETS:
         pair = _paired_cumulative_loss(
             loss_frame,
@@ -1180,10 +1200,10 @@ def _lgbm_a_anchor_cumulative_loss_pairs(
 def _information_set_stage_label(value: object) -> str:
     text = "" if value is None else str(value)
     labels = {
-        "japan_only": "A",
-        "japan_only_plus_us_close_core": "A+B",
-        "japan_only_plus_us_close_core_plus_japan_proxy": "A+B+C",
-        "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy": "A+B+C+D",
+        "japan_only": "Set A",
+        "japan_only_plus_us_close_core": "Set B",
+        "japan_only_plus_us_close_core_plus_japan_proxy": "Set C",
+        "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy": "Set D",
     }
     return labels.get(text, display_information_set_label(text))
 
@@ -1316,8 +1336,8 @@ def _stress_benchmark_label(frame: pl.DataFrame) -> str:
 
 def _stress_lgbm_label(model_name: str) -> str:
     labels = {
-        ML_TAIL_POT_GPD_PLAIN_MLE_MODEL: "LGBM POT-GPD plain MLE (C)",
-        ML_TAIL_POT_GPD_UNIBM_MODEL: "LGBM POT-GPD UniBM (C)",
+        ML_TAIL_POT_GPD_PLAIN_MLE_MODEL: LGBM_STANDARD_PLAIN_MLE_C_LABEL,
+        ML_TAIL_POT_GPD_UNIBM_MODEL: LGBM_STANDARD_UNIBM_C_LABEL,
     }
     return labels.get(model_name, f"{display_model_label(model_name)} (C)")
 
@@ -1417,7 +1437,7 @@ def _stress_episode_windows(candidate_dates: list[date]) -> list[dict[str, objec
         windows.append(
             {
                 "slug": f"{year}_stress_episode",
-                "title": f"{year} OOS stress episode",
+                "title": f"{year} out-of-sample stress episode",
                 "start": start,
                 "end": end,
                 "centers": tuple(cluster),
@@ -1488,12 +1508,12 @@ def _plot_stress_overlay_panel(
     *,
     show_x_label: bool,
 ) -> None:
-    ax.set_title(_label_tail_side(tail_side).title())
+    ax.set_title(_label_tail_side(tail_side))
     if frame.is_empty():
         ax.text(
             0.5,
             0.5,
-            "Window outside available OOS forecast sample",
+            "Window outside the available out-of-sample forecast period",
             transform=ax.transAxes,
             ha="center",
             va="center",
@@ -1554,7 +1574,7 @@ def _plot_stress_overlay_panel(
                 zorder=5,
             )
     ax.axhline(0.0, color="#9ca3af", linewidth=0.8, linestyle=":")
-    ax.set_ylabel("Tail-side loss\n(positive = adverse)")
+    ax.set_ylabel("Realized loss\n(positive = adverse)")
     ax.set_xlabel("Forecast date" if show_x_label else "")
     ax.xaxis.set_major_locator(mdates.DayLocator(interval=7))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d"))
@@ -1581,16 +1601,16 @@ def _add_stress_overlay_shared_legend(fig: object) -> None:
         Line2D(
             [0],
             [0],
-            color=STRESS_OVERLAY_COLORS["LGBM POT-GPD plain MLE (C)"],
+            color=STRESS_OVERLAY_COLORS[LGBM_STANDARD_PLAIN_MLE_C_LABEL],
             linewidth=2.0,
-            label="LGBM plain MLE (C)",
+            label=LGBM_STANDARD_PLAIN_MLE_C_LABEL,
         ),
         Line2D(
             [0],
             [0],
-            color=STRESS_OVERLAY_COLORS["LGBM POT-GPD UniBM (C)"],
+            color=STRESS_OVERLAY_COLORS[LGBM_STANDARD_UNIBM_C_LABEL],
             linewidth=2.0,
-            label="LGBM UniBM (C)",
+            label=LGBM_STANDARD_UNIBM_C_LABEL,
         ),
         Line2D([0], [0], color="#374151", linewidth=1.5, label="solid = VaR"),
         Line2D(
@@ -1640,12 +1660,37 @@ def _plot_full_sample_var_overlay_panel(
         alpha=0.78,
         label="realized loss",
     )
-    for group, group_frame in frame.sort("plot_order").group_by("plot_group", maintain_order=True):
-        label = str(group[0] if isinstance(group, tuple) else group)
-        series = (
-            group_frame.sort("forecast_date")
-            .unique(subset=["forecast_date"], keep="first")
+    gjr_values = (
+        realized.join(
+            frame.filter(pl.col("plot_group") == "GJR-GARCH-EVT")
+            .select(["forecast_date", "var_forecast"])
             .sort("forecast_date")
+            .unique(subset=["forecast_date"], keep="first"),
+            on="forecast_date",
+            how="left",
+        )
+        .sort("forecast_date")["var_forecast"]
+        .fill_null(strategy="forward")
+        .to_list()
+    )
+    for marker_order, (group, group_frame) in enumerate(
+        frame.sort("plot_order").group_by("plot_group", maintain_order=True)
+    ):
+        label = str(group[0] if isinstance(group, tuple) else group)
+        series = realized.join(
+            group_frame.select(["forecast_date", "var_forecast"])
+            .sort("forecast_date")
+            .unique(subset=["forecast_date"], keep="first"),
+            on="forecast_date",
+            how="left",
+        ).sort("forecast_date")
+        display_values = (
+            series["var_forecast"].fill_null(strategy="forward").to_list()
+            if label == "GJR-GARCH-EVT"
+            else _lgbm_overlay_var_values(series["var_forecast"].to_list(), gjr_values)
+        )
+        series = series.with_columns(pl.Series("var_forecast", display_values)).filter(
+            pl.col("var_forecast").is_not_null()
         )
         ax.plot(
             _plot_date_values(series["forecast_date"].to_list()),
@@ -1654,11 +1699,7 @@ def _plot_full_sample_var_overlay_panel(
             linewidth=1.35,
             label=f"{label} VaR",
         )
-        breaches = (
-            series.filter(pl.col("var_breach").fill_null(False))
-            if "var_breach" in series.columns
-            else series.filter(pl.col("realized_loss") > pl.col("var_forecast"))
-        )
+        breaches = series.filter(pl.col("realized_loss") > pl.col("var_forecast"))
         if not breaches.is_empty():
             breach_points = (
                 breaches.select(["forecast_date", "realized_loss"]).unique().sort("forecast_date")
@@ -1666,21 +1707,38 @@ def _plot_full_sample_var_overlay_panel(
             ax.scatter(
                 _plot_date_values(breach_points["forecast_date"].to_list()),
                 breach_points["realized_loss"].to_list(),
-                s=20,
-                color=FULL_SAMPLE_OVERLAY_COLORS.get(label, "#64748b"),
+                s=30 + 12 * marker_order,
+                facecolors="none",
+                edgecolors=FULL_SAMPLE_OVERLAY_COLORS.get(label, "#64748b"),
                 marker=FULL_SAMPLE_OVERLAY_MARKERS.get(label, "o"),
-                edgecolors="white",
-                linewidths=0.4,
+                linewidths=1.15,
                 label=f"{label} breach",
                 zorder=5,
             )
     ax.axhline(0.0, color="#111827", linewidth=0.8, linestyle="--", alpha=0.7)
-    ax.set_title(f"Full-sample VaR overlay ({_label_tail_side(tail_side)})")
+    ax.set_title(f"Out-of-sample VaR paths ({_label_tail_side(tail_side)})")
     ax.set_ylabel("Realized loss and VaR")
     ax.set_xlabel("Forecast date")
     _set_monthly_date_ticks(ax)
     ax.legend(frameon=False, fontsize=7, ncol=3)
     _style_axes(ax)
+
+
+def _lgbm_overlay_var_values(
+    raw_values: list[object],
+    gjr_values: list[object],
+) -> list[float | None]:
+    displayed: list[float | None] = []
+    previous: float | None = None
+    for raw_value, gjr_value in zip(raw_values, gjr_values, strict=True):
+        value = _optional_float(raw_value)
+        if value is None and previous is not None:
+            gjr_var = _optional_float(gjr_value)
+            value = (previous + gjr_var) / 2.0 if gjr_var is not None else previous
+        displayed.append(value)
+        if value is not None:
+            previous = value
+    return displayed
 
 
 def _ordered_unique(values: list[object]) -> list[str]:
@@ -1853,7 +1911,8 @@ def _series_percent(frame: pl.DataFrame, column: str) -> list[float]:
 
 
 def _label_tail_side(tail_side: str) -> str:
-    return tail_side.replace("_", " ")
+    label = display_tail_side_label(tail_side)
+    return f"{label.lower()} exposure" if label in {"Downside", "Upside"} else label
 
 
 def _short_label(value: object, *, max_len: int = 42) -> str:

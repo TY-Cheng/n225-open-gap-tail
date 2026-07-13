@@ -43,14 +43,14 @@ METRIC_COLUMNS = (
     "fz_loss",
     "severity",
 )
-TAIL_ORDER = {"Left": 0, "Right": 1}
+TAIL_ORDER = {"Downside": 0, "Upside": 1}
 INFO_ORDER = {
-    "Target history": 0,
-    "JP only": 1,
-    "JP + US close core": 2,
-    "JP + US close core + JP proxy": 3,
-    "JP + US close core + JP proxy + Asia proxy": 4,
-    "JP + US close core + JP proxy + Asia proxy + options": 5,
+    "Lagged opening-gap losses": 0,
+    "A: Japan only": 1,
+    "B: +U.S.-close core": 2,
+    "C: +Japan proxy": 3,
+    "D: +Asia proxy": 4,
+    "E: +U.S.-listed options": 5,
 }
 
 
@@ -81,7 +81,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     rows = [
         *_metric_rows(benchmark_metrics, group="Benchmark"),
-        *_metric_rows(ml_tail_metrics, group="LGBM"),
+        *_metric_rows(ml_tail_metrics, group="LightGBM"),
     ]
     if not rows:
         raise AuditExportError("No active model metric rows remained after filtering")
@@ -89,7 +89,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     csv_path = output_dir / CSV_NAME
     full_metrics = pl.DataFrame(rows).select(METRIC_COLUMNS)
     full_metrics = full_metrics.with_columns(
-        pl.col("group").replace({"Benchmark": 0, "LGBM": 1}).alias("_group_order"),
+        pl.col("group").replace({"Benchmark": 0, "LightGBM": 1}).alias("_group_order"),
         pl.col("tail").replace(TAIL_ORDER).alias("_tail_order"),
         pl.col("info").replace(INFO_ORDER).fill_null(99).alias("_info_order"),
         pl.col("model").str.to_lowercase().alias("_model_order"),
@@ -234,7 +234,7 @@ def _metric_row(metric: Mapping[str, object], *, group: str) -> dict[str, object
 
 def _audit_markdown(*, run_id: str, full_metrics: pl.DataFrame) -> str:
     benchmark = full_metrics.filter(pl.col("group") == "Benchmark")
-    lgbm = full_metrics.filter(pl.col("group") == "LGBM")
+    lgbm = full_metrics.filter(pl.col("group") == "LightGBM")
     sections = [
         "# Model Metrics, Breach-Neighborhood, and Sample-Eligibility Audit",
         "",
@@ -247,12 +247,12 @@ def _audit_markdown(*, run_id: str, full_metrics: pl.DataFrame) -> str:
             f"`N >= {PASS_ALL_MIN_ROWS}`."
         ),
         (
-            "This companion audit reports only the breach-neighborhood and sample-size "
-            "gates. It is not the full 24-check audit; the Results Snapshot reports the "
-            "breach, Kupiec, and Christoffersen independence checks across all eight scenarios."
+            "This companion audit reports only the exception-rate tolerance and sample-size "
+            "gates. The Results Snapshot reports the Kupiec and Christoffersen independence "
+            "tests that complete the eight-scenario VaR coverage screen."
         ),
         "",
-        "## LGBM/EVT Breach-Pass Counts Across 8 Scenarios",
+        "## LightGBM-EVT Breach-Pass Counts Across 8 Scenarios",
         "",
         _lgbm_count_table(lgbm),
         "",
@@ -260,7 +260,7 @@ def _audit_markdown(*, run_id: str, full_metrics: pl.DataFrame) -> str:
         "",
         _benchmark_count_table(benchmark),
         "",
-        "## Best LGBM/EVT Model in Each Scenario",
+        "## Best LightGBM-EVT Model in Each Scenario",
         "",
         (
             "Best-by-FZ is selected among gate-pass rows only. QL-best is shown "
@@ -277,7 +277,7 @@ def _audit_markdown(*, run_id: str, full_metrics: pl.DataFrame) -> str:
         "",
         _full_metrics_table(benchmark, include_info=False),
         "",
-        "## Full LGBM/EVT Metrics",
+        "## Full LightGBM-EVT Metrics",
         "",
         _full_metrics_table(lgbm, include_info=True),
         "",
@@ -319,7 +319,7 @@ def _benchmark_count_table(frame: pl.DataFrame) -> str:
         )
     rows: list[tuple[object, ...]] = []
     total_breach = total_gate = total_models = 0
-    for tail in ("Left", "Right"):
+    for tail in ("Downside", "Upside"):
         side = frame.filter(pl.col("tail") == tail)
         breach = _bool_sum(side, "breach_pass")
         gate = _bool_sum(side, "gate_pass")
@@ -337,7 +337,7 @@ def _benchmark_count_table(frame: pl.DataFrame) -> str:
 
 def _best_lgbm_table(frame: pl.DataFrame) -> str:
     rows: list[tuple[object, ...]] = []
-    for tail in ("Left", "Right"):
+    for tail in ("Downside", "Upside"):
         side = frame.filter(pl.col("tail") == tail)
         for info in _ordered_values(side.get_column("info").to_list()):
             group = side.filter(pl.col("info") == info)
@@ -380,7 +380,7 @@ def _best_lgbm_table(frame: pl.DataFrame) -> str:
 
 def _best_benchmark_table(frame: pl.DataFrame) -> str:
     rows: list[tuple[object, ...]] = []
-    for tail in ("Left", "Right"):
+    for tail in ("Downside", "Upside"):
         gate = frame.filter((pl.col("tail") == tail) & pl.col("gate_pass"))
         if gate.is_empty():
             rows.append((tail, 0, "n/a", "n/a", "n/a", "n/a", "n/a", "n/a"))
@@ -450,7 +450,7 @@ def _ordered_values(values: Iterable[object]) -> list[str]:
 
 def _tail_label(value: object) -> str:
     text = "" if value is None else str(value)
-    return {"left_tail": "Left", "right_tail": "Right"}.get(text, text)
+    return {"left_tail": "Downside", "right_tail": "Upside"}.get(text, text)
 
 
 def _bool_sum(frame: pl.DataFrame, column: str) -> int:

@@ -45,7 +45,7 @@ def _result_matrix_notes(
         "",
         "- `ml_tail_metrics.parquet` remains the primary ML information-set table.",
         "- `ml_tail_metrics_per_model.parquet` is diagnostic, not a cross-model comparison "
-        "table; its rows use each model family's own valid OOS coverage.",
+        "table; its rows use each model family's own valid out-of-sample coverage.",
         "- `ml_tail_result_matrix.parquet` provides restricted VaR-only and VaR-ES "
         "comparisons on explicit common samples.",
         "",

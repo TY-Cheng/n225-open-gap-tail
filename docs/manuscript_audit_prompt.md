@@ -111,8 +111,8 @@ Evidence lock:
 
 Current empirical design to protect:
 - Target: the OSE Nikkei 225 Futures settlement-to-open opening gap, evaluated
-  as left-tail and right-tail positive losses.
-- Forecast origin: after the matched U.S. cash-market close and before the OSE
+  as downside and upside losses.
+- Forecast origin: after the matched U.S. equity-market close and before the OSE
   day-session open.
 - Hard timing invariant:
   feature_available_ts_utc <= model_cutoff_ts_utc < target_open_ts_utc
@@ -133,22 +133,25 @@ Canonical vocabulary:
 - Use "U.S.-close forecast origin" for the information cutoff.
 - Use "OSE day-session open" for the target opening mark.
 - Use "Nikkei 225 Futures" for the contract family.
-- Use "left-tail loss" and "right-tail loss" under the positive-loss
-  convention.
+- Use "left tail" and "right tail" for the corresponding sides of the original
+  opening-gap return distribution.
+- Use "downside exposure" and "upside exposure" for economic interpretation,
+  and "downside loss" and "upside loss" for the transformed loss variables.
+- State that both transformed losses are evaluated through the upper tail of
+  their respective loss distributions; neither series is truncated at zero.
 - Use "information set" or "predictor block"; avoid switching among "feature
   group", "signal bucket", and "factor set" for the same object.
 - Use "Fissler-Ziegel joint VaR-ES loss" on first use. "Fissler-Ziegel loss" is
   acceptable after that. Do not introduce duplicate objective labels for the
   same loss.
-- Use "LightGBM+EVT" only for filtered-tail families that actually combine the
+- Use "LightGBM-EVT" only for filtered-tail families that actually combine the
   learner with empirical or POT-GPD tail calibration.
-- Use "post-24-check comparison set" for the restricted comparison among
-  models that pass the breach-rate, Kupiec, and Christoffersen checks across
-  both tails and the four information sets.
-- If "post-24-check" appears before definition, flag it. In main text, prefer
-  "coverage-admissible comparison set" unless "post-24-check" has already been
-  defined for the reader. The internal term is more natural in appendix,
-  provenance, and locked-run audit material.
+- Use "post-screen comparison set" for the restricted comparison among models
+  that satisfy the eight-scenario VaR coverage screen across both exposures and
+  the four information sets.
+- Prefer "coverage-admissible comparison set" when the procedural screen is the
+  focus and "post-screen comparison set" when the subsequent loss comparison is
+  the focus.
 
 Terms that must stay distinct:
 - "Primary evidence" means evidence eligible for the main claim after the
@@ -156,8 +159,8 @@ Terms that must stay distinct:
 - "Restricted evidence" means matched-date comparisons or gated diagnostics; it
   does not create a universal model ranking.
 - "Diagnostic evidence" supports interpretation only.
-- "Coverage-admissible model family" means a model family that passes the
-  24-check coverage screen. The informal shorthand "pass-all" may identify the
+- "Coverage-admissible model family" means a model family that satisfies the
+  eight-scenario VaR coverage screen. The informal shorthand "pass-all" may identify the
   code path, but manuscript prose should use the formal term.
 
 JFM fit checks:
@@ -209,19 +212,19 @@ Model checks:
 - The benchmark suite should include historical or rolling quantiles, EWMA,
   GARCH, GJR-GARCH, Student-t variants where implemented, and GJR-GARCH-EVT as
   the compact futures-risk benchmark.
-- Advanced own-history benchmarks may appear in appendix material as CAViaR,
+- Advanced benchmarks based on lagged opening-gap losses may appear in appendix material as CAViaR,
   CARE or expectile, and GAS-t rows where generated. Do not present them as
   separate headline model innovations.
-- Direct LightGBM quantile rows are the clean information-ladder experiment.
+- Direct-quantile LightGBM rows are the clean information-ladder experiment.
   They may show lower loss but weak exception discipline; do not sell them as
   final risk forecasts when they fail coverage checks.
 - Filtered-tail rows separate conditional body estimation from empirical or
   POT-GPD tail calibration.
-- The post-24-check comparison set is:
+- The post-screen comparison set is:
   GJR-GARCH-EVT;
-  LGBM POT-GPD plain MLE with information set C;
-  LGBM POT-GPD UniBM with information set C.
-- Do not broaden the post-24-check comparison set beyond the three registered
+  LightGBM mean/scale POT-GPD MLE with information set C;
+  LightGBM mean/scale POT-GPD UniBM with information set C.
+- Do not broaden the post-screen comparison set beyond the three registered
   coverage-admissible comparison rows.
 - Verify every stated LightGBM hyperparameter and downstream EVT threshold
   against the locked research_config artifact recorded in the run manifest. Do
@@ -235,14 +238,14 @@ Evaluation checks:
   benchmark family.
 - Lower quantile loss or lower Fissler-Ziegel loss alone is not enough for a
   risk-forecasting claim if exception behavior is poor.
-- The 24-check robustness story should be stated as coverage reliability across
-  left and right tails and across the four nested information sets. It is a
-  screening discipline, not a theorem of model optimality.
+- The eight-scenario robustness result should be stated as coverage reliability
+  across downside and upside exposures and the four nested information sets.
+  It is a screening discipline, not a theorem of model optimality.
 - Paired Diebold-Mariano evidence must use common forecast dates. Heatmap cells
   must state or inherit the same common-sample N within a tail panel.
 - Every N, breach rate, exception count, loss value, p-value, and claim about
   significance must trace to a locked table, figure, manifest, or results
-  snapshot. Check text/table/caption consistency, including the cross-suite
+  snapshot. Check text/table/caption consistency, including the post-screen
   common-sample N and DM p-values reported in the Evidence section.
 - Murphy diagrams, ES severity tables, VaR/ES overlays, stress-window overlays,
   and sensitivity tables are supporting diagnostics unless the main text makes
@@ -253,18 +256,18 @@ Current result interpretation to protect:
 - The raw settlement-to-open distribution is heavy-tailed on both sides and
   motivates VaR/ES and EVT-style tail calibration; it does not validate any
   forecast model.
-- The benchmark suite is not a straw man. It provides calibrated own-history and
-  econometric risk references.
-- Direct LightGBM quantile forecasts show that U.S.-close and proxy information
+- The benchmark suite is not a straw man. It provides statistical and econometric
+  risk references based only on lagged opening-gap losses.
+- Direct-quantile LightGBM forecasts show that U.S.-close and proxy information
   changes loss scores and exception behavior.
 - The main lesson is the tension between average loss improvement and VaR
   exception discipline.
-- In the locked run, standardized-loss POT-GPD plain MLE and UniBM are the two
-  LGBM families that pass all 24 calibration checks. The paired loss comparison
-  fixes information set C for both.
-- The post-24-check Diebold-Mariano heatmaps compare GJR-GARCH-EVT with the two
-  LGBM+EVT information-set-C families on strict common dates. The family-level
-  claim is more defensible than declaring one LGBM tail estimator superior.
+- In the locked run, LightGBM mean/scale POT-GPD MLE and LightGBM mean/scale POT-GPD
+  UniBM are the two specifications that pass the eight-scenario VaR coverage
+  screen. The paired loss comparison fixes information set C for both.
+- The post-screen Diebold-Mariano heatmaps compare GJR-GARCH-EVT with the two
+  LightGBM-EVT information-set-C specifications on strict common dates. The
+  model-class claim is more defensible than declaring one tail estimator superior.
 - Sensitivity evidence is appendix evidence. It asks whether the selected
   comparison set is fragile to nearby LightGBM capacity or POT-threshold
   changes; it does not feed model selection.
@@ -362,12 +365,12 @@ Allowed claims:
 - point-in-time forecast evaluation for OSE Nikkei 225 Futures opening-gap
   VaR/ES;
 - U.S.-close and proxy information change loss and coverage patterns;
-- direct LightGBM quantile rows reveal an information signal and a calibration
+- direct-quantile LightGBM rows reveal an information signal and a calibration
   problem;
 - filtered-tail calibration can produce side-specific gated candidates under
   the locked evaluation;
-- the post-24-check comparison set supports a restricted family-level comparison
-  between GJR-GARCH-EVT and two LGBM+EVT information-set-C specifications;
+- the post-screen comparison set supports a restricted family-level comparison
+  between GJR-GARCH-EVT and two LightGBM-EVT information-set-C specifications;
 - sensitivity rows support appendix robustness discussion only.
 
 Forbidden claims:
@@ -414,7 +417,7 @@ Automated terminology search:
 - Replace "FZ score", "FZ loss", or "joint score" with "Fissler-Ziegel joint
   VaR-ES loss" on first use; short forms are allowed only after definition.
 - Check for inconsistent uses of "restricted", "diagnostic", "primary",
-  "headline", "coverage-admissible", and "post-24-check".
+  "headline", "coverage-admissible", and "post-screen".
 
 Report format:
 1. Overall verdict: ready for internal circulation, revise before circulation,

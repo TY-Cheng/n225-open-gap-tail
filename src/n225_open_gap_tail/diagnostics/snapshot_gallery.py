@@ -95,8 +95,11 @@ def figure_gallery_markdown(*, figure_manifest: dict[str, object], run_id: str) 
         ("full_var_overlay", "Figure 5. Full-Sample VaR Overlay Diagnostics"),
         ("stress_overlay", "Figure 6. VaR/ES Stress-Window Overlays"),
         ("dm", "Figure 7. DM Heatmaps"),
-        ("benchmark_murphy", "Figure 8. Benchmark Murphy Diagnostics"),
-        ("lgbm_24check_murphy", "Figure 9. 24-Check LGBM Murphy Diagnostics"),
+        ("benchmark_murphy", "Figure 8. Murphy Diagnostics for the Benchmark Suite"),
+        (
+            "lgbm_24check_murphy",
+            "Figure 9. LightGBM Murphy Diagnostics after Coverage Screening",
+        ),
         ("severity", "Figure 10. ES Severity Diagnostics"),
     ]
     for family, title in order:
@@ -197,39 +200,40 @@ def _figure_key_readings(family: str) -> list[str]:
             "- Loss changes must still be read with coverage and inference gates.",
         ],
         "cumulative_loss": [
-            "- Key readings: upward movement means the candidate has lower cumulative FZ loss under the fixed anchor-loss-minus-candidate-loss convention.",
-            "- Each panel uses the corresponding A-only LGBM+EVT forecast as anchor.",
-            "- The GJR-GARCH-EVT line is an own-history benchmark reference; B/C/D lines show same-family information increments.",
+            "- Key readings: upward movement means the candidate has lower cumulative FZ loss than the corresponding information-set-A anchor.",
+            "- Each panel uses the corresponding Japan-only LightGBM-EVT forecast as anchor.",
+            "- GJR-GARCH-EVT and information sets B, C, and D are each compared with that same anchor on pair-specific common dates; endpoints are not a common-sample ranking across lines.",
         ],
         "target_distribution": [
             "- Key readings: these figures describe the raw settlement-to-open gap and the left/right loss tails.",
-            "- They motivate VaR/ES and POT-GPD modeling, but they do not validate LightGBM+EVT forecasts.",
+            "- They motivate VaR/ES and POT-GPD modeling, but they do not validate LightGBM-EVT forecasts.",
         ],
         "coverage": [
             "- Key readings: bars report realized VaR exception rates against the nominal line.",
             "- Read this first: exception-rate deviations set the boundary for any loss-based interpretation.",
         ],
         "full_var_overlay": [
-            "- Key readings: full-sample overlays compare realized loss with VaR from the fixed post-24-check set: GJR-GARCH-EVT, LGBM plain MLE C, and LGBM UniBM C.",
-            "- Colored markers identify each model's VaR exceptions; no model is selected by inspecting this plot.",
+            "- Key readings: full-sample overlays compare realized loss with VaR from the fixed post-screen set: GJR-GARCH-EVT, LightGBM mean/scale POT-GPD MLE (C), and LightGBM mean/scale POT-GPD UniBM (C).",
+            "- After each LightGBM model's first valid forecast, a missing display value is the mean of its previous displayed VaR and the same-day GJR-GARCH-EVT VaR; open markers on the realized-loss path identify exceedances of the displayed threshold.",
+            "- Carried values and their visual exceedances do not enter formal coverage, loss, or DM calculations.",
             "- Treat the plot as a visual diagnostic. Formal comparison uses coverage checks and strict common-sample FZ DM evidence.",
         ],
         "stress_overlay": [
-            "- Supporting diagnostic: stress-window overlays illustrate threshold behavior in broad OOS stress episodes with left/right tails sharing each episode's x-axis.",
-            "- The LGBM overlays use information set C, the best-FZ row within the two 24-check LGBM+EVT families.",
+            "- Supporting diagnostic: stress-window overlays illustrate threshold behavior in broad out-of-sample stress episodes, with downside and upside exposure sharing each episode's x-axis.",
+            "- The LightGBM overlays use information set C, the lowest-FZ row within the two mean/scale LightGBM-EVT specifications that satisfy the coverage screen.",
             "- They do not report hedge PnL, transaction-cost evidence, or trading performance.",
         ],
         "dm": [
-            "- Supporting diagnostic: heatmap cells report pairwise FZ-loss differences and one-sided DM p-values for the pass-all cross-suite model set.",
+            "- Supporting diagnostic: heatmap cells report pairwise FZ-loss differences and one-sided DM p-values for the post-screen comparison set.",
             "- Rows are candidates, columns are anchors, and negative candidate-minus-anchor differences favor the row model.",
-            "- Each tail uses a strict global common sample across GJR-GARCH-EVT, LGBM plain MLE C, and LGBM UniBM C.",
+            "- Each exposure uses a strict global common sample across GJR-GARCH-EVT, LightGBM mean/scale POT-GPD MLE (C), and LightGBM mean/scale POT-GPD UniBM (C).",
         ],
         "benchmark_murphy": [
-            "- Key readings: curves report target-history benchmark elementary-score diagnostics on a common grid.",
+            "- Key readings: curves report elementary-score diagnostics for models in the benchmark suite on a common grid.",
             "- The plot is a scoring-family diagnostic, not a pairwise ranking statement.",
         ],
         "lgbm_24check_murphy": [
-            "- Key readings: curves report only the LGBM families that pass the full tail-by-information-set calibration screen.",
+            "- Key readings: curves report only the LightGBM specifications that pass the full tail-by-information-set coverage screen.",
             "- Interpret curve separation as scoring-family sensitivity evidence, not as a standalone model-selection rule.",
         ],
         "severity": [

@@ -2,20 +2,20 @@
 % git_commit: 7f628ff4f66258a36314f492b652cdf7ef594b7e
 % config_hash: 874b7125bfae77a6fb261d40af0f987d89e5bae1e5ebc54a3958be66f9c17b4c
 % claim_level: research_candidate
-% loss convention: realized_loss is positive loss for selected tail_side; lower FZ loss is better
-\begin{tabular}{lllrrrrr}
+% loss convention: realized_loss is the tail-oriented loss for selected tail_side; lower FZ loss is better
+\begin{tabular}{lllrrrrrr}
 \toprule
-model & info & side & tail & rows & breach & q_loss & fz_loss \\
+model & info & side & tail & rows & breach & q_loss & fz_loss & severity \\
 \midrule
-LGBM direct quantile & JP only & left\_tail & 0.950 & 527 & 0.081594 & 0.001412 & -3.489349 \\
-LGBM direct quantile & JP + US close core & left\_tail & 0.950 & 527 & 0.111954 & 0.001158 & -3.668401 \\
-LGBM direct quantile & JP + US close core + JP proxy & left\_tail & 0.950 & 527 & 0.117647 & 0.001114 & -3.868878 \\
-LGBM direct quantile & JP + US close core + JP proxy + Asia proxy & left\_tail & 0.950 & 527 & 0.117647 & 0.001119 & -3.807595 \\
-LGBM direct quantile & JP only & right\_tail & 0.950 & 527 & 0.096774 & 0.001310 & -3.487426 \\
-LGBM direct quantile & JP + US close core & right\_tail & 0.950 & 527 & 0.119545 & 0.001252 & -3.486236 \\
-LGBM direct quantile & JP + US close core + JP proxy & right\_tail & 0.950 & 527 & 0.115750 & 0.001211 & -3.557463 \\
-LGBM direct quantile & JP + US close core + JP proxy + Asia proxy & right\_tail & 0.950 & 527 & 0.129032 & 0.001222 & -3.559147 \\
+LightGBM direct quantile & A: Japan only & Downside & 0.950 & 527 & 0.081594 & 0.001412 & -3.489349 & 0.008741 \\
+LightGBM direct quantile & B: +U.S.-close core & Downside & 0.950 & 527 & 0.111954 & 0.001158 & -3.668401 & 0.006086 \\
+LightGBM direct quantile & C: +Japan proxy & Downside & 0.950 & 527 & 0.117647 & 0.001114 & -3.868878 & 0.005511 \\
+LightGBM direct quantile & D: +Asia proxy & Downside & 0.950 & 527 & 0.117647 & 0.001119 & -3.807595 & 0.005581 \\
+LightGBM direct quantile & A: Japan only & Upside & 0.950 & 527 & 0.096774 & 0.001310 & -3.487426 & 0.007417 \\
+LightGBM direct quantile & B: +U.S.-close core & Upside & 0.950 & 527 & 0.119545 & 0.001252 & -3.486236 & 0.006614 \\
+LightGBM direct quantile & C: +Japan proxy & Upside & 0.950 & 527 & 0.115750 & 0.001211 & -3.557463 & 0.006448 \\
+LightGBM direct quantile & D: +Asia proxy & Upside & 0.950 & 527 & 0.129032 & 0.001222 & -3.559147 & 0.005853 \\
 \midrule
-\multicolumn{8}{l}{\footnotesize Visible notes: candidate artifact; lower FZ loss is better; inference artifacts use block-bootstrap DM; common-sample status is recorded in metrics metadata.} \\
+\multicolumn{9}{l}{\footnotesize Visible notes: candidate artifact; lower FZ loss is better; inference artifacts use block-bootstrap DM; severity is the mean VaR overshoot conditional on an exception; common-sample status is recorded in metrics metadata.} \\
 \bottomrule
 \end{tabular}

@@ -2,6 +2,8 @@
 # ruff: noqa: F401,I001,UP035
 from __future__ import annotations
 
+import json
+
 from n225_open_gap_tail.config.runtime import (
     CLAIMS_LEVEL,
     ML_TAIL_DIRECT_QUANTILE_MODEL,
@@ -13,6 +15,10 @@ from n225_open_gap_tail.config.runtime import (
 )
 from n225_open_gap_tail.metrics.admissibility import coverage_admissibility_summary_rows
 from n225_open_gap_tail.metrics.cross_suite_dm import cross_suite_dm_records_from_run
+from n225_open_gap_tail.panel.information_sets import (
+    ml_tail_feature_columns_for_information_set,
+    registered_ml_tail_information_sets,
+)
 from n225_open_gap_tail.reporting.figures import export_figures
 from n225_open_gap_tail.reporting.latex import (
     _claim_scope_to_latex,
@@ -44,11 +50,22 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
     manifest = _read_manifest(run_dir)
     feature_coverage_path = run_dir / "panel" / "feature_coverage.parquet"
     if feature_coverage_path.exists():
+        feature_coverage = pl.read_parquet(feature_coverage_path)
+        diagnostics_path = run_dir / "forecasts" / "ml_tail_fit_diagnostics.parquet"
+        retained_features = (
+            _retained_ml_tail_features(
+                feature_coverage,
+                pl.read_parquet(diagnostics_path),
+            )
+            if diagnostics_path.exists()
+            else None
+        )
         table_path = latex_dir / "tailrisk_predictor_block_coverage_table.tex"
         table_path.write_text(
             _predictor_block_coverage_to_latex(
-                pl.read_parquet(feature_coverage_path),
+                feature_coverage,
                 manifest=manifest,
+                retained_features=retained_features,
             ),
             encoding="utf-8",
         )
@@ -125,7 +142,7 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
         table_path.write_text(
             _full_per_model_metrics_to_latex(
                 ml_tail_per_model,
-                suite_group="LGBM",
+                suite_group="LightGBM",
                 manifest=manifest,
             ),
             encoding="utf-8",
@@ -216,6 +233,53 @@ def export_tables(*, run_dir: Path) -> TableExportResult:
     return TableExportResult(run_id=run_dir.name, latex_dir=latex_dir, tables=tables)
 
 
+def _retained_ml_tail_features(
+    coverage: pl.DataFrame,
+    diagnostics: pl.DataFrame,
+) -> set[str] | None:
+    required = {
+        "information_set",
+        "dropped_features_json",
+        "scale_dropped_features_json",
+    }
+    if coverage.is_empty() or diagnostics.is_empty() or not required.issubset(diagnostics.columns):
+        return None
+
+    coverage_rows = coverage.to_dicts()
+    coverage_features = {str(row["feature"]) for row in coverage_rows}
+    information_sets = set(registered_ml_tail_information_sets())
+    retained: set[str] = set()
+    observed_gate = False
+    for row in diagnostics.select(sorted(required)).iter_rows(named=True):
+        information_set = str(row.get("information_set") or "")
+        if information_set not in information_sets:
+            continue
+        candidates = set(
+            ml_tail_feature_columns_for_information_set(
+                coverage_rows,
+                information_set=information_set,
+            )
+        )
+        for column in ("dropped_features_json", "scale_dropped_features_json"):
+            raw = row.get(column)
+            if not raw:
+                continue
+            try:
+                payload = json.loads(str(raw))
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, list):
+                continue
+            observed_gate = True
+            dropped = {
+                str(item["feature"])
+                for item in payload
+                if isinstance(item, dict) and item.get("feature")
+            }
+            retained.update(candidates - dropped)
+    return retained & coverage_features if observed_gate else None
+
+
 def export_sensitivity_tables(*, run_dir: Path) -> TableExportResult:  # pragma: no cover
     from n225_open_gap_tail.forecasting.artifacts import (
         _read_manifest,
@@ -299,8 +363,11 @@ def _table_manifest_entry(table_file: str) -> dict[str, object]:
     specs: dict[str, tuple[str, list[str], str, str | None]] = {
         "tailrisk_predictor_block_coverage_table.tex": (
             "tailrisk_predictor_block_coverage",
-            ["panel/feature_coverage.parquet"],
-            "main_text_predictor_block_coverage_information_transparency",
+            [
+                "panel/feature_coverage.parquet",
+                "forecasts/ml_tail_fit_diagnostics.parquet",
+            ],
+            "appendix_methods_predictor_block_information_transparency",
             None,
         ),
         "tailrisk_model_inventory_table.tex": (
@@ -310,7 +377,7 @@ def _table_manifest_entry(table_file: str) -> dict[str, object]:
                 "metrics/benchmark_metrics_per_model.parquet",
                 "metrics/ml_tail_metrics_per_model.parquet",
             ],
-            "main_text_model_inventory_forecast_construction",
+            "appendix_methods_forecast_construction_inventory",
             None,
         ),
         "benchmark_metrics_table.tex": (
@@ -446,9 +513,11 @@ def _table_manifest_entry(table_file: str) -> dict[str, object]:
 def _table_caption(name: str) -> str:
     captions = {
         "tailrisk_predictor_block_coverage": (
-            "Predictor-block feature count, examples, and coverage summary."
+            "Candidate predictor blocks and panel missingness across the nested information sets."
         ),
-        "tailrisk_model_inventory": "Model-family inventory and VaR/ES construction table.",
+        "tailrisk_model_inventory": (
+            "Forecast-model inventory, information basis, and VaR/ES construction."
+        ),
         "benchmark_metrics": "Baseline benchmark common-sample metric table.",
         "benchmark_left_tail_risk": "Benchmark downside-risk metric table.",
         "benchmark_right_tail_risk": "Benchmark upside-risk metric table.",
@@ -463,15 +532,13 @@ def _table_caption(name: str) -> str:
         "ml_tail_result_matrix_summary": (
             "Restricted result-matrix inference and gate summary table."
         ),
-        "tailrisk_cross_suite_fz_dm": (
-            "Post-24-check cross-suite FZ DM comparisons on strict common samples."
-        ),
-        "tailrisk_lgbm_24check": ("Full LightGBM 24-check coverage-admissibility screen."),
+        "tailrisk_cross_suite_fz_dm": ("Post-screen FZ DM comparisons on strict common samples."),
+        "tailrisk_lgbm_24check": ("Full LightGBM eight-scenario VaR coverage screen."),
         "appendix_lgbm_configuration_sensitivity": (
-            "Appendix post-24-check LightGBM configuration sensitivity table."
+            "Appendix post-screen LightGBM configuration sensitivity table."
         ),
         "appendix_evt_threshold_sensitivity": (
-            "Appendix post-24-check POT threshold sensitivity table."
+            "Appendix post-screen POT threshold sensitivity table."
         ),
     }
     return captions.get(name, "Generated LaTeX table artifact.")

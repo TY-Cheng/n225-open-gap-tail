@@ -2,26 +2,26 @@
 % git_commit: 7f628ff4f66258a36314f492b652cdf7ef594b7e
 % config_hash: 874b7125bfae77a6fb261d40af0f987d89e5bae1e5ebc54a3958be66f9c17b4c
 % claim_level: research_candidate
-% loss convention: realized_loss is positive loss for selected tail_side; lower FZ loss is better
-\begin{tabular}{lllrrrrr}
+% loss convention: realized_loss is the tail-oriented loss for selected tail_side; lower FZ loss is better
+\begin{tabular}{lllrrrrrr}
 \toprule
-model & info & side & tail & rows & breach & q_loss & fz_loss \\
+model & info & side & tail & rows & breach & q_loss & fz_loss & severity \\
 \midrule
-ewma\_vol\_scaled & Target history & left\_tail & 0.950 & 722 & 0.052632 & 0.001409 & -3.647462 \\
-ewma\_vol\_scaled & Target history & right\_tail & 0.950 & 722 & 0.045706 & 0.001342 & -3.656615 \\
-garch\_t & Target history & left\_tail & 0.950 & 722 & 0.060942 & 0.001368 & -3.701083 \\
-garch\_t & Target history & right\_tail & 0.950 & 722 & 0.041551 & 0.001278 & -3.703374 \\
-gas\_t\_location\_scale & Target history & left\_tail & 0.950 & 722 & 0.063712 & 0.001352 & -3.693506 \\
-gas\_t\_location\_scale & Target history & right\_tail & 0.950 & 722 & 0.049861 & 0.001307 & -3.668339 \\
-gjr\_garch\_evt & Target history & left\_tail & 0.950 & 722 & 0.060942 & 0.001330 & -3.746233 \\
-gjr\_garch\_evt & Target history & right\_tail & 0.950 & 722 & 0.058172 & 0.001233 & -3.708574 \\
-gjr\_garch\_t & Target history & left\_tail & 0.950 & 722 & 0.070637 & 0.001338 & -3.723459 \\
-gjr\_garch\_t & Target history & right\_tail & 0.950 & 722 & 0.042936 & 0.001222 & -3.739711 \\
-historical\_quantile & Target history & left\_tail & 0.950 & 722 & 0.055402 & 0.001476 & -3.540661 \\
-historical\_quantile & Target history & right\_tail & 0.950 & 722 & 0.069252 & 0.001502 & -3.406776 \\
-rolling\_quantile & Target history & left\_tail & 0.950 & 722 & 0.058172 & 0.001481 & -3.524684 \\
-rolling\_quantile & Target history & right\_tail & 0.950 & 722 & 0.072022 & 0.001496 & -3.427318 \\
+EWMA volatility scaling & Lagged opening-gap losses & Downside & 0.950 & 722 & 0.052632 & 0.001409 & -3.647462 & 0.008636 \\
+EWMA volatility scaling & Lagged opening-gap losses & Upside & 0.950 & 722 & 0.045706 & 0.001342 & -3.656615 & 0.009787 \\
+GARCH-t & Lagged opening-gap losses & Downside & 0.950 & 722 & 0.060942 & 0.001368 & -3.701083 & 0.008609 \\
+GARCH-t & Lagged opening-gap losses & Upside & 0.950 & 722 & 0.041551 & 0.001278 & -3.703374 & 0.010888 \\
+GAS-t location-scale & Lagged opening-gap losses & Downside & 0.950 & 722 & 0.063712 & 0.001352 & -3.693506 & 0.008670 \\
+GAS-t location-scale & Lagged opening-gap losses & Upside & 0.950 & 722 & 0.049861 & 0.001307 & -3.668339 & 0.010514 \\
+GJR-GARCH-EVT & Lagged opening-gap losses & Downside & 0.950 & 722 & 0.060942 & 0.001330 & -3.746233 & 0.007631 \\
+GJR-GARCH-EVT & Lagged opening-gap losses & Upside & 0.950 & 722 & 0.058172 & 0.001233 & -3.708574 & 0.008988 \\
+GJR-GARCH-t & Lagged opening-gap losses & Downside & 0.950 & 722 & 0.070637 & 0.001338 & -3.723459 & 0.007359 \\
+GJR-GARCH-t & Lagged opening-gap losses & Upside & 0.950 & 722 & 0.042936 & 0.001222 & -3.739711 & 0.010272 \\
+Historical quantile & Lagged opening-gap losses & Downside & 0.950 & 722 & 0.055402 & 0.001476 & -3.540661 & 0.012140 \\
+Historical quantile & Lagged opening-gap losses & Upside & 0.950 & 722 & 0.069252 & 0.001502 & -3.406776 & 0.012003 \\
+Rolling quantile & Lagged opening-gap losses & Downside & 0.950 & 722 & 0.058172 & 0.001481 & -3.524684 & 0.011683 \\
+Rolling quantile & Lagged opening-gap losses & Upside & 0.950 & 722 & 0.072022 & 0.001496 & -3.427318 & 0.011480 \\
 \midrule
-\multicolumn{8}{l}{\footnotesize Visible notes: candidate artifact; lower FZ loss is better; inference artifacts use block-bootstrap DM; common-sample status is recorded in metrics metadata.} \\
+\multicolumn{9}{l}{\footnotesize Visible notes: candidate artifact; lower FZ loss is better; inference artifacts use block-bootstrap DM; severity is the mean VaR overshoot conditional on an exception; common-sample status is recorded in metrics metadata.} \\
 \bottomrule
 \end{tabular}

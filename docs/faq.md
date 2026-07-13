@@ -13,8 +13,8 @@ The paper asks whether information known by the U.S. cash-market close helps for
 
 - The contract is the OSE large Nikkei 225 Futures contract.
 - The target is opening-gap risk at the next OSE day-session open.
-- Left-tail and right-tail losses are reported separately. Both matter for futures positions, but they need not have the same economic pattern.
-- The main comparison is across nested information sets: Japan-only history, U.S. close core variables, Japan proxy ETFs, and Asia proxy ETFs.
+- The left and right tails of the opening-gap return are evaluated as downside and upside losses, respectively. Both matter for futures positions, but they need not have the same economic pattern.
+- The main comparison is across nested information sets: Japan-only history, U.S.-close core variables, Japan proxy ETFs, and Asia proxy ETFs.
 - The results are research-candidate evidence. They are not a model-selection statement by themselves.
 
 ## What is the target?
@@ -23,8 +23,8 @@ The primary target is the settlement-to-open gap:
 
 `gap_t = log(OSE day-session open_t) - log(previous settlement_{t-1})`
 
-- For left-tail models, loss is `-gap_t`.
-- For right-tail models, loss is `gap_t`.
+- For downside models, loss is `-gap_t`.
+- For upside models, loss is `gap_t`.
 - A VaR exception occurs when `realized_loss > VaR forecast`.
 - The primary risk level is 95% VaR/ES, so the nominal exception rate is 5%.
 - Rows around roll and SQ windows are excluded from the clean primary sample.
@@ -57,8 +57,8 @@ All predictors must be available before the OSE target open under the point-in-t
 - Massive supplies U.S. close-side ETF, sector, Japan proxy, Asia proxy, minute-bar, and optional U.S.-listed options-derived inputs.
 - FRED supplies rates, H.10 USD/JPY, VIX, and credit-spread controls with conservative release lags. These are not ALFRED real-time vintages.
 - CBOE supplies volatility-index data.
-- Benchmarks use target history only.
-- The ML information sets add predictors in a fixed order: Japan-only, then U.S. close core, then Japan proxies, then Asia proxies.
+- Benchmarks use lagged opening-gap losses only.
+- The ML information sets add predictors in a fixed order: Japan only, then U.S.-close core, then Japan proxies, then Asia proxies.
 - U.S.-listed options features are audit-gated. They are not primary evidence unless source, coverage, liquidity, and timing checks pass.
 
 ## What models are compared?
@@ -67,7 +67,7 @@ The baseline benchmarks, advanced econometric benchmarks, and ML-tail suite are 
 
 - Baseline benchmarks include historical quantiles, rolling quantiles, EWMA, GARCH-t, GJR-GARCH-t, and GJR-GARCH-EVT.
 - Advanced econometric benchmark families such as CAViaR, CARE/expectile, and GAS produce nonblocking empirical forecast rows; their interpretation still follows the benchmark and restricted-sample gates.
-- The ML suite includes direct LightGBM quantile forecasts, location-scale empirical calibration, standardized-loss POT-GPD variants, and the new research-candidate LightGBM+EVT routes.
+- The ML suite includes direct-quantile LightGBM forecasts, empirical location-scale calibration, and LightGBM-EVT specifications with MLE or UniBM tail estimation.
 - LightGBM is used as a fixed tabular learner. The paper does not claim a new machine-learning algorithm.
 - Hyperparameters are held fixed across information sets and refit dates.
 - Most models use expanding pre-forecast training histories. The rolling-quantile benchmark is the designed exception: it uses the most recent 1,000 clean observations.
@@ -81,20 +81,20 @@ No. The paper compares registered point-in-time forecast specifications, not a t
 - LightGBM hyperparameters are held fixed across information sets and refit dates so information-set comparisons are not contaminated by a separate tuning search.
 - This design may leave some model-specific performance untapped, but it keeps the nested information-set experiment interpretable.
 - Appendix configuration robustness varies nearby LightGBM capacity and POT threshold choices after the primary run.
-- Those rows carry `primary_claim_allowed=false`: they answer reviewer concerns about sensitivity but do not alter coverage admissibility, canonical forecasts, or the cross-suite FZ DM comparison.
+- Those rows carry `primary_claim_allowed=false`: they answer reviewer concerns about sensitivity but do not alter coverage admissibility, canonical forecasts, or the post-screen FZ DM comparison.
 - The primary design compares pre-specified point-in-time forecast specifications. Configuration sensitivity is appendix robustness evidence, not a model-selection stage.
 
-## How do the LightGBM+EVT variants work?
+## How do the LightGBM-EVT variants work?
 
 The final VaR/ES level is 95%. POT-GPD variants use a 0.90 threshold only for
 tail fitting; it is not the reported VaR level.
 
-- Direct LightGBM estimates the 95% VaR level directly.
-- Location-scale models estimate a conditional center and scale, then calibrate the upper tail of standardized losses.
-- Standardized-loss POT-GPD models fit a Generalized Pareto tail above the registered 0.90 threshold of out-of-fold standardized losses.
+- Direct-quantile LightGBM estimates the 95% VaR level directly.
+- The LightGBM empirical location-scale specification estimates a conditional center and scale, then calibrates the upper tail of standardized losses empirically.
+- The LightGBM mean/scale POT-GPD specifications fit a generalized Pareto tail above the registered 0.90 threshold of out-of-fold standardized losses.
 - Median/MAD and median/IQR routes use more robust body filters before the POT-GPD step.
 - Plain MLE estimates the GPD tail directly; UniBM supplies the alternative block-maxima shape route.
-- The standardized-loss plain-MLE and UniBM families are coverage-admissible in the current run because each passes all 24 registered calibration checks across both tails and all four information sets.
+- The mean/scale POT-GPD MLE and UniBM specifications satisfy the current eight-scenario coverage screen across both tails and all four information sets.
 
 ## How are forecasts judged?
 
@@ -114,29 +114,29 @@ The evaluation is built around tail-risk performance, not a single ranking.
 
 The current evidence supports a coverage-first, loss-second comparison.
 
-- Direct LightGBM quantile fails the breach-rate band and Kupiec test in all eight tail-by-information-set scenarios, although its Christoffersen independence checks pass. Its lower loss in some rows is therefore not sufficient for a calibrated tail-risk claim.
-- The standardized-loss POT-GPD plain-MLE and UniBM families each pass all 24 calibration checks: two tails x four information sets x breach-band, Kupiec, and Christoffersen-independence checks.
+- Direct-quantile LightGBM fails the breach-rate band and Kupiec test in all eight tail-by-information-set scenarios, although its Christoffersen independence checks pass. Its lower loss in some rows is therefore not sufficient for a calibrated tail-risk claim.
+- The mean/scale POT-GPD MLE and UniBM specifications each satisfy the eight-scenario coverage screen: two tails x four information sets, each assessed by the breach-rate band, Kupiec unconditional coverage, and Christoffersen independence.
 - GJR-GARCH-EVT passes the fixed benchmark validation rows and is the traditional anchor for the post-screen comparison.
-- On strict common samples, both C-information LGBM+EVT variants have lower FZ loss than GJR-GARCH-EVT in both tails. The differences are -0.472 and -0.451 in the left tail and -0.360 and -0.350 in the right tail, with one-sided DM p-values no larger than 0.005.
-- Plain MLE C and UniBM C are close to each other: the pairwise differences are small and do not support a decisive estimator-level ranking. The defensible result is family-level.
+- On strict common samples, both C-information LightGBM-EVT variants have lower FZ loss than GJR-GARCH-EVT in both tails. The differences are -0.472 and -0.451 in the left tail and -0.360 and -0.350 in the right tail, with one-sided DM p-values no larger than 0.005.
+- LightGBM mean/scale POT-GPD MLE (C) and LightGBM mean/scale POT-GPD UniBM (C) are close to each other: the pairwise differences are small and do not support a decisive estimator-level ranking. The defensible result is at the filtered-tail model-class level.
 
 ## What can the paper claim?
 
 | Evidence layer | Can support primary claim? | How to read it |
 | --- | --- | --- |
-| Benchmark common-sample table | Yes, after review | External target-history/econometric baseline benchmark on a shared sample. |
+| Benchmark common-sample table | Yes, after review | External statistical/econometric benchmark based on lagged opening-gap losses and a shared sample. |
 | ML-tail nested information sets | Yes, after review | Strict nested-information-set comparison; direct quantile is the information-set comparator, not the coverage-admissibility gate. |
-| ML-tail per-model rows | No | Model-specific OOS diagnostics; samples need not match across model families. |
+| ML-tail per-model rows | No | Model-specific out-of-sample diagnostics; samples need not match across model families. |
 | Restricted result matrix | No primary claim | Matched-date comparison for model families and within-model increments. |
-| 24-check screen and cross-suite FZ DM | Yes, conditional on the screen | Primary coverage-first comparison among the fixed coverage-admissible set on one strict common sample per tail. |
+| Eight-scenario VaR coverage screen and post-screen FZ DM | Yes, conditional on the screen | Primary coverage-first comparison among the fixed coverage-admissible set on one strict common sample per tail. |
 | Timing, target, information-ladder, coverage figures | Supporting main-text evidence | Design/motivation/headline visualization; still read with tables and gates. |
 | Stress, Murphy, and overlay figures | Diagnostic only | Useful for interpretation, not automatic model-selection evidence. |
 
 - The paper can claim a point-in-time forecast evaluation of OSE Nikkei 225 Futures opening-gap tail risk.
 - It can report that U.S. close information and proxy blocks change average loss and coverage patterns under registered information sets.
-- It can report that direct LightGBM quantile forecasts are too liberal in the current primary ML rows.
-- It can report that the two standardized-loss LGBM+EVT families are coverage-admissible across all registered information sets and that their C-information forecasts outperform GJR-GARCH-EVT on paired FZ loss in both tails.
+- It can report that direct-quantile LightGBM forecasts are too liberal in the current primary ML rows.
+- It can report that the two mean/scale LightGBM-EVT specifications satisfy the coverage screen across all nested information sets and that their information set C forecasts have lower paired FZ loss than GJR-GARCH-EVT in both tails.
 - It should not claim that one model is universally strongest.
-- It should not average left-tail and right-tail evidence into one mechanism.
+- It should not average downside and upside evidence into one mechanism.
 - It should not present trigger or feature-block diagnostics as causal proof or realized trading performance.
 - The current bottom line: the pipeline now produces a clean evidence set from the durable gold layer; baseline benchmark, advanced econometric benchmark, and ML-tail suites completed with zero recorded advanced-forecast failures; advanced rows are implemented evidence but remain nonblocking until author-reviewed against the same sample and inference gates.

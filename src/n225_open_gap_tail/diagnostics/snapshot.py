@@ -494,7 +494,7 @@ hide:
 This page is the generated Results and Discussion companion to
 [Paper Plan](paper_plan.md). It carries forward the planned manuscript sections:
 data/timing evidence, model/evaluation setup, benchmark results, ML nested
-information-set results, post-24-check comparisons, supporting diagnostics, and
+information-set results, post-screen comparisons, supporting diagnostics, and
 claim boundaries. Full data-source detail lives in [Data](data.md).
 
 ### Evidence Map
@@ -563,7 +563,7 @@ claim boundaries. Full data-source detail lives in [Data](data.md).
 | 2 | Bronze and silver cache | Preserve typed vendor/cache rows, then normalize point-in-time research features. |
 | 3 | Gold modeling panel | Join targets, calendar map, feature coverage, and leakage-bound signatures. |
 | 4 | Leakage and coverage gates | Enforce timestamp ordering and sample eligibility before evaluation. |
-| 5 | Baseline benchmarks and ML-tail registry | Run target-history/econometric baseline benchmarks and LightGBM tail-model families. |
+| 5 | Baseline benchmarks and ML-tail registry | Run statistical and econometric benchmarks based on lagged opening-gap losses and the LightGBM tail-model families. |
 | 6 | Metrics, inference, diagnostics | Build loss matrices, DM/Murphy diagnostics, stress windows, and result matrix artifacts. |
 | 7 | Results snapshot | Summarize run-specific evidence and claim boundaries for reader review. |
 
@@ -580,7 +580,7 @@ claim boundaries. Full data-source detail lives in [Data](data.md).
 - Forecast evaluation is based on coverage diagnostics, Kupiec/Christoffersen
   tests where available, quantile loss, Fissler-Ziegel joint VaR-ES loss, and
   DM inference.
-- Benchmarks use target-history information only. ML-tail models add predictors through fixed nested information sets.
+- Benchmarks use lagged opening-gap losses only. ML-tail models add predictors through fixed nested information sets.
 - Most specifications use expanding pre-forecast training histories. The rolling-quantile benchmark is the designed exception and uses the most recent 1,000 clean observations.
 - LightGBM hyperparameters are held fixed across information sets and refit dates; the snapshot reports model-family evidence rather than tuning-search evidence.
 - DM inference is read on average across the unconditional evaluation sample.
@@ -595,7 +595,7 @@ Status: `{benchmark_status_label}`; forecast rows: `{benchmark_status.get("forec
 
 {benchmark_table}
 
-- Baseline benchmark rows set the target-history/econometric reference that ML models should be interpreted against.
+- Baseline benchmark rows provide the statistical and econometric reference based on lagged opening-gap losses.
 - Advanced econometric benchmark families are nonblocking; rows with valid forecasts are empirical evidence subject to the same sample and inference gates, while unavailable rows remain diagnostics.
 - The table is not a leaderboard by itself; coverage, exception counts, quantile loss, and FZ loss must be read together.
 - Common-sample rows are reported directly so readers can see the effective evidence size.
@@ -607,7 +607,7 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 {ml_primary_table}
 
 - This primary ML table remains strict and reports only ML-tail rows that pass the registered common-sample and forecast-validity gates; coverage is reviewed separately.
-- Location-scale empirical and plain POT-GPD are primary candidates only after their valid OOS coverage, standardized-loss, exceedance, and ES-validity gates pass.
+- LightGBM empirical location-scale and LightGBM mean/scale POT-GPD MLE are primary candidates only after their valid out-of-sample coverage, standardized-loss, exceedance, and ES-validity gates pass.
 - Differences across information blocks are candidate forecast evidence only after the common-sample, coverage, and inference diagnostics are reviewed.
 - {ml_coverage_review}
 
@@ -616,15 +616,15 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 {metric_artifact_table}
 
 - `ml_tail_metrics.parquet` is the primary nested-information-set artifact. It contains the ML-tail rows that survived the strict common-sample gate in this run.
-- `ml_tail_metrics_per_model.parquet` reports each implemented ML-tail model on its own valid OOS rows; it is useful for debugging coverage but is not a cross-model comparison table.
+- `ml_tail_metrics_per_model.parquet` reports each implemented ML-tail model on its own valid out-of-sample rows; it is useful for debugging coverage but is not a cross-model comparison table.
 - `ml_tail_result_matrix.parquet` creates restricted common samples for VaR-only and VaR-ES comparisons across model families and within-model information-set increments.
 
 ### 4.4 All-model diagnostic scan
 
 {all_model_comparison_table}
 
-- This table joins `benchmark_metrics_per_model.parquet` and `ml_tail_metrics_per_model.parquet` so all benchmark and LGBM tail-model variants are visible in one place.
-- Mean and standard deviation are computed across registered metric rows for the same suite/model/information-set configuration; for most rows this summarizes left- and right-tail metrics.
+- This table joins `benchmark_metrics_per_model.parquet` and `ml_tail_metrics_per_model.parquet` so all benchmark and LightGBM tail-model variants are visible in one place.
+- Mean and standard deviation are computed across registered metric rows for the same suite/model/information-set configuration; for most rows this summarizes downside and upside metrics.
 - It is a diagnostic scan, not the formal cross-model comparison table. Cross-model claims still require common-sample result-matrix and DM evidence because valid dates and model gates can differ.
 
 {comparison_evidence}
@@ -633,7 +633,7 @@ Status: `{ml_tail_status_label}`; implemented models: {ml_tail_components}; fore
 
 {result_matrix_table}
 
-- The result matrix is the right place to compare direct quantile, location-scale empirical, plain POT-GPD, and the robust plain POT-GPD routes on their restricted common dates.
+- The result matrix is the right place to compare direct quantile, empirical location-scale, mean/scale POT-GPD, and robust-filter POT-GPD specifications on their restricted common dates.
 - It separates VaR-only losses from VaR-ES joint scoring, so VaR-only claims are not confused with ES claims.
 - Restricted direct-quantile performance is only a comparison anchor for the tail-model family; it does not replace the primary direct-quantile evidence.
 - DM records are emitted only where registered row-count and exception-count gates pass; otherwise the result matrix remains descriptive.
@@ -699,7 +699,7 @@ def _configuration_sensitivity_markdown(run_dir: Path) -> str:
     job_counts = status.get("job_counts")
     rows = [
         (
-            "LGBM capacity",
+            "LightGBM capacity",
             _sensitivity_metric_summary(
                 metrics_root / "lgbm_configuration_sensitivity_metrics.parquet"
             ),
@@ -732,7 +732,7 @@ def _configuration_sensitivity_markdown(run_dir: Path) -> str:
                     ("Source primary run", _code(status.get("source_primary_run_id"))),
                     ("Scope", _code(scope)),
                     ("Primary-claim allowed", _code(status.get("primary_claim_allowed"))),
-                    ("Selected LGBM models", _join_model_list(selected_lgbm)),
+                    ("Selected LightGBM models", _join_model_list(selected_lgbm)),
                     ("Selected benchmark models", _join_model_list(selected_benchmarks)),
                     ("Selected information sets", formatted_infos),
                     ("Job counts", _code(formatted_job_counts)),
@@ -744,14 +744,14 @@ def _configuration_sensitivity_markdown(run_dir: Path) -> str:
             _markdown_table(("Sensitivity family", "Rows / classifications"), rows),
             (
                 "- The primary design compares pre-specified point-in-time forecast "
-                "specifications. Configuration sensitivity is post-24-check robustness "
-                "evidence and is not used for model selection or the cross-suite FZ DM heatmap.\n"
-                "- The run is fixed to the post-24-check paper set. LGBM rows perturb "
-                "capacity only for the pass-all C-information LGBM+EVT families, "
+                "specifications. Configuration sensitivity is post-screen robustness "
+                "evidence and is not used for model selection or the common-sample FZ DM heatmap.\n"
+                "- The run is fixed to the post-screen paper set. LightGBM rows perturb "
+                "capacity only for the post-screen C-information LightGBM-EVT specifications, "
                 "and POT threshold rows perturb those rows plus GJR-GARCH-EVT.\n"
                 "- Robustness classes describe conclusion stability versus the "
                 "registered primary specification. They do not alter coverage "
-                "admissibility, canonical forecasts, or cross-suite DM evidence."
+                "admissibility, canonical forecasts, or post-screen DM evidence."
             ),
         )
     )
@@ -773,7 +773,7 @@ def _table_interpretation_markdown(run_id: str) -> str:
         (
             "Benchmark suite summary",
             f"[benchmark_metrics_table.tex]({root}/benchmark_metrics_table.tex)",
-            "Results table for target-history and econometric benchmark calibration and loss evidence.",
+            "Results table for benchmark calibration and loss evidence based on lagged opening-gap losses.",
         ),
         (
             "Benchmark tail-side details",
@@ -783,12 +783,12 @@ def _table_interpretation_markdown(run_id: str) -> str:
         (
             "ML information ladder",
             f"[ml_tail_metrics_table.tex]({root}/ml_tail_metrics_table.tex)",
-            "Core nested-information-set table for direct LightGBM; read loss changes with coverage gates.",
+            "Core nested-information-set table for direct-quantile LightGBM; read loss changes with coverage gates.",
         ),
         (
             "ML tail-side details",
             f"[ml_tail_left_tail_risk_table.tex]({root}/ml_tail_left_tail_risk_table.tex), [ml_tail_right_tail_risk_table.tex]({root}/ml_tail_right_tail_risk_table.tex)",
-            "Tail-specific direct LightGBM information-set rows.",
+            "Tail-specific direct-quantile LightGBM information-set rows.",
         ),
         (
             "Full benchmark scan",
@@ -796,7 +796,7 @@ def _table_interpretation_markdown(run_id: str) -> str:
             "Complete benchmark inventory supporting benchmark breadth.",
         ),
         (
-            "Full LGBM scan",
+            "Full LightGBM scan",
             f"[appendix_lgbm_all_models_table.tex]({root}/appendix_lgbm_all_models_table.tex)",
             "Complete per-model LightGBM scan; do not use as a raw leaderboard.",
         ),
@@ -806,7 +806,7 @@ def _table_interpretation_markdown(run_id: str) -> str:
             "Restricted common-sample model-family comparison and summary.",
         ),
         (
-            "24-check and paired DM evidence",
+            "Coverage-screen and paired DM evidence",
             f"[tailrisk_lgbm_24check_table.tex]({root}/tailrisk_lgbm_24check_table.tex), [tailrisk_cross_suite_fz_dm_table.tex]({root}/tailrisk_cross_suite_fz_dm_table.tex)",
             "Coverage-admissibility counts plus exact paired FZ comparisons; negative loss differences favor the candidate.",
         ),

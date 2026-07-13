@@ -113,7 +113,7 @@ def generate_results_discussion(
 
 - No hedge PnL, transaction-cost, or trading-alpha analysis is performed.
 - The current forecast artifacts evaluate only `full_gap_settle_to_open`; close-to-open and night-close-to-open target variants remain deferred.
-- Left-tail and right-tail outputs are both economic tail-risk surfaces for futures positions; neither side should be promoted beyond the sample, coverage, and inference gates without author review.
+- Downside and upside outputs are distinct economic tail-risk surfaces for futures positions; neither exposure should be promoted beyond the sample, coverage, and inference gates without author review.
 - The current evidence does not create an automatic model-selection statement; any manuscript claim still requires author review of sample gates, coverage, loss metrics, and inference diagnostics.
 """
 
@@ -195,7 +195,7 @@ def _results_benchmark_discussion(
     calibration_sentence = _benchmark_calibration_note(benchmark_metrics)
     lines = [
         f"- `benchmark_metrics.parquet` reports `{metric_rows}` common-sample rows across `{baseline_model_count}` baseline benchmark model families and `{tail_side_count}` tail side(s), while benchmark forecasts contain `{forecast_rows}` model-date rows.",
-        "- Baseline benchmark models are external target-history and econometric references; this section does not rank them.",
+        "- Baseline benchmark models are statistical and econometric references based on lagged opening-gap losses; this section does not rank them.",
         f"- {advanced_sentence}",
     ]
     if calibration_sentence:
@@ -304,9 +304,9 @@ def _results_supporting_diagnostics_discussion(
         ml_tail_metrics_per_model=ml_tail_metrics_per_model,
     )
     murphy_sentence = (
-        f"24-check LGBM Murphy diagnostics contain `{lgbm_24check_murphy.height}` rows."
+        f"Post-screen LightGBM Murphy diagnostics contain `{lgbm_24check_murphy.height}` rows."
         if not lgbm_24check_murphy.is_empty()
-        else "24-check LGBM Murphy diagnostics are not available in this snapshot."
+        else "Post-screen LightGBM Murphy diagnostics are not available in this snapshot."
     )
     stress_rows = benchmark_stress.height + ml_tail_stress.height
     feature_sentence = (
@@ -719,7 +719,7 @@ def _information_set_saturation_note(ml_tail_metrics: pl.DataFrame) -> str | Non
     contexts_text = ", ".join(f"`{s}`" for s in sorted(set(saturated_contexts)))
     return (
         f"For {contexts_text}, the largest quantile-loss change occurs at the first information-set augmentation "
-        "(adding U.S. close core); subsequent additions of Japan proxy and Asia proxy ETFs contribute "
+        "(adding U.S.-close core); subsequent additions of Japan proxy and Asia proxy ETFs contribute "
         "diminishing incremental loss changes. This saturation pattern is descriptive and does not "
         "automatically reduce the value of the broader information set."
     )
@@ -762,5 +762,5 @@ def _restricted_short_sample_warning(result_matrix: pl.DataFrame) -> str | None:
     return (
         f"The tail-model family comparison is severely sample-limited: the largest restricted common-N "
         f"is `{max_n_int}` rows. No model-family ranking claim is supportable from this restricted sample; "
-        "extended OOS coverage is needed before tail-model family ranking becomes meaningful."
+        "extended out-of-sample coverage is needed before tail-model family ranking becomes meaningful."
     )

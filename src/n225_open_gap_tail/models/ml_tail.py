@@ -61,12 +61,10 @@ from n225_open_gap_tail.models.ml_tail_oof import (
     _ml_tail_oof_median_iqr_location_scale,
     _ml_tail_oof_median_mad_location_scale,
     _ml_tail_seed,
-    _ml_tail_unavailable_feature_forecast,
     _ml_tail_unavailable_status,
     _predict_ml_tail_location_scale_forecast,
     _predict_lgb_rows,
     _rearrange_quantile_predictions,
-    _unavailable_active_features,
 )
 from n225_open_gap_tail.panel.build import ml_tail_feature_columns_for_information_set
 
@@ -408,39 +406,6 @@ def _forecast_ml_tail_lightgbm_sequence(
         if cached_model is None:
             continue
         try:
-            unavailable_features = _unavailable_active_features(row, cached_active_features)
-            if unavailable_features:
-                realized_loss = _required_float(row["realized_loss"])
-                forecasts.append(
-                    {
-                        "forecast_date": row["forecast_date"],
-                        "target_family": row.get("target_family") or "full_gap_settle_to_open",
-                        "tail_side": tail_side,
-                        "model_name": model_name,
-                        "information_set": information_set,
-                        "tail_level": tail_level,
-                        "refit_frequency": ML_TAIL_REFIT_FREQUENCY,
-                        "var_forecast": None,
-                        "es_forecast": None,
-                        "es_companion_type": "empirical_excess_es_companion",
-                        "realized_loss": realized_loss,
-                        "var_breach": None,
-                        "is_valid_forecast": False,
-                        "invalid_reason": "unavailable_feature_not_valid_at_cutoff",
-                        "train_start": cached_train_start,
-                        "train_end": cached_train_end,
-                        "train_n": cached_train_n,
-                        "fit_status": "unavailable_feature_not_valid_at_cutoff",
-                        "failure_reason": ",".join(unavailable_features),
-                        "runtime_seconds": None,
-                        "dst_regime": row.get("dst_regime"),
-                        "absorption_regime": row.get("absorption_regime"),
-                        "vix_level": row.get("vix_level"),
-                        "active_feature_hash": cached_gate.get("active_feature_hash"),
-                        **_ml_tail_extended_forecast_fields(),
-                    }
-                )
-                continue
             predict_frame = pl.DataFrame([row], infer_schema_length=None)
             x_predict = _feature_matrix(predict_frame, cached_active_features)
             with warnings.catch_warnings():
@@ -594,25 +559,6 @@ def _forecast_ml_tail_location_scale_sequence(
         if cached_bundle is None or cached_bundle.get("fit_status") != "ok":
             continue
         try:
-            active_features = cast(list[str], cached_bundle["active_features"])
-            scale_active_features = cast(list[str], cached_bundle["scale_active_features"])
-            unavailable_features = _unavailable_active_features(
-                row,
-                list(dict.fromkeys((*active_features, *scale_active_features))),
-            )
-            if unavailable_features:
-                forecasts.append(
-                    _ml_tail_unavailable_feature_forecast(
-                        row=row,
-                        model_name=model_name,
-                        information_set=information_set,
-                        tail_side=tail_side,
-                        tail_level=tail_level,
-                        bundle=cached_bundle,
-                        unavailable_features=unavailable_features,
-                    )
-                )
-                continue
             if model_name in ML_TAIL_ROBUST_POT_GPD_MODEL_NAMES:
                 forecast = _predict_ml_tail_robust_location_scale_forecast(
                     row=row,

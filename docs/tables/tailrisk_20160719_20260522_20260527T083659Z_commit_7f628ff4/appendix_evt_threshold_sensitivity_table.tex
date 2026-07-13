@@ -7,25 +7,19 @@
 \toprule
 family & config & model & info & side & N & breach & q_loss & fz_loss & class \\
 \midrule
-evt\_threshold & u\_0\_875 & gjr\_garch\_evt & Target history & left\_tail & 722 & 0.060942 & 0.001329 & -3.747775 & robust \\
-evt\_threshold & u\_0\_875 & LGBM POT-GPD plain MLE & JP + US close core + JP proxy & left\_tail & 473 & 0.061311 & 0.000991 & -4.149781 & robust \\
-evt\_threshold & u\_0\_875 & LGBM POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy & left\_tail & 473 & 0.063425 & 0.000998 & -4.127510 & robust \\
-evt\_threshold & u\_0\_875 & gjr\_garch\_evt & Target history & right\_tail & 722 & 0.056787 & 0.001231 & -3.712077 & robust \\
-evt\_threshold & u\_0\_875 & LGBM POT-GPD plain MLE & JP + US close core + JP proxy & right\_tail & 474 & 0.056962 & 0.001032 & -4.031106 & robust \\
-evt\_threshold & u\_0\_875 & LGBM POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy & right\_tail & 474 & 0.056962 & 0.001032 & -4.017355 & robust \\
-evt\_threshold & u\_0\_925 & gjr\_garch\_evt & Target history & left\_tail & 722 & 0.060942 & 0.001330 & -3.746794 & robust \\
-evt\_threshold & u\_0\_925 & LGBM POT-GPD plain MLE & JP + US close core + JP proxy & left\_tail & 473 & 0.054968 & 0.000990 & -4.152200 & robust \\
-evt\_threshold & u\_0\_925 & LGBM POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy & left\_tail & 473 & 0.061311 & 0.000998 & -4.134696 & robust \\
-evt\_threshold & u\_0\_925 & gjr\_garch\_evt & Target history & right\_tail & 722 & 0.058172 & 0.001233 & -3.708617 & robust \\
-evt\_threshold & u\_0\_925 & LGBM POT-GPD plain MLE & JP + US close core + JP proxy & right\_tail & 474 & 0.056962 & 0.001034 & -4.031751 & robust \\
-evt\_threshold & u\_0\_925 & LGBM POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy & right\_tail & 474 & 0.056962 & 0.001033 & -4.028096 & robust \\
-evt\_threshold & u\_0\_950\_boundary & gjr\_garch\_evt & Target history & left\_tail & 0 &  &  &  & boundary\_diagnostic \\
-evt\_threshold & u\_0\_950\_boundary & LGBM POT-GPD plain MLE & JP + US close core + JP proxy & left\_tail & 0 &  &  &  & boundary\_diagnostic \\
-evt\_threshold & u\_0\_950\_boundary & LGBM POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy & left\_tail & 0 &  &  &  & boundary\_diagnostic \\
-evt\_threshold & u\_0\_950\_boundary & gjr\_garch\_evt & Target history & right\_tail & 0 &  &  &  & boundary\_diagnostic \\
-evt\_threshold & u\_0\_950\_boundary & LGBM POT-GPD plain MLE & JP + US close core + JP proxy & right\_tail & 0 &  &  &  & boundary\_diagnostic \\
-evt\_threshold & u\_0\_950\_boundary & LGBM POT-GPD UniBM block-maxima shape & JP + US close core + JP proxy & right\_tail & 0 &  &  &  & boundary\_diagnostic \\
+evt\_threshold & u\_0\_875 & GJR-GARCH-EVT & Lagged opening-gap losses & Downside & 722 & 0.060942 & 0.001329 & -3.747775 & robust \\
+evt\_threshold & u\_0\_875 & LightGBM mean/scale POT-GPD MLE & C: +Japan proxy & Downside & 473 & 0.061311 & 0.000991 & -4.149781 & robust \\
+evt\_threshold & u\_0\_875 & LightGBM mean/scale POT-GPD UniBM & C: +Japan proxy & Downside & 473 & 0.063425 & 0.000998 & -4.127510 & robust \\
+evt\_threshold & u\_0\_875 & GJR-GARCH-EVT & Lagged opening-gap losses & Upside & 722 & 0.056787 & 0.001231 & -3.712077 & robust \\
+evt\_threshold & u\_0\_875 & LightGBM mean/scale POT-GPD MLE & C: +Japan proxy & Upside & 474 & 0.056962 & 0.001032 & -4.031106 & robust \\
+evt\_threshold & u\_0\_875 & LightGBM mean/scale POT-GPD UniBM & C: +Japan proxy & Upside & 474 & 0.056962 & 0.001032 & -4.017355 & robust \\
+evt\_threshold & u\_0\_925 & GJR-GARCH-EVT & Lagged opening-gap losses & Downside & 722 & 0.060942 & 0.001330 & -3.746794 & robust \\
+evt\_threshold & u\_0\_925 & LightGBM mean/scale POT-GPD MLE & C: +Japan proxy & Downside & 473 & 0.054968 & 0.000990 & -4.152200 & robust \\
+evt\_threshold & u\_0\_925 & LightGBM mean/scale POT-GPD UniBM & C: +Japan proxy & Downside & 473 & 0.061311 & 0.000998 & -4.134696 & robust \\
+evt\_threshold & u\_0\_925 & GJR-GARCH-EVT & Lagged opening-gap losses & Upside & 722 & 0.058172 & 0.001233 & -3.708617 & robust \\
+evt\_threshold & u\_0\_925 & LightGBM mean/scale POT-GPD MLE & C: +Japan proxy & Upside & 474 & 0.056962 & 0.001034 & -4.031751 & robust \\
+evt\_threshold & u\_0\_925 & LightGBM mean/scale POT-GPD UniBM & C: +Japan proxy & Upside & 474 & 0.056962 & 0.001033 & -4.028096 & robust \\
 \midrule
-\multicolumn{10}{l}{\footnotesize Visible notes: appendix-only post-24-check configuration robustness diagnostics. Rows carry primary\_claim\_allowed=false and do not alter coverage admissibility, the canonical forecasts, or the cross-suite FZ DM heatmap. Lower quantile/FZ loss is better; breach should be read against the 5\% nominal exception rate. Boundary EVT rows at u=0.95 are diagnostics at the 95\% VaR level, not alternative forecasts.} \\
+\multicolumn{10}{l}{\footnotesize Visible notes: appendix-only post-screen configuration robustness diagnostics. Rows carry primary\_claim\_allowed=false and do not alter coverage admissibility, the canonical forecasts, or the post-screen FZ DM heatmap. Lower quantile/FZ loss is better; breach should be read against the 5\% nominal exception rate.} \\
 \bottomrule
 \end{tabular}

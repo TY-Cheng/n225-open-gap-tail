@@ -97,7 +97,6 @@ LGBM_CONFIGURATION_SPECS: dict[str, dict[str, object]] = {
 EVT_THRESHOLD_SPECS: dict[str, float] = {
     "u_0_875": 0.875,
     "u_0_925": 0.925,
-    "u_0_950_boundary": 0.950,
 }
 SENSITIVITY_SCOPE = "paper"
 POST_24CHECK_LGBM_FAMILIES = (
@@ -145,7 +144,7 @@ def _sensitivity_selection(
     )
     if missing_lgbm_models:
         raise PipelineRunError(
-            "Sensitivity requires the post-24-check LGBM families, but these did not "
+            "Sensitivity requires the post-screen LightGBM families, but these did not "
             f"pass all checks in ml_tail_metrics_per_model.parquet: {missing_lgbm_models}"
         )
     if not benchmark_model_passes(benchmark_metrics, model_name=PASS_ALL_BENCHMARK_MODEL):
@@ -165,7 +164,7 @@ def _sensitivity_selection(
 
 def lgbm_sensitivity_config(label: str) -> dict[str, object]:
     if label not in LGBM_CONFIGURATION_SPECS:
-        raise PipelineRunError(f"Unknown LGBM sensitivity config label: {label}")
+        raise PipelineRunError(f"Unknown LightGBM sensitivity config label: {label}")
     return dict(LGBM_CONFIGURATION_SPECS[label])
 
 
@@ -255,7 +254,7 @@ def evaluate_sensitivity_suite(
         models=selection.lgbm_models,
         config_labels=selection.lgbm_config_labels,
     )
-    evt_jobs, evt_boundary_rows = _build_evt_threshold_jobs(
+    evt_jobs = _build_evt_threshold_jobs(
         panel_path=panel_path,
         coverage_path=coverage_path,
         coverage_rows=coverage_rows,
@@ -296,14 +295,6 @@ def evaluate_sensitivity_suite(
         primary_metrics=_read_primary_evt_metrics(run_dir),
         source_run_id=run_dir.name,
     )
-    evt_metrics.extend(
-        _tag_rows(
-            evt_boundary_rows,
-            source_primary_run_id=run_dir.name,
-            primary_claim_allowed=False,
-            sensitivity_scope=SENSITIVITY_SCOPE,
-        )
-    )
     forecast_root = sensitivity_root / "forecasts"
     metrics_root = sensitivity_root / "metrics"
     forecast_root.mkdir(parents=True, exist_ok=True)
@@ -333,7 +324,6 @@ def evaluate_sensitivity_suite(
             "job_counts": {
                 "lgbm_capacity": len(lgbm_jobs),
                 "evt_threshold": len(evt_jobs),
-                "evt_boundary_rows": len(evt_boundary_rows),
             },
             "forecast_rows": forecast_rows,
             "metric_rows": metric_rows,
@@ -367,7 +357,8 @@ def _cached_sensitivity_status_matches(status: dict[str, object]) -> bool:
     if "ewma_config_labels" in status:
         return False
     job_counts = status.get("job_counts")
-    return not (isinstance(job_counts, dict) and "ewma_lambda" in job_counts)
+    retired_job_counts = {"ewma_lambda", "evt_boundary_rows"}
+    return not (isinstance(job_counts, dict) and retired_job_counts.intersection(job_counts))
 
 
 def _sensitivity_config_hash() -> str:
@@ -457,34 +448,14 @@ def _build_evt_threshold_jobs(
     tail_level: float,
     pot_models: tuple[str, ...],
     benchmark_models: tuple[str, ...],
-) -> tuple[list[dict[str, object]], list[dict[str, object]]]:  # pragma: no cover
+) -> list[dict[str, object]]:  # pragma: no cover
     jobs: list[dict[str, object]] = []
-    boundary_rows: list[dict[str, object]] = []
     for config_label, threshold in EVT_THRESHOLD_SPECS.items():
         if tail_level <= threshold:
-            boundary_rows.extend(
-                _evt_boundary_metric_rows(
-                    config_label=config_label,
-                    threshold=threshold,
-                    tail_sides=tail_sides,
-                    tail_level=tail_level,
-                    information_sets=information_sets,
-                    models=pot_models,
-                    sensitivity_scope=SENSITIVITY_SCOPE,
-                )
+            raise PipelineRunError(
+                "EVT sensitivity thresholds must be below the target VaR level: "
+                f"threshold={threshold}, tail_level={tail_level}"
             )
-            boundary_rows.extend(
-                _evt_boundary_metric_rows(
-                    config_label=config_label,
-                    threshold=threshold,
-                    tail_sides=tail_sides,
-                    tail_level=tail_level,
-                    information_sets=("target_history_only",),
-                    models=benchmark_models,
-                    sensitivity_scope=SENSITIVITY_SCOPE,
-                )
-            )
-            continue
         for tail_side in tail_sides:
             for benchmark_model in benchmark_models:
                 jobs.append(
@@ -524,48 +495,7 @@ def _build_evt_threshold_jobs(
                             "primary_claim_allowed": False,
                         }
                     )
-    return jobs, boundary_rows
-
-
-def _evt_boundary_metric_rows(
-    *,
-    config_label: str,
-    threshold: float,
-    tail_sides: tuple[str, ...],
-    tail_level: float,
-    information_sets: tuple[str, ...],
-    models: tuple[str, ...],
-    sensitivity_scope: str | None = None,
-) -> list[dict[str, object]]:
-    rows: list[dict[str, object]] = []
-    for tail_side in tail_sides:
-        for model_name in models:
-            for information_set in information_sets:
-                rows.append(
-                    {
-                        "source_primary_run_id": None,
-                        "primary_claim_allowed": False,
-                        "sensitivity_scope": sensitivity_scope,
-                        "sensitivity_family": "evt_threshold",
-                        "config_label": config_label,
-                        "model_name": model_name,
-                        "information_set": information_set,
-                        "tail_side": tail_side,
-                        "tail_level": tail_level,
-                        "evt_threshold_quantile": threshold,
-                        "sensitivity_status": "not_applicable_threshold_not_below_tail_level",
-                        "rows": 0,
-                        "var_breach_rate": None,
-                        "expected_breach_rate": 1.0 - tail_level,
-                        "exceedance_count": 0,
-                        "mean_quantile_loss": None,
-                        "mean_fz_loss": None,
-                        "mean_exceedance_severity": None,
-                        "breach_category": "missing",
-                        "robustness_classification": "boundary_diagnostic",
-                    }
-                )
-    return rows
+    return jobs
 
 
 def _sensitivity_worker(

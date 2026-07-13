@@ -27,7 +27,6 @@ from n225_open_gap_tail.forecasting.sensitivity import (
     _build_lgbm_capacity_jobs,
     _cached_sensitivity_status_matches,
     _deterioration_ratio,
-    _evt_boundary_metric_rows,
     _metric_rows_from_forecasts,
     _remove_retired_ewma_sensitivity_artifacts,
     _sensitivity_config_hash,
@@ -68,7 +67,7 @@ def test_lgbm_sensitivity_config_labels_are_exact() -> None:
     assert lgbm_sensitivity_config("near_high")["num_leaves"] == 24
     assert lgbm_sensitivity_config("near_high")["min_child_samples"] == 20
     assert set(LGBM_CONFIGURATION_SPECS) == {"current", "near_low", "near_high"}
-    with pytest.raises(PipelineRunError, match="Unknown LGBM sensitivity config label"):
+    with pytest.raises(PipelineRunError, match="Unknown LightGBM sensitivity config label"):
         lgbm_sensitivity_config("wide")
 
 
@@ -78,7 +77,7 @@ def test_sensitivity_cache_key_rejects_retired_paper_scope_artifacts() -> None:
         "sensitivity_config_hash": _sensitivity_config_hash(),
         "lgbm_config_labels": list(PAPER_LGBM_CONFIGURATION_LABELS),
         "evt_threshold_labels": list(EVT_THRESHOLD_SPECS),
-        "job_counts": {"lgbm_capacity": 8, "evt_threshold": 12, "evt_boundary_rows": 6},
+        "job_counts": {"lgbm_capacity": 8, "evt_threshold": 12},
     }
     assert _cached_sensitivity_status_matches(current_status)
 
@@ -219,7 +218,7 @@ def test_sensitivity_cache_key_rejects_specific_stale_shapes() -> None:
         "sensitivity_config_hash": _sensitivity_config_hash(),
         "lgbm_config_labels": list(PAPER_LGBM_CONFIGURATION_LABELS),
         "evt_threshold_labels": list(EVT_THRESHOLD_SPECS),
-        "job_counts": {"lgbm_capacity": 8, "evt_threshold": 12, "evt_boundary_rows": 6},
+        "job_counts": {"lgbm_capacity": 8, "evt_threshold": 12},
     }
 
     assert not _cached_sensitivity_status_matches({**current_status, "scope": "full"})
@@ -276,7 +275,7 @@ def test_sensitivity_job_construction_keeps_only_post24check_c_models() -> None:
     assert ML_TAIL_MEDIAN_IQR_POT_GPD_PLAIN_MLE_MODEL not in {job["model_name"] for job in jobs}
     assert ML_TAIL_MEDIAN_MAD_POT_GPD_PLAIN_MLE_MODEL not in {job["model_name"] for job in jobs}
 
-    evt_jobs, boundary_rows = _build_evt_threshold_jobs(
+    evt_jobs = _build_evt_threshold_jobs(
         panel_path=Path("panel.parquet"),
         coverage_path=Path("coverage.parquet"),
         coverage_rows=[],
@@ -286,10 +285,9 @@ def test_sensitivity_job_construction_keeps_only_post24check_c_models() -> None:
         pot_models=POST_24CHECK_LGBM_FAMILIES,
         benchmark_models=(PASS_ALL_BENCHMARK_MODEL,),
     )
+    assert EVT_THRESHOLD_SPECS == {"u_0_875": 0.875, "u_0_925": 0.925}
     assert len(evt_jobs) == 12
-    assert len(boundary_rows) == 6
     assert {job["evt_threshold_quantile"] for job in evt_jobs} == {0.875, 0.925}
-    assert {row["evt_threshold_quantile"] for row in boundary_rows} == {0.95}
 
 
 def test_primary_lgbm_params_remain_registered_current_spec() -> None:
@@ -301,20 +299,6 @@ def test_sensitivity_configs_do_not_enter_primary_model_registry() -> None:
     assert "near_low" not in registry_text
     assert "near_high" not in registry_text
     assert "sensitivity" not in registry_text
-
-
-def test_evt_threshold_095_is_boundary_only_at_95pct_tail() -> None:
-    rows = _evt_boundary_metric_rows(
-        config_label="u_0_950_boundary",
-        threshold=EVT_THRESHOLD_SPECS["u_0_950_boundary"],
-        tail_sides=("left_tail",),
-        tail_level=0.95,
-        information_sets=("japan_only",),
-        models=("lightgbm_standardized_loss_pot_gpd_plain_mle",),
-    )
-    assert rows[0]["sensitivity_status"] == "not_applicable_threshold_not_below_tail_level"
-    assert rows[0]["rows"] == 0
-    assert rows[0]["robustness_classification"] == "boundary_diagnostic"
 
 
 def test_breach_category_thresholds_are_registered() -> None:

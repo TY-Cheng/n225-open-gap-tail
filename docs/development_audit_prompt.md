@@ -11,7 +11,7 @@ the reproducible research pipeline for "U.S. Close Information and Pre-Open Tail
 in OSE Nikkei 225 Futures".
 
 The research is about OSE Nikkei 225 Futures pre-open tail risk, not generic Japanese
-equity overnight returns. Both left-tail downside risk and right-tail upside risk are
+equity overnight returns. Both downside and upside risk are
 modeled as separate futures risk surfaces. OSE futures have a night session, so every
 model, table, figure, and claim must state its forecast origin, reference price, target
 family, tail side, and information cutoff.
@@ -82,8 +82,8 @@ Research design gates:
   U.S. cash close.
 - Every empirical claim must specify forecast origin, reference price, target family,
   tail side, and information cutoff.
-- Treat upper-tail modeling as the right-tail futures risk surface, evaluated under
-  the same gates as left-tail downside risk.
+- Treat upside-loss modeling as the upside futures-risk surface, evaluated under
+  the same gates as downside risk.
 
 Data and feature gates:
 

@@ -19,6 +19,8 @@ import n225_open_gap_tail.diagnostics.snapshot_gallery as snapshot_gallery
 import n225_open_gap_tail.diagnostics.snapshot_leakage as snapshot_leakage_module
 import n225_open_gap_tail.diagnostics.target_distribution as target_distribution_module
 from n225_open_gap_tail.config import Settings
+from n225_open_gap_tail.config.model_labels import display_model_label
+from n225_open_gap_tail.config.runtime import ML_TAIL_MODEL_NAMES
 from n225_open_gap_tail.diagnostics.snapshot import (
     build_snapshot_id,
 )
@@ -40,6 +42,19 @@ def test_build_snapshot_id_binds_window_timestamp_and_commit() -> None:
     )
 
     assert snapshot_id == "20220101_20260428_20260428T063000Z_commit_abcdef12"
+
+
+def test_lightgbm_display_labels_are_canonical() -> None:
+    assert [display_model_label(model_name) for model_name in ML_TAIL_MODEL_NAMES] == [
+        "LightGBM direct quantile",
+        "LightGBM empirical location-scale",
+        "LightGBM mean/scale POT-GPD MLE",
+        "LightGBM mean/scale POT-GPD UniBM",
+        "LightGBM median/MAD POT-GPD MLE",
+        "LightGBM median/MAD POT-GPD UniBM",
+        "LightGBM median/IQR POT-GPD MLE",
+        "LightGBM median/IQR POT-GPD UniBM",
+    ]
 
 
 def test_latest_snapshot_ignores_panel_only_runs(tmp_path: Path) -> None:
@@ -593,7 +608,7 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     assert "<!-- generated: results_discussion -->" in rendered
     _assert_results_discussion_subsections_in_order(rendered)
     assert "Gold modeling rows" in rendered
-    assert "JP only" in rendered
+    assert "A: Japan only" in rendered
     assert "### Run Metadata" in rendered
     assert "### Evidence Map" in rendered
     assert "## 5. Figures, Tables, And Source Artifacts" in rendered
@@ -610,9 +625,9 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     assert "Coverage review:" in rendered
     assert "must not be read as forecast improvement" in rendered
     assert "on average across the unconditional evaluation sample" in rendered
-    assert "### 4.5 Coverage-admissibility screen and cross-suite FZ DM evidence" in rendered
-    assert "24-check evidence is unavailable" in rendered
-    assert "Cross-suite FZ DM evidence is unavailable" in rendered
+    assert "### 4.5 Eight-scenario VaR coverage screen and post-screen FZ DM evidence" in rendered
+    assert "Coverage-screen evidence is unavailable" in rendered
+    assert "Post-screen FZ DM evidence is unavailable" in rendered
     assert "current forecast artifacts evaluate only `full_gap_settle_to_open`" in rendered
 
 
@@ -660,7 +675,7 @@ def test_target_tail_diagnostics_markdown_reports_raw_target_boundary() -> None:
     assert "Hill xi" in rendered
     assert "target_tail_motivation" in rendered
     assert "panel/modeling_panel.parquet" in rendered
-    assert "not validate LightGBM+EVT forecasts" in rendered
+    assert "not validate LightGBM-EVT forecasts" in rendered
     assert "not a finite-sample proof of Frechet" in rendered
     scale_text = target_distribution_module.opening_gap_scale_text(panel)
     assert "largest absolute clean settle-to-open gap" in scale_text
@@ -729,7 +744,7 @@ def _assert_discussion_qa_headings_in_order(rendered: str) -> None:
         "## Why is the OSE open worth studying?",
         "## What data enter the forecasts?",
         "## What models are compared?",
-        "## How do the LightGBM+EVT variants work?",
+        "## How do the LightGBM-EVT variants work?",
         "## How are forecasts judged?",
         "## What do the current results say?",
         "## What can the paper claim?",
@@ -944,7 +959,7 @@ def test_snapshot_private_helpers_cover_defensive_edges() -> None:
     assert snapshot_formatting_module._markdown_cell("a|b\nc") == "a\\|b c"
     assert snapshot_formatting_module._join_list(["a", "b"]) == "`a`, `b`"
     assert snapshot_formatting_module._join_list("x") == "`x`"
-    assert "LGBM direct quantile" in snapshot_formatting_module._join_model_list(
+    assert "LightGBM direct quantile" in snapshot_formatting_module._join_model_list(
         ["lightgbm_direct_quantile"]
     )
     assert snapshot_formatting_module._demote_markdown_headings("# A\nbody\n## B", levels=2) == (
@@ -1050,7 +1065,7 @@ def test_snapshot_private_helpers_cover_defensive_edges() -> None:
         ),
     )
     assert "benchmark_baseline" in all_model_table
-    assert "LGBM POT-GPD plain MLE" in all_model_table
+    assert "LightGBM mean/scale POT-GPD MLE" in all_model_table
     assert "baseline" in snapshot_module._benchmark_layer_table(
         {
             "benchmark_baseline_forecast_rows": 10,
@@ -1116,7 +1131,7 @@ def test_snapshot_private_helpers_cover_defensive_edges() -> None:
     assert snapshot_formatting_module._fmt_float(True) == "True"
     assert snapshot_formatting_module._fmt_rate(float("nan")) == "nan"
     assert snapshot_formatting_module._fmt_rate(False) == "False"
-    assert "JP only" in all_model_table
+    assert "A: Japan only" in all_model_table
     assert "japan_only" not in all_model_table
     assert "Breach mean+-sd" in all_model_table
     assert results_discussion_module._optional_float("bad") is None
@@ -1186,7 +1201,6 @@ def test_snapshot_table_asset_sync_and_sensitivity_summary_cover_docs_helpers(
                 "job_counts": {
                     "lgbm_capacity": 8,
                     "evt_threshold": 12,
-                    "evt_boundary_rows": 6,
                 },
                 "forecast_rows": 10,
                 "metric_rows": 3,
@@ -1210,11 +1224,11 @@ def test_snapshot_table_asset_sync_and_sensitivity_summary_cover_docs_helpers(
     assert "tailrisk_primary" in summary
     assert "3 rows (robust_to_capacity=1, sensitive_to_capacity=2)" in summary
     assert "not generated" in summary
-    assert "post-24-check robustness evidence" in summary
+    assert "post-screen robustness evidence" in summary
     assert "`paper`" in summary
     assert "lgbm_capacity=8" in summary
     assert "EWMA lambda" not in summary
-    assert "cross-suite FZ DM heatmap" in summary
+    assert "common-sample FZ DM heatmap" in summary
 
 
 def test_snapshot_asset_cleanup_removes_stale_run_dirs(tmp_path: Path) -> None:
@@ -1586,7 +1600,7 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
     assert "Figure 5. Full-Sample VaR Overlay Diagnostics" in gallery
     assert "Figure 6. VaR/ES Stress-Window Overlays" in gallery
     assert "Figure 7. DM Heatmaps" in gallery
-    assert "Figure 9. 24-Check LGBM Murphy Diagnostics" in gallery
+    assert "Figure 9. LightGBM Murphy Diagnostics after Coverage Screening" in gallery
     assert "target_tail_motivation.png" in gallery
     assert "coverage_breach_rates_left_tail.png" in gallery
     assert "Figure artifacts are not available" in snapshot_gallery.figure_gallery_markdown(
@@ -1610,7 +1624,7 @@ def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
     assert snapshot_gallery._figure_family("es_severity_left_tail") == "severity"
     assert snapshot_gallery._figure_family("unknown") == "other"
     assert "generated diagnostic figure" in " ".join(snapshot_gallery._figure_key_readings("x"))
-    assert "LightGBM+EVT forecasts" in " ".join(
+    assert "LightGBM-EVT forecasts" in " ".join(
         snapshot_gallery._figure_key_readings("target_distribution")
     )
     assert snapshot_gallery._source_artifacts_text([]) == "`missing`"

@@ -2,19 +2,19 @@
 % git_commit: 7f628ff4f66258a36314f492b652cdf7ef594b7e
 % config_hash: 874b7125bfae77a6fb261d40af0f987d89e5bae1e5ebc54a3958be66f9c17b4c
 % table_scope: coverage_admissibility_24check_table
-\begin{tabular}{lrrrrl}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}Xrrrrrl@{}}
 \toprule
-LGBM family & eligible/8 & breach/8 & Kupiec/8 & Christoffersen independence/8 & admissible \\
+LightGBM specification & Eligible & \shortstack{Exception-rate\\tolerance} & Kupiec & \shortstack{Christoffersen\\independence} & \shortstack{Mean exception\\severity range} & \shortstack{Passes\\screen} \\
 \midrule
-LGBM direct quantile & 8/8 & 0/8 & 0/8 & 8/8 & no \\
-LGBM location-scale empirical & 8/8 & 8/8 & 7/8 & 8/8 & no \\
-LGBM POT-GPD plain MLE & 8/8 & 8/8 & 8/8 & 8/8 & yes \\
-LGBM POT-GPD UniBM block-maxima shape & 8/8 & 8/8 & 8/8 & 8/8 & yes \\
-LGBM median/MAD POT-GPD plain MLE & 8/8 & 6/8 & 5/8 & 7/8 & no \\
-LGBM median/MAD POT-GPD UniBM block-maxima shape & 8/8 & 6/8 & 3/8 & 8/8 & no \\
-LGBM median/IQR POT-GPD plain MLE & 8/8 & 8/8 & 7/8 & 8/8 & no \\
-LGBM median/IQR POT-GPD UniBM block-maxima shape & 8/8 & 8/8 & 7/8 & 8/8 & no \\
+LightGBM direct quantile & 8/8 & 0/8 & 0/8 & 8/8 & 0.005511--0.008940 & no \\
+LightGBM empirical location-scale & 8/8 & 8/8 & 7/8 & 8/8 & 0.004820--0.010108 & no \\
+\textbf{LightGBM mean/scale POT-GPD MLE} & \textbf{8/8} & \textbf{8/8} & \textbf{8/8} & \textbf{8/8} & \textbf{0.005035--0.011399} & \textbf{yes} \\
+\textbf{LightGBM mean/scale POT-GPD UniBM} & \textbf{8/8} & \textbf{8/8} & \textbf{8/8} & \textbf{8/8} & \textbf{0.005497--0.010602} & \textbf{yes} \\
+LightGBM median/MAD POT-GPD MLE & 8/8 & 6/8 & 5/8 & 7/8 & 0.006367--0.011229 & no \\
+LightGBM median/MAD POT-GPD UniBM & 8/8 & 6/8 & 3/8 & 8/8 & 0.006233--0.011303 & no \\
+LightGBM median/IQR POT-GPD MLE & 8/8 & 8/8 & 7/8 & 8/8 & 0.005493--0.010818 & no \\
+LightGBM median/IQR POT-GPD UniBM & 8/8 & 8/8 & 7/8 & 8/8 & 0.005463--0.010625 & no \\
 \midrule
-\multicolumn{6}{l}{\footnotesize The 24-check screen is two tail sides times four information sets times the breach-rate band, Kupiec unconditional coverage, and Christoffersen independence. N >= 450 is an eligibility precondition.} \\
+\multicolumn{7}{@{}p{\textwidth}@{}}{\footnotesize The eight-scenario screen covers two exposures and four information sets. Each scenario is assessed by the exception-rate tolerance, Kupiec unconditional coverage, and Christoffersen independence. At least 450 forecasts are required for a scenario to be eligible. The severity range is the minimum--maximum of scenario-specific mean VaR overshoots conditional on an exception, in decimal-return units; it is descriptive and is not a screen criterion.} \\
 \bottomrule
-\end{tabular}
+\end{tabularx}

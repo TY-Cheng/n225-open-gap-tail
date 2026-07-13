@@ -1,19 +1,23 @@
 % run_id: tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4
 % git_commit: 7f628ff4f66258a36314f492b652cdf7ef594b7e
 % config_hash: 874b7125bfae77a6fb261d40af0f987d89e5bae1e5ebc54a3958be66f9c17b4c
-% table_scope: model_inventory_forecast_construction
-\begin{tabular}{llllll}
+% table_scope: model_inventory_information_basis_forecast_construction
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{0.14\textwidth}>{\raggedright\arraybackslash}p{0.17\textwidth}>{\raggedright\arraybackslash}p{0.17\textwidth}@{}}
 \toprule
-family & examples & information & VaR & ES & role \\
+Model family & Specifications & Information basis & VaR construction & ES construction \\
 \midrule
-Historical & historical quantile; rolling quantile & target history & empirical quantile & empirical tail mean & benchmark suite \\
-GARCH/GJR & GARCH-t; GJR-GARCH-t & target history & parametric t & parametric t & econometric benchmark \\
-GARCH-EVT & GJR-GARCH-EVT & target history & filtered POT-GPD & GPD ES & tail benchmark \\
-Advanced econometric & CAViaR; CARE; GAS & target history & recursive/score & varies by family & nonblocking benchmark \\
-Direct LightGBM & LGBM direct quantile & nested information sets & quantile regression & empirical companion & information ladder \\
-LightGBM location-scale & LGBM location-scale empirical & nested information sets & standardized empirical tail & standardized empirical tail & filtered candidate \\
-LightGBM POT-GPD & standardized, median/MAD, median/IQR POT-GPD & nested information sets & standardized POT-GPD & GPD ES & filtered EVT candidate \\
+Empirical quantiles & historical quantile; rolling quantile & lagged opening-gap losses & empirical quantile & empirical tail mean \\
+EWMA & EWMA volatility scaling & lagged opening-gap losses & Gaussian conditional quantile & Gaussian conditional tail mean \\
+GARCH family & GARCH-t; GJR-GARCH-t & lagged opening-gap losses & Student-t conditional quantile & Student-t conditional tail mean \\
+GARCH-EVT & GJR-GARCH-EVT & lagged opening-gap losses & filtered POT-GPD & GPD ES \\
+CAViaR & SAV; asymmetric slope & lagged opening-gap losses & recursive quantile & empirical exceedance companion \\
+CARE & expectile SAV; expectile asymmetric slope & lagged opening-gap losses & training-selected expectile & empirical exceedance companion \\
+GAS-t & location-scale; POT-GPD & lagged opening-gap losses & Student-t conditional or POT-GPD quantile & Student-t conditional or POT-GPD tail mean \\
+LightGBM direct quantile & LightGBM direct quantile & nested information sets & quantile regression & empirical exceedance companion \\
+LightGBM empirical location-scale & LightGBM empirical location-scale & nested information sets & empirical standardized-loss quantile & empirical standardized-loss tail mean \\
+LightGBM-EVT (mean/scale filter) & LightGBM mean/scale POT-GPD MLE; LightGBM mean/scale POT-GPD UniBM & nested information sets & standardized POT-GPD & GPD ES \\
+LightGBM-EVT (robust filters) & LightGBM median/MAD POT-GPD MLE; LightGBM median/MAD POT-GPD UniBM; LightGBM median/IQR POT-GPD MLE; LightGBM median/IQR POT-GPD UniBM & nested information sets & POT-GPD on robust standardized losses & GPD ES \\
 \midrule
-\multicolumn{6}{l}{\footnotesize Visible notes: inventory table explains forecast construction and paper role. Performance belongs in the coverage-admissibility, common-sample loss, and full-result tables.} \\
+\multicolumn{5}{p{0.96\textwidth}}{\footnotesize Notes: the first four rows form the baseline benchmark set; CAViaR, CARE, and GAS-t are the advanced econometric benchmarks. Together they form the benchmark suite.} \\
 \bottomrule
-\end{tabular}
+\end{tabularx}

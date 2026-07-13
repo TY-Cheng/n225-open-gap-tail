@@ -57,7 +57,7 @@ def benchmark_advanced_refit_dates(
     *,
     oos_start: str,
 ) -> list[str]:
-    """First valid panel forecast date in each calendar month after OOS start."""
+    """First valid panel forecast date in each calendar month after out-of-sample start."""
     start_date = date.fromisoformat(oos_start)
     refits: dict[str, str] = {}
     for row in _clean_loss_rows(rows):

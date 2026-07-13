@@ -38,7 +38,7 @@ def _benchmark_layer_table(status: dict[str, object]) -> str:
                 ),
                 _code(status.get("benchmark_baseline_metric_rows") or status.get("metric_rows")),
                 _code(status.get("benchmark_baseline_failures") or 0),
-                "Implemented evidence for target-history and econometric baseline benchmark models.",
+                "Implemented evidence for statistical and econometric benchmarks based on lagged opening-gap losses.",
             ),
             (
                 "advanced econometric",
@@ -97,7 +97,7 @@ def _claim_scope_markdown_table() -> str:
             (
                 "Benchmark common-sample table",
                 "Yes, after review",
-                "External target-history/econometric baseline benchmark on a shared sample.",
+                "External statistical/econometric benchmark based on lagged opening-gap losses and a shared sample.",
             ),
             (
                 "ML-tail nested information sets",
@@ -107,7 +107,7 @@ def _claim_scope_markdown_table() -> str:
             (
                 "ML-tail per-model rows",
                 "No",
-                "Model-specific OOS diagnostics; samples need not match across model families.",
+                "Model-specific out-of-sample diagnostics; samples need not match across model families.",
             ),
             (
                 "Restricted result matrix",
@@ -115,7 +115,7 @@ def _claim_scope_markdown_table() -> str:
                 "Matched-date comparison for model families and within-model increments.",
             ),
             (
-                "24-check screen and cross-suite FZ DM",
+                "Eight-scenario VaR coverage screen and post-screen FZ DM",
                 "Yes, conditional on the screen",
                 "Primary coverage-first comparison among the fixed coverage-admissible set on one strict common sample per tail.",
             ),
@@ -151,7 +151,7 @@ def _metric_artifact_relationship_table(
             (
                 "`ml_tail_metrics_per_model.parquet`",
                 str(ml_tail_metrics_per_model.height),
-                "Per-model diagnostics on each model's own valid OOS rows",
+                "Per-model diagnostics on each model's own valid out-of-sample rows",
                 "Not a cross-model comparison and not a replacement primary ML table.",
             ),
             (

@@ -92,6 +92,12 @@ def coverage_admissibility_summary_rows(
             if (_optional_float(model_rows[scenario].get("christoffersen_pvalue")) or -1.0)
             >= PASS_ALL_TEST_ALPHA
         }
+        severities = [
+            severity
+            for scenario in eligible
+            if (severity := _optional_float(model_rows[scenario].get("mean_exceedance_severity")))
+            is not None
+        ]
         output.append(
             {
                 "model_name": model_name,
@@ -99,6 +105,8 @@ def coverage_admissibility_summary_rows(
                 "breach_passes": len(breach),
                 "kupiec_passes": len(kupiec),
                 "christoffersen_independence_passes": len(christoffersen),
+                "mean_exceedance_severity_min": min(severities) if severities else None,
+                "mean_exceedance_severity_max": max(severities) if severities else None,
                 "coverage_admissible": (
                     eligible == expected_scenarios
                     and breach == expected_scenarios

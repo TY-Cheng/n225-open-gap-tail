@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
+from n225_open_gap_tail.config.model_labels import display_model_label
 from n225_open_gap_tail.config.runtime import (
     BOOTSTRAP_REPS,
     INFERENCE_RANDOM_SEED,
@@ -17,10 +18,22 @@ from n225_open_gap_tail.config.runtime import (
 from n225_open_gap_tail.metrics.stat_utils import fz_loss, moving_block_one_sided_pvalue
 
 C_INFORMATION_SET = "japan_only_plus_us_close_core_plus_japan_proxy"
+LGBM_STANDARD_PLAIN_MLE_C_LABEL = f"{display_model_label(ML_TAIL_POT_GPD_PLAIN_MLE_MODEL)} (C)"
+LGBM_STANDARD_UNIBM_C_LABEL = f"{display_model_label(ML_TAIL_POT_GPD_UNIBM_MODEL)} (C)"
 CROSS_SUITE_DM_MODEL_SPECS = (
     ("GJR-GARCH-EVT", "benchmark", "gjr_garch_evt", "target_history_only"),
-    ("LGBM plain MLE C", "ml_tail", ML_TAIL_POT_GPD_PLAIN_MLE_MODEL, C_INFORMATION_SET),
-    ("LGBM UniBM C", "ml_tail", ML_TAIL_POT_GPD_UNIBM_MODEL, C_INFORMATION_SET),
+    (
+        LGBM_STANDARD_PLAIN_MLE_C_LABEL,
+        "ml_tail",
+        ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
+        C_INFORMATION_SET,
+    ),
+    (
+        LGBM_STANDARD_UNIBM_C_LABEL,
+        "ml_tail",
+        ML_TAIL_POT_GPD_UNIBM_MODEL,
+        C_INFORMATION_SET,
+    ),
 )
 
 

@@ -2,17 +2,17 @@
 % git_commit: 7f628ff4f66258a36314f492b652cdf7ef594b7e
 % config_hash: 874b7125bfae77a6fb261d40af0f987d89e5bae1e5ebc54a3958be66f9c17b4c
 % table_scope: post_24check_cross_suite_fz_dm_table
-\begin{tabular}{llllrrl}
+\begin{tabularx}{\textwidth}{@{}l>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}Xrrr@{}}
 \toprule
-tail & candidate & anchor & common N & mean FZ diff. & one-sided p & status \\
+Exposure & Candidate & Anchor & Common \(N\) & Mean FZ diff. & One-sided \(p\) \\
 \midrule
-left tail & LGBM plain MLE C & GJR-GARCH-EVT & 473 & -0.471644 & 0.001*** & ok\_block\_bootstrap\_dm \\
-left tail & LGBM plain MLE C & LGBM UniBM C & 473 & -0.020743 & 0.100 & ok\_block\_bootstrap\_dm \\
-left tail & LGBM UniBM C & GJR-GARCH-EVT & 473 & -0.450901 & 0.001*** & ok\_block\_bootstrap\_dm \\
-right tail & LGBM plain MLE C & GJR-GARCH-EVT & 474 & -0.359663 & 0.004*** & ok\_block\_bootstrap\_dm \\
-right tail & LGBM plain MLE C & LGBM UniBM C & 474 & -0.009499 & 0.197 & ok\_block\_bootstrap\_dm \\
-right tail & LGBM UniBM C & GJR-GARCH-EVT & 474 & -0.350165 & 0.005*** & ok\_block\_bootstrap\_dm \\
+Downside & LightGBM mean/scale POT-GPD MLE (C) & GJR-GARCH-EVT & 473 & -0.471644 & 0.001*** \\
+Downside & LightGBM mean/scale POT-GPD MLE (C) & LightGBM mean/scale POT-GPD UniBM (C) & 473 & -0.020743 & 0.100 \\
+Downside & LightGBM mean/scale POT-GPD UniBM (C) & GJR-GARCH-EVT & 473 & -0.450901 & 0.001*** \\
+Upside & LightGBM mean/scale POT-GPD MLE (C) & GJR-GARCH-EVT & 474 & -0.359663 & 0.004*** \\
+Upside & LightGBM mean/scale POT-GPD MLE (C) & LightGBM mean/scale POT-GPD UniBM (C) & 474 & -0.009499 & 0.197 \\
+Upside & LightGBM mean/scale POT-GPD UniBM (C) & GJR-GARCH-EVT & 474 & -0.350165 & 0.005*** \\
 \midrule
-\multicolumn{7}{l}{\footnotesize Mean differences are FZ(candidate - anchor) on one strict global common sample per tail. Negative values favor the candidate because lower Fissler-Ziegel joint VaR-ES loss is better. P-values are one-sided moving-block-bootstrap DM p-values.} \\
+\multicolumn{6}{@{}p{\textwidth}@{}}{\footnotesize Mean differences are FZ(candidate - anchor) on one strict global common sample per exposure. Negative values favor the candidate because lower Fissler-Ziegel joint VaR-ES loss is better. P-values are one-sided circular-block-bootstrap DM p-values. ***, **, and * denote significance at the 1\%, 5\%, and 10\% levels, respectively.} \\
 \bottomrule
-\end{tabular}
+\end{tabularx}

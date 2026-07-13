@@ -8,7 +8,7 @@ hide:
 This page records extensions that should remain outside the current paper unless they
 become necessary for interpretation. The present paper is a point-in-time out-of-sample
 forecast evaluation of OSE Nikkei 225 Futures opening-gap VaR and Expected Shortfall. It
-already covers benchmark models, ML tail models, left-tail and right-tail risk surfaces,
+already covers benchmark models, LightGBM tail models, downside and upside risk surfaces,
 coverage diagnostics, loss-based comparison, Murphy diagrams, ES
 severity, and stress-window diagnostics.
 

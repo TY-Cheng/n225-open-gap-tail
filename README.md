@@ -186,7 +186,7 @@ just sensitivity latest
 ```
 
 The sensitivity run is fixed to the post-24-check paper set: `GJR-GARCH-EVT`,
-`LGBM POT-GPD plain MLE (C)`, and `LGBM POT-GPD UniBM (C)`.
+`LGBM mean/scale POT-GPD MLE (C)`, and `LGBM mean/scale POT-GPD UniBM (C)`.
 
 The visible `just` surface is intentionally small:
 

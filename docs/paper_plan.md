@@ -23,9 +23,13 @@ and appendix/source notes.
 
   `gap_t = log(day_session_open_t) - log(previous_settlement_{t-1})`.
 
-- The same gap is evaluated as two loss surfaces:
-    - `left_tail`: downside opening-gap risk, `realized_loss_t = -gap_t`;
-    - `right_tail`: upside opening-gap risk, `realized_loss_t = gap_t`.
+- The same gap is evaluated through two loss orientations:
+    - `left_tail`: downside loss, `realized_loss_t = -gap_t`;
+    - `right_tail`: upside loss, `realized_loss_t = gap_t`.
+- In prose, left and right tail identify the corresponding sides of the original
+  opening-gap return distribution; downside and upside describe their economic
+  interpretation. Both losses are evaluated through the upper tail of their
+  respective loss distributions.
 - The registered primary tail level is 95% VaR, with a nominal 5% exception rate.
 - The empirical question is predictive and out-of-sample. It is not a structural causal design.
 - Why this setting is useful:
@@ -71,12 +75,12 @@ and appendix/source notes.
     - Quantile loss and Fissler-Ziegel loss rank average predictive performance; Kupiec and Christoffersen tests assess VaR calibration and exception dynamics.
     - A diagnostic-admissibility profile summarizes whether a model remains acceptable across tail sides and nested information sets. This is an information-set robustness or robust-satisficing idea.
 - Existing evidence in the current research run:
-    - the clean forecast sample is large enough for a full-sample OOS
-      comparison from 2018-06-20 to 2026-05-22, but still thin in realized 5%
-      tail events;
-    - direct LightGBM quantile rows are useful information-set comparators but
+    - the 1,722-date modeling sample supports distributional analysis, while
+      the recursive out-of-sample benchmark window contains 722 dates from
+      2023-01-26 to 2026-05-22 and remains thin in realized 5% tail events;
+    - direct-quantile LightGBM rows are useful information-set comparators but
       fail the current all-scenario calibration story;
-    - GJR-GARCH-EVT and two LightGBM+EVT families form the post-24-check
+    - GJR-GARCH-EVT and two mean/scale LightGBM-EVT specifications form the post-screen
       comparison set for the current FZ DM heatmap;
     - the current manuscript story should therefore sell calibration robustness
       first, then loss and information-set gains among admissible models.
@@ -104,7 +108,7 @@ and appendix/source notes.
   close core variables, Japan proxy variables, and Asia proxy variables.
 - A benchmark-versus-ML tail-risk comparison that evaluates VaR calibration,
   quantile loss, and Fissler-Ziegel joint VaR-ES loss in one consistent
-  positive-loss convention.
+  consistent loss orientation.
 - A post-coverage-screen comparison design: headline comparisons are made only
   among models that pass the current calibration/admissibility screen.
 - A generated evidence map connecting every table and figure to source
@@ -115,7 +119,7 @@ and appendix/source notes.
 - Does U.S. close information add predictive content beyond Japan-only history?
 - Is most of the marginal content captured by core U.S. close variables, or do Japan and Asia proxy blocks add further information?
 - Do the left and right tails display different patterns in calibration, loss, and timing diagnostics?
-- Are LightGBM direct quantile forecasts well calibrated at the 95% VaR level?
+- Are direct-quantile LightGBM forecasts well calibrated at the 95% VaR level?
 - Do LightGBM body filters combined with POT-GPD tail extrapolation improve VaR/ES behavior relative to direct 95% quantile forecasts?
 - Are loss differentials related to ex-ante observables such as VIX or calendar conditions?
 
@@ -239,7 +243,7 @@ and appendix/source notes.
     - `japan_only_plus_us_close_core_plus_japan_proxy`;
     - `japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy`.
 - `japan_only` includes:
-    - target history;
+    - lagged opening-gap losses;
     - lagged Japanese futures variables;
     - rolling volatility and tail-loss history;
     - volume and open-interest state;
@@ -274,7 +278,7 @@ paper-facing.
 | 2 | Bronze and silver cache | Preserve typed vendor/cache rows, then normalize point-in-time research features. |
 | 3 | Gold modeling panel | Join targets, calendar map, feature coverage, and leakage-bound signatures. |
 | 4 | Leakage and coverage gates | Enforce timestamp ordering and sample eligibility before evaluation. |
-| 5 | Baseline benchmarks and ML-tail registry | Run target-history/econometric baseline benchmarks and LightGBM tail-model families. |
+| 5 | Baseline benchmarks and ML-tail registry | Run benchmarks based on lagged opening-gap losses and the LightGBM forecast families. |
 | 6 | Metrics, inference, diagnostics | Build loss matrices, DM/Murphy diagnostics, stress windows, and result matrix artifacts. |
 | 7 | Results snapshot | Summarize run-specific evidence and claim boundaries for reader review. |
 
@@ -293,7 +297,7 @@ paper-facing.
 - Forecast evaluation uses coverage diagnostics, Kupiec/Christoffersen tests
   where available, quantile loss, Fissler-Ziegel joint VaR-ES loss, and DM
   inference.
-- Benchmarks use target-history information only.
+- Benchmarks use lagged opening-gap losses only.
 - ML-tail models add predictors through fixed nested information sets.
 - DM inference is read as unconditional average-sample forecast-comparison
   evidence.
@@ -313,7 +317,7 @@ paper-facing.
 
 ### 3.4 Baseline Benchmarks
 
-- The baseline benchmarks are target-history and econometric:
+- The baseline benchmark set comprises statistical and econometric specifications based on lagged opening-gap losses:
     - historical empirical quantile;
     - rolling empirical quantile;
     - EWMA or volatility-scaled quantile;
@@ -342,30 +346,32 @@ paper-facing.
 - Its ES companion is empirical rather than a separate ES model.
 - Current evidence shows that direct quantile rows must be read together with coverage diagnostics because lower average loss can coincide with higher exception rates.
 
-### 3.7 LightGBM Location-Scale Empirical Tail
+### 3.7 LightGBM Empirical Location-Scale Forecast
 
-- `lightgbm_location_scale_empirical` separates conditional body learning from tail calibration:
+- `lightgbm_location_scale_empirical`, displayed as `LightGBM empirical location-scale`, separates conditional body learning from tail calibration:
     - first-stage LightGBM estimates a conditional mean-like location with an L2 objective;
     - second-stage LightGBM estimates log absolute residual scale;
     - Duan-style smearing maps the scale estimate back to original units;
     - out-of-fold standardized losses are used for empirical VaR/ES calibration.
-- This is the main non-EVT filtered-tail comparator inside the LightGBM family.
+- This is the main non-EVT filtered-tail comparator inside the LightGBM model class.
 
-### 3.8 LightGBM Standardized-Loss POT-GPD
+### 3.8 LightGBM-EVT with the Standard Filter
 
-- The standardized-loss POT-GPD family uses the same location-scale body filter, then fits a GPD to standardized-loss exceedances.
+- `LightGBM mean/scale POT-GPD MLE` and `LightGBM mean/scale POT-GPD UniBM` use the same location-scale body filter, then fit a GPD to standardized-loss exceedances.
 - Current registered variants:
     - `lightgbm_standardized_loss_pot_gpd_plain_mle`;
     - `lightgbm_standardized_loss_pot_gpd_unibm`.
 - Plain MLE is the registered fixed-location POT-GPD estimator and remains the standard comparator.
 - The UniBM route keeps the same LightGBM mean/log-scale body filter and POT threshold, but replaces the MLE shape estimate with a UniBM block-maxima-derived estimate of `xi`; the GPD scale is then refit with `xi` fixed.
-- This is a shape-estimator diagnostic variant, not a new primary ML specification.
+- This comparison isolates tail-shape estimation while holding the body filter and POT threshold fixed.
 
-### 3.9 LightGBM Robust Body Filters
+### 3.9 LightGBM-EVT with Robust Filters
 
-- New research-candidate LightGBM+EVT models are implemented at the 95% level only and remain outside the primary ML table until post-rerun review:
+- Four robust-filter LightGBM-EVT specifications are implemented at the 95% level:
     - `lightgbm_median_mad_pot_gpd_plain_mle`;
-    - `lightgbm_median_iqr_pot_gpd_plain_mle`.
+    - `lightgbm_median_mad_pot_gpd_unibm`;
+    - `lightgbm_median_iqr_pot_gpd_plain_mle`;
+    - `lightgbm_median_iqr_pot_gpd_unibm`.
 - Median/MAD route:
     - LightGBM q50 estimates conditional median location;
     - LightGBM L1 regression estimates conditional median absolute residual scale;
@@ -386,7 +392,7 @@ paper-facing.
 
 - The registered EVT estimator uses the fixed-location MLE shape directly.
 - The UniBM comparison estimates the GPD shape `xi` as an extreme value index from the selected-plateau slope of a sliding block-maxima summary scaling regression. This is not the reciprocal Pareto tail index `alpha`; when a Pareto tail index is reported under the convention `P(X > x) ~ x^{-alpha}`, the relationship is `xi = 1 / alpha`.
-- UniBM failures are fail-closed and reported as unavailable; they are not silently replaced by plain MLE.
+- UniBM failures are fail-closed and reported as unavailable; they are not silently replaced by the MLE route.
 - ES is available only when the fitted shape implies a finite ES.
 - If the shape is negative, finite-endpoint support is checked before accepting the extrapolated quantile.
 - EVT diagnostics include:
@@ -430,28 +436,26 @@ paper-facing.
     - `FZ loss` means the Fissler-Ziegel joint VaR-ES evaluation score;
     - no separate likelihood-style VaR-ES loss label is used in the paper.
 - Scoring-function diagnostics:
-    - Murphy diagrams for target-history benchmarks and 24-check robust LGBM
-      families across the four registered information sets.
+    - Murphy diagrams for the benchmark suite and the LightGBM specifications
+      satisfying the coverage screen across the four nested information sets.
 - Model comparison:
     - block-bootstrap Diebold-Mariano tests on paired loss differentials.
 - Why DM is supporting inference:
     - it tests average paired loss differences on common forecast dates;
     - it is not a conditional state-by-state mechanism test;
-    - the post-24-check 3-by-3 heatmap uses strict common dates across
-      GJR-GARCH-EVT, LGBM POT-GPD plain MLE (C), and LGBM POT-GPD UniBM (C).
+    - the post-screen 3-by-3 heatmap uses strict common dates across
+      GJR-GARCH-EVT, LightGBM mean/scale POT-GPD MLE (C), and LightGBM mean/scale POT-GPD UniBM (C).
 - Supporting diagnostics:
     - stress-window performance.
-- Cross-scenario admissibility:
+- Cross-scenario coverage admissibility:
     - The headline robustness question is whether a model remains acceptable
-      under sparse and rich information sets, and on both tail sides.
-    - A 24-check version combines eight tail-by-information-set scenarios with
-      three calibration diagnostics: breach-neighborhood, Kupiec unconditional
-      coverage, and Christoffersen independence where available.
-    - This diagnostic battery is a validation profile, not a single formal
-      hypothesis test and not proof of universal optimality.
-    - The current breach-audit artifact reports the narrower breach-neighborhood
-      and row-count gates; it should not be described as the full 24-check table
-      unless the Kupiec and Christoffersen pass/fail grid is included.
+      across four information sets and both downside and upside exposures.
+    - The eight-scenario VaR coverage screen applies a descriptive exception-rate
+      tolerance check, the Kupiec unconditional-coverage test, and the
+      Christoffersen independence test in each scenario.
+    - The resulting 16 formal tests and eight descriptive checks form a
+      transparent validation profile, not a joint hypothesis test or proof of
+      universal optimality.
 
 ## 4. Workflow Chart
 
@@ -466,8 +470,8 @@ flowchart TD
     E["Eligible predictors<br/>availability timestamp no later than cutoff"]
     F["OSE day-session open<br/>08:45 JST"]
     G["Settlement-to-open gap"]
-    H["Left-tail loss<br/>minus gap"]
-    I["Right-tail loss<br/>gap"]
+    H["Downside loss<br/>minus gap"]
+    I["Upside loss<br/>gap"]
 
     A --> B
     A --> C
@@ -493,7 +497,7 @@ flowchart LR
 
     subgraph Features["Nested information sets"]
         A["A: Japan only"]
-        B["B: A plus U.S. close core"]
+        B["B: A plus U.S.-close core"]
         C["C: B plus Japan proxies"]
         D["D: C plus Asia proxies"]
     end
@@ -501,7 +505,7 @@ flowchart LR
     subgraph Models["Forecast models"]
         BF["Baseline benchmarks"]
         AB["Advanced econometric benchmarks"]
-        LGBM["LightGBM (+EVT) families<br/>direct quantile; location-scale empirical;<br/>standardized/robust body filters; POT-GPD"]
+        LGBM["LightGBM forecasts<br/>direct quantile; empirical location-scale;<br/>mean/std, median/MAD, and median/IQR body filters; POT-GPD"]
     end
 
     subgraph Evaluation["Evaluation"]
@@ -537,7 +541,7 @@ flowchart LR
 ```
 
 - The LightGBM block represents the implemented ML-tail registry: direct
-  quantile, location-scale empirical, standardized-loss POT-GPD, and robust
+  quantile, empirical location-scale, standard-filter POT-GPD, and robust
   median/MAD or median/IQR POT-GPD variants. All use the same registered nested
   information sets where the model family is eligible.
 - Forecast diagnostics are computed from forecasts, realized losses, timing
@@ -562,7 +566,7 @@ flowchart LR
 
 ### 5.2 Benchmark Experiments
 
-- Run target-history and econometric baselines on left/right 95% loss surfaces.
+- Run the benchmark suite on downside and upside 95% loss surfaces.
 - Include historical/rolling quantile, EWMA or volatility-scaled quantile,
   GARCH-t, GJR-GARCH-t, and GJR-GARCH-EVT.
 - Include advanced econometric benchmarks where they converge and pass artifact
@@ -570,12 +574,12 @@ flowchart LR
 - Output expected evidence:
     - benchmark metrics tables;
     - benchmark Murphy diagnostics;
-    - selected benchmark-versus-LGBM performance figures;
+    - selected benchmark-versus-LightGBM performance figures;
     - all-model diagnostic scan.
 
 ### 5.3 Nested Information-Set ML Experiments
 
-- Run LightGBM direct quantile and LightGBM filtered-tail families over the
+- Run direct-quantile LightGBM and LightGBM-EVT specifications over the
   nested A/B/C/D information sets.
 - Evaluate left and right tails separately.
 - Treat direct quantile rows as information-set comparators, but do not promote
@@ -583,19 +587,19 @@ flowchart LR
 - Output expected evidence:
     - primary ML nested-information-set table;
     - per-model ML-tail appendix table;
-    - 24-check coverage/admissibility discussion;
-    - LGBM Murphy diagnostics for the pass-all LGBM+EVT families.
+    - eight-scenario VaR coverage-screen discussion;
+    - LightGBM Murphy diagnostics for the LightGBM-EVT specifications satisfying the coverage screen.
 
-### 5.4 Post-24-Check Cross-Suite Comparison
+### 5.4 Post-Screen Common-Sample Comparison
 
 - Restrict the headline comparison set to models that pass the current
   calibration/admissibility screen:
     - `GJR-GARCH-EVT`;
-    - `LGBM POT-GPD plain MLE (C)`;
-    - `LGBM POT-GPD UniBM (C)`.
-- Compute the 3-by-3 pairwise FZ DM heatmap separately for left and right tails.
-- Use a strict global common sample within each tail so the benchmark and
-  LGBM rows are paired on identical forecast dates.
+    - `LightGBM mean/scale POT-GPD MLE (C)`;
+    - `LightGBM mean/scale POT-GPD UniBM (C)`.
+- Compute the 3-by-3 pairwise FZ DM heatmap separately for downside and upside exposure.
+- Use a strict global common sample within each exposure so the benchmark and
+  LightGBM rows are paired on identical forecast dates.
 - Output expected evidence:
     - `dm_heatmap_left_tail`;
     - `dm_heatmap_right_tail`;
@@ -603,9 +607,9 @@ flowchart LR
 
 ### 5.5 Information-Increment And Stress Diagnostics
 
-- Plot cumulative FZ gains relative to the same-family A-only LGBM+EVT anchor.
-- Compare GJR-GARCH-EVT and B/C/D information expansions against that A-only
-  anchor to show information increments after the 24-check screen.
+- Plot cumulative FZ gains relative to the corresponding Japan-only LightGBM-EVT specification.
+- Compare GJR-GARCH-EVT and the B/C/D information expansions against that
+  Japan-only anchor to show information increments after the coverage screen.
 - Use stress-window overlays to illustrate VaR/ES behavior in broad stress
   episodes; do not interpret them as PnL, trading alpha, or validation by
   themselves.
@@ -617,13 +621,13 @@ flowchart LR
 
 ### 5.6 Appendix Robustness Experiments
 
-- Run `just sensitivity` as post-24-check appendix evidence only.
-- Perturb nearby LightGBM capacity for the two pass-all C-information LGBM+EVT
+- Run `just sensitivity` as post-screen appendix evidence only.
+- Perturb nearby LightGBM capacity for the two pass-all C-information LightGBM-EVT
   families.
-- Perturb POT thresholds at `0.875` and `0.925`, while recording `0.95` as a
-  boundary diagnostic at the 95% VaR level.
+- Perturb POT thresholds at `0.875` and `0.925`, which bracket the registered
+  primary threshold of `0.90`.
 - Do not let sensitivity rows alter coverage admissibility, canonical forecasts,
-  or the cross-suite FZ DM heatmap.
+  or the post-screen FZ DM comparison.
 
 ## 6. Expected Results And Discussion Outputs
 
@@ -634,17 +638,17 @@ flowchart LR
   and model role. Coverage is not admissibility; timestamp and feature-matrix
   gates still apply.
 - Model inventory table: compact methods table explaining Historical,
-  GARCH/GJR, GARCH-EVT, advanced econometric, direct LightGBM, location-scale,
+  GARCH/GJR, GARCH-EVT, advanced econometric, direct-quantile LightGBM, location-scale,
   and POT-GPD constructions. Performance belongs in result tables, not here.
 - Benchmark suite table: common-sample benchmark breach rates and loss metrics,
   with left/right tail detail available when page space allows.
 - ML information-ladder table: the main nested information-set table for direct
   LightGBM, reported separately for left and right tails.
-- Coverage-admissibility table: all eight tail-by-information-set scenarios for
-  every LGBM family, with breach-band, Kupiec, and Christoffersen-independence
+- Coverage-admissibility table: all eight exposure-by-information-set scenarios for
+  every LightGBM specification, with breach-band, Kupiec, and Christoffersen-independence
   pass counts shown separately.
-- Cross-suite FZ DM table: exact paired comparisons among GJR-GARCH-EVT,
-  LGBM plain MLE C, and LGBM UniBM C on one global common sample per tail.
+- Post-screen FZ DM table: exact paired comparisons among GJR-GARCH-EVT,
+  LightGBM mean/scale POT-GPD MLE (C), and LightGBM mean/scale POT-GPD UniBM (C) on one global common sample per exposure.
 
 ### 6.2 Main Figures
 
@@ -655,38 +659,38 @@ flowchart LR
   log survival, mean-excess diagnostics, and Hill tail-index paths. This single
   composite motivates the target and EVT route; it is not forecast validation.
 - Coverage-screen evidence is summarized in tables rather than a compact
-  main-text coverage figure; this avoids duplicating the 24-check pass/fail
+  main-text coverage figure; this avoids duplicating the eight-scenario pass/fail
   story.
-- Direct LightGBM information-ladder graphics are not main-text figures under
-  the 24-check robustness story because the direct quantile rows fail the
+- Direct-quantile LightGBM information-ladder graphics are not main-text figures under
+  the coverage-first comparison because the direct-quantile rows fail the
   calibration screen.
 - Figure 3, cumulative FZ-gain diagnostics: one 2-by-2 figure after the
-  24-check coverage screen. Each panel fixes a tail side and one of the two
-  24-check-passing LGBM+EVT families. The anchor is the corresponding A-only
-  LGBM+EVT forecast; plotted candidates are GJR-GARCH-EVT and the same-family
+  eight-scenario VaR coverage screen. Each panel fixes an exposure and one of the two
+  LightGBM-EVT specifications satisfying the coverage screen. The anchor is the corresponding Japan-only
+  LightGBM-EVT forecast; plotted candidates are GJR-GARCH-EVT and the within-specification
   B/C/D information expansions. Upward movement means the candidate has lower
-  accumulated FZ loss than A-only under the fixed
+  accumulated FZ loss than Japan only under the fixed
   anchor-loss-minus-candidate-loss convention.
 
 ### 6.3 Appendix Figures And Tables
 
 - Raw target diagnostics: histogram/density, left/right QQ plots, log survival,
   mean excess, and Hill plot.
-- Full coverage diagnostics: appendix checks backing the 24-check summary.
-- Stress-window overlays: broad OOS stress episodes with left/right tails
-  sharing the same x-axis; LGBM lines use information set C, the best-FZ row
-  within the two 24-check LGBM+EVT families. Illustration only, not validation,
+- Full coverage diagnostics: appendix checks backing the eight-scenario coverage-screen summary.
+- Stress-window overlays: broad out-of-sample stress episodes with downside and upside exposures
+  sharing the same x-axis; LightGBM lines use information set C, the best-FZ row
+  within the two mean/scale LightGBM-EVT specifications satisfying the coverage screen. Illustration only, not validation,
   PnL, cost, or trading-performance evidence.
-- DM heatmaps: appendix pairwise FZ detail for the post-24-check cross-suite
+- DM heatmaps: appendix pairwise FZ detail for the post-screen
   set; rows are candidates, columns are anchors, and negative differences favor
-  the row model. Each tail uses a strict global common sample across
-  GJR-GARCH-EVT, LGBM plain MLE C, and LGBM UniBM C.
+  the row model. Each exposure uses a strict global common sample across
+  GJR-GARCH-EVT, LightGBM mean/scale POT-GPD MLE (C), and LightGBM mean/scale POT-GPD UniBM (C).
 - Murphy diagrams: scoring-family diagnostics, not pairwise dominance claims.
 - ES severity diagnostics: conditional exceedance diagnostics, not
   model-selection or alpha claims.
 - EVT standardized-residual diagnostics: QQ, log survival, mean excess, Hill,
   and threshold stability for the POT-GPD route.
-- Appendix tables: full benchmark scan, full LGBM scan, tail-side risk tables,
+- Appendix tables: full benchmark scan, full LightGBM scan, exposure-specific risk tables,
   restricted result matrix, ES severity diagnostics, claim-scope reference,
   and configuration robustness.
 - The complete generated figure and table map is maintained in
@@ -696,12 +700,11 @@ flowchart LR
 ### 6.4 Appendix Configuration Robustness
 
 - The primary design compares pre-specified point-in-time forecast specifications.
-- `just sensitivity` is fixed to the post-24-check paper set: `GJR-GARCH-EVT`, `LGBM POT-GPD plain MLE (C)`, and `LGBM POT-GPD UniBM (C)`.
-- The sensitivity run varies nearby LightGBM capacity only for the two pass-all C-information LGBM+EVT families.
-- POT threshold sensitivity reports forecastable thresholds `0.875` and `0.925` for the same post-24-check set, bracketing the registered primary threshold `0.90`.
-- At 95% VaR, threshold `0.95` is recorded only as a boundary diagnostic with status `not_applicable_threshold_not_below_tail_level`.
+- `just sensitivity` is fixed to the post-screen paper set: `GJR-GARCH-EVT`, `LightGBM mean/scale POT-GPD MLE (C)`, and `LightGBM mean/scale POT-GPD UniBM (C)`.
+- The sensitivity run varies nearby LightGBM capacity only for the two information set C LightGBM-EVT specifications satisfying the coverage screen.
+- POT threshold sensitivity reports forecastable thresholds `0.875` and `0.925` for the same post-screen set, bracketing the registered primary threshold `0.90`.
 - Sensitivity artifacts live under `reports/runs/<run_id>/sensitivity/` and carry `primary_claim_allowed=false`.
-- Robustness labels describe conclusion stability versus the registered primary specification. They do not alter coverage admissibility, canonical forecasts, or the cross-suite FZ DM heatmap.
+- Robustness labels describe conclusion stability versus the registered primary specification. They do not alter coverage admissibility, canonical forecasts, or the post-screen FZ DM comparison.
 
 ## 7. Manuscript Structure
 
@@ -721,7 +724,7 @@ flowchart LR
 - Methods:
     - define target, left/right losses, VaR, and ES;
     - describe benchmark and advanced econometric models;
-    - describe LightGBM direct quantile and filtered-tail models;
+    - describe direct-quantile LightGBM and LightGBM-EVT models;
     - describe POT-GPD shape, scale, and ES gates;
     - describe evaluation metrics and inference.
 - Results:
@@ -734,7 +737,7 @@ flowchart LR
     - interpret U.S. close information content;
     - distinguish downside and upside risk;
     - discuss VaR coverage before loss-based claims;
-    - explain where LightGBM+EVT is useful and where sample gates are still limiting.
+    - explain where LightGBM-EVT is useful and where sample gates are still limiting.
 - Conclusion:
     - summarize the predictive evidence;
     - state limitations from coverage drift, FRED vintages, EVT sample size, and missing U.S.-close Nikkei futures marks;
@@ -744,7 +747,7 @@ flowchart LR
 
 - No structural causal spillover claim.
 - No price-discovery claim.
-- No claim that left-tail and right-tail mechanisms are identical.
+- No claim that downside and upside mechanisms are identical.
 - No deployment claim from historical OHLC data.
 - No `residual_usclosemark_to_open` claim without licensed timestamped intraday Nikkei futures marks.
 - No claim that LightGBM-EVT is a new ML algorithm.

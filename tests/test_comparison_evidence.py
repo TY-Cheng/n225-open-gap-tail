@@ -9,7 +9,12 @@ from n225_open_gap_tail.diagnostics.snapshot_comparisons import (
 from n225_open_gap_tail.metrics.admissibility import (
     coverage_admissibility_summary_rows as coverage_admissibility_rows,
 )
-from n225_open_gap_tail.metrics.cross_suite_dm import cross_suite_dm_records
+from n225_open_gap_tail.metrics.cross_suite_dm import (
+    LGBM_STANDARD_PLAIN_MLE_C_LABEL,
+    LGBM_STANDARD_UNIBM_C_LABEL,
+    cross_suite_dm_records,
+)
+from n225_open_gap_tail.reporting.latex import _coverage_admissibility_to_latex
 
 
 def test_coverage_admissibility_counts_all_three_checks_across_eight_scenarios() -> None:
@@ -34,6 +39,7 @@ def test_coverage_admissibility_counts_all_three_checks_across_eight_scenarios()
                             else 0.50
                         ),
                         "christoffersen_pvalue": 0.40,
+                        "mean_exceedance_severity": (0.011 if tail_side == "right_tail" else 0.010),
                     }
                 )
 
@@ -50,6 +56,8 @@ def test_coverage_admissibility_counts_all_three_checks_across_eight_scenarios()
             "breach_passes": 8,
             "kupiec_passes": 8,
             "christoffersen_independence_passes": 8,
+            "mean_exceedance_severity_min": 0.010,
+            "mean_exceedance_severity_max": 0.011,
             "coverage_admissible": True,
         },
         {
@@ -58,21 +66,32 @@ def test_coverage_admissibility_counts_all_three_checks_across_eight_scenarios()
             "breach_passes": 8,
             "kupiec_passes": 7,
             "christoffersen_independence_passes": 8,
+            "mean_exceedance_severity_min": 0.010,
+            "mean_exceedance_severity_max": 0.011,
             "coverage_admissible": False,
         },
     ]
     rendered = coverage_admissibility_markdown(summary)
-    assert "24-check" in rendered
+    assert "eight-scenario VaR coverage screen" in rendered
     assert "Christoffersen independence" in rendered
     assert "Christoffersen conditional coverage" not in rendered
     assert "8/8" in rendered
+    assert "0.010000--0.011000" in rendered
+    latex = _coverage_admissibility_to_latex(summary)
+    assert r"\textbf{pass\_model}" in latex
+    assert r"\textbf{kupiec\_failure}" not in latex
+    assert "Mean exception" in latex
 
 
 def test_cross_suite_dm_uses_one_global_common_sample_and_formats_exact_evidence() -> None:
     loss_rows: list[dict[str, object]] = []
-    labels = ("GJR-GARCH-EVT", "LGBM plain MLE C", "LGBM UniBM C")
+    labels = (
+        "GJR-GARCH-EVT",
+        LGBM_STANDARD_PLAIN_MLE_C_LABEL,
+        LGBM_STANDARD_UNIBM_C_LABEL,
+    )
     for label_index, label in enumerate(labels):
-        dates = range(1, 6) if label != "LGBM UniBM C" else range(2, 6)
+        dates = range(1, 6) if label != LGBM_STANDARD_UNIBM_C_LABEL else range(2, 6)
         for day in dates:
             loss_rows.append(
                 {

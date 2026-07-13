@@ -155,7 +155,7 @@ def _synthetic_ml_tail_location_scale_rows(n: int = 90) -> list[dict[str, object
     return rows
 
 
-def test_ml_tail_marks_active_feature_missing_as_unavailable(
+def test_ml_tail_uses_lightgbm_native_missing_value_branch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 5)
@@ -180,10 +180,9 @@ def test_ml_tail_marks_active_feature_missing_as_unavailable(
         oos_start="2026-04-06",
     )
 
-    assert any(
-        row["fit_status"] == "unavailable_feature_not_valid_at_cutoff"
-        for row in result["forecasts"]
-    )
+    forecast = next(row for row in result["forecasts"] if row["forecast_date"] == "2026-04-06")
+    assert forecast["fit_status"] == "ok"
+    assert math.isfinite(cast(float, forecast["var_forecast"]))
 
 
 def test_ml_tail_feature_unavailability_artifacts_aggregate_and_explode_dates() -> None:
@@ -268,8 +267,11 @@ def test_ml_tail_location_scale_sequence_outputs_valid_forecasts(
     _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 1)
     _patch_paper_module(monkeypatch, "ML_TAIL_MIN_OOF_TRAIN_ROWS", 8)
 
+    rows = _synthetic_ml_tail_location_scale_rows(80)
+    missing_date = "2026-02-10"
+    next(row for row in rows if row["forecast_date"] == missing_date)["feature_x"] = None
     result = paper_core._forecast_ml_tail_lightgbm_sequence(
-        rows=_synthetic_ml_tail_location_scale_rows(80),
+        rows=rows,
         model_name=paper_module.ML_TAIL_LOCATION_SCALE_MODEL,
         information_set="japan_only_plus_us_close_core",
         candidate_features=["feature_x", "feature_cycle"],
@@ -284,6 +286,7 @@ def test_ml_tail_location_scale_sequence_outputs_valid_forecasts(
     assert cast(float, ok[0]["scale_forecast"]) > 0
     assert cast(float, ok[0]["scale_smearing_factor"]) > 0
     assert ok[0]["standardization_method"] == "blocked_expanding_oof_location_scale_duan_smearing"
+    assert next(row for row in ok if row["forecast_date"] == missing_date)
 
 
 def test_ml_tail_standardized_pot_gpd_sequence_records_evt_metadata(

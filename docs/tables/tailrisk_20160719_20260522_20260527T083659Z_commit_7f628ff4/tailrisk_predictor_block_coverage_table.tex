@@ -2,29 +2,21 @@
 % git_commit: 7f628ff4f66258a36314f492b652cdf7ef594b7e
 % config_hash: 874b7125bfae77a6fb261d40af0f987d89e5bae1e5ebc54a3958be66f9c17b4c
 % table_scope: predictor_block_coverage_information_transparency
-\begin{tabular}{llrllll}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.15\linewidth}>{\raggedright\arraybackslash}p{0.21\linewidth}r>{\raggedright\arraybackslash}Xrr@{}}
 \toprule
-block & source & features & examples & mean miss & max miss & role \\
+\shortstack[l]{Information-set\\increment} & Source/block & Candidate features & Representative predictors & Mean missing (\%) & Maximum missing (\%) \\
 \midrule
-Asia proxy & massive\_minute & 60 & eem\_final\_window\_momentum, eem\_late\_30m\_return, eem\_late\_60m\_down\_semivar & 0.000000 & 0.000000 & Asia proxy increment \\
-Asia proxy & Asia proxy & 10 & eem\_range, eem\_return, ewh\_range & 0.000000 & 0.000000 & Asia proxy increment \\
-Asia proxy & cross\_market\_derived & 1 & xmarket\_asia\_proxy\_return\_dispersion\_1d & 0.000000 & 0.000000 & Asia proxy increment \\
-JP proxy & massive\_minute & 24 & dxj\_final\_window\_momentum, dxj\_late\_30m\_return, dxj\_late\_60m\_down\_semivar & 0.003484 & 0.041812 & Japan proxy increment \\
-JP proxy & JP proxy & 8 & dxj\_range, dxj\_return, ewj\_range & 0.000000 & 0.000000 & Japan proxy increment \\
-JP proxy & cross\_market\_derived & 2 & xmarket\_japan\_proxy\_dxj\_spy\_spread\_1d, xmarket\_japan\_proxy\_ewj\_spy\_spread\_1d & 0.000000 & 0.000000 & Japan proxy increment \\
-JP only & JP history & 37 & n225\_contract\_month\_cos, n225\_contract\_month\_sin, n225\_day\_parkinson\_var\_lag\_1 & 0.000047 & 0.000581 & Japan/history anchor \\
-JP only & J-Quants N225 options & 30 & n225\_option\_atm\_iv\_change\_20\_lag\_1, n225\_option\_atm\_iv\_lag\_1, n225\_option\_atm\_iv\_medium\_lag\_1 & 0.016047 & 0.146341 & Japan/history anchor \\
-FRED credit enriched & FRED credit enriched & 4 & fred\_bamlc0a0cm\_diff, fred\_bamlc0a0cm\_level, fred\_bamlh0a0hym2\_diff & 0.623984 & 0.624274 & Macro/credit enrichment \\
-massive\_optional & massive\_optional & 2 & uup\_range, uup\_return & 0.000000 & 0.000000 & Options-risk diagnostic \\
-calendar\_controls & event\_calendar & 7 & event\_boj\_same\_ose\_session, event\_cpi\_same\_us\_session, event\_days\_since\_previous\_major & 0.000000 & 0.000000 & Supporting control \\
-fx\_core & fx\_core & 4 & fx\_observation\_age\_days, fx\_release\_age\_days, fx\_usdjpy\_level & 0.000000 & 0.000000 & Supporting control \\
-US core & massive\_daily & 40 & dia\_range, dia\_return, gld\_range & 0.000015 & 0.000581 & U.S. close core \\
-US core & cross\_market\_derived & 2 & xmarket\_us\_core\_return\_mean\_1d, xmarket\_us\_sector\_return\_dispersion\_1d & 0.000000 & 0.000000 & U.S. close core \\
-fred\_core & cboe\_volatility & 2 & cboe\_vix\_close, cboe\_vix\_range & 0.000000 & 0.000000 & U.S. close core \\
-fred\_core & fred\_core & 9 & fred\_dgs10\_diff, fred\_dgs10\_level, fred\_dgs2\_diff & 0.000000 & 0.000000 & U.S. close core \\
-fred\_core & cross\_market\_derived & 2 & xmarket\_vix\_shock\_20d, xmarket\_vix\_shock\_zscore\_60d & 0.000000 & 0.000000 & U.S. close core \\
-US late session & massive\_minute & 84 & dia\_final\_window\_momentum, dia\_late\_30m\_return, dia\_late\_60m\_down\_semivar & 0.000000 & 0.000000 & U.S. late-session timing \\
-\midrule
-\multicolumn{7}{l}{\footnotesize Visible notes: predictor-block coverage is an information-transparency summary, not feature admissibility. Timestamp availability and feature-matrix gates are applied before each refit.} \\
+A: Japan only & Japan history and J-Quants options & 67 & Nikkei 225 contract month cosine, Nikkei 225 option ATM implied volatility 20-day change (one-day lag) & 0.72 & 14.63 \\
+A: Japan only & Official event calendars & 1 & BOJ same OSE session & 0.00 & 0.00 \\
+B: +U.S.-close core & FRED, Cboe, and derived rates/volatility & 13 & CBOE VIX close, FRED 10-year Treasury yield change & 0.00 & 0.00 \\
+B: +U.S.-close core & Foreign exchange & 4 & FX observation age days, FX release age days & 0.00 & 0.00 \\
+B: +U.S.-close core & Massive and derived U.S. core & 42 & DIA range, cross-market U.S. core return mean one-day & 0.00 & 0.06 \\
+B: +U.S.-close core & Massive cross-asset ETF & 2 & UUP range, UUP return & 0.00 & 0.00 \\
+B: +U.S.-close core & Massive intraday / U.S. late session & 84 & DIA final-window momentum, DIA late 30-minute return & 0.00 & 0.00 \\
+B: +U.S.-close core & Official event calendars & 6 & CPI same U.S. session, days since previous major & 0.00 & 0.00 \\
+C: +Japan proxy & Massive and derived Japan proxies & 34 & DXJ final-window momentum, DXJ range & 0.25 & 4.18 \\
+D: +Asia proxy & Massive and derived Asia proxies & 71 & EEM final-window momentum, EEM range & 0.00 & 0.00 \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
+\par\smallskip
+\begin{minipage}{\linewidth}\footnotesize Notes: counts cover candidate predictors retained by at least one reported LightGBM refit. Missingness is calculated over the 1,722 modeling dates; mean and maximum missingness are computed across predictors within each row. Refit-specific timestamp, missingness, and variance screens still apply, so not every listed predictor enters every fitted forecast.\end{minipage}

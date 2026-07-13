@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from n225_open_gap_tail.config.runtime import (
+    BENCHMARK_ADVANCED_MODEL_NAMES,
+    BENCHMARK_BASELINE_MODEL_NAMES,
     Mapping,
     ML_TAIL_DIRECT_QUANTILE_MODEL,
     pl,
@@ -12,10 +14,15 @@ from n225_open_gap_tail.config.runtime import (
     _optional_float,
 )
 from n225_open_gap_tail.metrics.stat_utils import _fmt
+from n225_open_gap_tail.metrics.cross_suite_dm import (
+    LGBM_STANDARD_PLAIN_MLE_C_LABEL,
+    LGBM_STANDARD_UNIBM_C_LABEL,
+)
 from n225_open_gap_tail.config.model_labels import (
     display_information_set_label,
     display_model_label,
     display_source_block_label,
+    display_tail_side_label,
 )
 from n225_open_gap_tail.reporting.latex_utils import (
     _inference_status_counts,
@@ -29,8 +36,11 @@ from n225_open_gap_tail.reporting.latex_headline import (
     _model_inventory_to_latex as _model_inventory_to_latex,
     _predictor_block_coverage_rows as _predictor_block_coverage_rows,
     _predictor_block_coverage_to_latex as _predictor_block_coverage_to_latex,
-    _source_block_role as _source_block_role,
 )
+
+
+def _display_tail_side_from_row(row: Mapping[str, object]) -> str:
+    return display_tail_side_label(row.get("tail_side") or PRIMARY_TAIL_SIDE)
 
 
 def _metrics_to_latex(
@@ -38,9 +48,19 @@ def _metrics_to_latex(
 ) -> str:
     has_information_set = "information_set" in metrics.columns
     headers = (
-        ("model", "info", "side", "tail", "rows", "breach", "q_loss", "fz_loss")
+        (
+            "model",
+            "info",
+            "side",
+            "tail",
+            "rows",
+            "breach",
+            "q_loss",
+            "fz_loss",
+            "severity",
+        )
         if has_information_set
-        else ("model", "side", "tail", "rows", "breach", "q_loss", "fz_loss")
+        else ("model", "side", "tail", "rows", "breach", "q_loss", "fz_loss", "severity")
     )
     manifest = manifest or {}
     lines = [
@@ -49,10 +69,10 @@ def _metrics_to_latex(
         f"% config_hash: {manifest.get('config_hash', '')}",
         f"% claim_level: {manifest.get('claim_level', manifest.get('claims_level', ''))}",
         (
-            "% loss convention: realized_loss is positive loss for selected tail_side; "
+            "% loss convention: realized_loss is the tail-oriented loss for selected tail_side; "
             "lower FZ loss is better"
         ),
-        "\\begin{tabular}{lllrrrrr}" if has_information_set else "\\begin{tabular}{llrrrrr}",
+        "\\begin{tabular}{lllrrrrrr}" if has_information_set else "\\begin{tabular}{llrrrrrr}",
         "\\toprule",
         " & ".join(headers) + r" \\",
         "\\midrule",
@@ -66,14 +86,16 @@ def _metrics_to_latex(
         lines.append(
             f"{_latex_escape(display_model_label(row['model_name']))} & "
             f"{info_cell}"
-            f"{_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
+            f"{_latex_escape(_display_tail_side_from_row(row))} & "
             f"{float(row['tail_level']):.3f} & "
             f"{int(row['rows'])} & {_fmt(row['var_breach_rate'])} & "
-            f"{_fmt(row['mean_quantile_loss'])} & {_fmt(row['mean_fz_loss'])} \\\\"
+            f"{_fmt(row['mean_quantile_loss'])} & {_fmt(row['mean_fz_loss'])} & "
+            f"{_fmt(row.get('mean_exceedance_severity'))} \\\\"
         )
     note = (
         "Visible notes: candidate artifact; lower FZ loss is better; "
         "inference artifacts use block-bootstrap DM; "
+        "severity is the mean VaR overshoot conditional on an exception; "
         "common-sample status is recorded in metrics metadata."
     )
     lines.extend(
@@ -93,9 +115,9 @@ def _cross_suite_dm_to_latex(
 ) -> str:
     manifest = manifest or {}
     displayed_pairs = {
-        ("LGBM plain MLE C", "GJR-GARCH-EVT"),
-        ("LGBM UniBM C", "GJR-GARCH-EVT"),
-        ("LGBM plain MLE C", "LGBM UniBM C"),
+        (LGBM_STANDARD_PLAIN_MLE_C_LABEL, "GJR-GARCH-EVT"),
+        (LGBM_STANDARD_UNIBM_C_LABEL, "GJR-GARCH-EVT"),
+        (LGBM_STANDARD_PLAIN_MLE_C_LABEL, LGBM_STANDARD_UNIBM_C_LABEL),
     }
     selected = [
         row
@@ -107,32 +129,44 @@ def _cross_suite_dm_to_latex(
         f"% git_commit: {manifest.get('git_commit', '')}",
         f"% config_hash: {manifest.get('config_hash', '')}",
         "% table_scope: post_24check_cross_suite_fz_dm_table",
-        "\\begin{tabular}{llllrrl}",
+        (
+            "\\begin{tabularx}{\\textwidth}{@{}l"
+            ">{\\raggedright\\arraybackslash}X"
+            ">{\\raggedright\\arraybackslash}Xrrr@{}}"
+        ),
         "\\toprule",
-        "tail & candidate & anchor & common N & mean FZ diff. & one-sided p & status \\\\",
+        "Exposure & Candidate & Anchor & Common \\(N\\) & Mean FZ diff. & One-sided \\(p\\) \\\\",
         "\\midrule",
     ]
     for row in selected:
         pvalue = _optional_float(row.get("pvalue_one_sided"))
         pvalue_text = "n/a" if pvalue is None else f"{pvalue:.3f}{_dm_significance_stars(pvalue)}"
+        tail_side = str(row.get("tail_side") or "")
+        exposure = display_tail_side_label(tail_side)
         lines.append(
-            f"{_latex_escape(str(row.get('tail_side') or '').replace('_', ' '))} & "
+            f"{_latex_escape(exposure)} & "
             f"{_latex_escape(row.get('candidate_label'))} & "
             f"{_latex_escape(row.get('anchor_label'))} & "
             f"{int(_optional_float(row.get('common_n')) or 0)} & "
             f"{_fmt(row.get('mean_fz_loss_diff_candidate_minus_anchor'))} & "
-            f"{_latex_escape(pvalue_text)} & "
-            f"{_latex_escape(row.get('inference_status'))} \\\\"
+            f"{_latex_escape(pvalue_text)} \\\\"
         )
     note = (
         "Mean differences are FZ(candidate - anchor) on one strict global common sample "
-        "per tail. Negative values favor the candidate because lower Fissler-Ziegel joint "
-        "VaR-ES loss is better. P-values are one-sided moving-block-bootstrap DM p-values."
+        "per exposure. Negative values favor the candidate because lower Fissler-Ziegel joint "
+        "VaR-ES loss is better. P-values are one-sided circular-block-bootstrap DM p-values. "
+        "***, **, and * denote significance at the 1%, 5%, and 10% levels, respectively."
     )
     lines.extend(
-        ["\\midrule", f"\\multicolumn{{7}}{{l}}{{\\footnotesize {_latex_escape(note)}}} \\\\"]
+        [
+            "\\midrule",
+            (
+                f"\\multicolumn{{6}}{{@{{}}p{{\\textwidth}}@{{}}}}"
+                f"{{\\footnotesize {_latex_escape(note)}}} \\\\"
+            ),
+        ]
     )
-    lines.extend(["\\bottomrule", "\\end{tabular}", ""])
+    lines.extend(["\\bottomrule", "\\end{tabularx}", ""])
     return "\n".join(lines)
 
 
@@ -147,32 +181,55 @@ def _coverage_admissibility_to_latex(
         f"% git_commit: {manifest.get('git_commit', '')}",
         f"% config_hash: {manifest.get('config_hash', '')}",
         "% table_scope: coverage_admissibility_24check_table",
-        "\\begin{tabular}{lrrrrl}",
+        ("\\begin{tabularx}{\\textwidth}{@{}>{\\raggedright\\arraybackslash}Xrrrrrl@{}}"),
         "\\toprule",
         (
-            "LGBM family & eligible/8 & breach/8 & Kupiec/8 & "
-            "Christoffersen independence/8 & admissible \\\\"
+            "LightGBM specification & Eligible & "
+            "\\shortstack{Exception-rate\\\\tolerance} & Kupiec & "
+            "\\shortstack{Christoffersen\\\\independence} & "
+            "\\shortstack{Mean exception\\\\severity range} & "
+            "\\shortstack{Passes\\\\screen} \\\\"
         ),
         "\\midrule",
     ]
     for row in rows:
-        lines.append(
-            f"{_latex_escape(display_model_label(row.get('model_name')))} & "
-            f"{int(_optional_float(row.get('eligible_scenarios')) or 0)}/8 & "
-            f"{int(_optional_float(row.get('breach_passes')) or 0)}/8 & "
-            f"{int(_optional_float(row.get('kupiec_passes')) or 0)}/8 & "
-            f"{int(_optional_float(row.get('christoffersen_independence_passes')) or 0)}/8 & "
-            f"{'yes' if row.get('coverage_admissible') else 'no'} \\\\"
+        severity_min = _optional_float(row.get("mean_exceedance_severity_min"))
+        severity_max = _optional_float(row.get("mean_exceedance_severity_max"))
+        severity_range = (
+            "n/a"
+            if severity_min is None or severity_max is None
+            else f"{_fmt(severity_min)}--{_fmt(severity_max)}"
         )
+        cells = [
+            _latex_escape(display_model_label(row.get("model_name"))),
+            f"{int(_optional_float(row.get('eligible_scenarios')) or 0)}/8",
+            f"{int(_optional_float(row.get('breach_passes')) or 0)}/8",
+            f"{int(_optional_float(row.get('kupiec_passes')) or 0)}/8",
+            f"{int(_optional_float(row.get('christoffersen_independence_passes')) or 0)}/8",
+            severity_range,
+            "yes" if row.get("coverage_admissible") else "no",
+        ]
+        if row.get("coverage_admissible"):
+            cells = [f"\\textbf{{{cell}}}" for cell in cells]
+        lines.append(" & ".join(cells) + " \\\\")
     note = (
-        "The 24-check screen is two tail sides times four information sets times "
-        "the breach-rate band, Kupiec unconditional coverage, and Christoffersen "
-        "independence. N >= 450 is an eligibility precondition."
+        "The eight-scenario screen covers two exposures and four information sets. "
+        "Each scenario is assessed by the exception-rate tolerance, Kupiec unconditional "
+        "coverage, and Christoffersen independence. At least 450 forecasts are required "
+        "for a scenario to be eligible. The severity range is the minimum--maximum of "
+        "scenario-specific mean VaR overshoots conditional on an exception, in decimal-return "
+        "units; it is descriptive and is not a screen criterion."
     )
     lines.extend(
-        ["\\midrule", f"\\multicolumn{{6}}{{l}}{{\\footnotesize {_latex_escape(note)}}} \\\\"]
+        [
+            "\\midrule",
+            (
+                f"\\multicolumn{{7}}{{@{{}}p{{\\textwidth}}@{{}}}}"
+                f"{{\\footnotesize {_latex_escape(note)}}} \\\\"
+            ),
+        ]
     )
-    lines.extend(["\\bottomrule", "\\end{tabular}", ""])
+    lines.extend(["\\bottomrule", "\\end{tabularx}", ""])
     return "\n".join(lines)
 
 
@@ -193,13 +250,18 @@ def _full_per_model_metrics_to_latex(
     manifest: Mapping[str, object] | None = None,
 ) -> str:
     manifest = manifest or {}
-    headers = ("group", "model", "info", "side", "N", "breach", "q_loss", "fz_loss", "severity")
+    benchmark_table = suite_group == "Benchmark"
+    headers = (
+        ("Model", "Exposure", "N", "Breach rate", "Quantile loss", "FZ loss", "Mean severity")
+        if benchmark_table
+        else ("group", "model", "info", "side", "N", "breach", "q_loss", "fz_loss", "severity")
+    )
     lines = [
         f"% run_id: {manifest.get('run_id', '')}",
         f"% git_commit: {manifest.get('git_commit', '')}",
         f"% config_hash: {manifest.get('config_hash', '')}",
         "% table_scope: full_per_model_appendix",
-        "\\begin{tabular}{lll lrrrrr}",
+        "\\begin{tabular}{llrrrrr}" if benchmark_table else "\\begin{tabular}{lll lrrrrr}",
         "\\toprule",
         " & ".join(headers) + r" \\",
         "\\midrule",
@@ -210,12 +272,46 @@ def _full_per_model_metrics_to_latex(
         if column in metrics.columns
     ]
     frame = metrics.sort(sort_columns) if sort_columns else metrics
-    for row in frame.iter_rows(named=True):
+    rows = list(frame.iter_rows(named=True))
+    if benchmark_table:
+        model_order = {
+            model_name: index
+            for index, model_name in enumerate(
+                (*BENCHMARK_BASELINE_MODEL_NAMES, *BENCHMARK_ADVANCED_MODEL_NAMES)
+            )
+        }
+        tail_order = {"left_tail": 0, "right_tail": 1}
+        rows.sort(
+            key=lambda row: (
+                tail_order.get(str(row.get("tail_side")), len(tail_order)),
+                model_order.get(str(row.get("model_name")), len(model_order)),
+            )
+        )
+    previous_tail_side = ""
+    for row in rows:
+        if benchmark_table:
+            tail_side = str(row.get("tail_side") or PRIMARY_TAIL_SIDE)
+            if previous_tail_side and tail_side != previous_tail_side:
+                lines.append("\\midrule")
+            previous_tail_side = tail_side
+            tail_label = display_tail_side_label(tail_side)
+            breach_rate = _optional_float(row.get("var_breach_rate"))
+            breach_text = "n/a" if breach_rate is None else f"{100.0 * breach_rate:.3f}\\%"
+            lines.append(
+                f"{_latex_escape(display_model_label(row.get('model_name')))} & "
+                f"{_latex_escape(tail_label)} & "
+                f"{int(_optional_float(row.get('rows')) or 0)} & "
+                f"{breach_text} & "
+                f"{_fmt(row.get('mean_quantile_loss'))} & "
+                f"{_fmt(row.get('mean_fz_loss'))} & "
+                f"{_fmt(row.get('mean_exceedance_severity'))} \\\\"
+            )
+            continue
         lines.append(
             f"{_latex_escape(suite_group)} & "
             f"{_latex_escape(display_model_label(row.get('model_name')))} & "
             f"{_latex_escape(display_information_set_label(row.get('information_set')))} & "
-            f"{_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
+            f"{_latex_escape(_display_tail_side_from_row(row))} & "
             f"{int(_optional_float(row.get('rows')) or 0)} & "
             f"{_fmt(row.get('var_breach_rate'))} & "
             f"{_fmt(row.get('mean_quantile_loss'))} & "
@@ -223,12 +319,15 @@ def _full_per_model_metrics_to_latex(
             f"{_fmt(row.get('mean_exceedance_severity'))} \\\\"
         )
     note = (
-        "Visible notes: appendix table; lower quantile/FZ loss and lower "
-        "exceedance severity are better, while VaR breach should be read relative "
-        "to the nominal 5% exception rate."
+        "Notes: results are reported on each model's valid forecast sample, so N may differ "
+        "across specifications and loss levels are not common-sample pairwise rankings. "
+        "Lower quantile and FZ loss and lower mean exceedance severity are better; breach "
+        "rates should be read against the nominal 5% rate."
     )
-    lines.extend(
-        ["\\midrule", f"\\multicolumn{{9}}{{l}}{{\\footnotesize {_latex_escape(note)}}} \\\\"]
+    lines.append("\\midrule")
+    lines.append(
+        f"\\multicolumn{{{len(headers)}}}{{p{{0.96\\linewidth}}}}{{\\footnotesize "
+        f"{_latex_escape(note)}}} \\\\"
     )
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     return "\n".join(lines)
@@ -283,7 +382,7 @@ def _configuration_sensitivity_to_latex(
             f"{_latex_escape(row.get('config_label'))} & "
             f"{_latex_escape(display_model_label(row.get('model_name')))} & "
             f"{_latex_escape(display_information_set_label(row.get('information_set')))} & "
-            f"{_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
+            f"{_latex_escape(_display_tail_side_from_row(row))} & "
             f"{int(_optional_float(row.get('rows')) or 0)} & "
             f"{_fmt(row.get('var_breach_rate'))} & "
             f"{_fmt(row.get('mean_quantile_loss'))} & "
@@ -291,12 +390,11 @@ def _configuration_sensitivity_to_latex(
             f"{_latex_escape(class_label)} \\\\"
         )
     note = (
-        "Visible notes: appendix-only post-24-check configuration robustness diagnostics. "
+        "Visible notes: appendix-only post-screen configuration robustness diagnostics. "
         "Rows carry primary_claim_allowed=false and do not alter coverage admissibility, "
-        "the canonical forecasts, or the cross-suite FZ DM heatmap. "
+        "the canonical forecasts, or the post-screen FZ DM heatmap. "
         "Lower quantile/FZ loss is better; breach should be read against the 5% "
-        "nominal exception rate. Boundary EVT rows at u=0.95 are diagnostics at "
-        "the 95% VaR level, not alternative forecasts."
+        "nominal exception rate."
     )
     lines.extend(
         ["\\midrule", f"\\multicolumn{{10}}{{l}}{{\\footnotesize {_latex_escape(note)}}} \\\\"]
@@ -345,7 +443,7 @@ def _result_matrix_to_latex(
             f"{_latex_escape(row.get('comparison_axis'))} & "
             f"{_latex_escape(row.get('loss_family'))} & "
             f"{_latex_escape(label)} & "
-            f"{_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
+            f"{_latex_escape(_display_tail_side_from_row(row))} & "
             f"{_fmt(row.get('tail_level'))} & "
             f"{int(_optional_float(row.get('common_n')) or 0)} & "
             f"{int(_optional_float(row.get('exception_count')) or 0)} & "
@@ -384,7 +482,7 @@ def _es_severity_to_latex(
             f"{_latex_escape(row.get('suite'))} & "
             f"{_latex_escape(row.get('claim_scope'))} & "
             f"{_latex_escape(display_model_label(row.get('model_name')))} & "
-            f"{_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
+            f"{_latex_escape(_display_tail_side_from_row(row))} & "
             f"{_latex_escape(display_information_set_label(row.get('information_set')))} & "
             f"{int(_optional_float(row.get('rows')) or 0)} & "
             f"{int(_optional_float(row.get('exceedance_count')) or 0)} & "
@@ -426,7 +524,7 @@ def _result_matrix_summary_to_latex(
             f"{_latex_escape(row.get('comparison_family'))} & "
             f"{_latex_escape(row.get('comparison_axis'))} & "
             f"{_latex_escape(row.get('loss_family'))} & "
-            f"{_latex_escape(row.get('tail_side') or PRIMARY_TAIL_SIDE)} & "
+            f"{_latex_escape(_display_tail_side_from_row(row))} & "
             f"{_latex_escape(row.get('sample_policy'))} & "
             f"{_latex_escape(row.get('common_n_range'))} & "
             f"{_latex_escape(row.get('joint_exception_range'))} & "
@@ -450,7 +548,7 @@ def _claim_scope_to_latex(*, manifest: Mapping[str, object] | None = None) -> st
     rows = [
         (
             "benchmark_metrics.parquet",
-            "baseline benchmarks",
+            "baseline benchmark set",
             "yes after clean-run author review",
         ),
         (
@@ -460,8 +558,8 @@ def _claim_scope_to_latex(*, manifest: Mapping[str, object] | None = None) -> st
         ),
         (
             "ml_tail_metrics_per_model.parquet",
-            "per-model OOS diagnostics",
-            "24-check inputs only; raw rows are not a cross-model comparison",
+            "per-model out-of-sample diagnostics",
+            "coverage-screen inputs only; raw rows are not a cross-model comparison",
         ),
         (
             "ml_tail_result_matrix*.parquet",
@@ -469,8 +567,8 @@ def _claim_scope_to_latex(*, manifest: Mapping[str, object] | None = None) -> st
             "no; restricted sample evidence only",
         ),
         (
-            "canonical forecasts + 24-check table",
-            "coverage-admissible cross-suite FZ DM",
+            "canonical forecasts + coverage-screen table",
+            "coverage-admissible post-screen FZ DM",
             "yes; conditional on the screen and strict common dates",
         ),
     ]

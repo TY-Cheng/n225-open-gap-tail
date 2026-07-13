@@ -9,6 +9,7 @@ import sys
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import cast
+from unittest.mock import MagicMock
 
 import httpx
 import numpy as np
@@ -3723,6 +3724,12 @@ def test_evaluate_benchmark_suite_and_latex_export_with_synthetic_panel(
         encoding="utf-8"
     )
     assert "% config_hash:" in latex_text
+    assert (
+        "Model & Exposure & N & Breach rate & Quantile loss & FZ loss & Mean severity" in latex_text
+    )
+    assert "Historical quantile & Downside" in latex_text
+    assert "valid forecast sample" in latex_text
+    assert "Benchmark &" not in latex_text
 
 
 def test_result_matrix_latex_export_has_restricted_notes(tmp_path: Path) -> None:
@@ -3769,7 +3776,7 @@ def test_result_matrix_latex_export_has_restricted_notes(tmp_path: Path) -> None
 
     assert latex.tables == 2
     assert "restricted result matrix" in latex_text
-    assert "LGBM direct quantile" in latex_text
+    assert "LightGBM direct quantile" in latex_text
     assert "primary ML table" in latex_text
     assert "block-bootstrap DM" in latex_text
     assert "VaR-only and VaR-ES" in summary_text
@@ -3850,10 +3857,10 @@ def test_market_timing_design_labels_jst_cutoff_and_schedule_note(
     kwargs = cast(dict[str, object], captured["kwargs"])
     assert entries
     assert kwargs["claim_scope"] == "design_forecast_origin_not_causal_price_discovery"
-    assert "JST timing for the settlement-to-open forecast design" in text
+    assert "Japan Standard Time (JST) timing for the settlement-to-open forecast design" in text
     assert "if EDT" in text
     assert "if EST" in text
-    assert "matched\nU.S. close\n+ data lag\ncutoff" in text
+    assert "matched\nNYSE close\n+ data lag\ncutoff" in text
     caption = str(kwargs["caption"])
     assert "05:00 JST" in caption
     assert "06:00 JST" in caption
@@ -4177,6 +4184,9 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
     assert dm_table["claim_scope"] == "post_24check_cross_suite_fz_dm_table"
     dm_table_text = (run_dir / dm_table["path"]).read_text(encoding="utf-8")
     assert "candidate - anchor" in dm_table_text
+    assert "Exposure & Candidate & Anchor & Common \\(N\\)" in dm_table_text
+    assert "One-sided \\(p\\)" in dm_table_text
+    assert "***, **, and * denote" in dm_table_text
     assert "Christoffersen" not in dm_table_text
     assert "GJR-GARCH-EVT" in dm_table_text
     screen_table = next(
@@ -4186,7 +4196,7 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
     assert screen_table["claim_scope"] == "coverage_admissibility_24check_table"
     screen_text = (run_dir / screen_table["path"]).read_text(encoding="utf-8")
     assert "Christoffersen independence" in screen_text
-    assert "24-check" in screen_text
+    assert "eight-scenario" in screen_text
     assert any(entry["name"] == "cumulative_lgbm_a_anchor_fz_gain" for entry in entries)
     assert any(entry["name"] == "full_sample_var_overlay_left_tail" for entry in entries)
     assert not any(
@@ -4218,8 +4228,8 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
     dm_loss_rows = reporting_figures._cross_suite_dm_loss_rows(run_dir)
     assert set(dm_loss_rows["plot_label"].unique().to_list()) == {
         "GJR-GARCH-EVT",
-        "LGBM plain MLE C",
-        "LGBM UniBM C",
+        "LightGBM mean/scale POT-GPD MLE (C)",
+        "LightGBM mean/scale POT-GPD UniBM (C)",
     }
     assert paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL not in set(
         dm_loss_rows["model_name"].unique().to_list()
@@ -4233,10 +4243,12 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
     assert {record["loss_family"] for record in left_dm_records} == {"var_es_fz_loss"}
     assert {record["candidate_label"] for record in left_dm_records} == {
         "GJR-GARCH-EVT",
-        "LGBM plain MLE C",
-        "LGBM UniBM C",
+        "LightGBM mean/scale POT-GPD MLE (C)",
+        "LightGBM mean/scale POT-GPD UniBM (C)",
     }
-    missing_unibm = dm_loss_rows.filter(pl.col("plot_label") != "LGBM UniBM C")
+    missing_unibm = dm_loss_rows.filter(
+        pl.col("plot_label") != "LightGBM mean/scale POT-GPD UniBM (C)"
+    )
     missing_records = reporting_figures._cross_suite_dm_records(
         missing_unibm,
         paper_module.TAIL_SIDE_LEFT,
@@ -4250,8 +4262,8 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
     assert "JP-only direct" not in set(full_overlay["plot_group"].to_list())
     assert set(full_overlay["plot_group"].to_list()) == {
         "GJR-GARCH-EVT",
-        "LGBM plain MLE C",
-        "LGBM UniBM C",
+        "LightGBM mean/scale POT-GPD MLE (C)",
+        "LightGBM mean/scale POT-GPD UniBM (C)",
     }
     retired_tables = {
         "tailrisk_selected_model_performance",
@@ -4264,8 +4276,8 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
     assert "JP-only direct" not in stress_groups
     assert {
         "GJR-GARCH-EVT",
-        "LGBM POT-GPD plain MLE (C)",
-        "LGBM POT-GPD UniBM (C)",
+        "LightGBM mean/scale POT-GPD MLE (C)",
+        "LightGBM mean/scale POT-GPD UniBM (C)",
     }.issubset(stress_groups)
 
 
@@ -4292,6 +4304,80 @@ def test_export_figures_skips_missing_optional_artifacts(tmp_path: Path) -> None
             pl.DataFrame({"x": list(range(20))}), max_rows=3
         ).height
         == 3
+    )
+
+
+def test_full_sample_var_overlay_uses_anchor_mean_and_marks_display_breaches() -> None:
+    lgbm_label = reporting_figures.LGBM_STANDARD_PLAIN_MLE_C_LABEL
+    frame = pl.DataFrame(
+        [
+            {
+                "forecast_date": "2026-01-05",
+                "tail_side": paper_module.TAIL_SIDE_RIGHT,
+                "plot_group": "GJR-GARCH-EVT",
+                "plot_order": 0,
+                "realized_loss": 0.01,
+                "var_forecast": 0.04,
+                "var_breach": False,
+            },
+            {
+                "forecast_date": "2026-01-06",
+                "tail_side": paper_module.TAIL_SIDE_RIGHT,
+                "plot_group": "GJR-GARCH-EVT",
+                "plot_order": 0,
+                "realized_loss": 0.25,
+                "var_forecast": 0.20,
+                "var_breach": False,
+            },
+            {
+                "forecast_date": "2026-01-07",
+                "tail_side": paper_module.TAIL_SIDE_RIGHT,
+                "plot_group": "GJR-GARCH-EVT",
+                "plot_order": 0,
+                "realized_loss": 0.50,
+                "var_forecast": 0.60,
+                "var_breach": False,
+            },
+            {
+                "forecast_date": "2026-01-05",
+                "tail_side": paper_module.TAIL_SIDE_RIGHT,
+                "plot_group": lgbm_label,
+                "plot_order": 1,
+                "realized_loss": 0.01,
+                "var_forecast": 0.10,
+                "var_breach": False,
+            },
+            {
+                "forecast_date": "2026-01-07",
+                "tail_side": paper_module.TAIL_SIDE_RIGHT,
+                "plot_group": lgbm_label,
+                "plot_order": 1,
+                "realized_loss": 0.50,
+                "var_forecast": 0.20,
+                "var_breach": True,
+            },
+        ]
+    )
+    ax = MagicMock()
+
+    reporting_figures._plot_full_sample_var_overlay_panel(
+        ax,
+        frame,
+        paper_module.TAIL_SIDE_RIGHT,
+    )
+
+    lgbm_path = ax.plot.call_args_list[2].args[1]
+    assert lgbm_path[0] == pytest.approx(0.10)
+    assert lgbm_path[1] == pytest.approx(0.15)
+    assert lgbm_path[2] == pytest.approx(0.20)
+    assert len(lgbm_path) == 3
+    breach_call = next(
+        call for call in ax.scatter.call_args_list if call.kwargs["label"] == f"{lgbm_label} breach"
+    )
+    assert breach_call.args[1] == [0.25, 0.50]
+    assert breach_call.kwargs["facecolors"] == "none"
+    assert (
+        breach_call.kwargs["edgecolors"] == reporting_figures.FULL_SAMPLE_OVERLAY_COLORS[lgbm_label]
     )
 
 
@@ -4483,6 +4569,12 @@ def test_reporting_new_figure_helpers_lock_selection_order_and_loss_sign(
     japan_only_order = reporting_figures._information_order("japan_only")
     us_core_order = reporting_figures._information_order("japan_only_plus_us_close_core")
     assert japan_only_order < us_core_order
+    assert (
+        reporting_figures._information_set_stage_label(
+            "japan_only_plus_us_close_core_plus_japan_proxy"
+        )
+        == "Set C"
+    )
 
     loss_frame = pl.DataFrame(
         [
@@ -4585,7 +4677,7 @@ def test_reporting_dm_heatmap_helpers_cover_edge_cases() -> None:
         == len(reporting_figures.INFORMATION_LADDER_ORDER) + 1
     )
     assert reporting_figures._ordered_unique(["a", "b", "a", 2]) == ["a", "b", "2"]
-    assert reporting_figures._entity_label("japan_only") == "JP only"
+    assert reporting_figures._entity_label("japan_only") == "A: Japan only"
 
 
 def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) -> None:
@@ -4647,16 +4739,18 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
     )
     severity_text = reporting_latex._es_severity_to_latex(metrics)
     assert "primary" in severity_text
-    assert "LGBM direct quantile" in severity_text
-    assert "JP only" in severity_text
+    assert "LightGBM direct quantile" in severity_text
+    assert "A: Japan only" in severity_text
     assert "japan\\_only" not in severity_text
     assert paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL not in severity_text
     assert "0.010000" in severity_text
     metric_text = reporting_latex._metrics_to_latex(
         metrics.filter(pl.col("model_name") == paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL)
     )
-    assert "LGBM direct quantile" in metric_text
+    assert "LightGBM direct quantile" in metric_text
     assert paper_module.ML_TAIL_DIRECT_QUANTILE_MODEL not in metric_text
+    assert "severity" in metric_text
+    assert "0.020000" in metric_text
     assert reporting_latex._severity_rows(pl.DataFrame()) == []
     assert reporting_latex._range_label(None, 1) == "n/a"
     assert reporting_latex._range_label(5, 5) == "5"
@@ -4666,7 +4760,7 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
             {
                 "source_family": "jquants",
                 "source_block": "japan_history",
-                "feature": "n225_day_return_lag1",
+                "feature": "n225_day_return_lag_1",
                 "missingness_rate": 0.0,
             },
             {
@@ -4707,19 +4801,42 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
             },
         ]
     )
-    coverage_rows = reporting_latex._predictor_block_coverage_rows(coverage)
-    assert {row["role"] for row in coverage_rows} >= {
-        "Japan/history anchor",
-        "U.S. close core",
-        "U.S. late-session timing",
-        "Japan proxy increment",
-        "Asia proxy increment",
-        "Options-risk diagnostic",
-        "Macro/credit enrichment",
+    diagnostics = pl.DataFrame(
+        [
+            {
+                "information_set": "japan_only_plus_us_close_core",
+                "dropped_features_json": json.dumps([{"feature": "baa_spread"}]),
+                "scale_dropped_features_json": json.dumps([{"feature": "baa_spread"}]),
+            },
+            {
+                "information_set": "japan_only_plus_us_close_core_plus_japan_proxy_plus_asia_proxy",
+                "dropped_features_json": json.dumps([{"feature": "baa_spread"}]),
+                "scale_dropped_features_json": json.dumps([{"feature": "baa_spread"}]),
+            },
+        ]
+    )
+    retained_features = reporting_tables._retained_ml_tail_features(coverage, diagnostics)
+    assert retained_features is not None
+    assert "baa_spread" not in retained_features
+    coverage_rows = reporting_latex._predictor_block_coverage_rows(
+        coverage,
+        retained_features=retained_features,
+    )
+    assert {row["information_increment"] for row in coverage_rows} == {
+        "A: Japan only",
+        "B: +U.S.-close core",
+        "C: +Japan proxy",
+        "D: +Asia proxy",
     }
-    coverage_text = reporting_latex._predictor_block_coverage_to_latex(coverage)
-    assert "feature-matrix gates" in coverage_text
-    assert reporting_latex._source_block_role("other_controls") == "Supporting control"
+    coverage_text = reporting_latex._predictor_block_coverage_to_latex(
+        coverage,
+        retained_features=retained_features,
+    )
+    assert "Mean missing (\\%)" in coverage_text
+    assert "SPY return" in coverage_text
+    assert "spy\\_return" not in coverage_text
+    assert "baa spread" not in coverage_text
+    assert "not every listed predictor enters every fitted forecast" in coverage_text
     assert (
         reporting_latex._severity_claim_scope(
             {

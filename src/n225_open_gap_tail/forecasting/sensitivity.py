@@ -43,6 +43,8 @@ from n225_open_gap_tail.metrics.admissibility import (
 from n225_open_gap_tail.metrics.stat_utils import (
     christoffersen_independence_test,
     fz_loss,
+    forecast_eligible,
+    index_forecast_sessions,
     kupiec_pof_test,
     quantile_loss,
 )
@@ -279,6 +281,9 @@ def evaluate_sensitivity_suite(
     evt_forecasts = _tag_rows(
         evt_result["forecasts"], source_run_id=run_dir.name, primary_claim_allowed=False
     )
+    sessions = pl.read_parquet(panel_path, columns=["forecast_date"])["forecast_date"].to_list()
+    lgbm_forecasts = index_forecast_sessions(lgbm_forecasts, session_dates=sessions)
+    evt_forecasts = index_forecast_sessions(evt_forecasts, session_dates=sessions)
     lgbm_diagnostics = _tag_rows(
         lgbm_result["diagnostics"], source_run_id=run_dir.name, primary_claim_allowed=False
     )
@@ -555,8 +560,8 @@ def _metric_rows_from_forecasts(
     grouped: dict[tuple[str, str, str, float, str, str], list[dict[str, object]]] = defaultdict(
         list
     )
-    for row in forecasts:
-        if row.get("fit_status") != "ok" or row.get("is_valid_forecast") is not True:
+    for row in index_forecast_sessions(forecasts):
+        if not forecast_eligible(row):
             continue
         tail_level = _optional_float(row.get("tail_level"))
         if tail_level is None:
@@ -586,22 +591,24 @@ def _metric_rows_from_forecasts(
         q_losses: list[float] = []
         fz_losses: list[float] = []
         severities: list[float] = []
-        for row in rows:
+        session_indices = []
+        for row in sorted(rows, key=lambda row: str(row["forecast_date"])):
             loss = _optional_float(row.get("realized_loss"))
             var = _optional_float(row.get("var_forecast"))
             es = _optional_float(row.get("es_forecast"))
-            if loss is None or var is None or es is None:
+            if loss is None or var is None:
                 continue
             loss = float(loss)
             var = float(var)
-            es = float(es)
             breach = loss > var
             losses.append(loss)
             vars_.append(var)
-            esses.append(es)
+            if es is not None:
+                esses.append(es)
             breaches.append(breach)
+            session_indices.append(row.get("target_session_index"))
             q_losses.append(quantile_loss(loss, var, tail_level))
-            loss_fz = fz_loss(loss, var, es, tail_level)
+            loss_fz = fz_loss(loss, var, es, tail_level) if es is not None else float("nan")
             if loss_fz == loss_fz:
                 fz_losses.append(loss_fz)
             if breach:
@@ -641,6 +648,7 @@ def _metric_rows_from_forecasts(
                 ).get("pvalue"),
                 "christoffersen_pvalue": christoffersen_independence_test(
                     breaches=pl.Series(breaches).to_numpy(),
+                    session_indices=session_indices,
                 ).get("pvalue"),
                 "mean_quantile_loss": mean_q,
                 "mean_fz_loss": mean_fz,

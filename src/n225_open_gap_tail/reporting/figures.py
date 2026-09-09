@@ -56,6 +56,7 @@ from n225_open_gap_tail.metrics.admissibility import (
 )
 from n225_open_gap_tail.reporting.latex import _severity_rows
 from n225_open_gap_tail.metrics.stat_utils import (
+    forecast_eligible,
     fz_loss,
     quantile_loss,
 )
@@ -141,77 +142,69 @@ def _remove_stale_figures(figure_dir: Path) -> None:
 def _market_timing_design_figures(*, run_dir: Path, figure_dir: Path) -> list[dict[str, object]]:
     if not (run_dir / "manifest.json").exists():
         return []
-    fig, ax = plt.subplots(figsize=(12.8, 3.05))
-    ax.set_xlim(-0.6, 14.8)
-    ax.set_ylim(-1.42, 1.25)
-    ax.axis("off")
-
-    events = [
-        (0.0, "T-1\n15:15\nOSE close /\nsettlement", "#eef2ff", 0.84),
-        (2.35, "T-1\n16:30\nOSE night\nopens", "#eef2ff", 0.84),
-        (4.70, "T\n05:00\nNYSE close\nif EDT", "#fef2f2", 0.84),
-        (7.05, "T\n05:30\nOSE night\ncloses", "#eef2ff", 0.84),
-        (9.40, "T\n06:00\nNYSE close\nif EST", "#fef2f2", 0.84),
-        (11.75, "T\nmatched\nNYSE close\n+ data lag\ncutoff", "#fdf2f8", 1.02),
-        (14.10, "T\n08:45\nOSE day\nopen", "#f0fdf4", 0.84),
+    fig, axes = plt.subplots(2, 1, figsize=(12.8, 3.8))
+    common_start = ["Previous OSE\nsettlement", "OSE night\nsession opens"]
+    night_close = "OSE night close\n06:00 JST"
+    lanes = [
+        (
+            "U.S. daylight-saving time (regular NYSE session)",
+            [
+                *common_start,
+                "NYSE close\n05:00 JST",
+                "Forecast cutoff\n05:15 JST",
+                night_close,
+                "Next OSE\nday-session open",
+            ],
+        ),
+        (
+            "U.S. standard time (regular NYSE session)",
+            [
+                *common_start,
+                "NYSE / OSE night\nclose: 06:00 JST",
+                "Forecast cutoff\n06:15 JST",
+                "Next OSE\nday-session open",
+            ],
+        ),
     ]
-    for (x0, _label0, _face0, half_width0), (x1, _label1, _face1, half_width1) in zip(
-        events[:-1], events[1:], strict=True
-    ):
-        ax.annotate(
-            "",
-            xy=(x1 - half_width1, 0.0),
-            xytext=(x0 + half_width0, 0.0),
-            arrowprops={"arrowstyle": "->", "linewidth": 1.2, "color": "#9ca3af"},
-        )
-    for x, label, facecolor, _half_width in events:
-        ax.text(
-            x,
-            0.0,
-            label,
-            ha="center",
-            va="center",
-            fontsize=9.2,
-            color="#111827",
-            linespacing=1.0,
-            bbox={
-                "boxstyle": "round,pad=0.36,rounding_size=0.08",
-                "facecolor": facecolor,
-                "edgecolor": "#a3a3a3",
-                "linewidth": 0.8,
-            },
-        )
-    ax.plot(
-        [2.35, 2.35, 7.05, 7.05],
-        [-0.58, -1.02, -1.02, -0.58],
-        color="#818cf8",
-        linewidth=1.3,
-    )
-    ax.text(
-        4.70,
-        -1.20,
-        "OSE night session",
-        ha="center",
-        va="center",
-        fontsize=8.7,
-        color="#1d4ed8",
-    )
-    ax.set_title(
-        "Japan Standard Time (JST) timing for the settlement-to-open forecast design",
-        fontsize=12.5,
-    )
+    for ax, (title, labels) in zip(axes, lanes, strict=True):
+        ax.set_xlim(-0.65, 10.7)
+        ax.set_ylim(-0.7, 0.7)
+        ax.axis("off")
+        ax.set_title(title, fontsize=11, loc="left")
+        positions = np.linspace(0, 10, len(labels))
+        for index, (x, label) in enumerate(zip(positions, labels, strict=True)):
+            if index:
+                ax.annotate(
+                    "",
+                    xy=(x - 0.65, 0),
+                    xytext=(positions[index - 1] + 0.65, 0),
+                    arrowprops={"arrowstyle": "->", "color": "#9ca3af"},
+                )
+            ax.text(
+                x,
+                0,
+                label,
+                ha="center",
+                va="center",
+                fontsize=9,
+                bbox={
+                    "boxstyle": "round,pad=0.35",
+                    "facecolor": "#fff3df" if "cutoff" in label else "#eef2ff",
+                    "edgecolor": "#a3a3a3",
+                },
+            )
     caption = (
-        "Session-aligned forecast-origin and target-timing diagram. The U.S. cash "
-        "close appears at 05:00 JST during U.S. daylight-saving time and at 06:00 "
-        "JST during U.S. standard time. OSE labels show the pre-2024-11-05 hours: "
-        "day close 15:15 JST, night session 16:30-05:30 JST, and next day open "
-        "08:45 JST. From 2024-11-05, JPX hours are day close 15:45 JST and night "
-        "session 17:00-06:00 JST; the next day open remains 08:45 JST. The model "
-        "cutoff is the matched U.S. equity-market close plus the pre-specified "
-        "data-availability "
-        "lag; the OSE night close is timing context, not the forecast origin. The "
-        "figure is a forecast-origin and target-timing diagram, not a structural "
-        "market-transmission diagram."
+        "Post-September-2021 event-ordered schematic, not to scale. Regular NYSE closes map to "
+        "05:00 JST in U.S. daylight-saving time and 06:00 JST in standard time; "
+        "the forecast cutoff is fifteen minutes later. The OSE night close was "
+        "05:30 JST before J-GATE3.0 and 06:00 JST for evening sessions starting "
+        "2021-09-21 onward (first extended close: 2021-09-22 JST). The "
+        "2021-09-17 night session was suspended for the migration. In the "
+        "post-extension standard-time lane, OSE night close and NYSE close are "
+        "simultaneous. On NYSE "
+        "early-close days the cutoff follows that session's official close, "
+        "not these regular-session clock times. The full settlement-to-open "
+        "target is unchanged; the night close is timing context, not the forecast origin."
     )
     return _save_figure(
         fig,
@@ -1152,12 +1145,7 @@ def _loss_rows_from_forecasts(run_dir: Path) -> pl.DataFrame:
 def _valid_forecast_rows(frame: pl.DataFrame) -> pl.DataFrame:
     if frame.is_empty():
         return frame
-    filtered = frame
-    if "fit_status" in filtered.columns:
-        filtered = filtered.filter(pl.col("fit_status") == "ok")
-    if "is_valid_forecast" in filtered.columns:
-        filtered = filtered.filter(pl.col("is_valid_forecast") == True)  # noqa: E712
-    return filtered
+    return frame.filter(pl.Series([forecast_eligible(row) for row in frame.iter_rows(named=True)]))
 
 
 def _lgbm_a_anchor_cumulative_loss_pairs(

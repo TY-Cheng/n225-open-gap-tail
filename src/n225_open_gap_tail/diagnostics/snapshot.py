@@ -202,7 +202,7 @@ def build_snapshot_id(
 
 
 def _resolve_snapshot_run_dir(*, settings: Settings, run_id: str | None) -> Path:
-    runs_dir = settings.reports_dir / "runs"
+    runs_dir = settings.artifacts_dir
     if run_id and run_id != "latest":
         run_dir = runs_dir / run_id
         if not (run_dir / "manifest.json").exists():
@@ -220,7 +220,7 @@ def _resolve_snapshot_run_dir(*, settings: Settings, run_id: str | None) -> Path
         reverse=True,
     )
     if not candidates:
-        raise SnapshotError("No completed tail-risk run found under reports/runs")
+        raise SnapshotError(f"No completed tail-risk run found under {runs_dir}")
     return candidates[0]
 
 
@@ -525,7 +525,7 @@ claim boundaries. Full data-source detail lives in [Data](data.md).
 
 {target_table}
 
-- The cache lower bound is 2016-07-19, but XLC/core predictor coverage pushes the actual forecast sample to the combined clean start.
+- The manifest's `sample_policy` and `combined_clean_start` determine this run's lower bound; legacy predictor-driven runs are not relabeled by current defaults.
 - Target exclusion is explicit: roll/SQ windows and the single missing reference price are carried as audit evidence, not silently dropped.
 - The forecast-sample reason column makes the sample boundary reproducible row by row.
 
@@ -568,8 +568,8 @@ claim boundaries. Full data-source detail lives in [Data](data.md).
 | 7 | Results snapshot | Summarize run-specific evidence and claim boundaries for reader review. |
 
 - Data-access and cache artifacts live under `data/bronze` and `data/silver`.
-- Durable modeling evidence lives under `data/gold`; forecast/evaluation/reporting read from gold and reports.
-- Run-specific forecasts, metrics, diagnostics, and LaTeX tables live under `reports/runs/<run_id>`.
+- Durable modeling evidence lives under `data/gold`; forecast/evaluation/reporting read from gold and artifacts.
+- Run-specific forecasts, metrics, diagnostics, and LaTeX tables live under `artifacts/<run_id>`.
 
 ### Model And Evaluation Protocol
 

@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     bronze_data_dir: Path = Field(default=Path("data/bronze"))
     silver_data_dir: Path = Field(default=Path("data/silver"))
     gold_data_dir: Path = Field(default=Path("data/gold"))
+    artifacts_dir: Path = Field(default=Path("artifacts"))
     reports_dir: Path = Field(default=Path("reports"))
 
     massive_api_key_file: str = ""
@@ -108,6 +109,7 @@ class Settings(BaseSettings):
             self.bronze_data_dir,
             self.silver_data_dir,
             self.gold_data_dir,
+            self.artifacts_dir,
             self.reports_dir,
         )
 

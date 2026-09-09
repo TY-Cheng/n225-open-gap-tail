@@ -1,5 +1,7 @@
+import json
 from pathlib import Path
 
+import polars as pl
 import pytest
 from typer.testing import CliRunner
 
@@ -93,6 +95,7 @@ def test_status_reports_environment_without_secret_values(
     bronze_dir = data_dir / "bronze"
     silver_dir = data_dir / "silver"
     gold_dir = data_dir / "gold"
+    artifacts_dir = tmp_path / "artifacts"
     reports_dir = tmp_path / "reports"
     massive_key_file = tmp_path / "massive.keyfile"
     massive_flat_file_key_file = tmp_path / "massive-flat-file.keyfile"
@@ -100,7 +103,7 @@ def test_status_reports_environment_without_secret_values(
     massive_key_file.write_text("massive-secret\n", encoding="utf-8")
     massive_flat_file_key_file.write_text("massive-flat-file-secret\n", encoding="utf-8")
     jquants_key_file.write_text("jquants-secret\n", encoding="utf-8")
-    for directory in (data_dir, bronze_dir, silver_dir, gold_dir, reports_dir):
+    for directory in (data_dir, bronze_dir, silver_dir, gold_dir, artifacts_dir, reports_dir):
         directory.mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", "${HOME}/.venvs/n225-open-gap-tail")
@@ -108,6 +111,7 @@ def test_status_reports_environment_without_secret_values(
     monkeypatch.setenv("BRONZE_DATA_DIR", str(bronze_dir))
     monkeypatch.setenv("SILVER_DATA_DIR", str(silver_dir))
     monkeypatch.setenv("GOLD_DATA_DIR", str(gold_dir))
+    monkeypatch.setenv("ARTIFACTS_DIR", str(artifacts_dir))
     monkeypatch.setenv("REPORTS_DIR", str(reports_dir))
     monkeypatch.setenv("MASSIVE_DAILY_TICKERS", ",".join(CORE_MASSIVE_TICKERS))
     monkeypatch.setenv("FRED_SERIES", ",".join(CORE_FRED_SERIES))
@@ -130,6 +134,7 @@ def test_status_reports_environment_without_secret_values(
     assert f"  - {bronze_dir}: ok" in result.output
     assert f"  - {silver_dir}: ok" in result.output
     assert f"  - {gold_dir}: ok" in result.output
+    assert f"  - {artifacts_dir}: ok" in result.output
     assert "data/raw" not in result.output
     assert "data/interim" not in result.output
     assert "data/processed" not in result.output
@@ -676,39 +681,51 @@ def test_run_command_runs_panel_eval_and_latex(
     assert "latex tables: 1" in result.output
 
 
-def test_export_tables_command_reports_summary(
+@pytest.mark.parametrize("run_id", ["", "body28_test"])
+def test_export_tables_command_reads_and_writes_flat_artifacts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    run_id: str,
 ) -> None:
-    run_dir = tmp_path / "tailrisk_run"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ARTIFACTS_DIR", str(tmp_path / "artifacts"))
+    monkeypatch.setenv("REPORTS_DIR", str(tmp_path / "reports"))
+    resolved_id = run_id or "tailrisk_latest"
+    run_dir = tmp_path / "artifacts" / resolved_id
+    (run_dir / "panel").mkdir(parents=True)
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"run_id": resolved_id, "config_hash": "original-config"}),
+        encoding="utf-8",
+    )
+    pl.DataFrame(
+        [
+            {
+                "source_family": "massive_daily",
+                "source_block": "us_core",
+                "feature": "spy_return",
+                "missingness_rate": 0.0,
+            }
+        ]
+    ).write_parquet(run_dir / "panel" / "feature_coverage.parquet")
 
-    def fake_resolve_run_dir(settings: object, run_id: str) -> Path:
-        assert run_id == ""
-        return run_dir
+    result = CliRunner().invoke(app, ["export-tables", *(["--run-id", run_id] if run_id else [])])
 
-    def fake_export_tables(**kwargs: object) -> TableExportResult:
-        assert kwargs["run_dir"] == run_dir
-        return TableExportResult(
-            run_id="tailrisk_latest",
-            latex_dir=run_dir / "latex" / "tables",
-            tables=1,
-        )
-
-    monkeypatch.setattr(cli, "resolve_run_dir", fake_resolve_run_dir)
-    monkeypatch.setattr(cli, "export_tables", fake_export_tables)
-
-    result = CliRunner().invoke(app, ["export-tables"])
-
-    assert result.exit_code == 0
-    assert "run id: tailrisk_latest" in result.output
+    assert result.exit_code == 0, result.output
+    assert f"run id: {resolved_id}" in result.output
+    assert f"latex dir: {run_dir / 'latex' / 'tables'}" in result.output
     assert "tables: 1" in result.output
+    table = run_dir / "latex" / "tables" / "tailrisk_predictor_block_coverage_table.tex"
+    assert "% config_hash: original-config" in table.read_text(encoding="utf-8")
+    assert (run_dir / "latex" / "table_manifest.json").exists()
+    assert not (tmp_path / "reports").exists()
+    assert not (tmp_path / "artifacts" / "runs").exists()
 
 
 def test_feature_audit_command_reports_summary(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "tailrisk_latest"
+    run_dir = tmp_path / "artifacts" / "tailrisk_latest"
     output_path = run_dir / "audits" / "feature_audit.json"
 
     def fake_resolve_run_dir(settings: object, run_id: str) -> Path:

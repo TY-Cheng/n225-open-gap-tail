@@ -451,9 +451,11 @@ constitute empirical validation of the forecasting paper.
 
 `data/bronze`, `data/silver`, and `data/gold` are logical data-lake locations.
 Local machines should map `DATA_DIR` to external storage in `.env`, or use a
-repo-local `data/` symlink that resolves outside the cloud-synced repo. `reports/runs`
-can remain local because generated run summaries, tables, and figures are small
-relative to the vendor cache and gold data lake.
+repo-local `data/` symlink that resolves outside the cloud-synced repo.
+Experiment outputs live directly under `ARTIFACTS_DIR/<run_id>/`, with
+`ARTIFACTS_DIR=artifacts` by default. Run-local panels, forecasts, diagnostics,
+tables, and figures are not silver or gold datasets. `reports/` is reserved for
+human-readable reports; operational logs and temporary receipts stay in `.cache/`.
 
 ## Forecast Origins
 
@@ -507,7 +509,11 @@ Before modeling, each predictor block must produce an availability table with:
 - frequency and release/update timing;
 - effective sample impact after joining to OSE target dates.
 
-The target audit and predictor timeline jointly determine the final sample period. Variables with short or unstable histories can enter robustness tables, but not the main predictor set if they materially shorten the main sample.
+The target audit and requested window determine the main target-history lower
+bound. Predictor timelines remain audited separately: variables with short or
+unstable histories enter only where the existing training-window feature gates
+admit them. They do not shorten every model's history. These feature gates are
+distinct from the downstream model coverage gates.
 
 ## Cache-First Data Lake Contract
 
@@ -525,19 +531,22 @@ empirical claim. The final modeling start is written to the run manifest as:
 
 ```text
 combined_clean_start = max(
+  main_sample_start_requested,
   jquants_required_field_coverage_start,
-  required_massive_core_coverage_start,
-  required_fred_core_coverage_start,
-  canonical_fx_coverage_start
 )
 ```
 
 `jquants_required_field_coverage_start` defaults to `2016-07-19` only when
 `fields_coverage_audit.parquet` supports required coverage for settlement, last-trading-day,
 SQ-day, and central-contract fields. `2008-05-07` remains available for opening-gap-history audit
-or robustness runs, not as the default clean predictor sample. Because XLC remains a
-required U.S. sector control, the final `combined_clean_start` is expected to move to
-XLC's post-inception coverage period rather than remain at the 2016 cache lower bound.
+or robustness runs, not as the default main sample. Under accepted Q37
+(2026-09-09), XLC remains a U.S. sector candidate but no longer determines the
+global sample lower bound. Its pre-inception values are not backfilled, and the
+existing training-window missingness thresholds are not relaxed to retain it.
+The effective predictor starts remain in the run manifest as availability
+diagnostics. Target, mapping, roll/SQ and other quality exclusions are unchanged.
+Earlier frozen runs used the predictor-driven lower bound; their sample masks
+and reported evidence must not be relabeled as this new policy.
 
 Physical layout uses Hive-style Parquet partitions with schema version in the path:
 

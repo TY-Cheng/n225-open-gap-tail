@@ -264,9 +264,9 @@ class ModelPolicy:
 
 @dataclass(frozen=True)
 class EvaluationPolicy:
-    primary_common_sample: str = "table_specific_intersection"
-    pairwise_inference_sample: str = "pairwise_oos_intersection"
-    global_primary_sample: str = "primary_only_report_retained_n"
+    primary_common_sample: str = "comparison_specific_fixed_roster_intersection"
+    pairwise_inference_sample: str = "group_common_score_eligible_dates"
+    global_primary_sample: str = "per_model_native_var_oos_gates"
     min_common_oos_rows: int = 120
     one_percent_min_exceedances: int = 10
     bootstrap_reps: int = 999

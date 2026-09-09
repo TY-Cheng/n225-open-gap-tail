@@ -37,6 +37,7 @@ from n225_open_gap_tail.forecasting.artifacts import (
     _write_parquet,
 )
 from n225_open_gap_tail.inference.core import build_common_sample_artifacts
+from n225_open_gap_tail.metrics.stat_utils import index_forecast_sessions
 from n225_open_gap_tail.metrics.information import (
     _assert_run_config_compatible,
     _gold_artifact_path,
@@ -154,6 +155,12 @@ def evaluate_ml_tail_suite(
             )
     forecasts, diagnostics, failures = _load_active_ml_tail_shards(run_dir, jobs)
     forecasts = _sort_ml_tail_rows(forecasts)
+    forecasts = index_forecast_sessions(
+        forecasts,
+        session_dates=(
+            pl.read_parquet(panel_path).get_column("forecast_date").cast(pl.String).to_list()
+        ),
+    )
     diagnostics = _sort_ml_tail_rows(diagnostics)
     failures = _sort_ml_tail_rows(failures)
     if not forecasts and not diagnostics and failures:
@@ -175,10 +182,9 @@ def evaluate_ml_tail_suite(
         anchor_model=ML_TAIL_DIRECT_QUANTILE_MODEL,
         anchor_information_set=ML_TAIL_ANCHOR_INFORMATION_SET,
     )
-    primary_forecasts = cast(list[dict[str, object]], artifacts["primary_forecasts"])
     metrics = cast(list[dict[str, object]], artifacts["primary_metrics"])
     incremental = build_incremental_information_records(
-        primary_forecasts,
+        forecasts,
         baseline_information_set=PIPELINE_CONFIG.feature_sets.ml_tail_model_a_information_set,
     )
     feature_unavailability = build_ml_tail_feature_unavailability_records(forecasts)

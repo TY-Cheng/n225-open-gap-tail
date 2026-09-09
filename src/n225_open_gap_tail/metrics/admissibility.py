@@ -5,6 +5,9 @@ from collections.abc import Mapping
 import polars as pl
 
 from n225_open_gap_tail.config.runtime import (
+    BENCHMARK_ADVANCED_MODEL_NAMES,
+    BENCHMARK_BASELINE_MODEL_NAMES,
+    ML_TAIL_DIRECT_QUANTILE_MODEL,
     ML_TAIL_LOCATION_SCALE_MODEL,
     ML_TAIL_MEDIAN_IQR_POT_GPD_PLAIN_MLE_MODEL,
     ML_TAIL_MEDIAN_IQR_POT_GPD_UNIBM_MODEL,
@@ -13,10 +16,13 @@ from n225_open_gap_tail.config.runtime import (
     ML_TAIL_MODEL_NAMES,
     ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
     ML_TAIL_POT_GPD_UNIBM_MODEL,
+    RESULT_MATRIX_MIN_METRIC_ROWS,
     TAIL_SIDE_LEFT,
     TAIL_SIDE_RIGHT,
     _optional_float,
+    _required_float,
 )
+from n225_open_gap_tail.metrics.stat_utils import forecast_eligible, fz_loss
 
 PASS_ALL_INFORMATION_SETS = (
     "japan_only",
@@ -33,6 +39,7 @@ PASS_ALL_LGBM_MODEL_ORDER = (
     ML_TAIL_MEDIAN_IQR_POT_GPD_UNIBM_MODEL,
     ML_TAIL_MEDIAN_MAD_POT_GPD_PLAIN_MLE_MODEL,
     ML_TAIL_MEDIAN_MAD_POT_GPD_UNIBM_MODEL,
+    ML_TAIL_DIRECT_QUANTILE_MODEL,
 )
 PASS_ALL_BENCHMARK_MODEL = "gjr_garch_evt"
 PASS_ALL_BENCHMARK_INFORMATION_SET = "target_history_only"
@@ -218,3 +225,92 @@ def benchmark_model_passes(
         if tail_side in expected_sides and pass_all_row_passes(row):
             passed_sides.add(tail_side)
     return passed_sides == expected_sides
+
+
+def select_external_references(
+    forecasts: list[dict[str, object]],
+    native_metrics: pl.DataFrame,
+) -> dict[str, list[dict[str, object]]]:
+    """Q8--Q13: both-tail native gates, then external-only shared FZ0 dates."""
+    pool = BENCHMARK_BASELINE_MODEL_NAMES + BENCHMARK_ADVANCED_MODEL_NAMES
+    admitted = [model for model in pool if benchmark_model_passes(native_metrics, model_name=model)]
+    ledger: list[dict[str, object]] = []
+    references: list[dict[str, object]] = []
+    for side in PASS_ALL_TAIL_SIDES:
+        by_model: dict[str, dict[str, dict[str, object]]] = {model: {} for model in pool}
+        for row in forecasts:
+            model = str(row.get("model_name"))
+            if (
+                model not in pool
+                or row.get("tail_side") != side
+                or row.get("information_set") != PASS_ALL_BENCHMARK_INFORMATION_SET
+                or not forecast_eligible(row, score="fz0")
+            ):
+                continue
+            day = str(row["forecast_date"])
+            if day in by_model[model]:
+                raise ValueError(
+                    "External reference selection requires one target/level/refit per model"
+                )
+            by_model[model][day] = row
+        common = (
+            sorted(set.intersection(*(set(by_model[model]) for model in admitted)))
+            if admitted
+            else []
+        )
+        scores: dict[str, float] = {}
+        for day in common:
+            if (
+                len({_required_float(by_model[model][day]["realized_loss"]) for model in admitted})
+                != 1
+            ):
+                raise ValueError(f"Inconsistent external comparison target on {day}")
+        for model in pool:
+            if model in admitted and common:
+                scores[model] = sum(
+                    fz_loss(
+                        _required_float(by_model[model][day]["realized_loss"]),
+                        _required_float(by_model[model][day]["var_forecast"]),
+                        _required_float(by_model[model][day]["es_forecast"]),
+                        _required_float(by_model[model][day]["tail_level"]),
+                    )
+                    for day in common
+                ) / len(common)
+            ledger.append(
+                {
+                    "model_name": model,
+                    "tail_side": side,
+                    "both_tail_coverage_admissible": model in admitted,
+                    "native_fz0_rows": len(by_model[model]),
+                    "selection_common_n": len(common),
+                    "mean_fz_loss": scores.get(model),
+                    "eligibility_status": (
+                        "coverage_failed_or_unavailable"
+                        if model not in admitted
+                        else "no_fz0_forecasts"
+                        if not by_model[model]
+                        else "coverage_admissible"
+                    ),
+                }
+            )
+        selected = (
+            min(scores, key=lambda model: (scores[model], pool.index(model)))
+            if (scores and len(common) >= RESULT_MATRIX_MIN_METRIC_ROWS)
+            else None
+        )
+        references.append(
+            {
+                "tail_side": side,
+                "model_name": selected,
+                "selection_common_n": len(common),
+                "date_start": common[0] if common else None,
+                "date_end": common[-1] if common else None,
+                "mean_fz_loss": scores.get(selected) if selected else None,
+                "selection_status": "ok"
+                if selected
+                else "unavailable_no_admissible_common_score_sample",
+                "selection_sample_policy": "external_only_post_gate_common_fz0_dates",
+                "minimum_score_rows": RESULT_MATRIX_MIN_METRIC_ROWS,
+            }
+        )
+    return {"eligibility": ledger, "references": references}

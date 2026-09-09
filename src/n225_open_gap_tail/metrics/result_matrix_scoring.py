@@ -51,6 +51,7 @@ def _build_result_matrix_group(
         common_n=common_n,
         joint_exception_count=joint_exception_count,
     )
+    audit.update(claim_scope=claim_scope, primary_claim_allowed=primary_claim_allowed)
     records: list[dict[str, object]] = []
     if missing_entities:
         for entity in entities:
@@ -181,7 +182,9 @@ def _result_matrix_metric_row(
     exception_rate = float(np.mean(breaches)) if common_n else None
     expected_rate = 1.0 - tail_level
     kupiec = kupiec_pof_test(breaches=breaches, expected_probability=expected_rate)
-    christoffersen = christoffersen_independence_test(breaches=breaches)
+    christoffersen = christoffersen_independence_test(
+        breaches=breaches, session_indices=[row.get("target_session_index") for row in rows]
+    )
     quantile_losses = np.array(
         [
             quantile_loss(loss, forecast, tail_level)
@@ -239,6 +242,8 @@ def _result_matrix_metric_row(
         "kupiec_pvalue": kupiec.get("pvalue"),
         "christoffersen_lr_ind": christoffersen.get("lr_stat"),
         "christoffersen_pvalue": christoffersen.get("pvalue"),
+        "christoffersen_transition_count": christoffersen.get("transition_count", 0),
+        "christoffersen_skipped_transitions": christoffersen.get("skipped_transitions", 0),
         "mean_quantile_loss": mean_quantile_loss,
         "mean_fz_loss": mean_fz_loss,
         "metric_value": metric_value,
@@ -349,12 +354,18 @@ def _build_result_matrix_dm_records(
                 reps=BOOTSTRAP_REPS,
                 block_length=int(block_length),
                 rng=np.random.default_rng(INFERENCE_RANDOM_SEED),
+                session_indices=[
+                    entity_rows[baseline_entity][day].get("target_session_index")
+                    for day in common_dates
+                ],
             )
             if gate_status == "ok_block_bootstrap_dm"
             and mean_diff is not None
             and block_length is not None
             else None
         )
+        if gate_status == "ok_block_bootstrap_dm" and pvalue is None:
+            gate_status = "unavailable_bootstrap_time_axis_or_sample"
         records.append(
             {
                 "comparison_family": comparison_family,
@@ -386,6 +397,7 @@ def _build_result_matrix_dm_records(
                 "bootstrap_reps": BOOTSTRAP_REPS,
                 "bootstrap_seed": INFERENCE_RANDOM_SEED,
                 "block_length": block_length,
+                "bootstrap_time_axis": "target_session_grid_with_missing_mask",
                 "method_note": PIPELINE_CONFIG.evaluation_policy.dm_method
                 if gate_status == "ok_block_bootstrap_dm"
                 else None,

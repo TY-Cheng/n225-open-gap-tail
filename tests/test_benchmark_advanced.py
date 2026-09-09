@@ -9,6 +9,7 @@ import math
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 
 import numpy as np
@@ -26,8 +27,10 @@ import n225_open_gap_tail.forecasting._benchmark_suite as benchmark_suite
 import n225_open_gap_tail.forecasting._ml_tail_suite as ml_tail_suite
 import n225_open_gap_tail.inference as paper_inference
 import n225_open_gap_tail.metrics.stat_utils as stat_utils
+import n225_open_gap_tail.models.benchmark as benchmark
 import n225_open_gap_tail.models.benchmark_advanced as benchmark_advanced
 import n225_open_gap_tail.models.benchmark_advanced_math as advanced_math
+import n225_open_gap_tail.models.benchmark_advanced_stateful as advanced_stateful
 import n225_open_gap_tail.panel as paper_leakage
 import n225_open_gap_tail.panel as paper_panel
 import n225_open_gap_tail.reporting as paper_reporting
@@ -324,6 +327,242 @@ def test_stateful_forecast_t_does_not_use_realized_loss_t(
     assert forecasts[0]["es_forecast"] == pytest.approx(mutated_forecasts[0]["es_forecast"])
 
 
+@pytest.mark.parametrize(
+    ("var", "es", "joint"),
+    [
+        (1.0, None, False),
+        (1.0, math.nan, False),
+        (1.0, math.inf, False),
+        (1.0, 0.5, False),
+        (1.0, 1.2, True),
+        (math.nan, 1.2, False),
+    ],
+)
+def test_baseline_retains_var_independently_of_es(monkeypatch, var, es, joint) -> None:
+    monkeypatch.setattr(benchmark, "DEFAULT_MIN_TRAIN_ROWS", 3)
+    monkeypatch.setattr(
+        benchmark,
+        "_forecast_one",
+        lambda **kw: {"var_forecast": var, "es_forecast": es, "es_companion_type": "test"},
+    )
+    rows = [
+        {"forecast_date": f"2026-01-{day:02d}", "realized_loss": day / 100.0} for day in range(1, 8)
+    ]
+    forecasts, _, failures = benchmark._forecast_model_sequence(
+        rows=rows,
+        model_name="historical_quantile",
+        tail_side="left_tail",
+        tail_level=0.95,
+        oos_start="2026-01-04",
+    )
+    if not math.isfinite(var):
+        assert not forecasts and len(failures) == 4
+        return
+    assert not failures and len(forecasts) == 4
+    for row in forecasts:
+        assert stat_utils.forecast_eligible(row)
+        assert stat_utils.forecast_eligible(row, score="joint") is joint
+        assert stat_utils.forecast_eligible(row, score="fz0") is joint
+        assert row["es_forecast"] == (es if es is not None and math.isfinite(es) else None)
+
+
+@pytest.mark.parametrize("model_name", pipeline_runtime.BENCHMARK_ADVANCED_MODEL_NAMES[:4])
+def test_recursive_es_unavailable_preserves_var_and_monthly_state(monkeypatch, model_name) -> None:
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 10)
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 1000)
+    refits = []
+    params = np.array([0.01, 0.5, 0.2, 0.1] if model_name.endswith("slope") else [0.01, 0.5, 0.2])
+
+    def optimizer(**kwargs):
+        refits.append(kwargs["forecast_date"])
+        return {"params": params}
+
+    monkeypatch.setattr(advanced_stateful, "_run_derivative_free_optimizer", optimizer)
+    monkeypatch.setattr(
+        advanced_stateful,
+        "_calibrate_care_expectile_tau",
+        lambda *a, **k: {"expectile_calibration_status": "ok", "expectile_tau": 0.975},
+    )
+    rows = [
+        {
+            "forecast_date": (datetime(2026, 1, 1) + timedelta(days=day)).date().isoformat(),
+            "realized_loss": 0.01 * (day % 7 + 1),
+        }
+        for day in range(35)
+    ]
+    forecasts, diagnostics, failures = advanced_stateful._forecast_stateful_sequence(
+        rows=rows,
+        model_name=model_name,
+        tail_level=0.95,
+        oos_start="2026-01-28",
+    )
+    assert refits == ["2026-01-28", "2026-02-01"]  # No ES-driven daily retries.
+    assert len(forecasts) == len(failures) == 8
+    assert all(row["fit_status"] == "ok" and row["parameter_json"] for row in diagnostics)
+    assert all(row["es_multiplier_exceedance_count"] is not None for row in diagnostics)
+    for row in forecasts:
+        assert row["es_forecast"] is None
+        assert (
+            row["es_failure_reason"]
+            == "unavailable_empirical_es_companion_insufficient_exceedances"
+        )
+        assert stat_utils.forecast_eligible(row)
+        assert not stat_utils.forecast_eligible(row, score="joint")
+        assert not stat_utils.forecast_eligible(row, score="fz0")
+    expected_next_var = advanced_math._recursive_next_var(
+        q=forecasts[0]["var_forecast"],
+        y=forecasts[0]["realized_loss"],
+        params=params,
+        variant="asymmetric_slope" if model_name.endswith("slope") else "sav",
+        has_gap=False,
+    )
+    assert forecasts[1]["var_forecast"] == pytest.approx(expected_next_var)
+
+
+@pytest.mark.parametrize("model_name", ["caviar_sav", "gas_t_location_scale"])
+@pytest.mark.parametrize("es", [None, math.nan, 0.5, 1.2])
+def test_advanced_sequence_preserves_raw_es_without_clipping(monkeypatch, model_name, es) -> None:
+    monkeypatch.setattr(advanced_stateful, "DEFAULT_MIN_TRAIN_ROWS", 3)
+    monkeypatch.setattr(
+        advanced_stateful,
+        "_fit_advanced_model",
+        lambda **k: {
+            "fit_status": "ok",
+            "model_name": model_name,
+            "params": np.array([]),
+            "state": {
+                "var": 1.0,
+                "log_sigma": 0.0,
+                "location": 0.0,
+                "standardized_var": 1.0,
+                "standardized_es": es,
+            },
+            "es_multiplier": es,
+            "es_companion_type": "test",
+        },
+    )
+    monkeypatch.setattr(advanced_stateful, "_update_advanced_fit_state", lambda *a: None)
+    forecasts, diagnostics, failures = advanced_stateful._forecast_stateful_sequence(
+        rows=[
+            {"forecast_date": f"2026-01-{day:02d}", "realized_loss": 0.01} for day in range(1, 8)
+        ],
+        model_name=model_name,
+        tail_level=0.95,
+        oos_start="2026-01-04",
+    )
+    joint = es is not None and math.isfinite(es) and es >= 1.0
+    assert len(diagnostics) == 1 and len(forecasts) == 4
+    assert len(failures) == (0 if joint else 4)
+    for row in forecasts:
+        assert row["es_forecast"] == (es if es is not None and math.isfinite(es) else None)
+        assert stat_utils.forecast_eligible(row)
+        assert stat_utils.forecast_eligible(row, score="joint") is joint
+        assert stat_utils.forecast_eligible(row, score="fz0") is joint
+
+
+def test_advanced_nonfinite_var_does_not_erase_prior_forecasts(monkeypatch) -> None:
+    monkeypatch.setattr(advanced_stateful, "DEFAULT_MIN_TRAIN_ROWS", 3)
+    monkeypatch.setattr(
+        advanced_stateful,
+        "_fit_advanced_model",
+        lambda **k: {
+            "fit_status": "ok",
+            "model_name": "caviar_sav",
+            "params": np.array([]),
+            "state": {"var": 1.0},
+            "es_multiplier": 1.2,
+            "es_companion_type": "test",
+        },
+    )
+    monkeypatch.setattr(
+        advanced_stateful,
+        "_update_advanced_fit_state",
+        lambda fit, loss: fit["state"].update(var=math.nan),
+    )
+    forecasts, diagnostics, failures = advanced_stateful._forecast_stateful_sequence(
+        rows=[
+            {"forecast_date": f"2026-01-{day:02d}", "realized_loss": 0.01} for day in range(1, 7)
+        ],
+        model_name="caviar_sav",
+        tail_level=0.95,
+        oos_start="2026-01-04",
+    )
+    assert [row["forecast_date"] for row in forecasts] == ["2026-01-04", "2026-01-06"]
+    assert len(diagnostics) == 2
+    assert failures[0]["fit_status"] == "unavailable_forecast_failed"
+    assert failures[0]["forecast_date"] == "2026-01-05"
+
+
+@pytest.mark.parametrize("shape", [0.2, 1.0, 1.2])
+def test_external_pot_preserves_var_when_es_is_infinite(monkeypatch, shape) -> None:
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 10)
+    _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 2)
+    monkeypatch.setattr("scipy.stats.genpareto.fit", lambda *a, **k: (shape, 0.0, 1.0))
+    train = np.linspace(-2.0, 5.0, 100)
+    arch_result = SimpleNamespace(
+        params={"nu": 5.0},
+        convergence_flag=0,
+        std_resid=-train,
+        forecast=lambda **k: SimpleNamespace(
+            mean=SimpleNamespace(iloc=np.array([[10.0]])),
+            variance=SimpleNamespace(iloc=np.array([[10000.0]])),
+        ),
+    )
+    monkeypatch.setattr(
+        "arch.arch_model",
+        lambda *a, **k: SimpleNamespace(fit=lambda **kw: arch_result),
+    )
+    arch_forecast = benchmark._arch_forecast(
+        train=train, tail_level=0.95, model_name="gjr_garch_evt"
+    )
+    monkeypatch.setattr(advanced_stateful, "_profile_gas_nu", lambda train: 5.0)
+    monkeypatch.setattr(
+        advanced_stateful,
+        "_run_derivative_free_optimizer",
+        lambda **k: {"params": np.array([0.0, 0.05, 0.9, 0.0])},
+    )
+    monkeypatch.setattr(
+        advanced_stateful,
+        "_gas_filter_path",
+        lambda **k: {"log_sigmas": np.zeros(len(k["train"])), "next_log_sigma": 0.0},
+    )
+    fit = advanced_stateful._fit_advanced_model(
+        train=train,
+        model_name="gas_t_pot_gpd",
+        tail_level=0.95,
+        forecast_date="2026-01-04",
+        previous_params=None,
+        gas_nu_by_year={},
+    )
+    assert fit["fit_status"] == "ok"
+    gas_forecast = advanced_stateful._forecast_from_advanced_fit(fit)
+    for row in [arch_forecast, {**gas_forecast, "es_failure_reason": fit.get("es_failure_reason")}]:
+        assert math.isfinite(row["var_forecast"])
+        if shape >= 1.0:
+            assert row["es_forecast"] is None
+            assert row["es_failure_reason"] == "unavailable_gpd_es_shape_ge_one"
+        else:
+            assert row["es_forecast"] > row["var_forecast"]
+            assert row["es_failure_reason"] is None
+    # Genuine tail-calibration failure must not fall back to Student-t or a finite ES.
+    with pytest.raises(paper_module.PipelineRunError, match="insufficient"):
+        benchmark._arch_forecast(
+            train=train[:2],
+            tail_level=0.95,
+            model_name="gjr_garch_evt",
+            evt_threshold_quantile=0.999,
+        )
+    failed_fit = advanced_stateful._fit_advanced_model(
+        train=train[:2],
+        model_name="gas_t_pot_gpd",
+        tail_level=0.95,
+        forecast_date="2026-01-04",
+        previous_params=None,
+        gas_nu_by_year={},
+    )
+    assert failed_fit["fit_status"] != "ok" and "state" not in failed_fit
+
+
 def test_gas_pot_validity_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_ROWS", 30)
     _patch_paper_module(monkeypatch, "DEFAULT_MIN_TRAIN_EXCEEDANCES", 3)
@@ -406,11 +645,13 @@ def test_advanced_helper_failure_branches_are_explicit(monkeypatch: pytest.Monke
         )
 
 
+@pytest.mark.parametrize("missing_es", [False, True])
 def test_benchmark_advanced_wiring_is_nonblocking_and_sharded(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    missing_es: bool,
 ) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "benchmark_advanced_synthetic"
+    run_dir = tmp_path / "artifacts" / "benchmark_advanced_synthetic"
     panel_dir = run_dir / "panel"
     panel_dir.mkdir(parents=True)
     rows = [
@@ -447,7 +688,7 @@ def test_benchmark_advanced_wiring_is_nonblocking_and_sharded(
         var = float(np.quantile(train, tail_level))
         return {
             "var_forecast": var,
-            "es_forecast": var + 0.01,
+            "es_forecast": None if missing_es else var + 0.01,
             "es_companion_type": "synthetic_baseline",
             "optimizer_status": "ok",
             "convergence_code": 0,
@@ -472,14 +713,14 @@ def test_benchmark_advanced_wiring_is_nonblocking_and_sharded(
                     "model_name": model_name,
                     "tail_level": tail_level,
                     "var_forecast": realized + 1.0,
-                    "es_forecast": realized + 1.1,
+                    "es_forecast": None if missing_es else realized + 1.1,
                     "es_companion_type": "synthetic_advanced",
                     "realized_loss": realized,
                     "var_breach": False,
-                    "is_valid_forecast": True,
-                    "invalid_reason": None,
+                    "is_valid_forecast": not missing_es,
+                    "invalid_reason": "invalid_nonfinite_forecast" if missing_es else None,
                     "train_n": index,
-                    "fit_status": "ok",
+                    "fit_status": "invalid_forecast" if missing_es else "ok",
                 }
             )
         return (
@@ -519,13 +760,19 @@ def test_benchmark_advanced_wiring_is_nonblocking_and_sharded(
     assert status["benchmark_advanced_status"] == "completed_nonblocking"
     assert status["benchmark_advanced_forecast_rows"] == advanced.height
     assert status["benchmark_advanced_failures"] == 0
+    metrics = pl.read_parquet(run_dir / "metrics" / "benchmark_metrics_per_model.parquet")
+    assert all(count == advanced.height for count in metrics["rows"])
+    if missing_es:
+        assert forecasts["es_forecast"].null_count() == forecasts.height
+        assert all(count == 0 for count in metrics["joint_rows"])
+        assert all(count == 0 for count in metrics["fz0_rows"])
 
 
 def test_benchmark_tagged_dispatch_preserves_serial_baseline_then_advanced_order(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "benchmark_dispatch_order"
+    run_dir = tmp_path / "artifacts" / "benchmark_dispatch_order"
     panel_dir = run_dir / "panel"
     panel_dir.mkdir(parents=True)
     rows = [
@@ -596,7 +843,7 @@ def test_benchmark_baseline_suite_skips_advanced_models(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "benchmark_baseline_only"
+    run_dir = tmp_path / "artifacts" / "benchmark_baseline_only"
     panel_dir = run_dir / "panel"
     panel_dir.mkdir(parents=True)
     rows = [

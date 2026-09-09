@@ -32,6 +32,7 @@ from n225_open_gap_tail.config.runtime import (
     _evaluation_log,
 )
 from n225_open_gap_tail.forecasting.artifacts import _write_json, _write_parquet
+from n225_open_gap_tail.config.git import _git_commit, _git_source_dirty
 from n225_open_gap_tail.models.ml_tail import (
     _evaluate_ml_tail_shard,
     _evt_variant_for_ml_tail_model,
@@ -83,6 +84,8 @@ ML_TAIL_SHARD_STATUS_FIELDS = (
     "panel_signature",
     "candidate_feature_hash",
     "seed_policy_version",
+    "source_git_commit",
+    "source_git_dirty",
     "created_utc",
 )
 ML_TAIL_SHARD_SCHEMA_HASH = stable_hash(
@@ -128,6 +131,8 @@ def _expected_ml_tail_shard_manifest(
     candidate_feature_hash = str(payload["candidate_feature_hash"])
     return {
         "shard_schema_hash": ML_TAIL_SHARD_SCHEMA_HASH,
+        "source_git_commit": manifest.get("git_commit"),
+        "source_git_dirty": _git_source_dirty(),
         "model_name": model_name,
         "target_family": str(payload["target_family"]),
         "tail_side": str(payload["tail_side"]),
@@ -235,6 +240,10 @@ def _validate_ml_tail_cached_shard(run_dir: Path, payload: dict[str, object]) ->
         if not (shard_dir / name).exists():
             return "compute"
     expected = cast(dict[str, object], payload["expected_shard_manifest"])
+    if expected.get("source_git_commit") != _git_commit():
+        raise PipelineRunError("ML-tail source revision mismatch; use a new run_id")
+    if status.get("source_git_dirty") is True or _git_source_dirty():
+        return "compute"
     mismatches = [
         key for key, expected_value in expected.items() if status.get(key) != expected_value
     ]

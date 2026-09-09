@@ -14,7 +14,6 @@ from n225_open_gap_tail.config.runtime import (
     CLAIMS_LEVEL,
     cleanup_orphan_tmp_files,
     cleanup_transient_unavailable_markers,
-    compute_combined_clean_start,
     CORE_FRED_SERIES_FOR_PIPELINE,
     CORE_MASSIVE_TICKERS_FOR_PIPELINE,
     CREDIT_ENRICHED_FRED_SERIES_FOR_PIPELINE,
@@ -151,7 +150,7 @@ def build_panel(
         git_commit=git_commit,
     )
     _pipeline_log(f"run id {run_id}")
-    run_dir = settings.reports_dir / "runs" / run_id
+    run_dir = settings.artifacts_dir / run_id
     panel_dir = run_dir / "panel"
     config_dir = run_dir / "config"
     gold_run_dir = _gold_panel_dir(settings.gold_data_dir, run_id)
@@ -312,15 +311,9 @@ def build_panel(
     _pipeline_log(f"modeling panel rows built: {len(panel)}")
     initial_feature_coverage = build_feature_coverage_records(panel)
     effective_predictor_start = build_effective_predictor_start(initial_feature_coverage)
-    fred_required_start = _max_date_strings(
-        effective_predictor_start.get("fred_core"),
-        effective_predictor_start.get("fx_core"),
-    )
-    combined_clean_start = compute_combined_clean_start(
-        jquants_required_field_coverage_start=jquants_required_start,
-        massive_daily_entitlement_start=effective_predictor_start.get("massive_daily"),
-        fred_required_series_coverage_start=fred_required_start,
-    )
+    # Predictor coverage is audited and gated per training window, not used to
+    # truncate unrelated models' otherwise valid target history (accepted Q37).
+    combined_clean_start = max(start, jquants_required_start)
     _pipeline_log(f"combined clean start: {combined_clean_start}")
     panel = apply_combined_clean_start(panel, combined_clean_start=combined_clean_start)
     feature_coverage = build_feature_coverage_records(panel)
@@ -467,12 +460,14 @@ def build_panel(
                 "feature_dictionary": str(gold_feature_dictionary_path),
             },
             "window": [start, end_date],
-            "sample_policy": "clean_predictor_entitlement_sample",
+            "sample_policy": "target_history_with_training_window_feature_gates",
             "main_sample_start_requested": start,
             "audit_sample_start": AUDIT_SAMPLE_START,
             "main_sample_rationale": (
-                "Main modeling panel starts no earlier than J-Quants futures required "
-                "field coverage, Massive entitlement, and required FRED coverage."
+                "Main modeling panel starts no earlier than the requested start and "
+                "J-Quants futures required-field coverage. Predictor availability is "
+                "audited separately and gated within each training window; late "
+                "predictors do not truncate other models' target history."
             ),
             "combined_clean_start": combined_clean_start,
             "effective_predictor_start": effective_predictor_start,
@@ -780,7 +775,7 @@ def apply_combined_clean_start(
     *,
     combined_clean_start: str,
 ) -> list[dict[str, object]]:
-    """Apply the audited combined clean start as the forecast-sample lower bound."""
+    """Apply the audited lower bound, restoring only prior lower-bound exclusions."""
     try:
         threshold = date.fromisoformat(combined_clean_start)
     except ValueError:
@@ -793,6 +788,24 @@ def apply_combined_clean_start(
         except ValueError:
             output.append(row)
             continue
+        if (
+            forecast_date >= threshold
+            and row.get("forecast_sample_reason")
+            == ForecastExclusionReason.BEFORE_COMBINED_CLEAN_START.value
+        ):
+            reason = _forecast_sample_exclusion_reason(
+                target_clean=row.get("target_clean_sample") is True,
+                mapping_status=str(row.get("mapping_status") or ""),
+                join_miss_reason=row.get("join_miss_reason"),
+                cutoff=_coerce_datetime(row.get("model_cutoff_ts_utc")),
+                target_open=_coerce_datetime(row.get("target_open_ts_utc")),
+            )
+            row = {
+                **row,
+                "clean_sample": reason is None,
+                "forecast_sample": reason is None,
+                "forecast_sample_reason": reason,
+            }
         if row.get("forecast_sample") is True and forecast_date < threshold:
             output.append(
                 {

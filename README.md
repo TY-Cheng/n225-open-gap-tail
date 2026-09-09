@@ -113,17 +113,28 @@ Source credentials belong in `.env`. Do not commit `.env`; keep shareable defaul
 
 ## Quick Start
 
-This repo uses `uv` and `just`. The local virtual environment is controlled by `.env`:
+This repo uses `uv` and `just`, with Python 3.13.15 as the local/CI target.
+Dependency versions are recorded in `uv.lock`. The local virtual
+environment is controlled by `.env`:
 
 ```bash
 UV_PROJECT_ENVIRONMENT="${HOME}/.venvs/n225-open-gap-tail"
 ```
 
+When upgrading from Python 3.12, keep the old environment for reproducing prior
+runs and create a separate environment before changing `.env`:
+
+```bash
+UV_PROJECT_ENVIRONMENT="${HOME}/.venvs/n225-open-gap-tail-py313" \
+  uv sync --python 3.13.15 --locked --all-extras --dev
+```
+
 Mutable research storage is also controlled by `.env`. On local machines, keep
 `DATA_DIR` as an absolute external path outside cloud-synced checkouts. A
 repo-local `data/` symlink is acceptable if it resolves outside this repo.
-`REPORTS_DIR` can remain `reports` because run
-summaries, figures, and tables are much smaller than the data lake.
+`ARTIFACTS_DIR` defaults to `artifacts`: each experiment writes directly to
+`artifacts/<run_id>/`, without an intermediate `runs/` directory. `REPORTS_DIR`
+is reserved for human-readable reports, not experiment inputs or outputs.
 
 Typical local checks:
 
@@ -137,6 +148,13 @@ ruff lint, mypy, the mypy-ignore debt guard, default pytest, strict MkDocs build
 and local architecture/name guards. Use `just fix` when you want ruff to format
 and apply automatic lint fixes.
 
+Tool caches live under `.cache/`: `mypy/`, `pytest/`, `ruff/`, and
+`coverage/`. Keep local run checkpoints and ad hoc review notes in
+`.cache/reports/`; these and root `CONTEXT.md` are ignored by Git.
+Keep durable research decisions and reproducible instructions in `docs/`,
+not solely in local notes. Existing tracked documentation and paper assets
+remain versioned.
+
 To serve the documentation site:
 
 ```bash
@@ -145,6 +163,26 @@ just docs
 
 ## Research Run
 
+The revised 28-spec experiment has a separate `body-rolling --source-run ...
+--output-dir ...` CLI entry point. It rebuilds the accepted sample view from
+source panel data, generates monthly shared-body forecasts for A--D/both tails,
+and writes per-refit OOF/diagnostics into a new directory. It does not reuse old
+forecast shards, run external benchmarks, select models, or export a manuscript.
+Run the existing benchmark suite on that same new panel before `reevaluate`;
+the latter reads the new run's 28-model roster. These are separately authorized
+execution steps. `body-pilot` remains the bounded one-date entry point. Public
+UniBM must be importable in the process environment. The legacy `just full`
+workflow below still uses the original eight ML specifications.
+
+`reevaluate` writes native VaR gates and comparison-specific common-date FZ0
+results, then `grem_curves.parquet` and `grem_summary.parquet`. GREM includes the
+entire pre-screen candidate roster, with W=500 primary and W=250 sensitivity;
+it never changes model/reference selection. Bets use earlier eligible observations
+and cumulative capital never resets. Known calendar/forecast unavailability gets
+zero bets; missing losses or unverified availability timing leave an explicit
+unavailable suffix. The reference level 20 is per-sequence, not a simultaneous
+or post-selection guarantee. See the accepted Q28--Q30 in `docs/paper_plan.md`.
+
 The full workflow is:
 
 ```bash
@@ -152,7 +190,7 @@ just full
 ```
 
 It runs checks, builds the point-in-time panel, evaluates benchmark and ML-tail suites,
-exports LaTeX tables and figures, and writes run outputs under `REPORTS_DIR/runs/`.
+exports LaTeX tables and figures, and writes run outputs under `ARTIFACTS_DIR/<run_id>/`.
 When the `end` argument is omitted, the workflow uses the most recent completed
 Friday as the data cutoff rather than the run date. Pass an explicit
 `YYYY-MM-DD` end date to override that paper-freeze default.
@@ -204,12 +242,21 @@ just docs
 ## Outputs
 
 - `docs/results_snapshot.md`: generated evidence map for the latest completed run.
-- `REPORTS_DIR/runs/<run_id>/latex/tables/`: paper-facing LaTeX tables.
-- `REPORTS_DIR/runs/<run_id>/latex/figures/`: paper-facing figures.
-- `REPORTS_DIR/runs/<run_id>/latex/table_manifest.json`: table provenance.
-- `REPORTS_DIR/runs/<run_id>/latex/figure_manifest.json`: figure provenance.
+- `ARTIFACTS_DIR/<run_id>/`: run manifests, panel copies, forecasts, metrics, and diagnostics.
+- `ARTIFACTS_DIR/<run_id>/latex/tables/`: paper-facing LaTeX tables.
+- `ARTIFACTS_DIR/<run_id>/latex/figures/`: paper-facing figures.
+- `ARTIFACTS_DIR/<run_id>/latex/table_manifest.json`: table provenance.
+- `ARTIFACTS_DIR/<run_id>/latex/figure_manifest.json`: figure provenance.
 - `DATA_DIR`: local mutable data lake, ignored by git and kept outside the repo.
-- `REPORTS_DIR`: local run summaries and generated reporting artifacts, ignored by git and usually kept at `reports`.
+- `ARTIFACTS_DIR`: defaults to `artifacts`, ignored by git. Re-evaluation defaults to
+  a sibling directory named `reevaluation_<source_run_id>_<timestamp>`; explicit
+  `--output-dir` options remain available.
+- `REPORTS_DIR`: optional human-readable reports, ignored by git; defaults to `reports`.
+
+Existing local `reports/runs/<run_id>/` directories must be moved to
+`artifacts/<run_id>/` when adopting this layout. Update their manifest/metadata
+path locators, retaining the original execution logs, model configuration, and
+data-lake bindings. There is no legacy-path fallback.
 
 ## Claim Boundaries
 

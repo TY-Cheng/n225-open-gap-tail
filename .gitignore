@@ -4,11 +4,14 @@
 !.env.example
 .venv/
 .python-version
-uv.lock
 
 # Local one-off tools
 ask_reviewer.py
 .serena/
+
+# Local working notes and tool caches
+/CONTEXT.md
+/.cache/
 
 # Python
 __pycache__/
@@ -28,6 +31,7 @@ htmlcov/
 data/bronze/*
 data/silver/*
 data/gold/*
+/artifacts/
 reports/*
 !reports/.gitkeep
 

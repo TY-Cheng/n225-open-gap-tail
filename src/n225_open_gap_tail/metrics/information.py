@@ -17,9 +17,12 @@ from n225_open_gap_tail.config.runtime import (
     _required_float,
 )
 from n225_open_gap_tail.data_lake.artifacts import _read_manifest, _update_manifest
+from n225_open_gap_tail.config.git import _git_commit
 from n225_open_gap_tail.metrics.stat_utils import (
     _safe_mean,
     fz_loss,
+    forecast_eligible,
+    index_forecast_sessions,
     moving_block_one_sided_pvalue,
     quantile_loss,
 )
@@ -31,6 +34,7 @@ def build_incremental_information_records(
     *,
     baseline_information_set: str,
 ) -> list[dict[str, object]]:
+    forecasts = index_forecast_sessions(forecasts)
     information_sets = registered_ml_tail_information_sets()
     model_names = sorted(
         {str(row.get("model_name") or "") for row in forecasts if row.get("model_name")}
@@ -79,10 +83,10 @@ def _paired_forecast_rows(
     expanded_information_set: str,
     dst_regime: str | None = None,
 ) -> list[tuple[dict[str, object], dict[str, object]]]:
-    base: dict[str, dict[str, object]] = {}
-    expanded: dict[str, dict[str, object]] = {}
+    information_sets = registered_ml_tail_information_sets()
+    by_info = {info: {} for info in information_sets}
     for row in forecasts:
-        if row.get("fit_status") != "ok" or row.get("is_valid_forecast") is not True:
+        if not forecast_eligible(row):
             continue
         if str(row.get("model_name") or "") != model_name:
             continue
@@ -94,11 +98,22 @@ def _paired_forecast_rows(
             continue
         key = str(row["forecast_date"])
         info = str(row.get("information_set") or "")
-        if info == base_information_set:
-            base[key] = row
-        elif info == expanded_information_set:
-            expanded[key] = row
-    return [(base[key], expanded[key]) for key in sorted(set(base).intersection(expanded))]
+        if info in by_info:
+            by_info[info][key] = row
+    common = sorted(set.intersection(*(set(rows) for rows in by_info.values())))
+    fz_dates = set.intersection(
+        *(
+            {day for day, row in rows.items() if forecast_eligible(row, score="fz0")}
+            for rows in by_info.values()
+        )
+    )
+    return [
+        (
+            {**by_info[base_information_set][day], "fz0_common_eligible": day in fz_dates},
+            {**by_info[expanded_information_set][day], "fz0_common_eligible": day in fz_dates},
+        )
+        for day in common
+    ]
 
 
 def _incremental_record_from_pairs(
@@ -117,16 +132,19 @@ def _incremental_record_from_pairs(
         loss = _required_float(base["realized_loss"])
         base_var = _required_float(base["var_forecast"])
         expanded_var = _required_float(expanded["var_forecast"])
-        base_es = _required_float(base["es_forecast"])
-        expanded_es = _required_float(expanded["es_forecast"])
         q_gains.append(
             quantile_loss(loss, base_var, tail_level)
             - quantile_loss(loss, expanded_var, tail_level)
         )
-        fz_gains.append(
-            fz_loss(loss, base_var, base_es, tail_level)
-            - fz_loss(loss, expanded_var, expanded_es, tail_level)
-        )
+        if (
+            base.get("fz0_common_eligible", True)
+            and forecast_eligible(base, score="fz0")
+            and forecast_eligible(expanded, score="fz0")
+        ):
+            fz_gains.append(
+                fz_loss(loss, base_var, _required_float(base["es_forecast"]), tail_level)
+                - fz_loss(loss, expanded_var, _required_float(expanded["es_forecast"]), tail_level)
+            )
     fz_gain_array = np.array(fz_gains, dtype=float)
     candidate_minus_base = -fz_gain_array
     paired_rows = int(candidate_minus_base[np.isfinite(candidate_minus_base)].size)
@@ -139,6 +157,13 @@ def _incremental_record_from_pairs(
             reps=BOOTSTRAP_REPS,
             block_length=int(block_length),
             rng=np.random.default_rng(INFERENCE_RANDOM_SEED),
+            session_indices=[
+                base.get("target_session_index")
+                for base, expanded in paired
+                if base.get("fz0_common_eligible", True)
+                and forecast_eligible(base, score="fz0")
+                and forecast_eligible(expanded, score="fz0")
+            ],
         )
         if mean_candidate_minus_base is not None
         and block_length is not None
@@ -158,6 +183,9 @@ def _incremental_record_from_pairs(
         "expanded_information_set": expanded_information_set,
         "dst_regime": dst_regime,
         "paired_rows": len(paired),
+        "fz0_paired_rows": paired_rows,
+        "sample_policy": "all_registered_information_sets_common_dates",
+        "bootstrap_time_axis": "target_session_grid_with_missing_mask",
         "common_sample_status": common_sample_status([str(i) for i in range(len(paired))]),
         "mean_quantile_gain": _safe_mean(np.array(q_gains, dtype=float)),
         "mean_fz_gain": _safe_mean(fz_gain_array),
@@ -188,6 +216,12 @@ def _clear_run_outputs_for_force(run_dir: Path) -> None:
 
 def _assert_run_config_compatible(run_dir: Path, *, force: bool = False) -> None:
     manifest = _read_manifest(run_dir)
+    stored_commit = manifest.get("git_commit")
+    if stored_commit and stored_commit != _git_commit():
+        raise PipelineRunError(
+            "Run source revision differs from current code; create a new run_id. "
+            "Use forecast-only reevaluation to inspect old forecasts without retraining."
+        )
     stored_hash = manifest.get("config_hash")
     current_hash = PIPELINE_CONFIG.config_hash()
     locked = _run_has_locked_outputs(run_dir)

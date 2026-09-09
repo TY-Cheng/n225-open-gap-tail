@@ -26,6 +26,7 @@ from n225_open_gap_tail.config.runtime import (
     stats,
     validate_forecast_values,
     _clean_loss_rows,
+    _optional_float,
     _required_float,
 )
 from n225_open_gap_tail.models.benchmark_advanced_math import (
@@ -144,62 +145,79 @@ def _forecast_stateful_sequence(
             previous_params = cast(np.ndarray, fit["params"])
         if current_fit is None:
             continue
-        forecast = _forecast_from_advanced_fit(current_fit)
-        realized_loss = float(losses[index])
-        var_forecast = _required_float(forecast["var_forecast"])
-        es_forecast = _required_float(forecast["es_forecast"])
-        valid, invalid_reason = validate_forecast_values(var_forecast, es_forecast)
-        if valid:
-            forecasts.append(
+        try:
+            forecast = _forecast_from_advanced_fit(current_fit)
+            var_forecast = _required_float(forecast["var_forecast"])
+        except Exception as exc:
+            failures.append(
                 {
                     "forecast_date": row["forecast_date"],
-                    "target_family": "full_gap_settle_to_open",
-                    "tail_side": tail_side,
                     "model_name": model_name,
-                    "information_set": "target_history_only",
+                    "tail_side": tail_side,
                     "tail_level": tail_level,
-                    "var_forecast": var_forecast,
-                    "es_forecast": es_forecast,
-                    "es_companion_type": forecast["es_companion_type"],
-                    "realized_loss": realized_loss,
-                    "var_breach": realized_loss > var_forecast,
-                    "is_valid_forecast": True,
-                    "invalid_reason": None,
-                    "train_start": train_start,
-                    "train_end": train_end,
-                    "train_n": int(train.size),
-                    "fit_status": "ok",
-                    "failure_reason": None,
-                    "runtime_seconds": current_fit.get("runtime_seconds"),
-                    "refit_date": current_fit.get("refit_date"),
-                    "burn_in_rows": current_fit.get("burn_in_rows"),
-                    "parameter_json": current_fit.get("parameter_json"),
-                    "optimizer_status": current_fit.get("optimizer_status"),
-                    "convergence_code": current_fit.get("convergence_code"),
-                    "objective_value": current_fit.get("objective_value"),
-                    "objective_kind": current_fit.get("objective_kind"),
-                    "retry_count": current_fit.get("retry_count"),
-                    "restart_count": current_fit.get("restart_count"),
-                    "initialization_source": current_fit.get("initialization_source"),
-                    "es_source": current_fit.get("es_source"),
-                    "fz_interpretation": current_fit.get("fz_interpretation"),
-                    "expectile_tau": current_fit.get("expectile_tau"),
-                    "score_scaling": current_fit.get("score_scaling"),
-                    "state_variable": current_fit.get("state_variable"),
-                    "nu": current_fit.get("nu"),
-                    "nu_profile_method": current_fit.get("nu_profile_method"),
-                    "threshold_quantile": current_fit.get("threshold_quantile"),
-                    "threshold_value": current_fit.get("threshold_value"),
-                    "evt_exceedance_count": current_fit.get("evt_exceedance_count"),
-                    "evt_shape": current_fit.get("evt_shape"),
-                    "evt_scale": current_fit.get("evt_scale"),
-                    "gpd_unconstrained_loc_hat": current_fit.get("gpd_unconstrained_loc_hat"),
-                    "gpd_fixed_loc_diagnostic_status": current_fit.get(
-                        "gpd_fixed_loc_diagnostic_status"
-                    ),
+                    "fit_status": "unavailable_forecast_failed",
+                    "failure_reason": str(exc),
                 }
             )
-        else:
+            current_fit = None
+            continue
+        realized_loss = float(losses[index])
+        es_forecast = _optional_float(forecast["es_forecast"])
+        valid, invalid_reason = validate_forecast_values(
+            var_forecast, es_forecast if es_forecast is not None else math.nan
+        )
+        # VaR availability must not depend on the ES companion or joint-score domain.
+        forecasts.append(
+            {
+                "forecast_date": row["forecast_date"],
+                "target_family": "full_gap_settle_to_open",
+                "tail_side": tail_side,
+                "model_name": model_name,
+                "information_set": "target_history_only",
+                "tail_level": tail_level,
+                "var_forecast": var_forecast,
+                "es_forecast": es_forecast,
+                "es_companion_type": forecast["es_companion_type"],
+                "realized_loss": realized_loss,
+                "var_breach": realized_loss > var_forecast,
+                "is_valid_forecast": valid,
+                "invalid_reason": invalid_reason,
+                "train_start": train_start,
+                "train_end": train_end,
+                "train_n": int(train.size),
+                "fit_status": "ok" if valid else "invalid_forecast",
+                "failure_reason": invalid_reason,
+                "es_failure_reason": current_fit.get("es_failure_reason"),
+                "runtime_seconds": current_fit.get("runtime_seconds"),
+                "refit_date": current_fit.get("refit_date"),
+                "burn_in_rows": current_fit.get("burn_in_rows"),
+                "parameter_json": current_fit.get("parameter_json"),
+                "optimizer_status": current_fit.get("optimizer_status"),
+                "convergence_code": current_fit.get("convergence_code"),
+                "objective_value": current_fit.get("objective_value"),
+                "objective_kind": current_fit.get("objective_kind"),
+                "retry_count": current_fit.get("retry_count"),
+                "restart_count": current_fit.get("restart_count"),
+                "initialization_source": current_fit.get("initialization_source"),
+                "es_source": current_fit.get("es_source"),
+                "fz_interpretation": current_fit.get("fz_interpretation"),
+                "expectile_tau": current_fit.get("expectile_tau"),
+                "score_scaling": current_fit.get("score_scaling"),
+                "state_variable": current_fit.get("state_variable"),
+                "nu": current_fit.get("nu"),
+                "nu_profile_method": current_fit.get("nu_profile_method"),
+                "threshold_quantile": current_fit.get("threshold_quantile"),
+                "threshold_value": current_fit.get("threshold_value"),
+                "evt_exceedance_count": current_fit.get("evt_exceedance_count"),
+                "evt_shape": current_fit.get("evt_shape"),
+                "evt_scale": current_fit.get("evt_scale"),
+                "gpd_unconstrained_loc_hat": current_fit.get("gpd_unconstrained_loc_hat"),
+                "gpd_fixed_loc_diagnostic_status": current_fit.get(
+                    "gpd_fixed_loc_diagnostic_status"
+                ),
+            }
+        )
+        if not valid:
             failures.append(
                 {
                     "forecast_date": row["forecast_date"],
@@ -208,6 +226,7 @@ def _forecast_stateful_sequence(
                     "tail_level": tail_level,
                     "fit_status": "invalid_forecast",
                     "failure_reason": invalid_reason,
+                    "es_failure_reason": current_fit.get("es_failure_reason"),
                     "var_forecast": var_forecast,
                     "es_forecast": es_forecast,
                 }
@@ -354,16 +373,7 @@ def _fit_recursive_var_model(
         train_losses=train[burn_in_rows:],
         train_var_forecasts=var_path[burn_in_rows:],
     )
-    if es_multiplier_info["status"] != "ok":
-        return {
-            "fit_status": "unavailable_empirical_es_companion_insufficient_exceedances",
-            "failure_reason": es_multiplier_info["status"],
-            "burn_in_rows": burn_in_rows,
-            **opt,
-            **care_calibration,
-            **es_multiplier_info,
-        }
-    es_multiplier = _required_float(es_multiplier_info["es_multiplier"])
+    es_multiplier = _optional_float(es_multiplier_info["es_multiplier"])
     es_source = "empirical_exceedance_companion"
     fz_interpretation = "augmented_var_es_pair_not_jointly_estimated"
     parameter_payload = _parameter_payload(
@@ -387,6 +397,10 @@ def _fit_recursive_var_model(
         "objective_kind": objective_kind,
         "state": {"var": float(next_var)},
         "es_multiplier": es_multiplier,
+        "es_multiplier_exceedance_count": es_multiplier_info["es_multiplier_exceedance_count"],
+        "es_failure_reason": None
+        if es_multiplier_info["status"] == "ok"
+        else es_multiplier_info["status"],
         "es_source": es_source,
         "fz_interpretation": fz_interpretation,
         "es_companion_type": es_source,
@@ -457,7 +471,7 @@ def _fit_gas_model(
             tail_level=tail_level,
         )
         standardized_var = _required_float(tail_info["standardized_var"])
-        standardized_es = _required_float(tail_info["standardized_es"])
+        standardized_es = _optional_float(tail_info["standardized_es"])
         es_companion_type = "gas_standardized_loss_pot_gpd"
     else:
         standardized_var, standardized_es = _student_t_standardized_var_es(
@@ -470,7 +484,7 @@ def _fit_gas_model(
         "location": location,
         "nu": nu,
         "standardized_var": float(standardized_var),
-        "standardized_es": float(standardized_es),
+        "standardized_es": standardized_es,
     }
     parameter_payload = _parameter_payload(
         model_name=model_name,
@@ -513,18 +527,20 @@ def _forecast_from_advanced_fit(fit: dict[str, object]) -> dict[str, object]:
         sigma = math.exp(_required_float(state["log_sigma"]))
         location = _required_float(state["location"])
         var = location + sigma * _required_float(state["standardized_var"])
-        es = location + sigma * _required_float(state["standardized_es"])
+        standardized_es = _optional_float(state["standardized_es"])
+        es = location + sigma * standardized_es if standardized_es is not None else None
         return {
             "var_forecast": float(var),
-            "es_forecast": float(max(var, es)),
+            "es_forecast": es,
             "es_companion_type": fit["es_companion_type"],
         }
     state = cast(dict[str, object], fit["state"])
     var = max(_required_float(state["var"]), 1e-12)
-    es = var * _required_float(fit["es_multiplier"])
+    es_multiplier = _optional_float(fit["es_multiplier"])
+    es = var * es_multiplier if es_multiplier is not None else None
     return {
         "var_forecast": float(var),
-        "es_forecast": float(max(var, es)),
+        "es_forecast": es,
         "es_companion_type": fit["es_companion_type"],
     }
 
@@ -604,6 +620,7 @@ def _fit_diagnostic_row(
         "es_source": fit.get("es_source"),
         "fz_interpretation": fit.get("fz_interpretation"),
         "es_multiplier": fit.get("es_multiplier"),
+        "es_failure_reason": fit.get("es_failure_reason"),
         "es_multiplier_exceedance_count": fit.get("es_multiplier_exceedance_count"),
         "care_model_definition": "conditional_autoregressive_expectile"
         if model_name.startswith("care_expectile_")

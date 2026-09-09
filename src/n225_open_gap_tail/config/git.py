@@ -27,3 +27,17 @@ def _git_dirty() -> bool:
     except (OSError, subprocess.CalledProcessError):
         return True
     return bool(result.stdout.strip())
+
+
+def _git_source_dirty() -> bool:
+    """Uncommitted computation changes cannot safely reuse a HEAD-keyed cache."""
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain", "--", "src", "pyproject.toml", "uv.lock"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return True
+    return bool(result.stdout.strip())

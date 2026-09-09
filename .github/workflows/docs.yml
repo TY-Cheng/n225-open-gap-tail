@@ -9,6 +9,7 @@ on:
       - "mkdocs.yml"
       - "docs/**"
       - "pyproject.toml"
+      - "uv.lock"
   pull_request:
     paths:
       - ".github/workflows/docs.yml"
@@ -16,6 +17,7 @@ on:
       - "mkdocs.yml"
       - "docs/**"
       - "pyproject.toml"
+      - "uv.lock"
   workflow_dispatch:
 
 permissions:
@@ -70,10 +72,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.13.15"
 
       - name: Install docs dependencies
-        run: uv sync --extra docs
+        run: uv sync --locked --extra docs
 
       - name: Build docs
         run: uv run mkdocs build --clean --strict

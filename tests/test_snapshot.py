@@ -58,9 +58,9 @@ def test_lightgbm_display_labels_are_canonical() -> None:
 
 
 def test_latest_snapshot_ignores_panel_only_runs(tmp_path: Path) -> None:
-    reports_dir = tmp_path / "reports"
-    incomplete = reports_dir / "runs" / "tailrisk_incomplete"
-    complete = reports_dir / "runs" / "tailrisk_complete"
+    artifacts_dir = tmp_path / "artifacts"
+    incomplete = artifacts_dir / "tailrisk_incomplete"
+    complete = artifacts_dir / "tailrisk_complete"
     incomplete.mkdir(parents=True)
     complete.mkdir(parents=True)
     (incomplete / "manifest.json").write_text(
@@ -79,7 +79,7 @@ def test_latest_snapshot_ignores_panel_only_runs(tmp_path: Path) -> None:
     )
 
     resolved = snapshot_module._resolve_snapshot_run_dir(
-        settings=Settings(reports_dir=reports_dir),
+        settings=Settings(artifacts_dir=artifacts_dir),
         run_id="latest",
     )
 
@@ -87,8 +87,8 @@ def test_latest_snapshot_ignores_panel_only_runs(tmp_path: Path) -> None:
 
 
 def test_snapshot_fails_closed_when_required_artifacts_are_missing(tmp_path: Path) -> None:
-    reports_dir = tmp_path / "reports"
-    run_dir = reports_dir / "runs" / "tailrisk_missing_artifacts"
+    artifacts_dir = tmp_path / "artifacts"
+    run_dir = artifacts_dir / "tailrisk_missing_artifacts"
     run_dir.mkdir(parents=True)
     (run_dir / "manifest.json").write_text(
         json.dumps(
@@ -103,7 +103,7 @@ def test_snapshot_fails_closed_when_required_artifacts_are_missing(tmp_path: Pat
 
     with pytest.raises(snapshot_module.SnapshotError, match="missing required artifacts"):
         snapshot_module.write_results_snapshot_from_run(
-            settings=Settings(reports_dir=reports_dir),
+            settings=Settings(artifacts_dir=artifacts_dir),
             run_id="tailrisk_missing_artifacts",
         )
 
@@ -384,9 +384,9 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     run_id = "tailrisk_test"
-    reports_dir = tmp_path / "reports"
+    artifacts_dir = tmp_path / "artifacts"
     gold_dir = tmp_path / "data" / "gold"
-    run_dir = reports_dir / "runs" / run_id
+    run_dir = artifacts_dir / run_id
     panel_dir = gold_dir / "tp" / run_id
     leakage_dir = gold_dir / "ls" / run_id
     metrics_dir = run_dir / "metrics"
@@ -587,7 +587,7 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
             bronze_data_dir=tmp_path / "data" / "bronze",
             silver_data_dir=tmp_path / "data" / "silver",
             gold_data_dir=gold_dir,
-            reports_dir=reports_dir,
+            artifacts_dir=artifacts_dir,
         ),
         run_id="latest",
     )
@@ -1166,7 +1166,7 @@ def test_snapshot_derives_leakage_warning_counts_from_parquet(tmp_path: Path) ->
 def test_snapshot_table_asset_sync_and_sensitivity_summary_cover_docs_helpers(
     tmp_path: Path,
 ) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "tailrisk_test"
+    run_dir = tmp_path / "artifacts" / "tailrisk_test"
     docs_dir = tmp_path / "docs"
     primary_tables = run_dir / "latex" / "tables"
     primary_tables.mkdir(parents=True)
@@ -1409,7 +1409,7 @@ def test_results_discussion_manuscript_audit_helpers_cover_branches(tmp_path: Pa
 
 
 def test_snapshot_gallery_helpers_cover_manifest_edges(tmp_path: Path) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "tailrisk_gallery"
+    run_dir = tmp_path / "artifacts" / "tailrisk_gallery"
     figure_dir = run_dir / "latex" / "figures"
     figure_dir.mkdir(parents=True)
     target_source = figure_dir / "target_tail_motivation.png"

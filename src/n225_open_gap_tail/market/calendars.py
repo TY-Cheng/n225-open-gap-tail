@@ -11,6 +11,10 @@ import exchange_calendars as xcals  # type: ignore[import-untyped]
 from n225_open_gap_tail.config import Settings
 from n225_open_gap_tail.data_lake import atomic_write_parquet, write_json_atomic
 
+# JPX J-GATE3.0 launched with the day session on 2021-09-21.
+# The first extended evening session therefore ended on 2021-09-22 JST.
+OSE_NIGHT_EXTENSION_START = date(2021, 9, 21)
+
 
 @dataclass(frozen=True)
 class CalendarBuildResult:
@@ -218,7 +222,12 @@ def _ose_night_close_for_us_close(
 ) -> datetime | None:
     if us_close_jst is None:
         return None
-    return datetime.combine(us_close_jst.date(), time(6, 0), tzinfo=jpx_timezone)
+    night_start = us_close_jst.date() - timedelta(days=1)
+    # JPX suspended this night session for the J-GATE3.0 migration.
+    if night_start == date(2021, 9, 17):
+        return None
+    close_time = time(6, 0) if night_start >= OSE_NIGHT_EXTENSION_START else time(5, 30)
+    return datetime.combine(us_close_jst.date(), close_time, tzinfo=jpx_timezone)
 
 
 def _minutes_between(start: datetime | None, end: datetime | None) -> int | None:

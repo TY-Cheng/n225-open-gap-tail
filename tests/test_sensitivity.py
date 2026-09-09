@@ -152,7 +152,10 @@ def test_pass_all_helpers_identify_admissible_lgbm_and_benchmark_models() -> Non
         for tail_side in PASS_ALL_TAIL_SIDES
         for info in PASS_ALL_INFORMATION_SETS
     ]
-    assert pass_all_lgbm_model_names(pl.DataFrame(ml_rows)) == POST_24CHECK_LGBM_FAMILIES
+    assert pass_all_lgbm_model_names(pl.DataFrame(ml_rows)) == (
+        *POST_24CHECK_LGBM_FAMILIES,
+        ML_TAIL_DIRECT_QUANTILE_MODEL,
+    )
 
     benchmark_rows = [
         _passing_metric_row(
@@ -395,6 +398,8 @@ def test_metric_rows_from_forecasts_registers_classification_and_primary_compari
             "model_name": "demo_model",
         },
     ]
+    for index, forecast in enumerate(forecasts):
+        forecast["forecast_date"] = f"2024-01-{index + 2:02d}"
     primary_metrics: dict[tuple[str, str, str, float], dict[str, object]] = {
         ("demo_model", "demo_info", "left_tail", 0.95): {
             "rows": 2,
@@ -430,6 +435,7 @@ def test_metric_rows_from_forecasts_registers_classification_and_primary_compari
                 "is_valid_forecast": True,
                 "tail_level": 0.95,
                 "model_name": "empty_model",
+                "forecast_date": "2024-01-02",
                 "information_set": "empty_info",
                 "tail_side": "left_tail",
                 "sensitivity_family": "lgbm_capacity",
@@ -442,4 +448,6 @@ def test_metric_rows_from_forecasts_registers_classification_and_primary_compari
         primary_metrics={},
         source_run_id="tailrisk_demo",
     )
-    assert skipped_rows == []
+    assert len(skipped_rows) == 1
+    assert skipped_rows[0]["rows"] == 1  # Missing ES does not invalidate VaR.
+    assert skipped_rows[0]["mean_fz_loss"] is None

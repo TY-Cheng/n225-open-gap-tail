@@ -198,7 +198,13 @@ def test_ml_tail_result_matrix_gates_sparse_tail_events_and_var_es_eligibility()
     assert {row["loss_family"] for row in no_es_matrix} == {
         "var_quantile_loss",
         "var_coverage",
+        "var_es_fz_loss",
     }
+    assert all(
+        row["metric_status"] != "ok"
+        for row in no_es_matrix
+        if row["loss_family"] == "var_es_fz_loss"
+    )
 
     nonpositive_es = _ml_tail_result_matrix_forecasts(dates=dates)
     for row in nonpositive_es:
@@ -238,14 +244,20 @@ def test_ml_tail_result_matrix_marks_short_common_samples_unavailable() -> None:
 
     assert matrix
     assert all(
-        row["metric_status"] == "unavailable_insufficient_common_rows_for_metrics" for row in matrix
+        row["metric_status"] == "unavailable_insufficient_common_rows_for_metrics"
+        for row in matrix
+        if row["comparison_axis"] == "model_family"
     )
     assert all(row["model_name"] != "unregistered_lightgbm_variant" for row in matrix)
-    assert all(row["comparison_axis"] == "model_family" for row in matrix)
+    assert all(
+        row["metric_status"] == "unavailable_missing_registered_model"
+        for row in matrix
+        if row["comparison_axis"] == "information_set_increment"
+    )
     assert all(
         row["dm_gate_status"] == "unavailable_insufficient_common_rows_for_inference"
         for row in audit
-        if row["loss_family"] != "var_coverage"
+        if row["loss_family"] != "var_coverage" and row["comparison_axis"] == "model_family"
     )
 
 

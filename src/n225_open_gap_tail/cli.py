@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -304,6 +305,56 @@ def build_panel_command(
     typer.echo(f"panel parquet: {result.panel_path}")
     typer.echo(f"rows: {result.rows}")
     typer.echo(f"clean rows: {result.clean_rows}")
+
+
+@app.command("reevaluate")
+def reevaluate_command(
+    run_id: Annotated[str, typer.Option(help="Explicit frozen source run id; no training.")],
+    output_dir: Annotated[
+        Path | None, typer.Option(help="New directory outside source run.")
+    ] = None,
+) -> None:
+    """Re-evaluate existing forecasts into a new directory, preserving their provenance."""
+    from n225_open_gap_tail.forecasting.reevaluation import reevaluate_frozen_run
+
+    result = reevaluate_frozen_run(resolve_run_dir(load_settings(), run_id), output_dir=output_dir)
+    typer.echo(f"frozen re-evaluation: {result}")
+
+
+@app.command("body-pilot")
+def body_pilot_command(
+    source_run: Annotated[Path, typer.Option(help="Frozen source run directory.")],
+    output_dir: Annotated[Path, typer.Option(help="New pilot directory outside the source.")],
+    forecast_date: Annotated[str, typer.Option(help="First eligible date of one refit month.")],
+    information_set: Annotated[
+        str, typer.Option(help="One registered information-set name, e.g. japan_only (A).")
+    ],
+    tail_side: Annotated[str, typer.Option(help="One exposure: left_tail or right_tail.")],
+) -> None:
+    """Fit 28 shared-body specifications for one date; not the full experiment."""
+    from n225_open_gap_tail.forecasting.body_experiment import run_body_pilot
+
+    result = run_body_pilot(
+        source_run,
+        output_dir,
+        forecast_date=forecast_date,
+        information_set=information_set,
+        tail_side=tail_side,
+        progress=typer.echo,
+    )
+    typer.echo(f"body pilot: {result}")
+
+
+@app.command("body-rolling")
+def body_rolling_command(
+    source_run: Annotated[Path, typer.Option(help="Source data run; no old forecasts reused.")],
+    output_dir: Annotated[Path, typer.Option(help="New rolling-run directory outside the source.")],
+) -> None:
+    """Generate 28 shared-body models across A--D and both tails; no external fits or selection."""
+    from n225_open_gap_tail.forecasting.body_experiment import run_body_rolling
+
+    result = run_body_rolling(source_run, output_dir, progress=typer.echo)
+    typer.echo(f"body rolling forecasts: {result}")
 
 
 @app.command("evaluate")

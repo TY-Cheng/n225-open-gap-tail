@@ -311,7 +311,7 @@ def test_pipeline_submodule_surfaces_import(module_name: str) -> None:
 def test_forecast_validity_distinguishes_var_breach_from_invalid_forecast() -> None:
     assert validate_forecast_values(2.0, 2.5) == (True, None)
     assert validate_forecast_values(2.0, 1.9) == (False, "invalid_es_below_var")
-    assert validate_forecast_values(-2.0, -1.0) == (False, "invalid_nonpositive_es")
+    assert validate_forecast_values(-2.0, -1.0) == (True, None)
     assert validate_forecast_values(math.nan, 2.5) == (False, "invalid_nonfinite_forecast")
 
 
@@ -404,6 +404,47 @@ def test_combined_clean_start_excludes_pre_start_forecast_rows() -> None:
         combined_clean_start="2018-06-21",
     )
     assert bad_date == [{"forecast_date": "not-a-date", "forecast_sample": True}]
+
+
+def test_earlier_sample_bound_restores_only_otherwise_eligible_history() -> None:
+    eligible = {
+        "forecast_date": "2016-07-20",
+        "target_clean_sample": True,
+        "mapping_status": "normal_trading",
+        "join_miss_reason": None,
+        "model_cutoff_ts_utc": datetime(2016, 7, 19, 20, 15, tzinfo=UTC),
+        "target_open_ts_utc": datetime(2016, 7, 19, 23, 45, tzinfo=UTC),
+        "clean_sample": True,
+        "forecast_sample": True,
+        "forecast_sample_reason": None,
+    }
+    frozen = paper_module.apply_combined_clean_start([eligible], combined_clean_start="2018-06-20")
+    legacy = frozen[0]
+    frozen.extend(
+        [
+            {**legacy, "target_clean_sample": False},
+            {**legacy, "mapping_status": "unmapped"},
+            {**legacy, "forecast_sample_reason": "target_not_clean"},
+            {**legacy, "forecast_date": "2016-07-18"},
+        ]
+    )
+    restored = paper_module.apply_combined_clean_start(frozen, combined_clean_start="2016-07-19")
+    assert [row["clean_sample"] for row in restored] == [True, False, False, False, False]
+    assert [row["forecast_sample"] for row in restored] == [True, False, False, False, False]
+    assert [row["forecast_sample_reason"] for row in restored] == [
+        None,
+        "target_not_clean",
+        "mapping_status_not_normal_trading",
+        "target_not_clean",
+        "before_combined_clean_start",
+    ]
+    assert all(row["combined_clean_start"] == "2016-07-19" for row in restored)
+    assert frozen[0]["clean_sample"] is False  # Do not mutate the source panel.
+    assert frozen[0]["combined_clean_start"] == "2018-06-20"
+    assert (
+        paper_module.apply_combined_clean_start(restored, combined_clean_start="2016-07-19")
+        == restored
+    )
 
 
 def test_oos_gate_reason_ordering_after_clean_sample_filter() -> None:
@@ -1572,8 +1613,8 @@ def test_cross_market_features_use_partial_aggregation_and_metadata() -> None:
 
 
 def test_feature_audit_reports_coverage_gate_and_baseline_delta(tmp_path: Path) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "tailrisk_current"
-    baseline_dir = tmp_path / "reports" / "runs" / "tailrisk_baseline"
+    run_dir = tmp_path / "artifacts" / "tailrisk_current"
+    baseline_dir = tmp_path / "artifacts" / "tailrisk_baseline"
     (run_dir / "panel").mkdir(parents=True)
     (run_dir / "forecasts").mkdir(parents=True)
     (baseline_dir / "panel").mkdir(parents=True)
@@ -1664,7 +1705,7 @@ def test_feature_audit_fails_clearly_when_coverage_is_missing(tmp_path: Path) ->
 
 
 def test_feature_audit_handles_empty_coverage_file(tmp_path: Path) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "tailrisk_empty"
+    run_dir = tmp_path / "artifacts" / "tailrisk_empty"
     (run_dir / "panel").mkdir(parents=True)
     (run_dir / "forecasts").mkdir(parents=True)
     pl.DataFrame(schema={"feature": pl.String}).write_parquet(
@@ -1688,8 +1729,8 @@ def test_feature_audit_handles_empty_coverage_file(tmp_path: Path) -> None:
 
 
 def test_feature_audit_handles_bad_optional_artifacts(tmp_path: Path) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "tailrisk_current"
-    baseline_dir = tmp_path / "reports" / "runs" / "tailrisk_baseline"
+    run_dir = tmp_path / "artifacts" / "tailrisk_current"
+    baseline_dir = tmp_path / "artifacts" / "tailrisk_baseline"
     (run_dir / "panel").mkdir(parents=True)
     (run_dir / "forecasts").mkdir(parents=True)
     (baseline_dir / "panel").mkdir(parents=True)
@@ -1738,7 +1779,7 @@ def test_feature_audit_handles_bad_optional_artifacts(tmp_path: Path) -> None:
     assert payload["ml_tail_gate_summary"]["dropped_feature_count"] == 1
     assert payload["feature_delta_summary"]["available"] is True
 
-    missing_baseline = tmp_path / "reports" / "runs" / "tailrisk_missing_baseline"
+    missing_baseline = tmp_path / "artifacts" / "tailrisk_missing_baseline"
     result = write_feature_audit(run_dir=run_dir, baseline_run_dir=missing_baseline)
     payload = json.loads(result.output_path.read_text(encoding="utf-8"))
     assert result.warning_count == 1
@@ -3215,7 +3256,7 @@ def _with_panel_signature_fields(row: dict[str, object]) -> dict[str, object]:
     }
 
 
-def test_common_sample_eviction_and_primary_artifacts() -> None:
+def test_common_sample_keeps_fixed_roster_and_primary_artifacts() -> None:
     dates = [f"2026-01-{day:02d}" for day in range(1, 21)]
     forecasts = [
         *_synthetic_forecasts(
@@ -3243,19 +3284,21 @@ def test_common_sample_eviction_and_primary_artifacts() -> None:
         suite="benchmark",
         anchor_model="historical_quantile",
         anchor_information_set="target_history_only",
+        model_names=("historical_quantile", "rolling_quantile", "fragile_model"),
     )
 
     evictions = cast(list[dict[str, object]], artifacts["model_eviction"])
     fragile = next(row for row in evictions if row["model_name"] == "fragile_model")
-    assert fragile["retained_for_primary"] is False
-    assert fragile["eviction_reason"] == "coverage_below_model_eviction_threshold"
+    assert fragile["retained_for_primary"] is True
+    assert fragile["eviction_threshold"] is None
+    assert fragile["common_rows"] == 18
     primary_models = {
         row["model_name"] for row in cast(list[dict[str, object]], artifacts["primary_metrics"])
     }
     per_model_models = {
         row["model_name"] for row in cast(list[dict[str, object]], artifacts["per_model_metrics"])
     }
-    assert "fragile_model" not in primary_models
+    assert "fragile_model" in primary_models
     assert "fragile_model" in per_model_models
     assert cast(list[dict[str, object]], artifacts["loss_matrix"])
     assert cast(list[dict[str, object]], artifacts["dm_inference"])[0]["alternative"] == (
@@ -3305,6 +3348,7 @@ def test_common_sample_compares_benchmark_models_across_refit_metadata() -> None
         suite="benchmark",
         anchor_model="historical_quantile",
         anchor_information_set="target_history_only",
+        model_names=("historical_quantile", "caviar_sav"),
     )
 
     assert artifacts["common_sample_status"] == "ok"
@@ -3332,6 +3376,7 @@ def test_primary_dm_gate_on_common_rows_and_tail_events() -> None:
                     "realized_loss": 1.0 if index % 25 == 0 else 0.1,
                     "var_forecast": 0.5,
                     "fz_loss": fz,
+                    "target_session_index": index,
                 }
             )
 
@@ -3437,6 +3482,14 @@ def test_incremental_information_artifacts_use_block_bootstrap_dm_labels() -> No
             ]
         )
 
+    forecasts.extend(
+        [
+            {**row, "information_set": info}
+            for row in list(forecasts)
+            if row["information_set"] == "japan_only_plus_us_close_core"
+            for info in paper_module.registered_ml_tail_information_sets()[2:]
+        ]
+    )
     incremental = paper_module.build_incremental_information_records(
         forecasts,
         baseline_information_set="japan_only",
@@ -3445,7 +3498,7 @@ def test_incremental_information_artifacts_use_block_bootstrap_dm_labels() -> No
     assert any(row["inference_status"] == "ok_block_bootstrap_dm" for row in incremental)
 
 
-def test_common_sample_unstable_status_after_eviction_threshold(
+def test_common_sample_does_not_use_availability_eviction_threshold(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     dates = [f"2026-02-{day:02d}" for day in range(1, 11)]
@@ -3469,11 +3522,12 @@ def test_common_sample_unstable_status_after_eviction_threshold(
         suite="benchmark",
         anchor_model="historical_quantile",
         anchor_information_set="target_history_only",
+        model_names=("historical_quantile", "candidate"),
     )
 
-    assert artifacts["common_sample_status"] == "common_sample_unstable"
+    assert artifacts["common_sample_status"] == "unavailable_insufficient_common_oos"
     assert all(
-        row["common_sample_status"] == "common_sample_unstable"
+        row["common_rows"] == 8 and row["retained_for_primary"] is True
         for row in cast(list[dict[str, object]], artifacts["model_eviction"])
     )
 
@@ -3492,9 +3546,9 @@ def test_common_sample_missing_anchor_and_empty_artifacts() -> None:
         anchor_information_set="target_history_only",
     )
 
-    assert artifacts["common_sample_status"] == "unavailable_missing_anchor"
+    assert artifacts["common_sample_status"] == "unavailable_missing_registered_model"
     eviction = cast(list[dict[str, object]], artifacts["model_eviction"])[0]
-    assert eviction["eviction_reason"] == "missing_anchor_sample"
+    assert "historical_quantile" in eviction["missing_entities"]
     assert paper_module.build_murphy_records([], suite="benchmark") == []
     bad_matrix = paper_module.build_loss_matrix_records(
         [
@@ -3505,7 +3559,9 @@ def test_common_sample_missing_anchor_and_empty_artifacts() -> None:
         ],
         suite="benchmark",
     )
-    assert bad_matrix == []
+    assert len(bad_matrix) == 1
+    assert bad_matrix[0]["fz_loss"] is None
+    assert math.isfinite(bad_matrix[0]["quantile_loss"])
 
 
 def test_coverage_tests_return_unavailable_for_degenerate_inputs() -> None:
@@ -3665,7 +3721,7 @@ def test_evaluate_benchmark_suite_and_latex_export_with_synthetic_panel(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "benchmark_synthetic"
+    run_dir = tmp_path / "artifacts" / "benchmark_synthetic"
     panel_dir = run_dir / "panel"
     panel_dir.mkdir(parents=True)
     rows = [
@@ -3733,7 +3789,7 @@ def test_evaluate_benchmark_suite_and_latex_export_with_synthetic_panel(
 
 
 def test_result_matrix_latex_export_has_restricted_notes(tmp_path: Path) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "ml_tail_result_matrix_latex"
+    run_dir = tmp_path / "artifacts" / "ml_tail_result_matrix_latex"
     metrics_dir = run_dir / "metrics"
     metrics_dir.mkdir(parents=True)
     (run_dir / "manifest.json").write_text(
@@ -3784,7 +3840,7 @@ def test_result_matrix_latex_export_has_restricted_notes(tmp_path: Path) -> None
 
 
 def test_export_tables_clears_stale_tables_when_primary_gate_fails(tmp_path: Path) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "stale_table_gate"
+    run_dir = tmp_path / "artifacts" / "stale_table_gate"
     metrics_dir = run_dir / "metrics"
     latex_dir = run_dir / "latex" / "tables"
     metrics_dir.mkdir(parents=True)
@@ -3822,7 +3878,7 @@ def test_export_tables_clears_stale_tables_when_primary_gate_fails(tmp_path: Pat
 def test_market_timing_design_labels_jst_cutoff_and_schedule_note(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "timing_design"
+    run_dir = tmp_path / "artifacts" / "timing_design"
     run_dir.mkdir(parents=True)
     (run_dir / "manifest.json").write_text("{}", encoding="utf-8")
     captured: dict[str, object] = {}
@@ -3857,22 +3913,21 @@ def test_market_timing_design_labels_jst_cutoff_and_schedule_note(
     kwargs = cast(dict[str, object], captured["kwargs"])
     assert entries
     assert kwargs["claim_scope"] == "design_forecast_origin_not_causal_price_discovery"
-    assert "Japan Standard Time (JST) timing for the settlement-to-open forecast design" in text
-    assert "if EDT" in text
-    assert "if EST" in text
-    assert "matched\nNYSE close\n+ data lag\ncutoff" in text
+    assert "NYSE close\n05:00 JST" in text
+    assert "NYSE / OSE night\nclose: 06:00 JST" in text
+    assert "Forecast cutoff\n05:15 JST" in text
+    assert "Forecast cutoff\n06:15 JST" in text
     caption = str(kwargs["caption"])
     assert "05:00 JST" in caption
     assert "06:00 JST" in caption
-    assert "pre-2024-11-05 hours" in caption
-    assert "day close 15:45 JST" in caption
-    assert "night session 17:00-06:00 JST" in caption
-    assert "OSE night close is timing context, not the forecast origin" in caption
-    assert "not a structural market-transmission diagram" in caption
+    assert "2021-09-21" in caption and "2021-09-22" in caption
+    assert "2021-09-17 night session was suspended" in caption
+    assert "early-close days" in caption
+    assert "night close is timing context, not the forecast origin" in caption
 
 
 def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "figure_export"
+    run_dir = tmp_path / "artifacts" / "figure_export"
     metrics_dir = run_dir / "metrics"
     forecasts_dir = run_dir / "forecasts"
     panel_dir = run_dir / "panel"
@@ -4282,7 +4337,7 @@ def test_export_tables_generates_paper_figures_and_manifest(tmp_path: Path) -> N
 
 
 def test_export_figures_skips_missing_optional_artifacts(tmp_path: Path) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "empty_figures"
+    run_dir = tmp_path / "artifacts" / "empty_figures"
     run_dir.mkdir(parents=True)
     stale = run_dir / "latex" / "figures" / "stale.png"
     stale.parent.mkdir(parents=True)
@@ -4382,7 +4437,7 @@ def test_full_sample_var_overlay_uses_anchor_mean_and_marks_display_breaches() -
 
 
 def test_export_figures_renders_target_distribution_diagnostics(tmp_path: Path) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "target_figures"
+    run_dir = tmp_path / "artifacts" / "target_figures"
     panel_dir = run_dir / "panel"
     panel_dir.mkdir(parents=True)
     rows = []
@@ -4425,7 +4480,7 @@ def test_export_figures_renders_target_distribution_diagnostics(tmp_path: Path) 
 def test_reporting_new_figure_helpers_lock_selection_order_and_loss_sign(
     tmp_path: Path,
 ) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "reporting_new_helpers"
+    run_dir = tmp_path / "artifacts" / "reporting_new_helpers"
     metrics_dir = run_dir / "metrics"
     metrics_dir.mkdir(parents=True)
     pl.DataFrame(
@@ -4922,7 +4977,7 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
     assert reporting_latex._result_matrix_summary_rows(pl.DataFrame(), dm=None) == []
     assert reporting_latex._inference_status_counts(None, "status", "ok") == {}
 
-    run_dir = tmp_path / "reports" / "runs" / "ml_tail_reporting"
+    run_dir = tmp_path / "artifacts" / "ml_tail_reporting"
     (run_dir / "metrics").mkdir(parents=True)
     (run_dir / "forecasts").mkdir(parents=True)
     (run_dir / "manifest.json").write_text(
@@ -4960,7 +5015,7 @@ def test_reporting_claim_scope_helpers_cover_restricted_edges(tmp_path: Path) ->
 
 
 def test_locked_run_refuses_config_mismatch_without_force(tmp_path: Path) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "benchmark_locked"
+    run_dir = tmp_path / "artifacts" / "benchmark_locked"
     panel_dir = run_dir / "panel"
     metrics_dir = run_dir / "metrics"
     panel_dir.mkdir(parents=True)
@@ -5016,7 +5071,7 @@ def test_evaluate_suite_dispatches_registered_suite_names(
 
 
 def test_benchmark_and_ml_tail_require_current_leakage_summary(tmp_path: Path) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "leakage_required"
+    run_dir = tmp_path / "artifacts" / "leakage_required"
     panel_dir = run_dir / "panel"
     panel_dir.mkdir(parents=True)
     pl.DataFrame(
@@ -5070,7 +5125,7 @@ def test_benchmark_and_ml_tail_require_current_leakage_summary(tmp_path: Path) -
 
 
 def test_write_leakage_check_outputs_summary(tmp_path: Path) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "benchmark_leakage"
+    run_dir = tmp_path / "artifacts" / "benchmark_leakage"
     panel_dir = run_dir / "panel"
     panel_dir.mkdir(parents=True)
     pl.DataFrame(
@@ -5150,7 +5205,7 @@ def test_leakage_binding_uses_deterministic_panel_signature(tmp_path: Path) -> N
         sort_columns=("forecast_date",),
     )
 
-    run_dir = tmp_path / "reports" / "runs" / "leakage_bound"
+    run_dir = tmp_path / "artifacts" / "leakage_bound"
     panel_dir = run_dir / "panel"
     panel_dir.mkdir(parents=True)
     frame.write_parquet(panel_dir / "modeling_panel.parquet")
@@ -5185,9 +5240,15 @@ def test_leakage_signature_fails_closed_on_missing_signature_column() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("required_target_start", "expected_clean_rows"),
+    [(None, 1), ("2016-07-19", 1), ("2026-01-07", 0)],
+)
 def test_build_panel_with_synthetic_vendor_rows(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    required_target_start: str | None,
+    expected_clean_rows: int,
 ) -> None:
     raw_rows = [
         _raw_futures_row("2026-01-05", settle=50000, ac=50100),
@@ -5213,6 +5274,22 @@ def test_build_panel_with_synthetic_vendor_rows(
 
     _patch_paper_module(monkeypatch, "_git_commit", lambda: "abcdef123456")
     _patch_paper_module(monkeypatch, "_git_dirty", lambda: False)
+    predictor_starts = {
+        "massive_daily": "2026-02-01",
+        "fred_core": "2026-02-02",
+        "fx_core": "2026-02-03",
+    }
+    if required_target_start is not None:
+        _patch_paper_module(
+            monkeypatch,
+            "infer_jquants_required_field_coverage_start",
+            lambda *args, **kwargs: required_target_start,
+        )
+        _patch_paper_module(
+            monkeypatch,
+            "build_effective_predictor_start",
+            lambda rows: predictor_starts,
+        )
     _patch_paper_module(
         monkeypatch,
         "_fetch_jquants_futures_rows",
@@ -5240,6 +5317,8 @@ def test_build_panel_with_synthetic_vendor_rows(
     )
 
     settings = Settings(
+        data_dir=tmp_path / "data",
+        artifacts_dir=tmp_path / "artifacts",
         reports_dir=tmp_path / "reports",
         bronze_data_dir=tmp_path / "data" / "bronze",
         silver_data_dir=tmp_path / "data" / "silver",
@@ -5248,8 +5327,10 @@ def test_build_panel_with_synthetic_vendor_rows(
     result = build_panel(settings=settings, start="2026-01-05", end="2026-01-06")
     panel = pl.read_parquet(result.panel_path)
 
+    assert result.run_dir == settings.artifacts_dir / result.run_id
+    assert not settings.reports_dir.exists()
     assert result.rows == 2
-    assert result.clean_rows == 1
+    assert result.clean_rows == expected_clean_rows
     assert result.run_id.startswith("tailrisk_20260105_20260106_")
     assert "spy_return" in panel.columns
     assert (result.run_dir / "panel" / "feature_coverage.parquet").exists()
@@ -5260,6 +5341,14 @@ def test_build_panel_with_synthetic_vendor_rows(
     assert gold_panel.exists()
     assert gold_calendar.exists()
     assert result.panel_path == gold_panel
+    manifest = json.loads((result.run_dir / "manifest.json").read_text())
+    assert manifest["combined_clean_start"] == max(
+        "2026-01-05", required_target_start or "2016-07-19"
+    )
+    assert panel["combined_clean_start"].unique().to_list() == [manifest["combined_clean_start"]]
+    if required_target_start is not None:
+        assert manifest["effective_predictor_start"] == predictor_starts
+    assert manifest["sample_policy"] == "target_history_with_training_window_feature_gates"
 
 
 def test_default_end_date_resolves_to_most_recent_completed_friday() -> None:
@@ -5490,25 +5579,25 @@ def test_private_pipeline_helpers_cover_defensive_edges(
         )
     with pytest.raises(paper_module.PipelineRunError, match="No run found"):
         paper_module.resolve_run_dir(
-            Settings(reports_dir=tmp_path / "missing_reports"),
+            Settings(artifacts_dir=tmp_path / "missing_artifacts"),
             "",
         )
     with pytest.raises(paper_module.PipelineRunError, match="Run does not exist"):
         paper_module.resolve_run_dir(
-            Settings(reports_dir=tmp_path / "reports"),
+            Settings(artifacts_dir=tmp_path / "artifacts"),
             "missing_run",
         )
     with pytest.raises(paper_module.PipelineRunError, match="Missing modeling panel"):
         evaluate_benchmark_suite(run_dir=tmp_path / "no_panel", workers=1)
-    runs_dir = tmp_path / "reports" / "runs"
+    runs_dir = tmp_path / "artifacts"
     latest = runs_dir / "tailrisk_latest"
     older = runs_dir / "tailrisk_older"
     older.mkdir(parents=True)
     latest.mkdir(parents=True)
-    assert paper_module.resolve_run_dir(Settings(reports_dir=tmp_path / "reports"), "").name
+    assert paper_module.resolve_run_dir(Settings(artifacts_dir=tmp_path / "artifacts"), "").name
     assert (
         paper_module.resolve_run_dir(
-            Settings(reports_dir=tmp_path / "reports"),
+            Settings(artifacts_dir=tmp_path / "artifacts"),
             "tailrisk_latest",
         )
         == latest

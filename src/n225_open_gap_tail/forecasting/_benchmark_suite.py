@@ -15,6 +15,7 @@ from n225_open_gap_tail.config.runtime import (
     Path,
     PIPELINE_CONFIG,
     PipelineRunError,
+    pl,
     TAIL_LEVELS,
     TAIL_SIDE_BOTH,
     tail_side_values,
@@ -32,6 +33,7 @@ from n225_open_gap_tail.forecasting.artifacts import (
     _write_parquet,
 )
 from n225_open_gap_tail.inference.core import build_common_sample_artifacts
+from n225_open_gap_tail.metrics.stat_utils import index_forecast_sessions
 from n225_open_gap_tail.metrics.information import (
     _assert_run_config_compatible,
     _gold_artifact_path,
@@ -119,11 +121,21 @@ def evaluate_benchmark_suite(
     baseline_outputs = [output for output in outputs if output.get("shard_kind") == "baseline"]
     advanced_outputs = [output for output in outputs if output.get("shard_kind") == "advanced"]
     forecasts = [row for output in outputs for row in output["forecasts"]]
+    forecasts = index_forecast_sessions(
+        forecasts,
+        session_dates=(
+            pl.read_parquet(panel_path).get_column("forecast_date").cast(pl.String).to_list()
+        ),
+    )
     diagnostics = [row for output in outputs for row in output["diagnostics"]]
     failures = [row for output in outputs for row in output["failures"]]
-    baseline_forecasts = [row for output in baseline_outputs for row in output["forecasts"]]
+    baseline_forecasts = [
+        row for row in forecasts if row["model_name"] in BENCHMARK_BASELINE_MODEL_NAMES
+    ]
     baseline_failures = [row for output in baseline_outputs for row in output["failures"]]
-    advanced_forecasts = [row for output in advanced_outputs for row in output["forecasts"]]
+    advanced_forecasts = [
+        row for row in forecasts if row["model_name"] in BENCHMARK_ADVANCED_MODEL_NAMES
+    ]
     advanced_diagnostics = [row for output in advanced_outputs for row in output["diagnostics"]]
     advanced_failures = [row for output in advanced_outputs for row in output["failures"]]
     forecast_path = forecast_root / "benchmark_forecasts.parquet"
@@ -137,17 +149,38 @@ def evaluate_benchmark_suite(
     _evaluation_log(f"wrote failures: {failures_path} rows={len(failures)}")
     _write_forecast_shards(forecast_root, forecasts, diagnostics, failures)
     _evaluation_log("wrote forecast shards")
-    artifacts = build_common_sample_artifacts(
-        forecasts,
-        suite="benchmark",
-        anchor_model=BENCHMARK_ANCHOR_MODEL,
-        anchor_information_set="target_history_only",
-    )
     baseline_artifacts = build_common_sample_artifacts(
         baseline_forecasts,
         suite="benchmark_baseline",
         anchor_model=BENCHMARK_ANCHOR_MODEL,
         anchor_information_set="target_history_only",
+        model_names=BENCHMARK_BASELINE_MODEL_NAMES,
+    )
+    parts = [baseline_artifacts]
+    if include_advanced:
+        parts.append(
+            build_common_sample_artifacts(
+                advanced_forecasts,
+                suite="benchmark_advanced",
+                anchor_model=BENCHMARK_ADVANCED_MODEL_NAMES[0],
+                anchor_information_set="target_history_only",
+                model_names=BENCHMARK_ADVANCED_MODEL_NAMES,
+            )
+        )
+    artifacts = {
+        key: [row for part in parts for row in part[key]]
+        for key in (
+            "primary_metrics",
+            "per_model_metrics",
+            "model_eviction",
+            "loss_matrix",
+            "dm_inference",
+            "murphy",
+            "stress_windows",
+        )
+    }
+    artifacts["common_sample_status"] = ",".join(
+        sorted({part["common_sample_status"] for part in parts})
     )
     metrics = cast(list[dict[str, object]], artifacts["primary_metrics"])
     _write_parquet(metrics_root / "benchmark_metrics.parquet", metrics)

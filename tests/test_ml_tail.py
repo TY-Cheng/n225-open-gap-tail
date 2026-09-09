@@ -742,7 +742,11 @@ def test_unibm_registry_name_is_restricted_diagnostic_variant() -> None:
     )
 
 
-def test_ml_tail_resumable_shard_manifest_reuses_complete_and_failed(tmp_path: Path) -> None:
+def test_ml_tail_resumable_shard_manifest_reuses_complete_and_failed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ml_tail_shards, "_git_source_dirty", lambda: False)
     payload = _minimal_ml_tail_shard_payload(tmp_path)
     output = {
         "forecasts": [
@@ -783,12 +787,22 @@ def test_ml_tail_resumable_shard_manifest_reuses_complete_and_failed(tmp_path: P
     cached, compute = ml_tail_shards._partition_ml_tail_shard_jobs(tmp_path, [payload])
     assert cached == [payload]
     assert compute == []
+
+    monkeypatch.setattr(ml_tail_shards, "_git_source_dirty", lambda: True)
+    assert ml_tail_shards._partition_ml_tail_shard_jobs(tmp_path, [payload]) == ([], [payload])
+    monkeypatch.setattr(ml_tail_shards, "_git_source_dirty", lambda: False)
     forecasts, diagnostics, failures = ml_tail_shards._load_active_ml_tail_shards(
         tmp_path, [payload]
     )
     assert forecasts[0]["shard_id"] == "ml_tail_test_shard"
     assert diagnostics[0]["shard_id"] == "ml_tail_test_shard"
     assert failures[0]["shard_id"] == "ml_tail_test_shard"
+
+    # A shard produced by dirty code must not become reusable after a clean checkout.
+    payload["expected_shard_manifest"]["source_git_dirty"] = True
+    ml_tail_shards._write_ml_tail_shard_atomic(payload, output, completion_state="complete")
+    assert ml_tail_shards._partition_ml_tail_shard_jobs(tmp_path, [payload]) == ([], [payload])
+    payload["expected_shard_manifest"]["source_git_dirty"] = False
 
     ml_tail_shards._write_ml_tail_shard_atomic(payload, output, completion_state="failed")
     cached, compute = ml_tail_shards._partition_ml_tail_shard_jobs(tmp_path, [payload])
@@ -801,7 +815,11 @@ def test_ml_tail_resumable_shard_manifest_reuses_complete_and_failed(tmp_path: P
     assert compute == [payload]
 
 
-def test_ml_tail_resumable_shard_stale_manifest_errors(tmp_path: Path) -> None:
+def test_ml_tail_resumable_shard_stale_manifest_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ml_tail_shards, "_git_source_dirty", lambda: False)
     payload = _minimal_ml_tail_shard_payload(tmp_path)
     output = {"forecasts": [], "diagnostics": [], "failures": []}
     ml_tail_shards._write_ml_tail_shard_atomic(payload, output, completion_state="complete")
@@ -829,6 +847,8 @@ def _minimal_ml_tail_shard_payload(tmp_path: Path) -> dict[str, object]:
         "panel_signature": "panel",
         "candidate_feature_hash": "features",
         "seed_policy_version": ml_tail_shards.ML_TAIL_SHARD_SEED_POLICY_VERSION,
+        "source_git_commit": ml_tail_shards._git_commit(),
+        "source_git_dirty": False,
     }
     return {
         "run_dir": str(tmp_path),
@@ -1110,7 +1130,7 @@ def test_evaluate_ml_tail_suite_writes_lightgbm_ladder_artifacts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    run_dir = tmp_path / "reports" / "runs" / "ml_tail_synthetic"
+    run_dir = tmp_path / "artifacts" / "ml_tail_synthetic"
     panel_dir = run_dir / "panel"
     audits_dir = run_dir / "audits"
     panel_dir.mkdir(parents=True)
@@ -1148,7 +1168,12 @@ def test_evaluate_ml_tail_suite_writes_lightgbm_ladder_artifacts(
         ]
     ).write_parquet(panel_dir / "feature_coverage.parquet")
     (run_dir / "manifest.json").write_text(
-        json.dumps({"config_hash": paper_module.PIPELINE_CONFIG.config_hash()}),
+        json.dumps(
+            {
+                "config_hash": paper_module.PIPELINE_CONFIG.config_hash(),
+                "git_commit": ml_tail_shards._git_commit(),
+            }
+        ),
         encoding="utf-8",
     )
     write_leakage_check(run_dir=run_dir)
@@ -1180,9 +1205,8 @@ def test_evaluate_ml_tail_suite_writes_lightgbm_ladder_artifacts(
     assert (run_dir / "metrics" / "ml_tail_result_matrix_notes.md").exists()
     result_matrix = pl.read_parquet(run_dir / "metrics" / "ml_tail_result_matrix.parquet")
     primary_metrics = pl.read_parquet(run_dir / "metrics" / "ml_tail_metrics.parquet")
-    assert not set(paper_module.ML_TAIL_ROBUST_POT_GPD_MODEL_NAMES).intersection(
-        set(primary_metrics["model_name"].to_list())
-    )
+    assert primary_metrics.is_empty()  # Missing registered members cannot be silently evicted.
+    assert "unavailable_missing_registered_model" in result_matrix["metric_status"].to_list()
     assert {
         "var_quantile_loss",
         "var_coverage",

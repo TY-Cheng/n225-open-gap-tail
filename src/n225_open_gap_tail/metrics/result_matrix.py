@@ -5,6 +5,7 @@ from __future__ import annotations
 from n225_open_gap_tail.config.runtime import (
     Any,
     ML_TAIL_DIRECT_QUANTILE_MODEL,
+    ML_TAIL_MODEL_NAMES,
     np,
     PIPELINE_CONFIG,
     PRIMARY_TAIL_SIDE,
@@ -15,6 +16,8 @@ from n225_open_gap_tail.metrics.stat_utils import (
     _safe_mean,
     christoffersen_independence_test,
     fz_loss,
+    forecast_eligible,
+    index_forecast_sessions,
     kupiec_pof_test,
     quantile_loss,
     valid_forecast_rows,
@@ -37,8 +40,8 @@ def build_metric_records(
     common_sample_status_value: str | None = None,
 ) -> list[dict[str, object]]:
     grouped: dict[tuple[str, str, str, str, float, str | None], list[dict[str, object]]] = {}
-    for row in forecasts:
-        if row.get("fit_status") == "ok" and row.get("is_valid_forecast") is True:
+    for row in index_forecast_sessions(forecasts):
+        if row.get("tail_level") is not None:
             grouped.setdefault(
                 (
                     str(row["model_name"]),
@@ -58,14 +61,19 @@ def build_metric_records(
         information_set,
         tail_level,
         refit_frequency,
-    ), rows in sorted(grouped.items()):
+    ), scheduled_rows in sorted(grouped.items()):
+        rows = sorted(
+            valid_forecast_rows(scheduled_rows), key=lambda row: str(row["forecast_date"])
+        )
         losses: Any = np.array([_required_float(row["realized_loss"]) for row in rows], dtype=float)
         var: Any = np.array([_required_float(row["var_forecast"]) for row in rows], dtype=float)
-        es: Any = np.array([_required_float(row["es_forecast"]) for row in rows], dtype=float)
+        fz_rows = [row for row in rows if forecast_eligible(row, score="fz0")]
         breaches = losses > var
         alpha = 1.0 - tail_level
         kupiec = kupiec_pof_test(breaches=breaches, expected_probability=alpha)
-        christoffersen = christoffersen_independence_test(breaches=breaches)
+        christoffersen = christoffersen_independence_test(
+            breaches=breaches, session_indices=[row.get("target_session_index") for row in rows]
+        )
         exceedance_count = int(np.sum(breaches))
         records.append(
             {
@@ -78,6 +86,13 @@ def build_metric_records(
                 "sample_policy": sample_policy,
                 "common_sample_status": common_sample_status_value,
                 "rows": len(rows),
+                "recorded_rows": len(scheduled_rows),
+                "joint_rows": sum(forecast_eligible(row, score="joint") for row in rows),
+                "fz0_rows": len(fz_rows),
+                "fz0_excluded_rows": len(rows) - len(fz_rows),
+                "date_start": str(rows[0]["forecast_date"]) if rows else None,
+                "date_end": str(rows[-1]["forecast_date"]) if rows else None,
+                "session_axis": rows[0].get("session_axis") if rows else None,
                 "var_breach_rate": float(np.mean(breaches)) if rows else None,
                 "expected_breach_rate": alpha,
                 "exceedance_count": exceedance_count,
@@ -86,6 +101,9 @@ def build_metric_records(
                 "kupiec_pvalue": kupiec.get("pvalue"),
                 "christoffersen_lr_ind": christoffersen.get("lr_stat"),
                 "christoffersen_pvalue": christoffersen.get("pvalue"),
+                "christoffersen_status": christoffersen.get("status"),
+                "christoffersen_transition_count": christoffersen.get("transition_count", 0),
+                "christoffersen_skipped_transitions": christoffersen.get("skipped_transitions", 0),
                 "dq_status": "unavailable_not_implemented",
                 "mean_quantile_loss": _safe_mean(
                     np.array(
@@ -98,13 +116,13 @@ def build_metric_records(
                 "mean_fz_loss": _safe_mean(
                     np.array(
                         [
-                            fz_loss(loss, var_value, es_value, tail_level)
-                            for loss, var_value, es_value in zip(
-                                losses,
-                                var,
-                                es,
-                                strict=True,
+                            fz_loss(
+                                _required_float(row["realized_loss"]),
+                                _required_float(row["var_forecast"]),
+                                _required_float(row["es_forecast"]),
+                                tail_level,
                             )
+                            for row in fz_rows
                         ]
                     )
                 ),
@@ -118,13 +136,17 @@ def build_metric_records(
 
 def build_ml_tail_result_matrix_artifacts(
     forecasts: list[dict[str, object]],
+    *,
+    model_names: tuple[str, ...] = ML_TAIL_MODEL_NAMES,
 ) -> dict[str, object]:
-    valid_rows = valid_forecast_rows(forecasts)
+    valid_rows = index_forecast_sessions(forecasts)
     matrix: list[dict[str, object]] = []
     sample_audit: list[dict[str, object]] = []
     dm_records: list[dict[str, object]] = []
     for loss_family in RESULT_MATRIX_LOSS_FAMILIES:
-        for group in _result_matrix_tail_model_groups(valid_rows, loss_family=loss_family):
+        for group in _result_matrix_tail_model_groups(
+            valid_rows, loss_family=loss_family, model_names=model_names
+        ):
             group_rows, audit = _build_result_matrix_group(
                 group=group,
                 loss_family=loss_family,
@@ -146,7 +168,7 @@ def build_ml_tail_result_matrix_artifacts(
                 )
             )
         for group in _result_matrix_information_increment_groups(
-            valid_rows, loss_family=loss_family
+            valid_rows, loss_family=loss_family, model_names=model_names
         ):
             group_rows, audit = _build_result_matrix_group(
                 group=group,

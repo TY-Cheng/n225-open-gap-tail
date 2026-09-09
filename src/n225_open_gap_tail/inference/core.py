@@ -21,7 +21,20 @@ from n225_open_gap_tail.config.runtime import (
     _optional_float,
     _required_float,
 )
-from n225_open_gap_tail.metrics.stat_utils import _safe_mean, fz_loss
+from n225_open_gap_tail.config.runtime import (
+    BENCHMARK_BASELINE_MODEL_NAMES,
+    BENCHMARK_ADVANCED_MODEL_NAMES,
+    ML_TAIL_MODEL_NAMES,
+)
+from n225_open_gap_tail.metrics.stat_utils import (
+    _safe_mean,
+    fz_loss,
+    forecast_eligible,
+    index_forecast_sessions,
+    valid_forecast_rows,
+    christoffersen_independence_test as _session_independence_test,
+    moving_block_one_sided_pvalue as _session_block_pvalue,
+)
 from n225_open_gap_tail.metrics.result_matrix import build_metric_records
 
 
@@ -31,142 +44,141 @@ def build_common_sample_artifacts(
     suite: str,
     anchor_model: str,
     anchor_information_set: str,
+    model_names: tuple[str, ...] | None = None,
 ) -> dict[str, object]:
-    valid_rows = _valid_forecast_rows(forecasts)
-    per_model_metrics = build_metric_records(
-        valid_rows,
-        sample_policy="per_model_oos",
-        common_sample_status_value=None,
+    forecasts = index_forecast_sessions(forecasts)
+    per_model_metrics = build_metric_records(forecasts, sample_policy="per_model_oos")
+    registered = model_names or (
+        ML_TAIL_MODEL_NAMES
+        if suite == "ml_tail"
+        else BENCHMARK_BASELINE_MODEL_NAMES
+        if suite == "benchmark_baseline"
+        else BENCHMARK_ADVANCED_MODEL_NAMES
+        if suite == "benchmark_advanced"
+        else BENCHMARK_BASELINE_MODEL_NAMES + BENCHMARK_ADVANCED_MODEL_NAMES
     )
-    grouped = _group_forecasts_by_key(valid_rows)
-    evictions: list[dict[str, object]] = []
-    primary_forecasts: list[dict[str, object]] = []
-    status_by_tail: dict[tuple[str, str, float], str] = {}
-    for target_family, tail_side, tail_level in sorted(
-        {(key[0], key[5], key[3]) for key in grouped}
-    ):
-        keys = sorted(
-            key
-            for key in grouped
-            if key[0] == target_family and key[5] == tail_side and key[3] == tail_level
-        )
-        anchor_keys = [
-            key for key in keys if key[1] == anchor_model and key[2] == anchor_information_set
-        ]
-        anchor_key = (
-            anchor_keys[0]
-            if anchor_keys
-            else (
-                target_family,
-                anchor_model,
-                anchor_information_set,
-                tail_level,
-                "",
-                tail_side,
+    grouped = _group_forecasts_by_key(_valid_forecast_rows(forecasts))
+    dimensions = sorted(
+        {
+            (
+                str(row.get("target_family") or "full_gap_settle_to_open"),
+                str(row.get("tail_side") or PRIMARY_TAIL_SIDE),
+                float(row["tail_level"]),
+                str(row.get("information_set") or "target_history_only"),
             )
+            for row in forecasts
+        }
+    )
+    primary_forecasts = []
+    primary_metrics = []
+    evictions = []
+    loss_matrix = []
+    dm = []
+    statuses = {}
+    for target, side, level, information in dimensions:
+        keys = []
+        for model in registered:
+            matches = [
+                key
+                for key in grouped
+                if (key[0], key[1], key[2], key[3], key[5])
+                == (target, model, information, level, side)
+            ]
+            if len(matches) > 1:
+                raise ValueError("A comparison requires one refit specification per model")
+            key = matches[0] if matches else (target, model, information, level, "", side)
+            grouped.setdefault(key, {})
+            keys.append(key)
+        anchor_key = next((key for key in keys if key[1] == anchor_model), keys[0])
+        anchor_dates = set(grouped[anchor_key])
+        missing = [key[1] for key in keys if not grouped[key]]
+        common_dates = sorted(set.intersection(*(set(grouped[key]) for key in keys)))
+        status = (
+            "unavailable_missing_registered_model"
+            if missing
+            else common_sample_status(common_dates)
         )
-        anchor_dates = set().union(*(set(grouped[key]) for key in anchor_keys))
-        if not anchor_dates:
-            status_by_tail[(target_family, tail_side, tail_level)] = "unavailable_missing_anchor"
-            for key in keys:
-                evictions.append(
-                    _model_eviction_record(
-                        suite=suite,
-                        key=key,
-                        anchor_key=anchor_key,
-                        anchor_rows=0,
-                        overlap_rows=0,
-                        coverage_ratio=0.0,
-                        retained=False,
-                        eviction_reason="missing_anchor_sample",
-                        common_rows=0,
-                        common_anchor_coverage=0.0,
-                        common_sample_status_value="unavailable_missing_anchor",
-                    )
-                )
-            continue
-
-        retained_keys: list[tuple[str, str, str, float, str, str]] = []
-        pending_rows: list[dict[str, object]] = []
-        comparison_refit_frequency = anchor_key[4] or None
+        statuses[(target, side, level, information)] = status
         for key in keys:
-            overlap_rows = len(set(grouped[key]).intersection(anchor_dates))
-            coverage_ratio = overlap_rows / len(anchor_dates)
-            primary_candidate = suite != "ml_tail" or key[1] in ML_TAIL_PRIMARY_MODEL_NAMES
-            retained = key in anchor_keys or (
-                primary_candidate and coverage_ratio >= MODEL_EVICTION_COVERAGE_THRESHOLD
+            overlap = len(set(grouped[key]) & anchor_dates)
+            record = _model_eviction_record(
+                suite=suite,
+                key=key,
+                anchor_key=anchor_key,
+                anchor_rows=len(anchor_dates),
+                overlap_rows=overlap,
+                coverage_ratio=overlap / len(anchor_dates) if anchor_dates else 0.0,
+                retained=not missing,
+                eviction_reason=status if missing else None,
+                common_rows=len(common_dates),
+                common_anchor_coverage=len(common_dates) / len(anchor_dates)
+                if anchor_dates
+                else 0.0,
+                common_sample_status_value=status,
             )
-            eviction_reason = None
-            if not retained:
-                eviction_reason = (
-                    "diagnostic_variant_not_primary_candidate"
-                    if not primary_candidate
-                    else "coverage_below_model_eviction_threshold"
-                )
-            if retained:
-                retained_keys.append(key)
-            pending_rows.append(
-                _model_eviction_record(
-                    suite=suite,
-                    key=key,
-                    anchor_key=anchor_key,
-                    anchor_rows=len(anchor_dates),
-                    overlap_rows=overlap_rows,
-                    coverage_ratio=coverage_ratio,
-                    retained=retained,
-                    eviction_reason=eviction_reason,
-                    common_rows=0,
-                    common_anchor_coverage=0.0,
-                    common_sample_status_value="pending",
-                )
+            record.update(
+                eviction_threshold=None,
+                common_sample_min_anchor_coverage=None,
+                roster_policy="fixed_by_comparison_question",
+                missing_entities=missing,
             )
-        common_dates = (
-            sorted(set.intersection(*(set(grouped[key]) for key in retained_keys)))
-            if retained_keys
-            else []
+            evictions.append(record)
+        group_rows = [
+            {**grouped[key][day], "comparison_refit_frequency": anchor_key[4] or None}
+            for key in keys
+            for day in common_dates
+        ]
+        primary_forecasts.extend(group_rows)
+        metrics = build_metric_records(
+            group_rows,
+            sample_policy="comparison_specific_common_dates",
+            common_sample_status_value=status,
         )
-        common_anchor_coverage = len(common_dates) / len(anchor_dates)
-        if common_anchor_coverage < COMMON_SAMPLE_MIN_ANCHOR_COVERAGE:
-            tail_status = "common_sample_unstable"
-        else:
-            tail_status = common_sample_status(common_dates)
-        status_by_tail[(target_family, tail_side, tail_level)] = tail_status
-        for row in pending_rows:
-            row["common_rows"] = len(common_dates)
-            row["common_anchor_coverage"] = common_anchor_coverage
-            row["common_sample_status"] = tail_status
-            evictions.append(row)
-        for key in retained_keys:
-            date_map = grouped[key]
-            primary_forecasts.extend(
-                {
-                    **date_map[forecast_date],
-                    "comparison_refit_frequency": comparison_refit_frequency,
-                }
-                for forecast_date in common_dates
+        # FZ0 has its own all-member common sample; never average unequal ES subsets.
+        fz_dates = sorted(
+            set.intersection(
+                *(
+                    {
+                        day
+                        for day, row in grouped[key].items()
+                        if forecast_eligible(row, score="fz0")
+                    }
+                    for key in keys
+                )
             )
-
-    primary_metrics = build_metric_records(
-        primary_forecasts,
-        sample_policy="primary_common_sample",
-        common_sample_status_value=_combined_common_sample_status(status_by_tail),
-    )
-    loss_matrix = build_loss_matrix_records(primary_forecasts, suite=suite)
+        )
+        fz_metrics = {
+            row["model_name"]: row
+            for row in build_metric_records([grouped[key][day] for key in keys for day in fz_dates])
+        }
+        for metric in metrics:
+            fz_metric = fz_metrics.get(metric["model_name"], {})
+            metric["mean_fz_loss"] = fz_metric.get("mean_fz_loss")
+            metric["fz0_rows"] = len(fz_dates)
+        primary_metrics.extend(metrics)
+        group_loss = build_loss_matrix_records(group_rows, suite=suite)
+        for row in group_loss:
+            if str(row["forecast_date"]) not in fz_dates:
+                row["fz_loss"] = None
+        loss_matrix.extend(group_loss)
+        dm.extend(
+            build_block_bootstrap_dm_records(
+                group_loss,
+                suite=suite,
+                anchor_model=anchor_model,
+                anchor_information_set=information,
+            )
+        )
     return {
         "primary_forecasts": primary_forecasts,
         "primary_metrics": primary_metrics,
         "per_model_metrics": per_model_metrics,
         "model_eviction": evictions,
         "loss_matrix": loss_matrix,
-        "dm_inference": build_block_bootstrap_dm_records(
-            loss_matrix,
-            suite=suite,
-            anchor_model=anchor_model,
-            anchor_information_set=anchor_information_set,
-        ),
+        "dm_inference": dm,
         "murphy": build_murphy_records(primary_forecasts, suite=suite),
         "stress_windows": build_stress_window_records(primary_forecasts, suite=suite),
-        "common_sample_status": _combined_common_sample_status(status_by_tail),
+        "common_sample_status": _combined_common_sample_status(statuses),
     }
 
 
@@ -180,15 +192,18 @@ def build_loss_matrix_records(
         tail_level = _required_float(row["tail_level"])
         loss = _required_float(row["realized_loss"])
         var_forecast = _required_float(row["var_forecast"])
-        es_forecast = _required_float(row["es_forecast"])
+        es_forecast = _optional_float(row.get("es_forecast"))
         q_loss = quantile_loss(loss, var_forecast, tail_level)
-        realized_fz_loss = fz_loss(loss, var_forecast, es_forecast, tail_level)
-        if not math.isfinite(realized_fz_loss):
-            continue
+        realized_fz_loss = (
+            fz_loss(loss, var_forecast, es_forecast, tail_level)
+            if forecast_eligible(row, score="fz0")
+            else None
+        )
         records.append(
             {
                 "suite": suite,
                 "forecast_date": row["forecast_date"],
+                "target_session_index": row.get("target_session_index"),
                 "target_family": row.get("target_family") or "full_gap_settle_to_open",
                 "tail_side": row.get("tail_side") or PRIMARY_TAIL_SIDE,
                 "model_name": row["model_name"],
@@ -255,7 +270,12 @@ def build_block_bootstrap_dm_records(
             if candidate_key == anchor_key:
                 continue
             candidate_rows = grouped[candidate_key]
-            dates = sorted(set(anchor_rows).intersection(candidate_rows))
+            dates = sorted(
+                day
+                for day in set(anchor_rows).intersection(candidate_rows)
+                if _optional_float(anchor_rows[day].get("fz_loss")) is not None
+                and _optional_float(candidate_rows[day].get("fz_loss")) is not None
+            )
             diffs = np.array(
                 [
                     _required_float(candidate_rows[forecast_date]["fz_loss"])
@@ -280,12 +300,15 @@ def build_block_bootstrap_dm_records(
                     reps=reps,
                     block_length=int(block_length),
                     rng=rng,
+                    session_indices=[anchor_rows[day].get("target_session_index") for day in dates],
                 )
                 if inference_status == "ok_block_bootstrap_dm"
                 and mean_diff is not None
                 and block_length is not None
                 else None
             )
+            if inference_status == "ok_block_bootstrap_dm" and pvalue is None:
+                inference_status = "unavailable_bootstrap_time_axis_or_sample"
             records.append(
                 {
                     "suite": suite,
@@ -308,6 +331,7 @@ def build_block_bootstrap_dm_records(
                     "bootstrap_reps": reps,
                     "bootstrap_seed": seed,
                     "block_length": block_length,
+                    "bootstrap_time_axis": "target_session_grid_with_missing_mask",
                     "method_note": PIPELINE_CONFIG.evaluation_policy.dm_method
                     if inference_status == "ok_block_bootstrap_dm"
                     else None,
@@ -418,11 +442,7 @@ def build_stress_window_records(
 
 
 def _valid_forecast_rows(forecasts: list[dict[str, object]]) -> list[dict[str, object]]:
-    return [
-        row
-        for row in forecasts
-        if row.get("fit_status") == "ok" and row.get("is_valid_forecast") is True
-    ]
+    return valid_forecast_rows(forecasts)
 
 
 def _forecast_key(row: Mapping[str, object]) -> tuple[str, str, str, float, str, str]:
@@ -441,7 +461,11 @@ def _group_forecasts_by_key(
 ) -> dict[tuple[str, str, str, float, str, str], dict[str, dict[str, object]]]:
     grouped: dict[tuple[str, str, str, float, str, str], dict[str, dict[str, object]]] = {}
     for row in forecasts:
-        grouped.setdefault(_forecast_key(row), {})[str(row["forecast_date"])] = row
+        date_rows = grouped.setdefault(_forecast_key(row), {})
+        day = str(row["forecast_date"])
+        if day in date_rows:
+            raise ValueError(f"Duplicate forecast for {_forecast_key(row)} on {day}")
+        date_rows[day] = row
     return grouped
 
 
@@ -546,24 +570,16 @@ def _moving_block_one_sided_pvalue(
     reps: int,
     block_length: int,
     rng: np.random.Generator,
+    session_indices=None,
 ) -> float | None:
-    if observed_mean is None or values.size < 2:
-        return None
-    centered = values - float(np.mean(values))
-    n = int(centered.size)
-    starts = np.arange(n)
-    count = 0
-    for _ in range(reps):
-        sample: list[float] = []
-        while len(sample) < n:
-            start = int(rng.choice(starts))
-            for offset in range(block_length):
-                sample.append(float(centered[(start + offset) % n]))
-                if len(sample) == n:
-                    break
-        if float(np.mean(np.array(sample, dtype=float))) <= observed_mean:
-            count += 1
-    return float((count + 1) / (reps + 1))
+    return _session_block_pvalue(
+        values,
+        observed_mean=observed_mean,
+        reps=reps,
+        block_length=block_length,
+        rng=rng,
+        session_indices=session_indices,
+    )
 
 
 def _moving_block_greater_pvalue(
@@ -610,28 +626,10 @@ def kupiec_pof_test(*, breaches: np.ndarray, expected_probability: float) -> dic
     }
 
 
-def christoffersen_independence_test(*, breaches: np.ndarray) -> dict[str, object]:
-    values = [bool(value) for value in breaches.tolist()]
-    if len(values) < 2:
-        return {"status": "unavailable_insufficient_oos", "lr_stat": None, "pvalue": None}
-    n00 = n01 = n10 = n11 = 0
-    for previous, current in zip(values[:-1], values[1:], strict=True):
-        if not previous and not current:
-            n00 += 1
-        elif not previous and current:
-            n01 += 1
-        elif previous and not current:
-            n10 += 1
-        else:
-            n11 += 1
-    unrestricted = _bernoulli_log_likelihood(n01, n00) + _bernoulli_log_likelihood(n11, n10)
-    restricted = _bernoulli_log_likelihood(n01 + n11, n00 + n10)
-    lr_stat = -2.0 * (restricted - unrestricted)
-    return {
-        "status": "ok",
-        "lr_stat": float(lr_stat),
-        "pvalue": float(1.0 - stats.chi2.cdf(lr_stat, 1)),
-    }
+def christoffersen_independence_test(
+    *, breaches: np.ndarray, session_indices=None
+) -> dict[str, object]:
+    return _session_independence_test(breaches=breaches, session_indices=session_indices)
 
 
 def _bernoulli_log_likelihood(successes: int, failures: int) -> float:

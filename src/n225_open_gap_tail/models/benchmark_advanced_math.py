@@ -353,8 +353,6 @@ def _advanced_pot_gpd_standardized_tail(
         if math.isfinite(loc_hat) and abs(loc_hat) > 0.25 * scale
         else "ok"
     )
-    if shape >= 1.0:
-        raise PipelineRunError(f"GAS-POT shape >= 1 has infinite ES: {shape}")
     exceedance_probability = excesses.size / values.size
     target_tail_probability = max(1.0 - tail_level, 1e-12)
     ratio = max(exceedance_probability / target_tail_probability, 1.0)
@@ -362,10 +360,11 @@ def _advanced_pot_gpd_standardized_tail(
         var_z = threshold + scale * math.log(ratio)
     else:
         var_z = threshold + scale * (ratio**shape - 1.0) / shape
-    es_z = var_z + (scale + shape * (var_z - threshold)) / (1.0 - shape)
+    es_z = var_z + (scale + shape * (var_z - threshold)) / (1.0 - shape) if shape < 1.0 else None
     return {
         "standardized_var": float(var_z),
-        "standardized_es": float(max(var_z, es_z)),
+        "standardized_es": es_z,
+        "es_failure_reason": "unavailable_gpd_es_shape_ge_one" if shape >= 1.0 else None,
         "threshold_quantile": threshold_quantile,
         "threshold_value": threshold,
         "evt_exceedance_count": int(excesses.size),

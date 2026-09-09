@@ -42,7 +42,7 @@ UNIBM_EVI_SLIDING_BLOCKS = True
 
 
 def resolve_run_dir(settings: Settings, run_id: str) -> Path:
-    runs_dir = settings.reports_dir / "runs"
+    runs_dir = settings.artifacts_dir
     if run_id:
         run_dir = runs_dir / run_id
     else:
@@ -167,10 +167,10 @@ def _forecast_model_sequence(
                 )
             realized_loss = _required_float(row["realized_loss"])
             var_forecast = _required_float(forecast["var_forecast"])
-            es_forecast = _required_float(forecast["es_forecast"])
+            es_forecast = _optional_float(forecast["es_forecast"])
             valid, invalid_reason = validate_forecast_values(
                 var_forecast,
-                es_forecast,
+                es_forecast if es_forecast is not None else math.nan,
             )
             forecasts.append(
                 {
@@ -197,6 +197,7 @@ def _forecast_model_sequence(
                     "train_n": int(train.size),
                     "fit_status": "ok" if valid else "invalid_forecast",
                     "failure_reason": invalid_reason,
+                    "es_failure_reason": forecast.get("es_failure_reason"),
                     "runtime_seconds": None,
                 }
             )
@@ -214,6 +215,7 @@ def _forecast_model_sequence(
                     "train_n": int(train.size),
                     "optimizer_status": forecast.get("optimizer_status"),
                     "convergence_code": forecast.get("convergence_code"),
+                    "es_failure_reason": forecast.get("es_failure_reason"),
                     "candidate_feature_hash": stable_hash([]),
                     "active_feature_hash": stable_hash([]),
                     "dropped_features_json": "[]",
@@ -387,19 +389,23 @@ def _arch_forecast(  # pragma: no cover - numeric optimizer exercised in real Be
             threshold_quantile=EVT_THRESHOLD_QUANTILE
             if evt_threshold_quantile is None
             else float(evt_threshold_quantile),
-            require_finite_gpd_es=True,
+            preserve_var_without_es=True,
         )
         var_forecast = -mean_return_forecast + scale_forecast * _required_float(
             evt_tail["standardized_var"]
         )
-        es_forecast = -mean_return_forecast + scale_forecast * _required_float(
-            evt_tail["standardized_es"]
+        standardized_es = _optional_float(evt_tail["standardized_es"])
+        es_forecast = (
+            -mean_return_forecast + scale_forecast * standardized_es
+            if standardized_es is not None
+            else None
         )
     else:
         evt_tail = {}
     return {
         "var_forecast": float(var_forecast),
-        "es_forecast": float(max(es_forecast, var_forecast)),
+        "es_forecast": es_forecast,
+        "es_failure_reason": evt_tail.get("evt_es_failure_reason"),
         "es_companion_type": "analytical_student_t_es"
         if model_name != "gjr_garch_evt"
         else str(evt_tail.get("tail_method", "pot_gpd_filtered_es")),
@@ -477,7 +483,12 @@ def _pot_gpd_standardized_tail(
     evt_variant: str = "plain_mle",
     shape_cap: tuple[float, float] | None = None,
     shape_shrinkage_k: float | None = None,
+    unibm_anchor: dict[str, object] | None = None,
+    preserve_var_without_es: bool = False,
 ) -> dict[str, object]:
+    # The new experiment retains partial forecasts; legacy callers keep their policy.
+    if preserve_var_without_es and require_finite_gpd_es:
+        raise ValueError("Cannot both retain partial VaR and require finite GPD ES")
     values = standardized_losses[np.isfinite(standardized_losses)]
     min_standardized_losses = (
         DEFAULT_MIN_TRAIN_ROWS if min_standardized_losses is None else int(min_standardized_losses)
@@ -522,6 +533,7 @@ def _pot_gpd_standardized_tail(
             evt_variant=evt_variant,
             shape_cap=shape_cap,
             shape_shrinkage_k=shape_shrinkage_k,
+            unibm_anchor=unibm_anchor,
         )
         shape_method = str(shape["shape_method"])
         cap_policy = str(shape["cap_policy"])
@@ -542,6 +554,8 @@ def _pot_gpd_standardized_tail(
             var_z = threshold + scale * (ratio**shape - 1.0) / shape
         if shape < 1.0:
             es_z = var_z + (scale + shape * (var_z - threshold)) / (1.0 - shape)
+        elif preserve_var_without_es:
+            es_z = math.nan
         elif require_finite_gpd_es:
             raise PipelineRunError(f"EVT calibration shape >= 1 has infinite ES: {shape}")
         else:
@@ -563,10 +577,18 @@ def _pot_gpd_standardized_tail(
         evt_variant=evt_variant,
         shape_cap=shape_cap,
         shape_shrinkage_k=shape_shrinkage_k,
+        unibm_anchor=unibm_anchor,
     )
+    returned_es = es_z if preserve_var_without_es else max(var_z, es_z)
+    es_finite = math.isfinite(float(returned_es))
     return {
         "standardized_var": float(var_z),
-        "standardized_es": float(max(var_z, es_z)),
+        "standardized_es": float(returned_es) if es_finite or not preserve_var_without_es else None,
+        "evt_es_failure_reason": None
+        if es_finite
+        else "unavailable_gpd_es_shape_ge_one"
+        if shape is not None and shape >= 1
+        else "unavailable_nonfinite_gpd_es",
         "threshold_quantile": threshold_quantile,
         "threshold_value": threshold,
         "evt_exceedance_count": int(excesses.size),
@@ -599,7 +621,7 @@ def _pot_gpd_standardized_tail(
             evi.get("plateau_block_counts"), sort_keys=True
         ),
         "evt_scale_refit_status": scale_refit_status,
-        "evt_es_finite": bool(math.isfinite(float(max(var_z, es_z)))),
+        "evt_es_finite": es_finite,
         "evt_evi_diagnostics_json": json.dumps(evi, sort_keys=True, default=str),
         "evt_ei_diagnostics_json": json.dumps(ei, sort_keys=True, default=str),
         "evt_cap_sensitivity_json": json.dumps(cap_sensitivity, sort_keys=True),
@@ -624,6 +646,7 @@ def _select_evt_shape_and_scale(
     evt_variant: str,
     shape_cap: tuple[float, float] | None,
     shape_shrinkage_k: float | None,
+    unibm_anchor: dict[str, object] | None = None,
 ) -> tuple[dict[str, object], dict[str, object]]:
     variant = evt_variant.strip().lower()
     evi = _unavailable_evi_anchor("not_used")
@@ -644,7 +667,7 @@ def _select_evt_shape_and_scale(
             {"scale_final": float(scale_mle), "scale_refit_status": "original_fixed_loc_mle"},
         )
     if variant == "unibm":
-        evi = _estimate_unibm_evi_anchor(evi_sample)
+        evi = _estimate_unibm_evi_anchor(evi_sample) if unibm_anchor is None else unibm_anchor
         shape = _optional_float(evi.get("xi_evi_anchor"))
         if evi.get("status") != "ok" or shape is None:
             raise PipelineRunError(f"unavailable_evt_unibm: {evi.get('status')}")
@@ -1129,6 +1152,7 @@ def _evt_threshold_sensitivity(
     evt_variant: str,
     shape_cap: tuple[float, float] | None,
     shape_shrinkage_k: float | None,
+    unibm_anchor: dict[str, object] | None = None,
 ) -> list[dict[str, object]]:
     finite = values[np.isfinite(values)]
     rows: list[dict[str, object]] = []
@@ -1179,6 +1203,7 @@ def _evt_threshold_sensitivity(
                 evt_variant=evt_variant,
                 shape_cap=shape_cap,
                 shape_shrinkage_k=shape_shrinkage_k,
+                unibm_anchor=unibm_anchor,
             )
             shape = _required_float(selected_shape["shape_final"])
             scale = _required_float(selected_scale["scale_final"])

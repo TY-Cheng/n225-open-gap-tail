@@ -60,8 +60,8 @@ class AuditExportError(RuntimeError):
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
-    reports_dir = _resolve_reports_dir()
-    run_dir = _resolve_run_dir(reports_dir=reports_dir, run_id=args.run_id)
+    artifacts_dir = _resolve_artifacts_dir()
+    run_dir = _resolve_run_dir(artifacts_dir=artifacts_dir, run_id=args.run_id)
     run_id = run_dir.name
     output_dir = args.output_dir or (ROOT / "docs" / "tables" / run_id)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -122,7 +122,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--run-id",
         default="latest",
-        help="Run id under reports/runs, or 'latest' for the latest completed full run.",
+        help="Run id under artifacts, or 'latest' for the latest completed full run.",
     )
     parser.add_argument(
         "--output-dir",
@@ -133,16 +133,16 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _resolve_reports_dir() -> Path:
+def _resolve_artifacts_dir() -> Path:
     settings = load_settings()
-    reports_dir = settings.reports_dir
-    if not reports_dir.is_absolute():
-        reports_dir = ROOT / reports_dir
-    return reports_dir.resolve(strict=False)
+    artifacts_dir = settings.artifacts_dir
+    if not artifacts_dir.is_absolute():
+        artifacts_dir = ROOT / artifacts_dir
+    return artifacts_dir.resolve(strict=False)
 
 
-def _resolve_run_dir(*, reports_dir: Path, run_id: str) -> Path:
-    runs_dir = reports_dir / "runs"
+def _resolve_run_dir(*, artifacts_dir: Path, run_id: str) -> Path:
+    runs_dir = artifacts_dir
     if run_id != "latest":
         run_dir = runs_dir / run_id
         if not (run_dir / "manifest.json").exists():

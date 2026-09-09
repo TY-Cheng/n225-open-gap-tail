@@ -11,26 +11,29 @@ from n225_open_gap_tail.config.runtime import (
     RESULT_MATRIX_LOSS_FAMILIES,
     _required_float,
 )
-from n225_open_gap_tail.metrics.stat_utils import fz_loss
+from n225_open_gap_tail.metrics.stat_utils import forecast_eligible
 from n225_open_gap_tail.panel.build import registered_ml_tail_information_sets
 
 
 def _result_matrix_tail_model_groups(
-    forecasts: list[dict[str, object]], *, loss_family: str
+    forecasts: list[dict[str, object]],
+    *,
+    loss_family: str,
+    model_names: tuple[str, ...] = ML_TAIL_MODEL_NAMES,
 ) -> list[dict[str, object]]:
     grouped: dict[tuple[str, str, float, str], dict[str, dict[str, dict[str, object]]]] = {}
     for row in forecasts:
-        if not _result_row_eligible(row, loss_family):
-            continue
         key = _result_matrix_group_key(row)
         model_name = str(row["model_name"])
-        if model_name not in ML_TAIL_MODEL_NAMES:
+        if model_name not in model_names:
             continue
-        grouped.setdefault(key, {}).setdefault(model_name, {})[str(row["forecast_date"])] = row
+        date_rows = grouped.setdefault(key, {}).setdefault(model_name, {})
+        if _result_row_eligible(row, loss_family):
+            date_rows[str(row["forecast_date"])] = row
     result: list[dict[str, object]] = []
     for key, entity_rows in sorted(grouped.items()):
         missing_entities = [
-            model_name for model_name in ML_TAIL_MODEL_NAMES if model_name not in entity_rows
+            model_name for model_name in model_names if not entity_rows.get(model_name)
         ]
         for model_name in missing_entities:
             entity_rows[model_name] = {}
@@ -38,11 +41,11 @@ def _result_matrix_tail_model_groups(
             common_dates = []
         else:
             common_dates = sorted(
-                set.intersection(*(set(entity_rows[model]) for model in ML_TAIL_MODEL_NAMES))
+                set.intersection(*(set(entity_rows[model]) for model in model_names))
             )
         payload = _result_matrix_group_payload(
             key=key,
-            entities=list(ML_TAIL_MODEL_NAMES),
+            entities=list(model_names),
             entity_field="model_name",
             entity_rows=entity_rows,
             common_dates=common_dates,
@@ -54,41 +57,45 @@ def _result_matrix_tail_model_groups(
 
 
 def _result_matrix_information_increment_groups(
-    forecasts: list[dict[str, object]], *, loss_family: str
+    forecasts: list[dict[str, object]],
+    *,
+    loss_family: str,
+    model_names: tuple[str, ...] = ML_TAIL_MODEL_NAMES,
 ) -> list[dict[str, object]]:
     information_sets = registered_ml_tail_information_sets()
     grouped: dict[
         tuple[str, str, str, float, str, str], dict[str, dict[str, dict[str, object]]]
     ] = {}
     for row in forecasts:
-        if not _result_row_eligible(row, loss_family):
-            continue
         model_name = str(row["model_name"])
-        if model_name not in ML_TAIL_MODEL_NAMES:
+        if model_name not in model_names:
             continue
         target_family, tail_side, _, tail_level, refit_frequency = _result_matrix_group_key(row)
         key = (target_family, tail_side, model_name, tail_level, refit_frequency, loss_family)
         information_set = str(row.get("information_set") or "target_history_only")
-        grouped.setdefault(key, {}).setdefault(information_set, {})[str(row["forecast_date"])] = row
+        date_rows = grouped.setdefault(key, {}).setdefault(information_set, {})
+        if _result_row_eligible(row, loss_family):
+            date_rows[str(row["forecast_date"])] = row
     result: list[dict[str, object]] = []
     for key, entity_rows in sorted(grouped.items()):
-        available_sets = [info for info in information_sets if info in entity_rows]
-        if len(available_sets) < 2:
-            continue
+        missing_sets = [info for info in information_sets if not entity_rows.get(info)]
+        for info in information_sets:
+            entity_rows.setdefault(info, {})
         common_dates = sorted(
-            set.intersection(*(set(entity_rows[info]) for info in available_sets))
+            set.intersection(*(set(entity_rows[info]) for info in information_sets))
         )
         target_family, tail_side, model_name, tail_level, refit_frequency, _ = key
         result.append(
             {
                 **_result_matrix_group_payload(
                     key=(target_family, tail_side, model_name, tail_level, refit_frequency),
-                    entities=available_sets,
+                    entities=list(information_sets),
                     entity_field="information_set",
                     entity_rows=entity_rows,
                     common_dates=common_dates,
                 ),
                 "fixed_model_name": model_name,
+                "missing_entities": missing_sets,
             }
         )
     return result
@@ -128,22 +135,6 @@ def _result_matrix_group_payload(
 
 
 def _result_row_eligible(row: Mapping[str, object], loss_family: str) -> bool:
-    if row.get("fit_status") != "ok" or row.get("is_valid_forecast") is not True:
-        return False
-    try:
-        _required_float(row["realized_loss"])
-        loss = _required_float(row["realized_loss"])
-        var_forecast = _required_float(row["var_forecast"])
-        if loss_family == "var_es_fz_loss":
-            es_forecast = _required_float(row["es_forecast"])
-            realized_fz_loss = fz_loss(
-                loss,
-                var_forecast,
-                es_forecast,
-                _required_float(row["tail_level"]),
-            )
-            if not math.isfinite(realized_fz_loss):
-                return False
-    except (KeyError, TypeError, ValueError, PipelineRunError):
-        return False
-    return loss_family in RESULT_MATRIX_LOSS_FAMILIES
+    return loss_family in RESULT_MATRIX_LOSS_FAMILIES and forecast_eligible(
+        row, score="fz0" if loss_family == "var_es_fz_loss" else "var"
+    )

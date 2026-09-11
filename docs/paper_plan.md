@@ -20,8 +20,9 @@ The author accepted Q1--Q13 below as the P0 implementation basis and subsequentl
 accepted Q14, revised Q15, revised Q16, Q19--Q25, Q26a, and Q27--Q35. Q17 is declined. Q18's
 e-backtesting scope and primary betting method are settled by Q19--Q20; the
 monitoring protocol is settled by Q23, Q26a and Q28--Q30, with implementation
-verification still pending. Q21 excludes XGBoost; Q22 fixes common LightGBM
-hyperparameters, with its sensitivity component deferred this round by Q26b.
+verification still pending. Q21 excludes XGBoost; Q22 originally fixed common
+LightGBM hyperparameters. Q40 below reopens bounded, objective-aware selection;
+it does not authorize the extra sensitivity matrix deferred by Q26b.
 Q23 adopts a 500-observation betting history; Q26a adds W=250 sensitivity on
 all available candidates. The author wants broad coverage
 of objectives that genuinely fit the central/spread/tail architecture. Q24
@@ -88,6 +89,378 @@ This change does not authorize retraining, HPO or manuscript revision, and no
 post-withdrawal OOS performance or gate result is available yet. Verification
 uses the existing body-fitting, forecast and artifact/replay interfaces, not
 statistical gate success as a software-test condition.
+
+**2026-09-10 Q40 checkpoint: bounded LightGBM selection accepted for design.**
+The author accepts replacing the fixed-common-parameter restriction with a
+limited, objective-aware search within the existing nine-body/three-tail plus
+direct-quantile roster (28 specifications). Different objectives may select
+different settings; tree complexity, regularization and learning-rate/iteration
+choices are the priorities. Do not add XGBoost, RF or DART families. Retain shared
+body fits, OOF residuals and selected settings across each matched empirical,
+POT-MLE and UniBM comparison rather than tuning a separate body for each tail.
+
+Use only preceding training history for parameter selection. Chronological
+validation and early stopping are accepted, and each concrete fitting/selection
+case must have a time limit. Early stopping on validation improvement is not
+itself a wall-clock limit. The selection metric, temporal validation allocation,
+retuning schedule, short-history treatment, search bounds, budget unit, numerical
+time limit and timeout handling were left for the next grill; Q41--Q43 below
+subsequently settle the component metrics, sharing constraint and local temporal
+split/refit design. Q45--Q46 below settle the joint criterion and round-selection
+mechanism; Q47--Q48 and Q50--Q51 subsequently settle candidate scope, joint
+availability and bounded execution/failure handling.
+Historical OOF choices must remain honest at their own origins; a later choice
+cannot be applied retrospectively to earlier OOF predictions.
+
+Decimal training, matched-tail controls and native-VaR gates followed by
+question-specific common-date FZ0 remain unchanged. Q39's unit comparison stays
+declined. This design acceptance neither promises gate success nor makes the
+already inspected OOS sample an untouched holdout. No tuning implementation,
+training run, additional LightGBM sensitivity matrix or manuscript revision has
+been started or authorized by this checkpoint; implementation awaits completion
+and confirmation of the design.
+
+**2026-09-10 Q41--Q43 checkpoint: component losses, shared parameters and
+chronological validation accepted; Q44 budget not yet settled.**
+
+- Q41: select parameters using the component's own validation task, not the final
+  tail estimator's FZ0. Use MSE for the mean center; the corresponding pinball
+  loss for median/IQR/direct quantiles; fixed-constant Huber/Fair losses for their
+  centers; log-target MSE for log-absolute-residual spread; absolute-residual MAE
+  for MAD; and a common residual-square MSE for all four RMS objectives. Compare
+  candidate settings within a component, not numeric loss levels across different
+  component tasks. Retain the later native-gate/common-date-FZ0 protocol.
+- Q42: the author rejects independent parameter selection by information set or
+  tail side. A--D and both sides must share hyperparameters for the corresponding
+  component. Q40 still permits objective/component-specific settings; shared
+  hyperparameters do not mean a single fitted model across different feature
+  sets or targets. The joint validation aggregation and common boosting-round
+  selection mechanism remain to be agreed. Do not silently keep eight separate
+  early-stopping round counts under a claim of shared settings.
+- Q43: retain monthly refits and history-only choices at each historical OOF
+  origin. Use the last 126 available target observations for chronological
+  validation while retaining at least 250 earlier training observations. After
+  choosing settings/rounds, refit on the whole eligible preceding prefix. For
+  fewer than 376 observations, retain the existing fixed settings and 160 rounds
+  rather than discarding previously usable OOF dates. These window sizes are a
+  predeclared lightweight design, not an empirically established optimum. Applying
+  this local rule to joint selection, including unequal history/availability
+  across the eight scenarios, remains subject to Q42's sharing constraint.
+- Q44: the author requests an explanation of the existing 69--77 fit count; this
+  is not acceptance of a particular budget unit or numerical time cap. The count
+  concerns one information-set/side/monthly-refit case before tuning, excluding
+  tail calibration. It must not be presented as the new shared-selection cost.
+
+Only the decision document is updated. No tuning implementation, training or
+manuscript revision is authorized by these accepted design answers alone.
+
+**2026-09-10 Q45--Q46 checkpoint: equal-weight joint selection and common rounds
+accepted.**
+
+- Q45: for a given component and historical cutoff, evaluate each candidate
+  setting in all eight A--D-by-tail scenarios. Select one common setting using
+  the equally weighted mean of their Q41 validation losses. Do not average eight
+  independently optimized parameter vectors. Preserve per-scenario validation
+  results; minimizing the joint mean does not guarantee improvement in the worst
+  scenario or passage of the downstream gates.
+- Q46: include a small finite set of common boosting-round values in selection.
+  All eight scenarios use the same selected `n_estimators` cap when refitted on
+  their eligible full histories. Actual fitted tree counts may be lower if
+  LightGBM cannot continue splitting; shared settings do not imply identical
+  fitted models. This refines Q43's iteration selection: do not use
+  eight independently early-stopped round counts and call them shared settings.
+  No cross-model synchronized early-stopping coordinator is required. The
+  chronological split, short-history treatment and full-history refit principles
+  remain unchanged; wall-clock limits are still required.
+
+Exact candidates, partial/missing joint-validation handling and timeout/budget
+rules were left open here; Q47--Q49 below subsequently settle the candidate pool,
+validation-date rule and single-fit cap. No selection implementation, pilot or
+full training run is authorized or executed by this checkpoint.
+
+**2026-09-10 Q47--Q49 checkpoint: candidate pool and common validation accepted;
+single-fit limit revised to 300 seconds.**
+
+Q47 accepts six fixed non-round configurations, crossed with common
+`n_estimators` caps of 80, 160 and 320 (18 candidate combinations):
+
+| Configuration | num_leaves | min_child_samples | learning_rate | reg_alpha | reg_lambda |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Current | 20 | 25 | 0.025 | 0.1 | 0.5 |
+| No L1 | 20 | 25 | 0.025 | 0 | 0.5 |
+| No L1/L2 | 20 | 25 | 0.025 | 0 | 0 |
+| Lower capacity | 7 | 50 | 0.025 | 0 | 0.5 |
+| Higher capacity | 31 | 25 | 0.025 | 0 | 0.5 |
+| Faster learning | 20 | 25 | 0.05 | 0 | 0.5 |
+
+Other settings, including accepted objective constants, remain unchanged.
+Each component may select a different candidate, but its A--D/both-tail scenarios
+share the selected setting. This is a coarse bounded search, not a literature-
+certified optimum or a design identifying each parameter's independent effect.
+Do not automatically expand the pool after seeing results. Fit to the largest
+round cap once per non-round configuration/scenario and score the requested
+iteration prefixes, using LightGBM's existing prediction interface.
+
+Q48 accepts the last 126 common eligible validation dates for each component
+and historical cutoff, fixed independently of the candidate setting. Each
+scenario must retain at least 250 earlier training observations. Training and
+final refits retain each scenario's own full eligible preceding history; do not
+intersect their entire training histories. If common validation is unavailable,
+skip joint selection and use the existing fixed settings/160 rounds for all
+eight scenarios, recording the reason. Native-gate sample policies do not change.
+
+Q49: the author sets the single-fit upper limit to 300 seconds instead of the
+proposed 15 seconds. The former proposed 120-second joint-selection limit would
+bind before this allowance, so the joint and pilot budgets require clarification.
+Do not infer acceptance of increased aggregate runtime or of all remaining Q49
+timeout/fallback proposals from this single-limit adjustment. No training or
+implementation is authorized by this checkpoint.
+
+**2026-09-10 Q50--Q51 checkpoint: aggregate budgets and failure handling accepted.**
+
+Q50 settles three wall-clock upper bounds, with the earliest applicable deadline
+binding:
+
+| Scope | Upper bound |
+| --- | ---: |
+| One LightGBM fit | 300 seconds |
+| Joint selection for one component and one historical cutoff across all eight scenarios | 30 minutes |
+| First bounded pilot, whole workflow | 60 minutes |
+
+These are resource ceilings, not runtime estimates or a promise that every
+candidate finishes. The joint-selection limit is not a limit for all components
+and OOF/final fits in an entire monthly refit. Full-experiment resource approval
+must follow measured pilot evidence; no full run starts automatically.
+
+Q51 accepts the following handling:
+
+- Rank only candidates with validation complete in all eight scenarios; never
+  replace the agreed eight-way mean with a seven-way mean after a failure.
+- On search timeout, use the best fully evaluated candidate if any and mark the
+  search incomplete. Do not claim comparison of the entire 18-combination pool.
+- If no candidate is complete, use the existing common fixed settings and 160
+  rounds. If fitting still fails, retain unavailable output rather than filling
+  predictions. The pilot's global deadline forbids starting fallback work after
+  expiry.
+- Do not automatically retry, extend deadlines or expand candidates. Report
+  unexpected code exceptions separately rather than hiding them with fallback.
+
+The bounded-tuning methodological design is now settled. Implementation and the
+concrete pilot scope await the author's closing confirmation; no tuning code,
+training run, manuscript revision, commit or push has been performed in this
+design round.
+
+**2026-09-10 Q52 closing confirmation: implementation and execution authorized.**
+
+The author accepted implementation/testing and the all-eight-scenario,
+all-28-spec pilot on 2026-05-01, then explicitly extended the scope through the
+full LightGBM central/spread/tail experiment, reevaluation, GREM and a report.
+This supersedes the earlier requirement to stop after the pilot for full-run
+authorization. Measure the bounded pilot first; retain the per-fit and
+per-selection limits in the full run. Preserve old artifacts. No manuscript
+revision, commit or push is included in this authorization.
+
+**2026-09-10 residual-construction design reopened; implementation pending.**
+
+The author retains the outer monthly expanding walk-forward OOS evaluation,
+defers changes to missing-value handling, and chooses random inner
+cross-validation for the next residual-construction design. This changes the
+direction of the earlier chronological-OOF design, not the provenance or meaning
+of completed experiment artifacts. All inner data must remain before the outer
+forecast cutoff. Fold-level versus pooled tail calibration, isolation of the
+held-out fold throughout center/spread target construction and fitting, and the
+associated tuning/refit policy remain to be settled in the grill. Do not treat
+this choice as authorization to replace only the splitter or launch a new run.
+
+**2026-09-10 Q53--Q54 checkpoint: pooled calibration and full body-training
+isolation accepted; feature and tuning boundaries pending.**
+
+Q53 accepts constructing one held-out standardized residual per eligible date
+across the random folds, restoring original date positions and fitting the tail
+once within each body/information-set/tail/monthly-refit case. Do not pool across
+information sets or tail sides, concatenate in shuffled fold order, or average
+fold-specific EVI estimates as a substitute for pooled calibration.
+
+Q54 accepts isolating the held-out fold throughout center/spread fitting and
+residual-target construction, including center cross-fitting within the training
+complement for residual-based spread learners. Median--IQR does not require
+residual-target stacking. This is a design requirement, not a claim that the
+current implementation provides it.
+
+Subsequent inspection identified two further dependency paths: precomputed
+lagged/rolling loss features can carry a held-out label into later training rows,
+and shared eight-scenario tuning can reuse that date's label from another
+scenario. The precise treatment of these paths and the local tuning policy
+remain open; do not silently narrow full isolation or remove historical features.
+No new model execution is authorized by this checkpoint.
+
+**2026-09-10 Q55 checkpoint: historical-feature dependence accepted; Q56 pending.**
+
+The author accepts retaining the existing point-in-time lagged/rolling history
+features under random inner cross-fitting, including the path by which a
+held-out historical loss appears in later inner-training features. This explicitly
+qualifies Q54: isolation of direct fitting labels and generated residual targets
+remains required, but complete exclusion of held-out losses from the fixed
+historical feature graph is not required. Do not remove these features or change
+missing-value handling as a consequence of the cross-fitting change.
+
+The outer monthly time boundary remains mandatory. The author's rationale is
+better use of training history; improved residual calibration, EVI estimation or
+OOS performance is an untested hypothesis, not an established consequence of
+outer train/test separation. Q55 does not authorize use of held-out losses as
+inner fitting or selection labels. Q56's fold-local tuning policy remains
+unanswered; fold construction, refitting and execution scope are not yet settled.
+
+**2026-09-10 Q56 clarification: K-fold tuning on the full outer training history.**
+
+The author specifies K-fold CV to tune LightGBM on the entire outer monthly
+training history D, followed by a full-D LightGBM refit. This replaces the
+proposed separate 126-date chronological tuning holdout inside each residual
+fold's training complement. Do not interpret this as acceptance of that earlier
+proposal or introduce nested per-residual-fold parameter searches by default.
+The existing component-specific, A--D/both-tail shared-parameter constraint
+remains unchanged.
+
+The description then obtains residuals after full-D fitting to estimate EVI.
+Taken literally, these are in-sample residuals, unlike Q53's held-out residual
+pool. The calibration residual source therefore needs explicit clarification
+before implementation. Even if selected-candidate CV predictions are retained,
+their hyperparameters have been selected using CV labels throughout D, so they
+must not be described as fully selection-isolated under the earlier Q54 wording.
+Outer monthly OOS separation remains required. No code change or run is
+authorized by this clarification.
+
+**2026-09-10 Q57 checkpoint: in-sample calibration explicitly selected.**
+
+The author explicitly chooses standardized in-sample residuals from the body
+refitted on the full outer monthly training history D as the EVT calibration
+sample, treating LightGBM plus EVT as one forecasting model. This supersedes
+Q53's held-out residual source and Q54's cross-fitting requirement for that
+calibration source; do not retain or add an OOF calibration branch by default.
+Q53's chronological ordering and separate body/information-set/tail calibration
+pools remain applicable. Historical OOF artifacts retain their original meaning.
+
+K-fold CV on D selects LightGBM settings; the final full-D body fit supplies
+in-sample standardized residuals for tail estimation and body predictions for
+the next outer test month. All fitting, selection and tail calibration remain
+inside the outer training boundary. This is an accepted empirical design, not
+evidence that in-sample residuals equal future prediction errors or improve
+coverage. Existing component-loss tuning, shared settings across A--D/both
+tails, the model roster and outer native-gate/common-date-FZ0 evaluation remain
+unchanged unless separately revised. The spread-training target construction,
+K-fold details and bounded execution plan still require clarification. No code
+change, training, manuscript revision, commit or push is authorized here.
+
+**2026-09-10 Q58--Q59 checkpoint: sequential in-sample body training and three-fold
+tuning accepted (fold count amended 2026-09-11).**
+
+Q58 accepts fitting the center on the available training subset, using its
+in-sample residuals as the log-absolute/MAD/RMS spread targets, then fitting the
+spread on that subset. In each CV fold, repeat this construction within that
+fold's training subset; validation residual targets use that fold center's
+predictions on validation dates, not precomputed full-D fitted residuals. This
+does not add nested parameter searches or an OOF EVT calibration branch.
+Median--IQR retains its direct quantile construction. Existing objective
+definitions, numerical floors, target-domain rules and smearing remain unchanged.
+For final tail calibration, the fitted full-D body standardizes D in sample.
+
+Q59 accepts three-fold random CV with seed 0, no loss-based stratification, no
+repeated CV and no seed/K sensitivity in this round. Share the date folds across
+A--D, both tail sides and candidate settings. For each component and candidate,
+aggregate the held-out per-date validation losses within each scenario, then
+take the equally weighted mean across the eight scenarios. Different components
+may select different settings; the scenarios share their component's selected
+settings. Retain the six parameter configurations and 80/160/320 round-prefix
+scoring. CV selects LightGBM settings using the existing component losses;
+native gates and common-date FZ0 evaluate the combined model on outer OOS dates.
+
+On 2026-09-11 the author changed Q59 from five to three folds. This also updates
+Q61's completeness and joint-search scope below; the numerical budgets and all
+other accepted settings remain unchanged. Implementation/pilot closing
+confirmation remains pending.
+
+Remaining decisions concern calibration sample/warm-up handling, completion and
+budget rules for the expanded CV selection, and the bounded execution scope.
+Implementation and execution still await closing confirmation.
+
+**2026-09-11 Q60--Q62 checkpoint: sample, bounded selection and pilot accepted.**
+
+Q60 retains the current source panel, outer minimum training size of 1000 and
+scheduled OOS window 2021-02-22 through 2026-05-22. Use the full-D in-sample
+standardized residual timeline without the former fitted OOF warm-up. Preserve
+actual nonfinite positions for UniBM; do not compact the timeline or relax
+existing finite-sample, exceedance or numerical requirements.
+
+Q61 requires complete scoring on the predetermined validation dates in all three
+folds and all eight scenarios before a candidate can be ranked. Do not drop
+failed dates/folds or average only successful cells. Retain the best complete
+candidate on an incomplete search, or the common fixed-settings/160-round
+fallback if none is complete; retain unavailable outputs if final fitting fails.
+Keep the 300-second single-fit ceiling and a 30-minute ceiling for the entire
+component's three-fold joint search, not 30 minutes per fold. Do not automatically
+retry, extend deadlines or expand the search; no fallback work may start after
+the whole-pilot deadline.
+
+Q62 accepts implementation and relevant tests followed by a new 2026-05-01,
+all-eight-scenario/all-28-spec bounded pilot with a 60-minute whole-process hard
+limit. Preserve old artifacts, use a separate artifacts directory and identify
+the new residual outputs as in-sample rather than OOF. Report completion,
+runtime, memory, fallback and unavailable outcomes before deciding the full run
+and subsequent reevaluation/GREM; manuscript changes remain out of scope.
+
+**2026-09-11 Q63 closing confirmation accepted.** Implement the three-fold
+random-CV/full-D in-sample design and relevant tests, then run the bounded pilot
+above with one worker. Report first; do not automatically launch a full run,
+reevaluation or GREM. Up to four independent month workers remain available for
+a later full run after its separate decision. No manuscript edits, commit or
+push are authorized by this checkpoint.
+
+**Q63 execution checkpoint (2026-09-11).** The three-fold/full-D in-sample
+workflow is implemented; 433 tests pass (95.31% coverage). The approved
+single-worker pilot completed in 3030.762 seconds, with 2376 native fits,
+no timeout or tuning fallback, 224 eligible VaRs and 216 eligible ES/FZ0 inputs.
+Eight RMS-L2/POT-MLE ES values are unavailable because fitted shape >= 1;
+four of 72 finite UniBM FGLS fits retain precision warnings. No parameter or
+candidate was changed to remove these flags. The missing direct source run
+was replaced by its original frozen panel plus the unchanged Q37 preprocessing;
+the field/sample checks and audit are in `.cache/reports/insample_pilot_20260911.md`.
+Outputs: `artifacts/body28_insample_pilot_20260911`. Full-run authorization
+remains a separate next decision; no full experiment or reevaluation followed.
+
+**2026-09-11 post-pilot parameter clarification.** The author fixes
+`max_depth=17` across all six LightGBM candidate configurations, for both shared
+body fitting and the direct-quantile route. Separate LightGBM sensitivity runs
+remain deferred. The existing 80/160/320-round comparison remains part of primary CV
+selection; no new fixed round count has been chosen. The retained May pilot used
+the previous unlimited-depth setting and is not a result for `max_depth=17`.
+MAD and IQR retain their existing normal-consistency scale conversions (multiply
+by 1.4826 and divide by 1.349, respectively); no scale definition is changed.
+
+**2026-09-11 round-cap revision accepted.** Replace the primary CV candidates
+80/160/320 with 79/139/199, retaining the six non-round configurations and
+`max_depth=17`. Each candidate/fold/scenario fits once up to 199 rounds, then
+scores prediction prefixes at 79, 139 and 199; do not fit separately per cap or
+add continuous early-stopping search. The existing fixed-settings/160-round
+fallback when no candidate completes is unchanged. Earlier pilot artifacts
+retain their original parameters; no new experiment is launched by this edit.
+
+**2026-09-11 LGBM--EVT upper shape bound accepted.** Both MLE and UniBM
+branches use `min(xi, 0.99)` for all bodies/information sets/tails. Refit GPD scale
+when changing the MLE shape; fit UniBM scale at its bounded shape. Compute VaR
+and ES from that final pair. Report only the final shape, without raw/used shape
+pairs or cap-hit flags. State the model constraint explicitly; it is not an
+unconstrained MLE or an unmodified UniBM slope. Retained UniBM uncertainty and
+precision diagnostics belong to the underlying regression, not the capped
+forecast estimator. External models, empirical/direct-quantile branches and old
+artifacts are unchanged. No additional ML sensitivity or new run is authorized.
+
+**2026-09-11 parallelism revision accepted.** LightGBM uses `num_threads=3`
+in the shared-body, legacy direct and registered sensitivity configurations.
+The primary `body-tuned` monthly scheduler defaults to two workers and allows
+one through three. Its bounded one-date pilot still requires explicit
+`--workers 1`. Other nested BLAS limits, fit/selection deadlines and statistical
+settings are unchanged. This supersedes the earlier four-worker full-run limit;
+it does not launch experiments or change external-model scheduling.
 
 **Q1 accepted, with the author's Q10 sample clarification; implemented for the
 frozen replay.** Fix common-date samples by comparison question, not
@@ -243,6 +616,21 @@ these additions diagnostic, not new admission gates. Joint calibration errors
 must not be attributed to ES alone when VaR can also be misspecified. Existing
 availability and common-sample coverage reports remain mandatory.
 
+The 2026-09-10 implementation adds native joint identification means (negative
+of Nolde and Ziegel, 2017, eq. 2.7 in upper-loss notation), with pointwise 95%
+basic circular-block-bootstrap intervals (999 draws, seed 225). Blocks retain
+internal missing positions on the observed native target-session span. These
+are descriptive average-calibration diagnostics, not a joint or conditional
+calibration test; finite-second-moment and dependence assumptions remain
+unverified, and forecast ties require care with the nominal breach moment.
+Joint Murphy curves use the S_v2 elementary family in Ziegel et al. (2017),
+Prop. 2.1, transformed from returns to upper losses. The fixed-roster sample is
+joint-eligible by comparison question, not restricted to positive ES or gate
+winners. A 101-quantile pooled common ES/loss grid, including endpoints, is a
+finite-grid sensitivity report, not uniform or population dominance evidence.
+Sources: https://arxiv.org/html/1608.05498v2 and https://arxiv.org/pdf/1705.04537.
+Full new-run diagnostic results remain pending until forecasts complete.
+
 **Q15 author revision accepted: update to current public UniBM, not a parity
 study.** Replace the copied estimator integration with the current public
 implementation. On 2026-09-09, local UniBM and remote default-branch HEAD both
@@ -368,7 +756,8 @@ training cost on which to base an hours estimate.
   consideration of compatible central/spread objectives. This supersedes the
   assistant's unaccepted proposal to add 24 XGBoost series; it is not a claim
   that XGBoost has no possible predictive value.
-- Q22 accepted, subsequently narrowed by Q26b: fixed common LightGBM
+- Q22 accepted, subsequently narrowed by Q26b; its no-search restriction is
+  superseded for the next design by Q40 above. Historical decision: fixed common LightGBM
   capacity/regularization settings for the primary controlled experiment, with
   no formal hyperparameter search and no LightGBM parameter sensitivity this
   round. The earlier lightweight-sensitivity proposal is deferred, not executed;
@@ -410,9 +799,9 @@ training cost on which to base an hours estimate.
   change training endpoints. Reuse existing machinery rather than introduce a
   separate caching framework. Direct quantile has a different ES companion and
   must not be described as sharing this OOF-tail pipeline.
-- If formal tuning is later adopted, its search budget, retuning frequency and
-  A--D adaptation policy remain downstream choices. Under revised Q22, hold
-  common hyperparameters fixed across A--D and refit dates. Any tail-effect claim
+- Q40 now accepts bounded tuning for design; its search budget, retuning
+  frequency and A--D adaptation policy remain downstream choices. Q22 originally
+  held common hyperparameters fixed across A--D and refit dates. Any tail-effect claim
   remains conditional on the chosen body: the current MAD/IQR pairs compare
   POT-MLE with UniBM, but lack empirical-tail controls. Adding those two controls
   would answer a broader EVT-versus-empirical question across bodies and is now

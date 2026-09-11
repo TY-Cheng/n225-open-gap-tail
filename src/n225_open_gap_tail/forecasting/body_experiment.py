@@ -13,7 +13,7 @@ from collections.abc import Callable, Iterator, Mapping
 from datetime import UTC, date, datetime
 from itertools import groupby
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import lightgbm as lgb
 import numpy as np
@@ -26,8 +26,10 @@ from n225_open_gap_tail.config.runtime import (
     EVT_MIN_EXCEEDANCES_95,
     EVT_MIN_STANDARDIZED_LOSSES_95,
     LOCATION_SCALE_MIN_ES_EXCEEDANCES_95,
+    ML_TAIL_EVT_SHAPE_UPPER_BOUND,
     PIPELINE_CONFIG,
     TAIL_SIDES,
+    PipelineRunError,
     _optional_float,
     empirical_excess_es_companion,
     find_oos_start_date,
@@ -73,8 +75,10 @@ def forecast_shared_body_refit(
     tail_level: float = 0.95,
     lgbm_params: Mapping[str, object] | None = None,
     progress: Callable[[str], None] | None = None,
+    components: Mapping[str, dict[str, Any]] | None = None,
+    calibration_kind: Literal["oof", "in_sample"] = "oof",
 ) -> dict[str, Any]:
-    """Fit one historical prefix; all three tails reuse each body's actual fits/OOF.
+    """Fit one historical prefix; three tails reuse each body's fits and calibration sample.
 
     Forecast rows must be in one refit month and strictly after training. Failed
     models/dates remain in the roster. ES-only failure does not erase finite VaR.
@@ -101,6 +105,7 @@ def forecast_shared_body_refit(
     diagnostics: list[dict[str, Any]] = []
     oof: list[dict[str, Any]] = []
     context = {
+        "calibration_kind": calibration_kind,
         "information_set": information_set,
         "tail_side": tail_side,
         "tail_level": tail_level,
@@ -169,16 +174,22 @@ def forecast_shared_body_refit(
     started = time.perf_counter()
     direct: dict[str, Any] = {**context, "model_name": "lightgbm_direct_quantile"}
     try:
-        model, gate, active = _fit_lgb_regression_model(
-            lgb=lgb,
-            rows=train_rows,
-            target=y,
-            candidate_features=candidate_features,
-            objective="quantile",
-            alpha=tail_level,
-            random_state=int(tail_level * 10000) + len(information_set),
-            lgbm_params=lgbm_params,
-        )
+        if components is None:
+            model, gate, active = _fit_lgb_regression_model(
+                lgb=lgb,
+                rows=train_rows,
+                target=y,
+                candidate_features=candidate_features,
+                objective="quantile",
+                alpha=tail_level,
+                random_state=int(tail_level * 10000) + len(information_set),
+                lgbm_params=lgbm_params,
+            )
+        else:
+            fitted = components["direct"]
+            if fitted.get("failure_reason"):
+                raise PipelineRunError(fitted["failure_reason"])
+            model, gate, active = fitted["model"], fitted["gate"], fitted["active_features"]
         training_q = _predict_lgb_rows(model, train_rows, active)
         q = _predict_lgb_rows(model, forecast_rows, active)
         e = np.array(
@@ -200,6 +211,8 @@ def forecast_shared_body_refit(
         )
         direct.update(fit_status="ok", feature_gate=gate, parameters=model.get_params())
     except Exception as exc:
+        if components is not None and not isinstance(exc, PipelineRunError):
+            raise
         direct.update(fit_status="unavailable_fit", failure_reason=f"{type(exc).__name__}: {exc}")
         emit(
             "lightgbm_direct_quantile",
@@ -220,6 +233,8 @@ def forecast_shared_body_refit(
         tail_level=tail_level,
         lgb=lgb,
         lgbm_params=lgbm_params,
+        components=components,
+        calibration_kind=calibration_kind,
     )
     for expected_recipe in BODY_RECIPES:
         if progress:
@@ -233,9 +248,11 @@ def forecast_shared_body_refit(
         }
         try:
             if body["fit_status"] != "ok":
-                raise ValueError(body["failure_reason"])
+                raise PipelineRunError(body["failure_reason"])
             pred = predict_body(body, forecast_rows)
         except Exception as exc:
+            if components is not None and not isinstance(exc, PipelineRunError):
+                raise
             failure = f"{type(exc).__name__}: {exc}"
             diagnostics.append(
                 {**detail, "fit_status": "unavailable_body_fit", "failure_reason": failure}
@@ -262,12 +279,12 @@ def forecast_shared_body_refit(
                     "spread",
                     "q25",
                     "q75",
-                    "mu_oof",
-                    "scale_oof",
-                    "raw_scale_oof",
+                    f"mu_{calibration_kind}",
+                    f"scale_{calibration_kind}",
+                    f"raw_scale_{calibration_kind}",
                     "standardized_losses",
-                    "oof_dates",
-                    "scale_target_oof_training_units",
+                    f"{calibration_kind}_dates",
+                    f"scale_target_{calibration_kind}_training_units",
                 }
             },
             components={
@@ -282,17 +299,22 @@ def forecast_shared_body_refit(
         )
         z = body["standardized_losses"]
         finite = z[np.isfinite(z)]
-        for i, day in enumerate(body["oof_dates"]):
+        for i, day in enumerate(body[f"{calibration_kind}_dates"]):
             oof.append(
                 {
                     **context,
                     "recipe": recipe,
                     "observation_date": day,
                     "position": i,
-                    "structural_warmup": i < body["oof_warmup_rows"],
+                    "structural_warmup": i < body[f"{calibration_kind}_warmup_rows"],
                     **{
                         key: _optional_float(body[key][i])
-                        for key in ("mu_oof", "scale_oof", "raw_scale_oof", "standardized_losses")
+                        for key in (
+                            f"mu_{calibration_kind}",
+                            f"scale_{calibration_kind}",
+                            f"raw_scale_{calibration_kind}",
+                            "standardized_losses",
+                        )
                     },
                 }
             )
@@ -317,8 +339,12 @@ def forecast_shared_body_refit(
                 else:
                     anchor = None
                     if tail == "unibm":
-                        anchor = estimate_public_unibm(z, warmup_rows=body["oof_warmup_rows"])
-                        detail["public_unibm"] = anchor
+                        anchor = estimate_public_unibm(
+                            z, warmup_rows=body[f"{calibration_kind}_warmup_rows"]
+                        )
+                        detail["public_unibm"] = {
+                            key: value for key, value in anchor.items() if key != "xi_evi_anchor"
+                        }
                         if anchor["status"] != "ok":
                             raise ValueError(anchor["failure_reason"])
                     metadata.update(
@@ -326,6 +352,7 @@ def forecast_shared_body_refit(
                             standardized_losses=z,
                             tail_level=tail_level,
                             evt_variant=tail,
+                            shape_upper_bound=ML_TAIL_EVT_SHAPE_UPPER_BOUND,
                             unibm_anchor=anchor,
                             preserve_var_without_es=True,
                             min_standardized_losses=min(
@@ -367,7 +394,7 @@ def forecast_shared_body_refit(
         diagnostics.append(detail)
         if progress:
             progress(f"{recipe}: body and three tail streams recorded")
-    return {"forecasts": forecasts, "diagnostics": diagnostics, "oof": oof}
+    return {"forecasts": forecasts, "diagnostics": diagnostics, calibration_kind: oof}
 
 
 def _prepare_body_run(

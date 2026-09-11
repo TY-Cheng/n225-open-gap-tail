@@ -2,10 +2,7 @@ from pathlib import Path
 
 
 def test_research_docs_use_christoffersen_independence_terminology() -> None:
-    text = "\n".join(
-        Path(path).read_text(encoding="utf-8")
-        for path in ("docs/paper_plan.md", "docs/manuscript_audit_prompt.md")
-    )
+    text = Path("docs/paper_plan.md").read_text(encoding="utf-8")
 
     assert "Christoffersen conditional coverage" not in text
     assert "Christoffersen independence or conditional coverage" not in text
@@ -25,7 +22,6 @@ def test_active_docs_use_coverage_admissibility_not_retired_promotion_routes() -
         for path in (
             "README.md",
             "docs/paper_plan.md",
-            "docs/manuscript_audit_prompt.md",
             "docs/results_snapshot.md",
             "docs/faq.md",
         )

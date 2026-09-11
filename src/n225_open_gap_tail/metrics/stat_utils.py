@@ -126,24 +126,48 @@ def moving_block_one_sided_pvalue(
     if observed_mean is None or values.size < 2 or not np.all(np.isfinite(values)):
         return None
     centered = values - float(np.mean(values))
-    n = int(centered.size)
+    means = moving_block_mean_draws(
+        centered,
+        reps=reps,
+        block_length=block_length,
+        rng=rng,
+        session_indices=session_indices,
+    )
+    if not means.size:
+        return None
+    count = int(np.sum(means <= observed_mean))
+    return float((count + 1) / (means.size + 1))
+
+
+def moving_block_mean_draws(
+    values: np.ndarray,
+    *,
+    reps: int,
+    block_length: int,
+    rng: np.random.Generator,
+    session_indices: Sequence[int | None] | None = None,
+) -> np.ndarray:
+    """Circular block mean draws on the observed span, preserving internal missingness."""
+    if values.size < 2 or not np.all(np.isfinite(values)):
+        return np.array([], dtype=float)
+    n = int(values.size)
     if block_length < 1 or reps < 1:
         raise ValueError("Positive block length and replication count required")
     weights = np.ones(n, dtype=int)
     if session_indices is not None:
         if len(session_indices) != n or any(value is None for value in session_indices):
-            return None
+            return np.array([], dtype=float)
         indices = np.asarray(session_indices, dtype=int)
         if np.any(np.diff(indices) <= 0):
-            return None
+            return np.array([], dtype=float)
         offsets = indices - indices[0]
         n = int(offsets[-1]) + 1
         grid = np.zeros(n)
         weights = np.zeros(n, dtype=int)
-        grid[offsets] = centered
+        grid[offsets] = values
         weights[offsets] = 1
-        centered = grid
-    # Circular blocks on the full target axis resample (mask * centered loss, mask).
+        values = grid
+    # Circular blocks on the target-session span resample (mask * value, mask).
     # Missing scores carry zero weight, not an imputed loss; isolated observations
     # remain eligible. The ratio targets the observed-date mean, not missing outcomes.
     chosen = rng.choice(np.arange(n), size=(reps, math.ceil(n / block_length)))
@@ -152,10 +176,8 @@ def moving_block_one_sided_pvalue(
     counts = np.sum(weights[positions], axis=1)
     usable = counts > 0
     if not np.any(usable):
-        return None
-    means = np.sum(centered[positions[usable]], axis=1) / counts[usable]
-    count = int(np.sum(means <= observed_mean))
-    return float((count + 1) / (int(np.sum(usable)) + 1))
+        return np.array([], dtype=float)
+    return np.sum(values[positions[usable]], axis=1) / counts[usable]
 
 
 def kupiec_pof_test(*, breaches: np.ndarray, expected_probability: float) -> dict[str, object]:

@@ -50,7 +50,7 @@ def test_lgbm_sensitivity_config_labels_are_exact() -> None:
     assert lgbm_sensitivity_config("current") == {
         "n_estimators": 160,
         "learning_rate": 0.025,
-        "max_depth": -1,
+        "max_depth": 17,
         "num_leaves": 20,
         "min_child_samples": 25,
         "subsample": 0.85,
@@ -58,7 +58,7 @@ def test_lgbm_sensitivity_config_labels_are_exact() -> None:
         "colsample_bytree": 0.85,
         "reg_alpha": 0.1,
         "reg_lambda": 0.5,
-        "num_threads": 1,
+        "num_threads": 3,
     }
     assert lgbm_sensitivity_config("near_low")["n_estimators"] == 128
     assert lgbm_sensitivity_config("near_low")["num_leaves"] == 16
@@ -67,6 +67,7 @@ def test_lgbm_sensitivity_config_labels_are_exact() -> None:
     assert lgbm_sensitivity_config("near_high")["num_leaves"] == 24
     assert lgbm_sensitivity_config("near_high")["min_child_samples"] == 20
     assert set(LGBM_CONFIGURATION_SPECS) == {"current", "near_low", "near_high"}
+    assert all(config["num_threads"] == 3 for config in LGBM_CONFIGURATION_SPECS.values())
     with pytest.raises(PipelineRunError, match="Unknown LightGBM sensitivity config label"):
         lgbm_sensitivity_config("wide")
 

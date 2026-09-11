@@ -30,6 +30,7 @@ from n225_open_gap_tail.metrics.admissibility import (
 )
 from n225_open_gap_tail.metrics.cross_suite_dm import build_screened_comparison_artifacts
 from n225_open_gap_tail.metrics.grem import build_grem_artifacts
+from n225_open_gap_tail.metrics.joint_diagnostics import build_joint_diagnostic_artifacts
 from n225_open_gap_tail.metrics.result_matrix import (
     build_metric_records,
     build_ml_tail_result_matrix_artifacts,
@@ -171,6 +172,14 @@ def reevaluate_frozen_run(run_dir: Path, *, output_dir: Path | None = None) -> P
             outputs[f"benchmark_{tier}_{key}"] = cast(list[dict[str, object]], comparison[key])
     # Selection is already fixed above. Sequential diagnostics never feed back into it.
     outputs.update(
+        build_joint_diagnostic_artifacts(
+            forecasts,
+            roster=availability,
+            ml_model_names=ml_model_names,
+            references=screened["references"],
+        )
+    )
+    outputs.update(
         build_grem_artifacts(
             forecasts,
             roster=availability,
@@ -213,6 +222,22 @@ def reevaluate_frozen_run(run_dir: Path, *, output_dir: Path | None = None) -> P
             "bootstrap": "circular_target_session_blocks_with_missing_mask_reps999_seed225",
         },
         "forecast_retrained": False,
+        "joint_diagnostic_policy": {
+            "population": "all_registered_candidates_before_coverage_screening",
+            "calibration": (
+                "native_joint_identification_means_pointwise_95pct_basic_block_intervals"
+            ),
+            "calibration_limits": (
+                "not_joint_or_conditional_test_"
+                "finite_second_moments_and_dependence_assumptions_not_verified"
+            ),
+            "es_interpretation": "joint_error_not_ES_only_when_VaR_misspecified",
+            "murphy": "upper_loss_S_v2_101_pooled_common_ES_loss_quantiles_including_bounds",
+            "comparisons": "fixed_roster_joint_eligible_dates_by_question",
+            "claim_scope": "descriptive_finite_grid_not_population_or_uniform_dominance",
+            "used_for_selection": False,
+            "sources": ["https://arxiv.org/html/1608.05498v2", "https://arxiv.org/pdf/1705.04537"],
+        },
         "grem_policy": {
             "method": "equal_capital_GREE_GREL_mixture_Taylor_approximation_gamma0.5",
             "windows": [500, 250],

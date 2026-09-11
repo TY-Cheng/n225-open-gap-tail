@@ -1,13 +1,13 @@
 """Accepted nine-body experiment; fits are shared before any tail calibration.
 
 Fits use decimal losses before each recipe's target transform. Public outputs
-use decimal returns and keep original row positions, including unavailable OOF predictions.
+use decimal returns and keep original calibration-row positions, including unavailable predictions.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -110,6 +110,14 @@ def rms_scale(raw_second_moment: Array) -> Array:
     return np.sqrt(_positive_scale(raw_second_moment, floor=ML_TAIL_ROBUST_SCALE_FLOOR**2))
 
 
+def spread_target(residual: Array, transform: str) -> Array:
+    if transform == "log_abs":
+        return np.log(np.maximum(np.abs(residual), ML_TAIL_SCALE_FLOOR * TRAINING_MULTIPLIER))
+    if transform == "rms":
+        return residual**2
+    return np.abs(residual)
+
+
 def fit_body_recipes(
     train_rows: list[dict[str, Any]],
     *,
@@ -118,6 +126,8 @@ def fit_body_recipes(
     tail_level: float,
     lgb: Any,
     lgbm_params: Mapping[str, object] | None = None,
+    components: Mapping[str, dict[str, Any]] | None = None,
+    calibration_kind: Literal["oof", "in_sample"] = "oof",
 ) -> Iterator[tuple[str, dict[str, Any]]]:
     """One refit's nine bodies; the five mean recipes reuse the same center object.
 
@@ -127,8 +137,15 @@ def fit_body_recipes(
     y = np.array([float(row["realized_loss"]) for row in train_rows]) * TRAINING_MULTIPLIER
     if not np.all(np.isfinite(y)):
         raise ValueError("Body training rows require finite observed losses")
-    folds = _blocked_expanding_oof_folds(
-        len(train_rows), n_splits=ML_TAIL_OOF_SPLITS, min_train_rows=ML_TAIL_MIN_OOF_TRAIN_ROWS
+    if calibration_kind == "in_sample" and components is None:
+        raise ValueError("In-sample calibration requires full-history fitted components")
+    prediction_key = "fitted" if calibration_kind == "in_sample" else "oof"
+    folds = (
+        []
+        if calibration_kind == "in_sample"
+        else _blocked_expanding_oof_folds(
+            len(train_rows), n_splits=ML_TAIL_OOF_SPLITS, min_train_rows=ML_TAIL_MIN_OOF_TRAIN_ROWS
+        )
     )
     center_warmup = folds[0][1][0] if folds else len(train_rows)
     spread_warmup = next(
@@ -139,11 +156,18 @@ def fit_body_recipes(
         ),
         len(train_rows),
     )
+    if calibration_kind == "in_sample":
+        center_warmup = spread_warmup = 0
     oof_dates = [str(row["forecast_date"]) for row in train_rows]
     centers: dict[tuple[str, float | None], dict[str, Any]] = {}
     failures: dict[tuple[str, float | None], str] = {}
 
     def component(target: Array, objective: str, alpha: float | None, role: str) -> dict[str, Any]:
+        if components is not None:
+            result = components[role]
+            if result.get("failure_reason"):
+                raise PipelineRunError(result["failure_reason"])
+            return result
         return _fit_component(
             train_rows,
             target,
@@ -171,25 +195,21 @@ def fit_body_recipes(
     for recipe, (objective, transform, spread_objective) in BODY_RECIPES.items():
         try:
             central = center(objective, 0.5 if objective == "quantile" else None)
-            mu = central["oof"]
-            target = np.abs(y - mu)
+            mu = central[prediction_key]
+            target = spread_target(y - mu, transform)
             smearing = None
             q25 = q75 = spread = None
             crossing = None
             if transform == "iqr":
                 q25, q75 = center("quantile", 0.25), center("quantile", 0.75)
                 low, mu, high, crossing = _rearrange_quantile_predictions(
-                    q25["oof"], mu, q75["oof"]
+                    q25[prediction_key], mu, q75[prediction_key]
                 )
                 raw_scale = (high - low) / (ML_TAIL_IQR_CONSISTENCY_FACTOR * TRAINING_MULTIPLIER)
                 scale = _positive_scale(raw_scale, floor=ML_TAIL_ROBUST_SCALE_FLOOR)
             else:
-                if transform == "log_abs":
-                    target = np.log(np.maximum(target, ML_TAIL_SCALE_FLOOR * TRAINING_MULTIPLIER))
-                elif transform == "rms":
-                    target = (y - mu) ** 2
                 spread = component(target, spread_objective, None, f"spread:{recipe}")
-                raw = spread["oof"]
+                raw = spread[prediction_key]
                 if transform == "log_abs":
                     valid = np.isfinite(target) & np.isfinite(raw)
                     with np.errstate(over="ignore", invalid="ignore"):
@@ -211,7 +231,9 @@ def fit_body_recipes(
                 standardized = ((y - mu) / TRAINING_MULTIPLIER) / scale
             standardized[~np.isfinite(standardized)] = np.nan
             if np.count_nonzero(np.isfinite(standardized)) < ML_TAIL_MIN_OOF_TRAIN_ROWS:
-                raise PipelineRunError("unavailable_oof_standardization_insufficient_sample")
+                raise PipelineRunError(
+                    f"unavailable_{calibration_kind}_standardization_insufficient_sample"
+                )
             floor = (
                 ML_TAIL_ROBUST_SCALE_FLOOR**2 if transform == "rms" else ML_TAIL_ROBUST_SCALE_FLOOR
             )
@@ -219,6 +241,7 @@ def fit_body_recipes(
                 recipe,
                 {
                     "fit_status": "ok",
+                    "calibration_kind": calibration_kind,
                     "recipe": recipe,
                     "center": central,
                     "spread": spread,
@@ -229,18 +252,22 @@ def fit_body_recipes(
                     "training_multiplier": TRAINING_MULTIPLIER,
                     "center_objective": objective,
                     "spread_objective": spread_objective,
-                    "mu_oof": mu / TRAINING_MULTIPLIER,
-                    "scale_oof": scale,
-                    "raw_scale_oof": raw_scale,
-                    "scale_target_oof_training_units": None if transform == "iqr" else target,
+                    f"mu_{calibration_kind}": mu / TRAINING_MULTIPLIER,
+                    f"scale_{calibration_kind}": scale,
+                    f"raw_scale_{calibration_kind}": raw_scale,
+                    f"scale_target_{calibration_kind}_training_units": None
+                    if transform == "iqr"
+                    else target,
                     "raw_scale_units": "decimal_return_squared"
                     if transform == "rms"
                     else "decimal_return",
                     "scale_floor": None if transform == "log_abs" else ML_TAIL_ROBUST_SCALE_FLOOR,
                     "log_abs_epsilon": ML_TAIL_SCALE_FLOOR if transform == "log_abs" else None,
                     "standardized_losses": standardized,
-                    "oof_warmup_rows": center_warmup if transform == "iqr" else spread_warmup,
-                    "oof_dates": oof_dates,
+                    f"{calibration_kind}_warmup_rows": center_warmup
+                    if transform == "iqr"
+                    else spread_warmup,
+                    f"{calibration_kind}_dates": oof_dates,
                     "quantile_crossing_rate": crossing,
                     "scale_nonpositive_count": int(
                         np.sum(np.isfinite(raw_scale) & (raw_scale <= 0))
@@ -254,6 +281,8 @@ def fit_body_recipes(
                 },
             )
         except Exception as exc:
+            if components is not None and not isinstance(exc, PipelineRunError):
+                raise
             yield recipe, {"fit_status": "unavailable_body_fit", "failure_reason": str(exc)}
 
 

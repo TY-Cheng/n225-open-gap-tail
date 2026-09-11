@@ -18,6 +18,7 @@ from n225_open_gap_tail.config.runtime import (
     LOCATION_SCALE_MIN_ES_EXCEEDANCES_95,
     math,
     ML_TAIL_DIRECT_QUANTILE_MODEL,
+    ML_TAIL_EVT_SHAPE_UPPER_BOUND,
     ML_TAIL_LOCATION_SCALE_MODEL,
     ML_TAIL_MAD_CONSISTENCY_FACTOR,
     ML_TAIL_MEDIAN_IQR_POT_GPD_MODEL_NAMES,
@@ -218,7 +219,7 @@ def _lgbm_training_params(overrides: Mapping[str, object] | None = None) -> dict
     params: dict[str, object] = {
         "n_estimators": 160,
         "learning_rate": 0.025,
-        "max_depth": -1,
+        "max_depth": 17,
         "num_leaves": 20,
         "min_child_samples": 25,
         "subsample": 0.85,
@@ -226,7 +227,7 @@ def _lgbm_training_params(overrides: Mapping[str, object] | None = None) -> dict
         "colsample_bytree": 0.85,
         "reg_alpha": 0.1,
         "reg_lambda": 0.5,
-        "num_threads": 1,
+        "num_threads": 3,
     }
     if overrides:
         for key in tuple(params):
@@ -667,6 +668,7 @@ def _fit_ml_tail_location_scale_bundle(
                 min_standardized_losses=min(EVT_MIN_STANDARDIZED_LOSSES_95, DEFAULT_MIN_TRAIN_ROWS),
                 min_exceedances=min(EVT_MIN_EXCEEDANCES_95, DEFAULT_MIN_TRAIN_EXCEEDANCES),
                 evt_variant=_evt_variant_for_ml_tail_model(model_name),
+                shape_upper_bound=ML_TAIL_EVT_SHAPE_UPPER_BOUND,
                 shape_cap=EVT_SHAPE_CAP_BASELINE,
                 shape_shrinkage_k=EVT_SHAPE_SHRINKAGE_K,
             )
@@ -862,6 +864,7 @@ def _fit_ml_tail_robust_location_scale_bundle(
             min_standardized_losses=min(EVT_MIN_STANDARDIZED_LOSSES_95, DEFAULT_MIN_TRAIN_ROWS),
             min_exceedances=min(EVT_MIN_EXCEEDANCES_95, DEFAULT_MIN_TRAIN_EXCEEDANCES),
             evt_variant=_evt_variant_for_ml_tail_model(model_name),
+            shape_upper_bound=ML_TAIL_EVT_SHAPE_UPPER_BOUND,
             shape_cap=EVT_SHAPE_CAP_BASELINE,
             shape_shrinkage_k=EVT_SHAPE_SHRINKAGE_K,
         )
@@ -1130,12 +1133,8 @@ def _predict_ml_tail_robust_location_scale_forecast(
         "evt_variant": evt_tail.get("evt_variant"),
         "evt_shape_method": evt_tail.get("evt_shape_method"),
         "evt_cap_policy": evt_tail.get("evt_cap_policy"),
-        "evt_cap_hit": evt_tail.get("evt_cap_hit"),
-        "evt_shape_mle": evt_tail.get("evt_shape_mle"),
-        "evt_scale_mle": evt_tail.get("evt_scale_mle"),
         "evt_evi_status": evt_tail.get("evt_evi_status"),
         "evt_ei_status": evt_tail.get("evt_ei_status"),
-        "evt_xi_evi_anchor": evt_tail.get("evt_xi_evi_anchor"),
         "evt_theta_hat": evt_tail.get("evt_theta_hat"),
         "evt_effective_exceedance_count": evt_tail.get("evt_effective_exceedance_count"),
         "evt_unibm_n_obs": evt_tail.get("evt_unibm_n_obs"),
@@ -1176,7 +1175,6 @@ def _location_scale_empirical_evt_metadata(
         "evt_variant": "empirical_standardized_tail",
         "evt_shape_method": "not_applicable_empirical_standardized_tail",
         "evt_cap_policy": "not_applicable",
-        "evt_cap_hit": False,
         "evt_evi_status": "not_used",
         "evt_ei_status": "not_used",
         "evt_exceedance_count": exceedance_count,

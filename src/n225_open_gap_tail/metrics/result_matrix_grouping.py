@@ -135,6 +135,8 @@ def _result_matrix_group_payload(
 
 
 def _result_row_eligible(row: Mapping[str, object], loss_family: str) -> bool:
+    if loss_family == "var_es_elementary":
+        return forecast_eligible(row, score="joint")
     return loss_family in RESULT_MATRIX_LOSS_FAMILIES and forecast_eligible(
         row, score="fz0" if loss_family == "var_es_fz_loss" else "var"
     )

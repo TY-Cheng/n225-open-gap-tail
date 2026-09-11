@@ -59,7 +59,7 @@ LGBM_CONFIGURATION_SPECS: dict[str, dict[str, object]] = {
     "current": {
         "n_estimators": 160,
         "learning_rate": 0.025,
-        "max_depth": -1,
+        "max_depth": 17,
         "num_leaves": 20,
         "min_child_samples": 25,
         "subsample": 0.85,
@@ -67,12 +67,12 @@ LGBM_CONFIGURATION_SPECS: dict[str, dict[str, object]] = {
         "colsample_bytree": 0.85,
         "reg_alpha": 0.1,
         "reg_lambda": 0.5,
-        "num_threads": 1,
+        "num_threads": 3,
     },
     "near_low": {
         "n_estimators": 128,
         "learning_rate": 0.025,
-        "max_depth": -1,
+        "max_depth": 17,
         "num_leaves": 16,
         "min_child_samples": 30,
         "subsample": 0.85,
@@ -80,12 +80,12 @@ LGBM_CONFIGURATION_SPECS: dict[str, dict[str, object]] = {
         "colsample_bytree": 0.85,
         "reg_alpha": 0.1,
         "reg_lambda": 0.5,
-        "num_threads": 1,
+        "num_threads": 3,
     },
     "near_high": {
         "n_estimators": 192,
         "learning_rate": 0.025,
-        "max_depth": -1,
+        "max_depth": 17,
         "num_leaves": 24,
         "min_child_samples": 20,
         "subsample": 0.85,
@@ -93,7 +93,7 @@ LGBM_CONFIGURATION_SPECS: dict[str, dict[str, object]] = {
         "colsample_bytree": 0.85,
         "reg_alpha": 0.1,
         "reg_lambda": 0.5,
-        "num_threads": 1,
+        "num_threads": 3,
     },
 }
 EVT_THRESHOLD_SPECS: dict[str, float] = {

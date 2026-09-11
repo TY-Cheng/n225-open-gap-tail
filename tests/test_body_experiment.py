@@ -22,6 +22,7 @@ from n225_open_gap_tail.forecasting._guards import _assert_leakage_gate
 from n225_open_gap_tail.metrics.stat_utils import forecast_eligible
 from n225_open_gap_tail.models.benchmark import _pot_gpd_standardized_tail
 from n225_open_gap_tail.models.ml_tail_oof import _fit_lgb_regression_model
+from n225_open_gap_tail.panel.information_sets import registered_ml_tail_information_sets
 
 
 def sample_rows(n: int = 120) -> list[dict[str, Any]]:
@@ -84,6 +85,7 @@ def test_shared_refit_native_bodies_units_and_anchor_reuse(
     assert {row["model_name"] for row in result["forecasts"]} == set(bodies.EXPERIMENT_MODEL_NAMES)
     assert len(result["diagnostics"]) == 10 and len(result["oof"]) == 9 * len(train)
     assert len(anchors) == 9 and len(calls) == 18
+    assert all(call["shape_upper_bound"] == 0.99 for call in calls)
     for i, (values, _) in enumerate(anchors):
         assert calls[2 * i]["standardized_losses"] is values
         assert calls[2 * i + 1]["standardized_losses"] is values
@@ -98,7 +100,9 @@ def test_shared_refit_native_bodies_units_and_anchor_reuse(
     assert first["train_end"] < first["forecast_date"]
     assert all(row["var_eligible"] for row in result["forecasts"]), result["diagnostics"]
     for detail in result["diagnostics"][1:]:
+        assert "xi_evi_anchor" not in detail["public_unibm"]
         for method, fitted_tail in detail["tails"].items():
+            assert "evt_cap_hit" not in fitted_tail and "evt_shape_mle" not in fitted_tail
             name = bodies.body_model_name(detail["recipe"], method)
             for row in result["forecasts"]:
                 if row["model_name"] != name:
@@ -224,6 +228,87 @@ def test_pot_retains_finite_var_without_empirical_es_or_clip(
         )
 
 
+@pytest.mark.parametrize("variant", ["plain_mle", "unibm"])
+@pytest.mark.parametrize("shape", [-0.2, 0.0, 0.2, 0.99, 1.2])
+def test_ml_shape_bound_refits_scale_and_reports_only_final_shape(
+    monkeypatch: pytest.MonkeyPatch, variant: str, shape: float
+) -> None:
+    fixed_shapes: list[float] = []
+
+    def fit(*args: Any, **kwargs: Any) -> tuple[float, float, float]:
+        if "f0" in kwargs:
+            fixed_shapes.append(kwargs["f0"])
+            return kwargs["f0"], 0.0, 3.0
+        return shape, 0.0, 2.0
+
+    monkeypatch.setattr("scipy.stats.genpareto.fit", fit)
+    anchor = {"status": "ok", "xi_evi_anchor": shape, "bootstrap_precision_met": False}
+    values = np.linspace(-2, 5, 600)
+    result = benchmark._pot_gpd_standardized_tail(
+        standardized_losses=values,
+        tail_level=0.95,
+        min_standardized_losses=100,
+        min_exceedances=20,
+        evt_variant=variant,
+        unibm_anchor=anchor,
+        shape_upper_bound=0.99,
+        preserve_var_without_es=True,
+    )
+    final_shape = min(shape, 0.99)
+    refit = variant == "unibm" or shape > 0.99
+    scale = 3.0 if refit else 2.0
+    assert fixed_shapes == ([final_shape] if refit else [])
+    assert result["evt_shape"] == final_shape and result["evt_scale"] == scale
+    threshold = np.quantile(values, 0.9)
+    q = threshold + scale * (
+        np.expm1(final_shape * np.log(2)) / final_shape if final_shape else np.log(2)
+    )
+    es = q + (scale + final_shape * (q - threshold)) / (1 - final_shape)
+    assert result["standardized_var"] == pytest.approx(q)
+    assert result["standardized_es"] == pytest.approx(es)
+    assert result["evt_es_failure_reason"] is None
+    for key in ("evt_cap_hit", "evt_shape_mle", "evt_scale_mle", "evt_xi_evi_anchor"):
+        assert key not in result
+    assert "evt_threshold_sensitivity_json" not in result
+    assert anchor["xi_evi_anchor"] == shape  # never mutate the supplied fit
+    if variant == "unibm":
+        diagnostics = json.loads(str(result["evt_evi_diagnostics_json"]))
+        assert "xi_evi_anchor" not in diagnostics
+        assert diagnostics["bootstrap_precision_met"] is False
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_shape_bound_never_repairs_nonfinite_estimates(
+    monkeypatch: pytest.MonkeyPatch, value: float
+) -> None:
+    monkeypatch.setattr("scipy.stats.genpareto.fit", lambda *a, **k: (value, 0.0, 1.0))
+    standardized_losses = np.linspace(-2, 5, 600)
+    with pytest.raises(ValueError, match="upper bound"):
+        benchmark._pot_gpd_standardized_tail(
+            standardized_losses=standardized_losses,
+            tail_level=0.95,
+            min_standardized_losses=100,
+            min_exceedances=20,
+            shape_upper_bound=value,
+        )
+    with pytest.raises(PipelineRunError, match="nonfinite GPD shape"):
+        benchmark._pot_gpd_standardized_tail(
+            standardized_losses=standardized_losses,
+            tail_level=0.95,
+            min_standardized_losses=100,
+            min_exceedances=20,
+            shape_upper_bound=0.99,
+        )
+    with pytest.raises(ValueError, match="upper bound"):
+        benchmark._pot_gpd_standardized_tail(
+            standardized_losses=standardized_losses,
+            tail_level=0.95,
+            min_standardized_losses=100,
+            min_exceedances=20,
+            shape_upper_bound=1.0,
+        )
+
+
 @pytest.mark.parametrize(
     "case", ["empty", "future", "duplicate", "month", "side", "nan", "excluded"]
 )
@@ -316,7 +401,7 @@ def test_pilot_artifacts_isolation_binding_and_no_retry(
                 for name in bodies.EXPERIMENT_MODEL_NAMES
             ],
             "diagnostics": [{"fit_status": "ok"}],
-            "oof": [{"position": 0, "standardized_losses": None}],
+            kwargs.get("calibration_kind", "oof"): [{"position": 0, "standardized_losses": None}],
         }
 
     monkeypatch.setattr(experiment, "forecast_shared_body_refit", refit)
@@ -389,6 +474,76 @@ def test_pilot_artifacts_isolation_binding_and_no_retry(
     with pytest.raises(FileExistsError):
         experiment.run_body_rolling(source, rolling)
 
+    from n225_open_gap_tail.forecasting import tuned_body
+
+    monkeypatch.setattr(tuned_body, "_save_working_source", lambda path: None)
+    monkeypatch.setattr(tuned_body, "forecast_shared_body_refit", refit)
+
+    def joint(cases: Any, **kw: Any) -> Any:
+        assert len(cases) == 8
+        kw["receipt"](
+            {
+                "role": "direct",
+                "cutoff": "2020-02-01",
+                "status": "selected",
+                "selected_name": "current",
+                "parameters": {"n_estimators": 160},
+            }
+        )
+        return {key: {"direct": {"test": True}} for key in cases}
+
+    monkeypatch.setattr(tuned_body, "fit_joint_bodies", joint)
+    for pilot_date, workers in (("2020-02-01", 1), (None, 1), (None, None), (None, 3)):
+        destination = tmp_path / f"tuned_{pilot_date}_{workers}"
+        observed.clear()
+        tuned_body.run_tuned_body(
+            source,
+            destination,
+            forecast_date=pilot_date,
+            progress=lambda message: None,
+            **({} if workers is None else {"workers": workers}),
+        )
+        tuned_manifest = json.loads((destination / "manifest.json").read_text())
+        assert tuned_manifest["status"] == "completed" and len(observed) == 8
+        assert tuned_manifest["month_workers"] == (2 if workers is None else workers)
+        assert tuned_manifest["completed_refits"] == 8 and tuned_manifest["forecast_rows"] == 224
+        assert all(c["components"]["direct"]["test"] for c in observed)
+        assert all(c["calibration_kind"] == "in_sample" for c in observed)
+        assert tuned_manifest["tuning"]["cv_splits"] == 3
+        assert tuned_manifest["tuning"]["cv_seed"] == 0
+        assert tuned_manifest["calibration_warmup_rows"] == 0
+        assert len(list((destination / "refits").rglob("in_sample_residuals.parquet"))) == 8
+        assert not list((destination / "refits").rglob("oof_residuals.parquet"))
+        assert (destination / "selection/2020-02.json").exists()
+    with pytest.raises(ValueError, match="first eligible"):
+        tuned_body.run_tuned_body(
+            source, tmp_path / "tuned_bad_date", forecast_date="2020-02-02", workers=1
+        )
+    for workers in (0, 4):
+        with pytest.raises(ValueError, match="month workers"):
+            tuned_body.run_tuned_body(source, tmp_path / "invalid_workers", workers=workers)
+    with pytest.raises(ValueError, match="pilot requires"):
+        tuned_body.run_tuned_body(source, tmp_path / "parallel_pilot", forecast_date="2020-02-01")
+
+    monkeypatch.setattr(tuned_body, "registered_ml_tail_information_sets", lambda: ["japan_only"])
+    with pytest.raises(ValueError, match="eight scenario"):
+        tuned_body.run_tuned_body(source, tmp_path / "tuned_missing_group")
+    monkeypatch.setattr(
+        tuned_body,
+        "registered_ml_tail_information_sets",
+        registered_ml_tail_information_sets,
+    )
+
+    def joint_crash(*a: Any, **kw: Any) -> Any:
+        raise RuntimeError("no hidden retry")
+
+    monkeypatch.setattr(tuned_body, "fit_joint_bodies", joint_crash)
+    with pytest.raises(RuntimeError, match="no hidden retry"):
+        tuned_body.run_tuned_body(source, tmp_path / "tuned_crash", workers=1)
+    assert json.loads((tmp_path / "tuned_crash/manifest.json").read_text())["status"] == "failed"
+    with pytest.raises(RuntimeError, match="no hidden retry"):
+        tuned_body.run_tuned_body(source, tmp_path / "tuned_parallel_crash", workers=2)
+
     def crash(*a: Any, **k: Any) -> Any:
         raise RuntimeError("do not retry")
 
@@ -418,6 +573,31 @@ def test_body_pilot_cli(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None
         return output
 
     monkeypatch.setattr(experiment, "run_body_pilot", run)
+    from n225_open_gap_tail.forecasting import tuned_body
+
+    monkeypatch.setattr(tuned_body, "run_tuned_body", run)
+    tuned_result = CliRunner().invoke(
+        app,
+        [
+            "body-tuned",
+            "--source-run",
+            str(tmp_path / "source"),
+            "--output-dir",
+            str(tmp_path / "tuned"),
+            "--forecast-date",
+            "2026-05-01",
+            "--workers",
+            "1",
+        ],
+    )
+    assert tuned_result.exit_code == 0
+    pilot_call = calls.pop()
+    assert pilot_call["forecast_date"] == "2026-05-01" and pilot_call["workers"] == 1
+    tuned_result = CliRunner().invoke(
+        app,
+        ["body-tuned", "--source-run", str(tmp_path), "--output-dir", str(tmp_path / "full")],
+    )
+    assert tuned_result.exit_code == 0 and calls.pop()["workers"] == 2
     result = CliRunner().invoke(
         app,
         [

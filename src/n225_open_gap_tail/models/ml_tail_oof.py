@@ -302,6 +302,7 @@ def _fit_lgb_regression_model(
     random_state: int,
     alpha: float | None = None,
     lgbm_params: Mapping[str, object] | None = None,
+    fit_executor: Any = None,
 ) -> tuple[Any, dict[str, object], list[str]]:
     frame = pl.DataFrame(rows, infer_schema_length=None)
     gate = build_feature_matrix_gate_records(frame, candidate_features)
@@ -313,7 +314,7 @@ def _fit_lgb_regression_model(
         "objective": objective,
         "n_estimators": 160,
         "learning_rate": 0.025,
-        "max_depth": -1,
+        "max_depth": 17,
         "num_leaves": 20,
         "min_child_samples": 25,
         "subsample": 0.85,
@@ -322,7 +323,7 @@ def _fit_lgb_regression_model(
         "reg_alpha": 0.1,
         "reg_lambda": 0.5,
         "random_state": random_state,
-        "num_threads": 1,
+        "num_threads": 3,
         "verbosity": -1,
     }
     if lgbm_params:
@@ -356,13 +357,20 @@ def _fit_lgb_regression_model(
             params["poisson_max_delta_step"] = 0.7
         elif objective == "tweedie":
             params["tweedie_variance_power"] = 1.5
-    model = lgb.LGBMRegressor(**params)
-    model.fit(x_train, target)
+    if fit_executor is None:
+        model = lgb.LGBMRegressor(**params)
+        model.fit(x_train, target)
+    else:
+        model = fit_executor(params, x_train, target)
     return model, gate, active_features
 
 
 def _predict_lgb_rows(
-    model: Any, rows: list[dict[str, object]], active_features: list[str]
+    model: Any,
+    rows: list[dict[str, object]],
+    active_features: list[str],
+    *,
+    num_iteration: int | None = None,
 ) -> np.ndarray:
     frame = pl.DataFrame(rows, infer_schema_length=None)
     x_predict = _feature_matrix(frame, active_features)
@@ -372,7 +380,8 @@ def _predict_lgb_rows(
             message="X does not have valid feature names",
             category=UserWarning,
         )
-        return np.asarray(model.predict(x_predict), dtype=float)
+        options = {} if num_iteration is None else {"num_iteration": num_iteration}
+        return np.asarray(model.predict(x_predict, **options), dtype=float)
 
 
 def _quantile_oof_predictions(
@@ -542,12 +551,8 @@ def _predict_ml_tail_location_scale_forecast(
         "evt_variant": evt_tail.get("evt_variant"),
         "evt_shape_method": evt_tail.get("evt_shape_method"),
         "evt_cap_policy": evt_tail.get("evt_cap_policy"),
-        "evt_cap_hit": evt_tail.get("evt_cap_hit"),
-        "evt_shape_mle": evt_tail.get("evt_shape_mle"),
-        "evt_scale_mle": evt_tail.get("evt_scale_mle"),
         "evt_evi_status": evt_tail.get("evt_evi_status"),
         "evt_ei_status": evt_tail.get("evt_ei_status"),
-        "evt_xi_evi_anchor": evt_tail.get("evt_xi_evi_anchor"),
         "evt_theta_hat": evt_tail.get("evt_theta_hat"),
         "evt_effective_exceedance_count": evt_tail.get("evt_effective_exceedance_count"),
         "evt_unibm_n_obs": evt_tail.get("evt_unibm_n_obs"),
@@ -628,12 +633,8 @@ def _ml_tail_location_scale_diagnostic(
         "evt_variant": evt_tail.get("evt_variant"),
         "evt_shape_method": evt_tail.get("evt_shape_method"),
         "evt_cap_policy": evt_tail.get("evt_cap_policy"),
-        "evt_cap_hit": evt_tail.get("evt_cap_hit"),
-        "evt_shape_mle": evt_tail.get("evt_shape_mle"),
-        "evt_scale_mle": evt_tail.get("evt_scale_mle"),
         "evt_evi_status": evt_tail.get("evt_evi_status"),
         "evt_ei_status": evt_tail.get("evt_ei_status"),
-        "evt_xi_evi_anchor": evt_tail.get("evt_xi_evi_anchor"),
         "evt_theta_hat": evt_tail.get("evt_theta_hat"),
         "evt_effective_exceedance_count": evt_tail.get("evt_effective_exceedance_count"),
         "evt_unibm_n_obs": evt_tail.get("evt_unibm_n_obs"),
@@ -688,12 +689,8 @@ def _ml_tail_extended_forecast_fields() -> dict[str, object]:
         "evt_variant": None,
         "evt_shape_method": None,
         "evt_cap_policy": None,
-        "evt_cap_hit": None,
-        "evt_shape_mle": None,
-        "evt_scale_mle": None,
         "evt_evi_status": None,
         "evt_ei_status": None,
-        "evt_xi_evi_anchor": None,
         "evt_theta_hat": None,
         "evt_effective_exceedance_count": None,
         "evt_unibm_n_obs": None,

@@ -9,6 +9,7 @@ import pytest
 
 import n225_open_gap_tail.models.ml_body as body_models
 from n225_open_gap_tail.config.runtime import PipelineRunError
+from n225_open_gap_tail.models.ml_tail import _lgbm_training_params
 from n225_open_gap_tail.models.ml_tail_oof import _fit_lgb_regression_model
 
 
@@ -79,6 +80,8 @@ def test_nine_bodies_share_mean_fits_and_preserve_oof_positions(
 
 
 def test_native_objective_domains_and_constants() -> None:
+    assert _lgbm_training_params()["max_depth"] == 17
+    assert _lgbm_training_params()["num_threads"] == 3
     training = rows(20)
     mixed_zero_target = np.arange(20, dtype=float) / 20
     for objective in ("gamma", "poisson", "tweedie", "huber", "fair"):
@@ -92,6 +95,8 @@ def test_native_objective_domains_and_constants() -> None:
             lgbm_params={"n_estimators": 2, "min_child_samples": 3},
         )
         params = model.get_params()
+        assert params["max_depth"] == 17
+        assert model.booster_.params["num_threads"] == 3
         if objective in {"gamma", "poisson", "tweedie"}:
             assert params["metric"] == "l2"
         if objective == "huber":

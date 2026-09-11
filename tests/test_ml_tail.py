@@ -369,8 +369,8 @@ def test_ml_tail_unibm_pot_gpd_uses_unibm_slope_as_gpd_shape(
     assert observed_sample_sizes
     assert observed_sample_sizes[0] > cast(int, ok[0]["evt_exceedance_count"])
     assert ok[0]["evt_variant"] == "unibm"
-    assert ok[0]["evt_shape_method"] == "unibm_block_maxima_xi_fixed_shape_scale_refit"
-    assert ok[0]["evt_shape_mle"] == pytest.approx(0.40)
+    assert ok[0]["evt_shape_method"] == "upper_bounded_unibm_xi_fixed_shape_scale_refit"
+    assert "evt_shape_mle" not in ok[0] and "evt_cap_hit" not in ok[0]
     assert ok[0]["evt_shape"] == pytest.approx(0.25)
     assert ok[0]["evt_shape_bin"] == "[0,0.75)"
     assert ok[0]["evt_scale"] == pytest.approx(2.0)
@@ -380,7 +380,7 @@ def test_ml_tail_unibm_pot_gpd_uses_unibm_slope_as_gpd_shape(
     assert ok[0]["evt_unibm_sliding_blocks"] is True
 
 
-def test_ml_tail_standardized_pot_gpd_shape_above_one_is_unavailable(
+def test_ml_tail_standardized_pot_gpd_shape_above_one_is_bounded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import lightgbm as lgb
@@ -393,15 +393,16 @@ def test_ml_tail_standardized_pot_gpd_shape_above_one_is_unavailable(
         lambda *args, **kwargs: (1.2, 0.0, 1.0),
     )
 
-    with pytest.raises(paper_module.PipelineRunError, match="unavailable_evt_shape_es_infinite"):
-        paper_core._fit_ml_tail_location_scale_bundle(
-            train_rows=_synthetic_ml_tail_location_scale_rows(80),
-            candidate_features=["feature_x", "feature_cycle"],
-            model_name=paper_module.ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
-            information_set="japan_only_plus_us_close_core",
-            tail_level=0.95,
-            lgb=lgb,
-        )
+    bundle = paper_core._fit_ml_tail_location_scale_bundle(
+        train_rows=_synthetic_ml_tail_location_scale_rows(80),
+        candidate_features=["feature_x", "feature_cycle"],
+        model_name=paper_module.ML_TAIL_POT_GPD_PLAIN_MLE_MODEL,
+        information_set="japan_only_plus_us_close_core",
+        tail_level=0.95,
+        lgb=lgb,
+    )
+    assert bundle["evt_tail"]["evt_shape"] == 0.99
+    assert math.isfinite(bundle["standardized_es"])
 
 
 def test_ml_tail_robust_pot_gpd_requires_tail_above_threshold(
@@ -574,8 +575,8 @@ def test_ml_tail_median_iqr_unibm_uses_iqr_route_and_unibm_shape(
     assert ok[0]["scale_method"] == "conditional_iqr_q25_q75"
     assert ok[0]["iqr_consistency_factor"] == pytest.approx(1.349)
     assert ok[0]["evt_variant"] == "unibm"
-    assert ok[0]["evt_shape_method"] == "unibm_block_maxima_xi_fixed_shape_scale_refit"
-    assert ok[0]["evt_shape_mle"] == pytest.approx(0.40)
+    assert ok[0]["evt_shape_method"] == "upper_bounded_unibm_xi_fixed_shape_scale_refit"
+    assert "evt_shape_mle" not in ok[0] and "evt_cap_hit" not in ok[0]
     assert ok[0]["evt_shape"] == pytest.approx(0.25)
     assert ok[0]["evt_scale"] == pytest.approx(2.0)
     assert ok[0]["evt_unibm_n_obs"] == observed_sample_sizes[0]
@@ -635,8 +636,8 @@ def test_ml_tail_median_mad_unibm_uses_mad_route_and_unibm_shape(
     assert ok[0]["scale_method"] == "conditional_median_abs_residual_l1"
     assert ok[0]["mad_consistency_factor"] == pytest.approx(1.4826)
     assert ok[0]["evt_variant"] == "unibm"
-    assert ok[0]["evt_shape_method"] == "unibm_block_maxima_xi_fixed_shape_scale_refit"
-    assert ok[0]["evt_shape_mle"] == pytest.approx(0.40)
+    assert ok[0]["evt_shape_method"] == "upper_bounded_unibm_xi_fixed_shape_scale_refit"
+    assert "evt_shape_mle" not in ok[0] and "evt_cap_hit" not in ok[0]
     assert ok[0]["evt_shape"] == pytest.approx(0.25)
     assert ok[0]["evt_scale"] == pytest.approx(2.0)
     assert ok[0]["evt_unibm_n_obs"] == observed_sample_sizes[0]

@@ -87,7 +87,4 @@ nav:
   - Data: data.md
   - Results Snapshot: results_snapshot.md
   - FAQ: faq.md
-  - Audit Prompts:
-      - Development Audit: development_audit_prompt.md
-      - Manuscript Audit: manuscript_audit_prompt.md
   - Future Work: future_work.md

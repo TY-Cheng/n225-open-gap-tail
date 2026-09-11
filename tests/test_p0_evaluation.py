@@ -378,6 +378,11 @@ def test_frozen_replay_preserves_source_and_reports_missing_candidates(
     assert set(grem["window"]) == {250, 500}
     assert set(roster).issubset(grem["model_name"])
     assert manifest["grem_policy"]["used_for_selection"] is False
+    assert manifest["joint_diagnostic_policy"]["used_for_selection"] is False
+    joint = pl.read_parquet(result / "joint_calibration.parquet")
+    assert joint.height == availability.height
+    assert joint["joint_rows"].sum() == 4
+    assert (result / "joint_murphy_samples.parquet").exists()
     # These candidates fail N>=450, but GREM must still retain their input timelines.
     assert not any(native["coverage_gate_pass"])
     curves = pl.read_parquet(result / "grem_curves.parquet")

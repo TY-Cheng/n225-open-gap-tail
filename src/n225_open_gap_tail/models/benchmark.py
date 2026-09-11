@@ -485,10 +485,15 @@ def _pot_gpd_standardized_tail(
     shape_shrinkage_k: float | None = None,
     unibm_anchor: dict[str, object] | None = None,
     preserve_var_without_es: bool = False,
+    shape_upper_bound: float | None = None,
 ) -> dict[str, object]:
     # The new experiment retains partial forecasts; legacy callers keep their policy.
     if preserve_var_without_es and require_finite_gpd_es:
         raise ValueError("Cannot both retain partial VaR and require finite GPD ES")
+    if shape_upper_bound is not None and (
+        not math.isfinite(shape_upper_bound) or shape_upper_bound >= 1.0
+    ):
+        raise ValueError("GPD shape upper bound must be finite and below one")
     values = standardized_losses[np.isfinite(standardized_losses)]
     min_standardized_losses = (
         DEFAULT_MIN_TRAIN_ROWS if min_standardized_losses is None else int(min_standardized_losses)
@@ -534,6 +539,7 @@ def _pot_gpd_standardized_tail(
             shape_cap=shape_cap,
             shape_shrinkage_k=shape_shrinkage_k,
             unibm_anchor=unibm_anchor,
+            shape_upper_bound=shape_upper_bound,
         )
         shape_method = str(shape["shape_method"])
         cap_policy = str(shape["cap_policy"])
@@ -561,27 +567,35 @@ def _pot_gpd_standardized_tail(
         else:
             es_z = static_empirical_es(values, var_z)
         tail_method = "pot_gpd_filtered_es"
-    cap_sensitivity = _evt_cap_sensitivity(
-        shape_mle=shape_mle,
-        caps=(
-            PIPELINE_CONFIG.model_policy.evt_shape_cap_conservative,
-            PIPELINE_CONFIG.model_policy.evt_shape_cap_baseline,
-            PIPELINE_CONFIG.model_policy.evt_shape_cap_loose,
-        ),
+    cap_sensitivity = (
+        []
+        if shape_upper_bound is not None
+        else _evt_cap_sensitivity(
+            shape_mle=shape_mle,
+            caps=(
+                PIPELINE_CONFIG.model_policy.evt_shape_cap_conservative,
+                PIPELINE_CONFIG.model_policy.evt_shape_cap_baseline,
+                PIPELINE_CONFIG.model_policy.evt_shape_cap_loose,
+            ),
+        )
     )
-    threshold_sensitivity = _evt_threshold_sensitivity(
-        values=values,
-        tail_level=tail_level,
-        threshold_grid=PIPELINE_CONFIG.model_policy.evt_threshold_grid,
-        min_exceedances=min_exceedances,
-        evt_variant=evt_variant,
-        shape_cap=shape_cap,
-        shape_shrinkage_k=shape_shrinkage_k,
-        unibm_anchor=unibm_anchor,
+    threshold_sensitivity = (
+        []
+        if shape_upper_bound is not None
+        else _evt_threshold_sensitivity(
+            values=values,
+            tail_level=tail_level,
+            threshold_grid=PIPELINE_CONFIG.model_policy.evt_threshold_grid,
+            min_exceedances=min_exceedances,
+            evt_variant=evt_variant,
+            shape_cap=shape_cap,
+            shape_shrinkage_k=shape_shrinkage_k,
+            unibm_anchor=unibm_anchor,
+        )
     )
     returned_es = es_z if preserve_var_without_es else max(var_z, es_z)
     es_finite = math.isfinite(float(returned_es))
-    return {
+    result = {
         "standardized_var": float(var_z),
         "standardized_es": float(returned_es) if es_finite or not preserve_var_without_es else None,
         "evt_es_failure_reason": None
@@ -634,6 +648,18 @@ def _pot_gpd_standardized_tail(
         "threshold_selection": "pre_registered_fixed_empirical_quantile",
         "tail_method": tail_method,
     }
+    if shape_upper_bound is not None:
+        # The ML specification reports one bounded shape, not raw/used pairs.
+        for key in (
+            "evt_cap_hit",
+            "evt_shape_mle",
+            "evt_scale_mle",
+            "evt_xi_evi_anchor",
+            "evt_cap_sensitivity_json",
+            "evt_threshold_sensitivity_json",
+        ):
+            result.pop(key)
+    return result
 
 
 def _select_evt_shape_and_scale(
@@ -647,6 +673,7 @@ def _select_evt_shape_and_scale(
     shape_cap: tuple[float, float] | None,
     shape_shrinkage_k: float | None,
     unibm_anchor: dict[str, object] | None = None,
+    shape_upper_bound: float | None = None,
 ) -> tuple[dict[str, object], dict[str, object]]:
     variant = evt_variant.strip().lower()
     evi = _unavailable_evi_anchor("not_used")
@@ -655,6 +682,15 @@ def _select_evt_shape_and_scale(
     if variant == "plain_mle":
         cap_policy = "none"
         cap_hit = False
+        scale = {"scale_final": float(scale_mle), "scale_refit_status": "original_fixed_loc_mle"}
+        if shape_upper_bound is not None:
+            if not math.isfinite(shape_mle):
+                raise PipelineRunError("EVT calibration has nonfinite GPD shape")
+            if shape_mle > shape_upper_bound:
+                shape_mle = shape_upper_bound
+                scale = _refit_gpd_scale_fixed_shape(excesses, shape_mle)
+            shape_method = "upper_bounded_mle_shape_fixed_loc_scale"
+            cap_policy = f"upper_bound_{shape_upper_bound}"
         return (
             {
                 "shape_final": float(shape_mle),
@@ -664,7 +700,7 @@ def _select_evt_shape_and_scale(
                 "evi": evi,
                 "ei": ei,
             },
-            {"scale_final": float(scale_mle), "scale_refit_status": "original_fixed_loc_mle"},
+            scale,
         )
     if variant == "unibm":
         evi = _estimate_unibm_evi_anchor(evi_sample) if unibm_anchor is None else unibm_anchor
@@ -673,12 +709,19 @@ def _select_evt_shape_and_scale(
             raise PipelineRunError(f"unavailable_evt_unibm: {evi.get('status')}")
         if not math.isfinite(shape):
             raise PipelineRunError("unavailable_evt_unibm: nonfinite_xi")
+        cap_policy = "none"
+        shape_method = "unibm_block_maxima_xi_fixed_shape_scale_refit"
+        if shape_upper_bound is not None:
+            shape = min(shape, shape_upper_bound)
+            evi = {key: value for key, value in evi.items() if key != "xi_evi_anchor"}
+            shape_method = "upper_bounded_unibm_xi_fixed_shape_scale_refit"
+            cap_policy = f"upper_bound_{shape_upper_bound}"
         scale = _refit_gpd_scale_fixed_shape(excesses, shape)
         return (
             {
                 "shape_final": float(shape),
-                "shape_method": "unibm_block_maxima_xi_fixed_shape_scale_refit",
-                "cap_policy": "none",
+                "shape_method": shape_method,
+                "cap_policy": cap_policy,
                 "cap_hit": False,
                 "evi": evi,
                 "ei": ei,

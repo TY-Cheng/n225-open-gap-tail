@@ -357,6 +357,26 @@ def body_rolling_command(
     typer.echo(f"body rolling forecasts: {result}")
 
 
+@app.command("body-tuned")
+def body_tuned_command(
+    source_run: Annotated[Path, typer.Option(help="Source panel; never reuse old predictions.")],
+    output_dir: Annotated[Path, typer.Option(help="New output directory.")],
+    forecast_date: Annotated[
+        str | None, typer.Option(help="One-date/all-eight pilot, 60min cap.")
+    ] = None,
+    workers: Annotated[
+        int, typer.Option(help="Independent month workers (1--3); pilot requires --workers 1.")
+    ] = 2,
+) -> None:
+    """Joint 3-fold CV tuning and in-sample tail calibration; outer monthly OOS."""
+    from n225_open_gap_tail.forecasting.tuned_body import run_tuned_body
+
+    result = run_tuned_body(
+        source_run, output_dir, forecast_date=forecast_date, progress=typer.echo, workers=workers
+    )
+    typer.echo(f"jointly tuned body forecasts: {result}")
+
+
 @app.command("evaluate")
 def evaluate_command(
     run_id: str = typer.Option("", help="Run id. Defaults to the latest tail-risk run."),

@@ -174,6 +174,40 @@ execution steps. `body-pilot` remains the bounded one-date entry point. Public
 UniBM must be importable in the process environment. The legacy `just full`
 workflow below still uses the original eight ML specifications.
 
+`body-tuned --source-run ... --output-dir ...` runs the accepted bounded
+component search before those same 28 forecasts. Each outer monthly cutoff uses
+three-fold random CV (shuffle, seed 0) over the full training history, with
+common validation-date folds and at least 250 training observations per case.
+Held-out losses are pooled by date within each scenario, then averaged equally
+across A--D/both tails to select shared parameters. Spread CV targets are formed
+using the center fitted on that fold's training subset; there is no nested HPO.
+Final center and spread fits use full native histories; their **in-sample**
+standardized residuals calibrate the tails, with zero artificial OOF warm-up and
+actual nonfinite positions retained. This is not OOF tail calibration or a claim
+of temporally independent inner validation; the outer monthly test stays separate.
+The finite pool has six configurations and
+79/139/199 round caps. Each candidate/fold/scenario is fitted once up to 199
+rounds and scored at all three prefixes, with no additional continuous
+early-stopping search. Incomplete candidates are not ranked on fewer cases;
+if none is complete, the existing fixed-settings/160-round fallback is retained.
+LGBM--POT-MLE and LGBM--UniBM use a shape upper bound of 0.99. A changed MLE
+shape triggers a fixed-shape GPD scale refit; UniBM scale is fitted at the bounded
+shape. VaR and ES use this same final pair. Only the final `evt_shape` is reported,
+without a raw/used shape pair or cap-hit flag. Retained UniBM regression uncertainty
+and bootstrap diagnostics describe the underlying fit, not the capped estimator.
+External benchmarks are unchanged; no extra ML cap/threshold sensitivity is run.
+Single fits are limited to 300 seconds and each joint selection to 30 minutes.
+`--forecast-date 2026-05-01 --workers 1` restricts this command to an all-eight, one-date
+pilot with a 60-minute workflow budget; supervise the process group to enforce
+that ceiling even during native tail-estimator calls. Full runs support
+`--workers 1` through `3` (default `2`) for independent months, with LightGBM
+`num_threads=3` per fit; this never separates the eight-way selection. Other
+nested BLAS thread limits remain at one. Selection receipts live in `selection/`, per-refit
+`in_sample_residuals.parquet` and forecasts in `refits/`, and the aggregate
+predictions in `forecasts/`.
+The run also preserves its working-tree source diff/new source files. Current
+training uses decimal losses; old multiplier-100 artifacts remain unchanged.
+
 `reevaluate` writes native VaR gates and comparison-specific common-date FZ0
 results, then `grem_curves.parquet` and `grem_summary.parquet`. GREM includes the
 entire pre-screen candidate roster, with W=500 primary and W=250 sensitivity;
@@ -182,6 +216,12 @@ and cumulative capital never resets. Known calendar/forecast unavailability gets
 zero bets; missing losses or unverified availability timing leave an explicit
 unavailable suffix. The reference level 20 is per-sequence, not a simultaneous
 or post-selection guarantee. See the accepted Q28--Q30 in `docs/paper_plan.md`.
+
+Q14 adds `joint_calibration.parquet`, `joint_murphy.parquet` and
+`joint_murphy_samples.parquet` without changing that selection. Native joint
+identification means have pointwise block-bootstrap intervals; these are not a
+joint or conditional calibration test. Murphy curves use joint-eligible fixed
+common dates and a finite shared threshold grid, not a dominance test.
 
 The full workflow is:
 

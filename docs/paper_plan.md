@@ -16,6 +16,35 @@ and appendix/source notes.
 
 ## P0 Revision Decisions — 2026-09-09
 
+**2026-09-12 calibration revision (supersedes random-CV/in-sample Q57--Q63):**
+for each outer monthly training window D, use five expanding validation blocks
+with initial training size 250 and block size ceil((N_common-250)/5). Evaluate
+each fixed candidate across these folds and the eight scenarios; pool losses
+by observation within scenario, then average scenarios equally. Select once
+per component, with no additional per-fold parameter search. Reuse the selected
+center's date-ordered OOF errors as spread targets; spread folds require at
+least 250 prior structurally available center errors, fixed before candidate
+scoring. Never remove a validation date/fold because a candidate fails. Retain
+the winning candidates' actual OOF predictions for standardized tail calibration.
+Refit center on full native D, and residual-based spread on all available OOF
+center errors; IQR retains its quartile construction. Shared parameters, the
+six candidate profiles, 79/139/199 prefixes, resource limits, ML shape cap and
+outer VaR gates are unchanged. OOF values are held out of their fitted trees,
+but parameters are selected over all D; this is not a strict historical
+hyperparameter replay or an independent calibration holdout. Implementation
+and tests are authorized, not retraining or a new full experiment. Old in-sample
+artifacts remain unchanged and must not be relabelled as OOF evidence.
+
+**2026-09-12 sample-policy revision (supersedes Q37):** restore the original
+predictor-driven global lower bound for new panel builds and body experiments:
+the maximum of the requested start, J-Quants required-field coverage, Massive
+daily entitlement and required FRED/FX coverage. Require at least 83% finite
+predictor coverage in each training window, uniformly for ordinary, minute and
+options features (maximum missingness 17%). Preserve target/timing/roll/SQ
+exclusions and do not backfill missing history. VaR gates, tuning, residual
+construction and existing artifacts are unchanged. This author decision does
+not authorize retraining or imply improved coverage.
+
 The author accepted Q1--Q13 below as the P0 implementation basis and subsequently
 accepted Q14, revised Q15, revised Q16, Q19--Q25, Q26a, and Q27--Q35. Q17 is declined. Q18's
 e-backtesting scope and primary betting method are settled by Q19--Q20; the

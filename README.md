@@ -176,15 +176,19 @@ workflow below still uses the original eight ML specifications.
 
 `body-tuned --source-run ... --output-dir ...` runs the accepted bounded
 component search before those same 28 forecasts. Each outer monthly cutoff uses
-three-fold random CV (shuffle, seed 0) over the full training history, with
-common validation-date folds and at least 250 training observations per case.
+five expanding validation blocks, with size `ceil((N_common - 250) / 5)` and
+at least 250 earlier training observations per case. There is no shuffle.
 Held-out losses are pooled by date within each scenario, then averaged equally
-across A--D/both tails to select shared parameters. Spread CV targets are formed
-using the center fitted on that fold's training subset; there is no nested HPO.
-Final center and spread fits use full native histories; their **in-sample**
-standardized residuals calibrate the tails, with zero artificial OOF warm-up and
-actual nonfinite positions retained. This is not OOF tail calibration or a claim
-of temporally independent inner validation; the outer monthly test stays separate.
+across A--D/both tails to select shared parameters once per component, not once
+per fold. Spread targets use the selected center's earlier OOF errors; only
+structurally eligible folds enter spread selection. The winner's actual prefix
+predictions are retained, so selected folds are not trained again. Standardized
+OOF residuals calibrate the tails, preserving warm-up and later missing positions.
+Final center fits use full native histories; final residual-based spread fits
+use all available OOF center errors. IQR uses the fitted quartiles instead.
+Parameter selection uses the whole outer training window: these are time-ordered
+OOF residuals, not an archive of historically selected hyperparameters or a
+selection-independent calibration sample. The outer monthly test stays separate.
 The finite pool has six configurations and
 79/139/199 round caps. Each candidate/fold/scenario is fitted once up to 199
 rounds and scored at all three prefixes, with no additional continuous
@@ -203,7 +207,7 @@ that ceiling even during native tail-estimator calls. Full runs support
 `--workers 1` through `3` (default `2`) for independent months, with LightGBM
 `num_threads=3` per fit; this never separates the eight-way selection. Other
 nested BLAS thread limits remain at one. Selection receipts live in `selection/`, per-refit
-`in_sample_residuals.parquet` and forecasts in `refits/`, and the aggregate
+`oof_residuals.parquet` and forecasts in `refits/`, and the aggregate
 predictions in `forecasts/`.
 The run also preserves its working-tree source diff/new source files. Current
 training uses decimal losses; old multiplier-100 artifacts remain unchanged.

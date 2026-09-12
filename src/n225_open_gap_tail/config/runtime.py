@@ -755,7 +755,7 @@ def build_feature_matrix_gate_records(
         raw_values = frame.get_column(column).to_list()
         finite_values = [_optional_float(value) for value in raw_values]
         valid_values = [value for value in finite_values if value is not None]
-        missingness = None if row_count == 0 else 1.0 - len(valid_values) / row_count
+        missingness = None if row_count == 0 else (row_count - len(valid_values)) / row_count
         training_missingness[column] = missingness
         missingness_limit = _training_missingness_limit(column)
         if missingness is not None and missingness > missingness_limit:

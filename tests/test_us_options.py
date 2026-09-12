@@ -285,7 +285,7 @@ def test_options_asof_respects_cutoff_metadata() -> None:
     assert selected_null["option_us_core_spy_atm_iv_short__fill_method"] == "direct"
 
 
-def test_options_missingness_gate_is_separate_from_core_features() -> None:
+def test_options_missingness_gate_matches_core_features() -> None:
     frame = pl.DataFrame(
         {
             "option_us_core_spy_atm_iv_short": [0.2, None, 0.21, 0.22],
@@ -299,11 +299,11 @@ def test_options_missingness_gate_is_separate_from_core_features() -> None:
     )
 
     active_features = cast(list[str], gate["active_features"])
-    assert "option_us_core_spy_atm_iv_short" in active_features
+    assert "option_us_core_spy_atm_iv_short" not in active_features
     dropped = json.loads(str(gate["dropped_features_json"]))
     spy_drop = next(item for item in dropped if item["feature"] == "spy_return")
     assert spy_drop["drop_reason"] == "high_training_missingness"
-    assert spy_drop["max_missingness"] == pytest.approx(0.20)
+    assert spy_drop["max_missingness"] == pytest.approx(0.17)
 
 
 def test_options_underlying_helpers_are_gated_and_deduplicated() -> None:

@@ -14,6 +14,7 @@ from n225_open_gap_tail.config.runtime import (
     CLAIMS_LEVEL,
     cleanup_orphan_tmp_files,
     cleanup_transient_unavailable_markers,
+    compute_combined_clean_start,
     CORE_FRED_SERIES_FOR_PIPELINE,
     CORE_MASSIVE_TICKERS_FOR_PIPELINE,
     CREDIT_ENRICHED_FRED_SERIES_FOR_PIPELINE,
@@ -311,9 +312,16 @@ def build_panel(
     _pipeline_log(f"modeling panel rows built: {len(panel)}")
     initial_feature_coverage = build_feature_coverage_records(panel)
     effective_predictor_start = build_effective_predictor_start(initial_feature_coverage)
-    # Predictor coverage is audited and gated per training window, not used to
-    # truncate unrelated models' otherwise valid target history (accepted Q37).
-    combined_clean_start = max(start, jquants_required_start)
+    combined_clean_start = max(
+        start,
+        compute_combined_clean_start(
+            jquants_required_field_coverage_start=jquants_required_start,
+            massive_daily_entitlement_start=effective_predictor_start.get("massive_daily"),
+            fred_required_series_coverage_start=_max_date_strings(
+                effective_predictor_start.get("fred_core"), effective_predictor_start.get("fx_core")
+            ),
+        ),
+    )
     _pipeline_log(f"combined clean start: {combined_clean_start}")
     panel = apply_combined_clean_start(panel, combined_clean_start=combined_clean_start)
     feature_coverage = build_feature_coverage_records(panel)
@@ -460,14 +468,14 @@ def build_panel(
                 "feature_dictionary": str(gold_feature_dictionary_path),
             },
             "window": [start, end_date],
-            "sample_policy": "target_history_with_training_window_feature_gates",
+            "sample_policy": "clean_predictor_entitlement_sample",
             "main_sample_start_requested": start,
             "audit_sample_start": AUDIT_SAMPLE_START,
             "main_sample_rationale": (
-                "Main modeling panel starts no earlier than the requested start and "
-                "J-Quants futures required-field coverage. Predictor availability is "
-                "audited separately and gated within each training window; late "
-                "predictors do not truncate other models' target history."
+                "Main modeling panel starts no earlier than the requested start, "
+                "J-Quants required-field coverage, Massive daily entitlement and "
+                "required FRED/FX coverage. All predictor classes additionally require "
+                "83% nonmissing coverage within each training window."
             ),
             "combined_clean_start": combined_clean_start,
             "effective_predictor_start": effective_predictor_start,

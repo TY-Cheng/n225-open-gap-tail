@@ -1,7 +1,8 @@
-"""Bounded three-fold random CV shared by A--D and both exposures.
+"""Bounded expanding-fold CV shared by A--D and both exposures.
 
 Only component validation losses select parameters. Tail outcomes and evaluation
-gates are not inputs. Final full-history in-sample residuals calibrate the tails.
+gates are not inputs. Selected-parameter OOF residuals calibrate the tails;
+selection uses all outer training folds, not a historical hyperparameter replay.
 """
 
 from __future__ import annotations
@@ -16,10 +17,10 @@ from typing import Any
 
 import lightgbm as lgb
 import numpy as np
-from sklearn.model_selection import KFold  # type: ignore[import-untyped]
 
 from n225_open_gap_tail.config.runtime import (
     ML_TAIL_MIN_OOF_TRAIN_ROWS,
+    ML_TAIL_OOF_SPLITS,
     PipelineRunError,
 )
 from n225_open_gap_tail.models.ml_body import (
@@ -29,13 +30,13 @@ from n225_open_gap_tail.models.ml_body import (
     spread_target,
 )
 from n225_open_gap_tail.models.ml_tail_oof import (
+    _blocked_expanding_oof_folds,
     _fit_lgb_regression_model,
     _ml_tail_seed,
     _predict_lgb_rows,
 )
 
-CV_SPLITS = 3
-CV_SEED = 0
+CV_SPLITS = ML_TAIL_OOF_SPLITS
 Fold = dict[str, tuple[list[int], list[int]]]
 ROUND_CAPS = (79, 139, 199)
 CANDIDATES: tuple[tuple[str, dict[str, object]], ...] = (
@@ -170,7 +171,7 @@ def _fit(
 
 
 def date_folds(cases: Mapping[str, dict[str, Any]], cutoff: str) -> list[Fold]:
-    """Partition common dates once; retain each scenario's extra native training dates."""
+    """Five chronological validation blocks; each fit retains its native past only."""
     maps = {
         key: {
             str(row["forecast_date"]): i
@@ -182,55 +183,20 @@ def date_folds(cases: Mapping[str, dict[str, Any]], cutoff: str) -> list[Fold]:
     if len(maps) != 8:
         return []
     common = sorted(set.intersection(*(set(mapping) for mapping in maps.values())))
-    if len(common) < CV_SPLITS:
-        return []
     result = []
-    for _, valid in KFold(CV_SPLITS, shuffle=True, random_state=CV_SEED).split(common):
+    for _, valid in _blocked_expanding_oof_folds(
+        len(common), n_splits=CV_SPLITS, min_train_rows=ML_TAIL_MIN_OOF_TRAIN_ROWS
+    ):
         heldout = [common[i] for i in valid]
-        heldout_set = set(heldout)
         result.append(
             {
                 key: (
-                    [i for day, i in mapping.items() if day not in heldout_set],
+                    [i for day, i in mapping.items() if day < heldout[0]],
                     [mapping[day] for day in heldout],
                 )
                 for key, mapping in maps.items()
             }
         )
-    return result
-
-
-def _center_fold_residuals(
-    cases: Mapping[str, dict[str, Any]],
-    folds: list[Fold],
-    centers: Mapping[str, dict[str, Any]],
-    runtime: BoundedFit,
-) -> list[dict[str, Array]]:
-    """One selected-center reconstruction per fold, reused by its spread recipes."""
-    result = []
-    for fold, split in enumerate(folds):
-        residuals = {}
-        for key, case in cases.items():
-            center = centers[key]
-            y = (
-                np.array([float(row["realized_loss"]) for row in case["train"]])
-                * TRAINING_MULTIPLIER
-            )
-            train, _ = split[key]
-            model, _, active = _fit(
-                case,
-                y,
-                train,
-                role=center["role"],
-                objective=center["objective"],
-                alpha=center["alpha"],
-                label=f"cv:{fold}",
-                params=center["parameters"],
-                runtime=runtime,
-            )
-            # T predictions are in-sample; V predictions use only this fold's T fit.
-            residuals[key] = y - _predict_lgb_rows(model, case["train"], active)
-        result.append(residuals)
     return result
 
 
@@ -245,10 +211,8 @@ def select_parameters(
     runtime: BoundedFit,
     selection_seconds: float = 1800,
     folds: list[Fold] | None = None,
-    center_cv: dict[str, Any] | None = None,
-    transform: str | None = None,
-) -> tuple[dict[str, object], dict[str, Any]]:
-    """Rank only complete 3 x 8 scores: pooled dates within case, then equal cases."""
+) -> tuple[dict[str, object], dict[str, Any], dict[str, Array]]:
+    """One search over all eligible folds; retain the winner's actual OOF predictions."""
     runtime.check()
     started = time.monotonic()
     folds = date_folds(cases, cutoff) if folds is None else folds
@@ -258,7 +222,8 @@ def select_parameters(
         "objective": objective,
         "alpha": alpha,
         "cv_splits": CV_SPLITS,
-        "cv_seed": CV_SEED,
+        "cv_kind": "blocked_expanding",
+        "scored_fold_count": len(folds),
         "status": "fixed_short_history",
         "folds": [],
         "candidates": [],
@@ -289,7 +254,7 @@ def select_parameters(
         )
     if (
         len(cases) != 8
-        or len(folds) != CV_SPLITS
+        or not folds
         or any(
             len(train) < ML_TAIL_MIN_OOF_TRAIN_ROWS
             for split in folds
@@ -298,29 +263,13 @@ def select_parameters(
     ):
         record["failure_reason"] = "eight_case_common_validation_or_training_history_unavailable"
         record["elapsed_seconds"] = time.monotonic() - started
-        return dict(record["parameters"]), record
+        return dict(record["parameters"]), record, {}
 
     best: tuple[float, int, int] | None = None
+    best_oof: dict[str, Array] = {}
     incomplete = False
     runtime.selection_deadline = started + selection_seconds
     try:
-        fold_targets: list[Mapping[str, Array]] = [targets] * len(folds)
-        if center_cv is not None:
-            assert transform is not None
-            if "failure_reason" in center_cv:
-                raise PipelineRunError(center_cv["failure_reason"])
-            if "residuals" not in center_cv:
-                try:
-                    center_cv["residuals"] = _center_fold_residuals(
-                        cases, folds, center_cv["components"], runtime
-                    )
-                except (FitTimeout, PipelineRunError) as exc:
-                    center_cv["failure_reason"] = str(exc)
-                    raise
-            fold_targets = [
-                {key: spread_target(residual, transform) for key, residual in residuals.items()}
-                for residuals in center_cv["residuals"]
-            ]
         for index, (name, overrides) in enumerate(CANDIDATES):
             runtime.check()
             if time.monotonic() >= runtime.selection_deadline:
@@ -329,12 +278,16 @@ def select_parameters(
             scores: dict[int, dict[str, list[tuple[int, float]]]] = {
                 rounds: {key: [] for key in cases} for rounds in ROUND_CAPS
             }
+            predictions = {
+                rounds: {key: np.full(len(case["train"]), np.nan) for key, case in cases.items()}
+                for rounds in ROUND_CAPS
+            }
             detail: dict[str, Any] = {"name": name, "actual_trees": {}, "status": "complete"}
             try:
                 for fold, split in enumerate(folds):
                     for key, case in cases.items():
                         train, valid = split[key]
-                        target = fold_targets[fold][key]
+                        target = targets[key]
                         eligible = [i for i in train if np.isfinite(target[i])]
                         if (
                             len(eligible) < ML_TAIL_MIN_OOF_TRAIN_ROWS
@@ -363,6 +316,7 @@ def select_parameters(
                                 active,
                                 num_iteration=rounds,
                             )
+                            predictions[rounds][key][valid] = prediction
                             scores[rounds][key].append(
                                 (
                                     len(valid),
@@ -375,12 +329,12 @@ def select_parameters(
             detail["rounds"] = []
             for rounds, per_case in scores.items():
                 complete = all(
-                    len(values) == CV_SPLITS and all(np.isfinite(loss) for _, loss in values)
+                    len(values) == len(folds) and all(np.isfinite(loss) for _, loss in values)
                     for values in per_case.values()
                 )
                 pooled = {
                     key: float(sum(n * loss for n, loss in values) / sum(n for n, _ in values))
-                    if len(values) == CV_SPLITS and all(np.isfinite(loss) for _, loss in values)
+                    if len(values) == len(folds) and all(np.isfinite(loss) for _, loss in values)
                     else None
                     for key, values in per_case.items()
                 }
@@ -406,6 +360,7 @@ def select_parameters(
                     rank = (mean, rounds, index)
                     if best is None or rank < best:
                         best = rank
+                        best_oof = predictions[rounds]
                         record.update(
                             selected_name=name, parameters={**overrides, "n_estimators": rounds}
                         )
@@ -423,7 +378,7 @@ def select_parameters(
         else "selected"
     )
     record["elapsed_seconds"] = time.monotonic() - started
-    return dict(record["parameters"]), record
+    return dict(record["parameters"]), record, best_oof
 
 
 def fit_joint_component(
@@ -436,12 +391,11 @@ def fit_joint_component(
     runtime: BoundedFit,
     receipt: Callable[[dict[str, Any]], None],
     folds: list[Fold] | None = None,
-    center_cv: dict[str, Any] | None = None,
-    transform: str | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """Select once on D; refit each scenario's full D and retain fitted values."""
+    """Select once on D; keep OOF predictions and refit on all finite target history."""
     cutoff = min(str(case["future"][0]["forecast_date"]) for case in cases.values())
-    params, record = select_parameters(
+    folds = date_folds(cases, cutoff) if folds is None else folds
+    params, record, oof = select_parameters(
         cases,
         targets,
         role=role,
@@ -450,8 +404,6 @@ def fit_joint_component(
         cutoff=cutoff,
         runtime=runtime,
         folds=folds,
-        center_cv=center_cv,
-        transform=transform,
     )
     results: dict[str, dict[str, Any]] = {}
     record["fits"] = []
@@ -461,6 +413,8 @@ def fit_joint_component(
         indices = _eligible(case, targets[key], cutoff)
         result: dict[str, Any] = {
             "fitted": np.full(len(case["train"]), np.nan),
+            "oof": oof.get(key, np.full(len(case["train"]), np.nan)),
+            "oof_warmup_rows": folds[0][key][1][0] if folds else len(case["train"]),
             "role": role,
             "objective": objective,
             "alpha": alpha,
@@ -475,7 +429,30 @@ def fit_joint_component(
         }
         try:
             if len(indices) < ML_TAIL_MIN_OOF_TRAIN_ROWS:
-                raise PipelineRunError("unavailable_in_sample_standardization_insufficient_sample")
+                raise PipelineRunError("unavailable_oof_standardization_insufficient_sample")
+            if key not in oof:
+                # Existing fixed-parameter fallback still needs genuine held-out predictions.
+                for fold, split in enumerate(folds):
+                    train, valid = split[key]
+                    eligible = [i for i in train if np.isfinite(targets[key][i])]
+                    if len(eligible) < ML_TAIL_MIN_OOF_TRAIN_ROWS:
+                        raise PipelineRunError(
+                            "unavailable_oof_standardization_insufficient_sample"
+                        )
+                    fold_model, _, active = _fit(
+                        case,
+                        targets[key],
+                        eligible,
+                        role=role,
+                        objective=objective,
+                        alpha=alpha,
+                        label=f"cv:{fold}",
+                        params=params,
+                        runtime=runtime,
+                    )
+                    result["oof"][valid] = _predict_lgb_rows(
+                        fold_model, [case["train"][i] for i in valid], active
+                    )
             model, gate, active = _fit(
                 case,
                 targets[key],
@@ -512,7 +489,6 @@ def fit_joint_bodies(
     progress: Callable[[str], None] | None = None,
 ) -> dict[str, dict[str, dict[str, Any]]]:
     components: dict[str, dict[str, dict[str, Any]]] = {key: {} for key in cases}
-    center_caches: dict[str, dict[str, Any]] = {}
     cutoff = min(str(case["future"][0]["forecast_date"]) for case in cases.values())
     folds = date_folds(cases, cutoff)
     y = {
@@ -525,9 +501,7 @@ def fit_joint_bodies(
         targets: Mapping[str, Array],
         objective: str,
         alpha: float | None,
-        *,
-        center_cv: dict[str, Any] | None = None,
-        transform: str | None = None,
+        score_folds: list[Fold] | None = None,
     ) -> dict[str, dict[str, Any]]:
         if progress:
             progress(f"joint component {role}")
@@ -539,9 +513,7 @@ def fit_joint_bodies(
             alpha=alpha,
             runtime=runtime,
             receipt=receipt,
-            folds=folds,
-            center_cv=center_cv,
-            transform=transform,
+            folds=folds if score_folds is None else score_folds,
         )
         for key in cases:
             components[key][role] = fitted[key]
@@ -556,22 +528,31 @@ def fit_joint_bodies(
         ("quantile", 0.75),
     ):
         role = f"center:{objective}:{alpha}"
-        center_caches[role] = {"components": fit(role, y, objective, alpha)}
+        fit(role, y, objective, alpha)
     for recipe, (objective, transform, spread_objective) in BODY_RECIPES.items():
         if transform == "iqr":
             continue
         center_role = f"center:{objective}:{0.5 if objective == 'quantile' else None}"
         targets = {
-            key: spread_target(y[key] - components[key][center_role]["fitted"], transform)
+            key: spread_target(y[key] - components[key][center_role]["oof"], transform)
             for key in cases
         }
+        # Structural warm-up alone fixes the scoring roster, never candidate performance.
+        spread_folds = [
+            split
+            for split in folds
+            if all(
+                sum(i >= components[key][center_role]["oof_warmup_rows"] for i in train)
+                >= ML_TAIL_MIN_OOF_TRAIN_ROWS
+                for key, (train, _) in split.items()
+            )
+        ]
         fit(
             f"spread:{recipe}",
             targets,
             spread_objective,
             None,
-            center_cv=center_caches[center_role],
-            transform=transform,
+            score_folds=spread_folds,
         )
     fit("direct", y, "quantile", next(iter(cases.values()))["tail_level"])
     return components

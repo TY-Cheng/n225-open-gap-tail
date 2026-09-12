@@ -418,11 +418,20 @@ def test_pilot_artifacts_isolation_binding_and_no_retry(
     manifest = json.loads((output / "manifest.json").read_text())
     assert manifest["status"] == "completed" and manifest["forecast_rows"] == 28
     assert manifest["training_multiplier"] == 1
+    assert manifest["sample_policy"] == "clean_predictor_entitlement_sample"
     assert "gold_root" not in manifest and "gold_artifacts" not in manifest
     assert manifest["leakage_check_failures"] == 0 and manifest["elapsed_seconds"] > 0
     assert (output / "audits/leakage_check_summary.json").exists()
     _assert_leakage_gate(output)
     assert json.loads((source / "manifest.json").read_text()) == original
+    # The body entry point must reapply predictor bounds, even to an expanded source panel.
+    later_rows = [{**row, "xlc_return": None, "xlc_return__source_date": None} for row in rows]
+    later_rows[-1].update(xlc_return=0.01, xlc_return__source_date="2020-01-05")
+    pl.from_dicts(later_rows).write_parquet(source / "panel/modeling_panel.parquet")
+    bounded, bounded_rows, _ = experiment._prepare_body_run(source, tmp_path / "bounded")
+    assert bounded["combined_clean_start"] == "2020-01-05"
+    assert sum(row["clean_sample"] is True for row in bounded_rows) == 6
+    pl.from_dicts(rows).write_parquet(source / "panel/modeling_panel.parquet")
     with pytest.raises(FileExistsError):
         experiment.run_body_pilot(
             source,
@@ -508,12 +517,18 @@ def test_pilot_artifacts_isolation_binding_and_no_retry(
         assert tuned_manifest["month_workers"] == (2 if workers is None else workers)
         assert tuned_manifest["completed_refits"] == 8 and tuned_manifest["forecast_rows"] == 224
         assert all(c["components"]["direct"]["test"] for c in observed)
-        assert all(c["calibration_kind"] == "in_sample" for c in observed)
-        assert tuned_manifest["tuning"]["cv_splits"] == 3
-        assert tuned_manifest["tuning"]["cv_seed"] == 0
-        assert tuned_manifest["calibration_warmup_rows"] == 0
-        assert len(list((destination / "refits").rglob("in_sample_residuals.parquet"))) == 8
-        assert not list((destination / "refits").rglob("oof_residuals.parquet"))
+        assert all(c["calibration_kind"] == "oof" for c in observed)
+        assert tuned_manifest["tuning"]["cv_splits"] == 5
+        assert tuned_manifest["tuning"]["cv_shuffle"] is False
+        assert (
+            tuned_manifest["calibration_warmup_policy"] == "per_refit_component_structural_warmup"
+        )
+        assert len(list((destination / "refits").rglob("oof_residuals.parquet"))) == 8
+        assert not list((destination / "refits").rglob("in_sample_residuals.parquet"))
+        assert (
+            tuned_manifest["tail_calibration"]
+            == "selected_parameter_expanding_oof_standardized_residuals"
+        )
         assert (destination / "selection/2020-02.json").exists()
     with pytest.raises(ValueError, match="first eligible"):
         tuned_body.run_tuned_body(

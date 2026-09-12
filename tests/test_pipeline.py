@@ -598,7 +598,7 @@ def test_feature_matrix_gate_drops_sparse_minute_features_before_prediction() ->
                 6.0,
                 7.0,
                 8.0,
-                None,
+                9.0,
                 None,
             ],
         }
@@ -616,7 +616,16 @@ def test_feature_matrix_gate_drops_sparse_minute_features_before_prediction() ->
         item for item in dropped if item["feature"] == "sparse_minute_late_60m_return"
     )
     assert sparse_drop["drop_reason"] == "high_training_missingness"
-    assert sparse_drop["max_missingness"] == pytest.approx(0.05)
+    assert sparse_drop["max_missingness"] == pytest.approx(0.17)
+
+
+@pytest.mark.parametrize("feature", ["spy_return", "spy_late_60m_return", "n225_option_iv"])
+def test_feature_coverage_83_percent_boundary_is_uniform(feature: str) -> None:
+    for observed, expected in [(83, [feature]), (82, [])]:
+        frame = pl.DataFrame(
+            {feature: [float(i) for i in range(observed)] + [None] * (100 - observed)}
+        )
+        assert build_feature_matrix_gate_records(frame, [feature])["active_features"] == expected
 
 
 def test_ml_tail_information_sets_select_nested_feature_blocks() -> None:
@@ -5242,7 +5251,7 @@ def test_leakage_signature_fails_closed_on_missing_signature_column() -> None:
 
 @pytest.mark.parametrize(
     ("required_target_start", "expected_clean_rows"),
-    [(None, 1), ("2016-07-19", 1), ("2026-01-07", 0)],
+    [(None, 1), ("2016-07-19", 0), ("2026-01-07", 0)],
 )
 def test_build_panel_with_synthetic_vendor_rows(
     monkeypatch: pytest.MonkeyPatch,
@@ -5343,12 +5352,14 @@ def test_build_panel_with_synthetic_vendor_rows(
     assert result.panel_path == gold_panel
     manifest = json.loads((result.run_dir / "manifest.json").read_text())
     assert manifest["combined_clean_start"] == max(
-        "2026-01-05", required_target_start or "2016-07-19"
+        "2026-01-05",
+        required_target_start or "2016-07-19",
+        "2026-02-03" if required_target_start is not None else "2016-07-19",
     )
     assert panel["combined_clean_start"].unique().to_list() == [manifest["combined_clean_start"]]
     if required_target_start is not None:
         assert manifest["effective_predictor_start"] == predictor_starts
-    assert manifest["sample_policy"] == "target_history_with_training_window_feature_gates"
+    assert manifest["sample_policy"] == "clean_predictor_entitlement_sample"
 
 
 def test_default_end_date_resolves_to_most_recent_completed_friday() -> None:

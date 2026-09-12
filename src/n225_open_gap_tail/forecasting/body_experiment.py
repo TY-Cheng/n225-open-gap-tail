@@ -36,6 +36,7 @@ from n225_open_gap_tail.config.runtime import (
     validate_forecast_values,
 )
 from n225_open_gap_tail.data_lake.artifacts import _write_json, _write_parquet
+from n225_open_gap_tail.data_lake.io import compute_combined_clean_start
 from n225_open_gap_tail.forecasting._guards import _assert_leakage_gate
 from n225_open_gap_tail.metrics.stat_utils import forecast_eligible, index_forecast_sessions
 from n225_open_gap_tail.models.benchmark import _pot_gpd_standardized_tail
@@ -56,8 +57,10 @@ from n225_open_gap_tail.models.ml_tail_oof import (
 from n225_open_gap_tail.models.unibm import estimate_public_unibm
 from n225_open_gap_tail.panel.build import (
     apply_combined_clean_start,
+    build_effective_predictor_start,
     build_feature_coverage_records,
 )
+from n225_open_gap_tail.panel.build_helpers import _max_date_strings
 from n225_open_gap_tail.panel.information_sets import (
     ml_tail_feature_columns_for_information_set,
     registered_ml_tail_information_sets,
@@ -413,6 +416,20 @@ def _prepare_body_run(
     if panel["forecast_date"].n_unique() != panel.height:
         raise ValueError("Source panel has duplicate target dates")
     panel_rows = apply_combined_clean_start(panel.to_dicts(), combined_clean_start=lower_bound)
+    effective_predictor_start = build_effective_predictor_start(
+        build_feature_coverage_records(panel_rows)
+    )
+    lower_bound = max(
+        lower_bound,
+        compute_combined_clean_start(
+            jquants_required_field_coverage_start=source["jquants_required_field_coverage_start"],
+            massive_daily_entitlement_start=effective_predictor_start.get("massive_daily"),
+            fred_required_series_coverage_start=_max_date_strings(
+                effective_predictor_start.get("fred_core"), effective_predictor_start.get("fx_core")
+            ),
+        ),
+    )
+    panel_rows = apply_combined_clean_start(panel_rows, combined_clean_start=lower_bound)
     coverage = build_feature_coverage_records(panel_rows)
     levels = PIPELINE_CONFIG.model_policy.tail_levels
     if len(levels) != 1:
@@ -444,8 +461,9 @@ def _prepare_body_run(
         "git_commit": _git_commit(),
         "git_dirty": _git_dirty(),
         "config_hash": PIPELINE_CONFIG.config_hash(),
-        "sample_policy": "target_history_with_training_window_feature_gates",
+        "sample_policy": "clean_predictor_entitlement_sample",
         "combined_clean_start": lower_bound,
+        "effective_predictor_start": effective_predictor_start,
         "main_sample_start_requested": source["main_sample_start_requested"],
         "jquants_required_field_coverage_start": source["jquants_required_field_coverage_start"],
         "fred_vintage_policy": source.get("fred_vintage_policy"),

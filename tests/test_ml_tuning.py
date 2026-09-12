@@ -77,7 +77,7 @@ def test_selection_is_eight_way_mean_and_uses_common_validation_not_common_histo
 
         def predict(x: Any, *, num_iteration: int) -> Any:
             prefixes.append(num_iteration)
-            return np.full(len(x), prediction)
+            return np.full(len(x), prediction + abs(num_iteration - 139) / 60)
 
         return (
             SimpleNamespace(n_estimators_=199, predict=predict),
@@ -86,14 +86,14 @@ def test_selection_is_eight_way_mean_and_uses_common_validation_not_common_histo
         )
 
     monkeypatch.setattr(tuning, "_fit", fit)
-    params, receipt = tuning.select_parameters(**selection_args(grid))
-    assert params == {"n_estimators": 79}  # tie: fewer rounds, not per-case winners
+    params, receipt, oof = tuning.select_parameters(**selection_args(grid))
+    assert params == {"n_estimators": 139}  # shared winner, not per-case winners or last prefix
     assert receipt["status"] == "selected"
-    assert len(receipt["folds"]) == 3
-    assert sum(len(f["validation_dates"]) for f in receipt["folds"]) == 37
+    assert len(receipt["folds"]) == 5
+    assert sum(len(f["validation_dates"]) for f in receipt["folds"]) == 27
     for fold in receipt["folds"]:
         assert fold["training"]["A/left_tail"]["n"] - fold["training"]["D/right_tail"]["n"] == 3
-    assert len(calls) == 48  # not 144: iteration-prefix scoring reuses each fit
+    assert len(calls) == 80  # 2 candidates x 5 folds x 8 cases; not 240
     assert all(params["n_estimators"] == 199 for _, _, params in calls)
     assert prefixes == list(round_caps) * len(calls)
     for candidate in receipt["candidates"]:
@@ -105,6 +105,10 @@ def test_selection_is_eight_way_mean_and_uses_common_validation_not_common_histo
         heldout_dates = []
         for key, (train, valid) in fold.items():
             assert not set(train) & set(valid)
+            assert max(grid[key]["train"][i]["forecast_date"] for i in train) < min(
+                grid[key]["train"][i]["forecast_date"] for i in valid
+            )
+            np.testing.assert_equal(oof[key][valid], np.ones(len(valid)))
             heldout_dates.append([grid[key]["train"][i]["forecast_date"] for i in valid])
         assert all(days == heldout_dates[0] for days in heldout_dates)
         assert {0, 1, 2}.issubset(fold["A/left_tail"][0])
@@ -121,7 +125,7 @@ def test_selection_missing_groups_and_timeout_never_rank_seven_cases(
     if failure == "missing":
         grid.pop("D/right_tail")
     if failure == "short":
-        args["cutoff"] = "2020-01-12"
+        args["cutoff"] = "2020-01-10"
     if failure == "no_finite":
         args["targets"]["D/right_tail"][:] = np.nan
     calls = 0
@@ -129,9 +133,9 @@ def test_selection_missing_groups_and_timeout_never_rank_seven_cases(
     def fit(*a: Any, **kw: Any) -> Any:
         nonlocal calls
         calls += 1
-        if failure == "timeout" or (failure == "partial" and calls == 48):
+        if failure == "timeout" or (failure == "partial" and calls == 80):
             raise tuning.FitTimeout("deadline")
-        prediction = np.nan if failure == "nan" and calls in (24, 48) else 0.0
+        prediction = np.nan if failure == "nan" and calls in (40, 80) else 0.0
         return (
             SimpleNamespace(n_estimators_=3, predict=lambda x, **k: np.full(len(x), prediction)),
             {},
@@ -139,7 +143,7 @@ def test_selection_missing_groups_and_timeout_never_rank_seven_cases(
         )
 
     monkeypatch.setattr(tuning, "_fit", fit)
-    params, receipt = tuning.select_parameters(**args)
+    params, receipt, _ = tuning.select_parameters(**args)
     if failure == "partial":
         assert receipt["status"] == "search_incomplete" and params["n_estimators"] == 2
     else:
@@ -151,7 +155,7 @@ def test_selection_missing_groups_and_timeout_never_rank_seven_cases(
 def test_deadline_and_unexpected_errors_propagate(monkeypatch: pytest.MonkeyPatch) -> None:
     configure(monkeypatch)
     args = selection_args(cases())
-    params, record = tuning.select_parameters(**args, selection_seconds=0)
+    params, record, _ = tuning.select_parameters(**args, selection_seconds=0)
     assert params == {"n_estimators": 160} and record["status"] == "fixed_no_complete_candidate"
 
     def crash(*a: Any, **kw: Any) -> Any:
@@ -174,7 +178,14 @@ def test_selects_once_then_native_full_refits(monkeypatch: pytest.MonkeyPatch) -
 
     def select(cases: Any, targets: Any, **kw: Any) -> Any:
         cutoff = kw["cutoff"]
-        return {"n_estimators": int(cutoff[-2:])}, {"cutoff": cutoff}
+        return (
+            {"n_estimators": int(cutoff[-2:])},
+            {"cutoff": cutoff},
+            {
+                key: np.r_[np.full(10, np.nan), np.ones(len(target) - 10)]
+                for key, target in targets.items()
+            },
+        )
 
     def fit(case: Any, target: Any, indices: Any, **kw: Any) -> Any:
         assert case["train"][indices[-1]]["forecast_date"] < (
@@ -207,7 +218,9 @@ def test_selects_once_then_native_full_refits(monkeypatch: pytest.MonkeyPatch) -
         assert len(record["fits"]) == 8
         assert all(f["train_end"] < record["cutoff"] for f in record["fits"])
     for component in result.values():
-        assert "oof" not in component
+        assert component["oof_warmup_rows"] == 10
+        assert np.isnan(component["oof"][:10]).all()
+        assert np.all(component["oof"][10:] == 1)
         assert len(component["fitted"]) == 40
         assert np.isfinite(component["fitted"]).all()
 
@@ -217,7 +230,7 @@ def test_component_expected_failures_preserve_positions(monkeypatch: pytest.Monk
     grid = cases()
     args = selection_args(grid)
     args["targets"]["D/right_tail"][:] = np.nan
-    monkeypatch.setattr(tuning, "select_parameters", lambda *a, **k: ({}, {}))
+    monkeypatch.setattr(tuning, "select_parameters", lambda *a, **k: ({}, {}, {}))
 
     def unavailable(*a: Any, **kw: Any) -> Any:
         raise PipelineRunError("expected domain failure")
@@ -305,9 +318,10 @@ def test_losses_are_native_component_metrics(objective: str, alpha: float | None
     assert np.isnan(tuning.validation_loss(y, np.array([np.nan, 0]), objective, alpha))
 
 
-def test_joint_body_targets_reuse_actual_full_history_components(
+def test_joint_body_targets_reuse_selected_oof_components(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    configure(monkeypatch)
     grid = cases(40)
     captured: dict[str, Any] = {}
 
@@ -315,7 +329,9 @@ def test_joint_body_targets_reuse_actual_full_history_components(
         captured[kw["role"]] = targets
         return {
             key: {
-                "fitted": np.zeros(len(y)),
+                "fitted": np.full(len(y), 99.0),
+                "oof": np.r_[np.full(10, np.nan), np.zeros(len(y) - 10)],
+                "oof_warmup_rows": 10,
                 "model": SimpleNamespace(predict=lambda x: np.zeros(len(x))),
                 "active_features": ["feature_x"],
                 "gate": {},
@@ -333,8 +349,9 @@ def test_joint_body_targets_reuse_actual_full_history_components(
     squared = captured["spread:mean_rms_l2"][key]
     for objective in ("poisson", "gamma", "tweedie"):
         np.testing.assert_equal(squared, captured[f"spread:mean_rms_{objective}"][key])
-    np.testing.assert_allclose(squared, y**2)
-    np.testing.assert_allclose(captured["spread:median_mad"][key], np.abs(y))
+    np.testing.assert_allclose(squared[10:], y[10:] ** 2)
+    assert np.isnan(squared[:10]).all()
+    np.testing.assert_allclose(captured["spread:median_mad"][key][10:], np.abs(y[10:]))
     monkeypatch.setattr(body, "ML_TAIL_MIN_OOF_TRAIN_ROWS", 10)
     bodies = dict(
         body.fit_body_recipes(
@@ -344,7 +361,7 @@ def test_joint_body_targets_reuse_actual_full_history_components(
             tail_level=0.95,
             lgb=lgb,
             components=fitted[key],
-            calibration_kind="in_sample",
+            calibration_kind="oof",
         )
     )
     assert bodies["mean_log_abs"]["center"] is bodies["mean_rms_l2"]["center"]
@@ -357,7 +374,7 @@ def test_joint_body_targets_reuse_actual_full_history_components(
             tail_level=0.95,
             lgb=lgb,
             components=fitted[key],
-            calibration_kind="in_sample",
+            calibration_kind="oof",
         )
     )
     assert unavailable["mean_log_abs"]["fit_status"] == "unavailable_body_fit"
@@ -407,18 +424,18 @@ def test_native_joint_components_and_direct_forecast_reuse(monkeypatch: pytest.M
             tail_level=0.95,
             lgb=lgb,
             components=fitted[key],
-            calibration_kind="in_sample",
+            calibration_kind="oof",
         )
     )
     assert all(v["fit_status"] == "ok" for v in expected.values())
     for recipe in expected.values():
-        assert recipe["in_sample_warmup_rows"] == 0
+        assert recipe["oof_warmup_rows"] > 0
         assert len(recipe["standardized_losses"]) == len(grid[key]["train"])
-        on_training = body.predict_body(recipe, grid[key]["train"])
         y = np.array([row["realized_loss"] for row in grid[key]["train"]])
         np.testing.assert_allclose(
             recipe["standardized_losses"],
-            (y - on_training["location"]) / on_training["scale"],
+            (y - recipe["mu_oof"]) / recipe["scale_oof"],
+            equal_nan=True,
         )
 
     # Native fitting finished: this forecast path must consume the actual supplied fits.
@@ -434,12 +451,12 @@ def test_native_joint_components_and_direct_forecast_reuse(monkeypatch: pytest.M
         information_set="A",
         tail_side="left_tail",
         components=fitted[key],
-        calibration_kind="in_sample",
+        calibration_kind="oof",
     )
     assert len(result["forecasts"]) == 28 and result["diagnostics"][0]["fit_status"] == "ok"
-    assert "oof" not in result
-    assert len(result["in_sample"]) == 9 * 120
-    assert not any(row["structural_warmup"] for row in result["in_sample"])
+    assert "in_sample" not in result
+    assert len(result["oof"]) == 9 * 120
+    assert any(row["structural_warmup"] for row in result["oof"])
     fitted[key]["direct"]["failure_reason"] = "bounded fit failure"
     result = experiment.forecast_shared_body_refit(
         grid[key]["train"],
@@ -448,7 +465,7 @@ def test_native_joint_components_and_direct_forecast_reuse(monkeypatch: pytest.M
         information_set="A",
         tail_side="left_tail",
         components=fitted[key],
-        calibration_kind="in_sample",
+        calibration_kind="oof",
     )
     assert result["forecasts"][0]["var_forecast"] is None
     with pytest.raises(KeyError):
@@ -462,7 +479,7 @@ def test_native_joint_components_and_direct_forecast_reuse(monkeypatch: pytest.M
         )
 
 
-def test_spread_cv_targets_use_fold_center_and_cache_reconstruction(
+def test_spread_search_uses_only_prior_oof_targets_and_fixed_warmup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     configure(monkeypatch)
@@ -470,52 +487,42 @@ def test_spread_cv_targets_use_fold_center_and_cache_reconstruction(
     grid = cases()
     args = selection_args(grid)
     folds = tuning.date_folds(grid, args["cutoff"])
-    cache = {
-        "components": {
-            key: {
-                "role": "center:regression_l2:None",
-                "objective": "regression_l2",
-                "alpha": None,
-                "parameters": {"n_estimators": 2},
-            }
-            for key in grid
-        }
-    }
-    center_calls = 0
+    # Center warm-up is ten rows; the first two blocks cannot yet train spread.
+    folds = [
+        split for split in folds if all(sum(i >= 10 for i in t) >= 10 for t, _ in split.values())
+    ]
+    targets = {key: np.r_[np.full(10, np.nan), np.arange(30.0)] for key in grid}
     spread_calls = 0
 
     def fit(case: Any, target: Any, indices: Any, **kw: Any) -> Any:
-        nonlocal center_calls, spread_calls
+        nonlocal spread_calls
         key = f"{case['information_set']}/{case['tail_side']}"
         fold = int(kw["label"].split(":")[-1])
         train, valid = folds[fold][key]
-        assert indices == train and not set(indices) & set(valid)
+        assert indices == [i for i in train if i >= 10]
+        assert max(indices) < min(valid)
         assert args["runtime"].selection_deadline is not None
-        y = np.array([row["realized_loss"] for row in case["train"]])
-        mean = float(np.mean(y[train]))
-        if kw["role"].startswith("center:"):
-            center_calls += 1
-            np.testing.assert_equal(target, y)
-            predicted = mean
-        else:
-            spread_calls += 1
-            # Check BOTH the in-sample training and held-out validation targets.
-            np.testing.assert_allclose(target, (y - mean) ** 2)
-            predicted = 0.0
+        assert kw["role"].startswith("spread:")
+        spread_calls += 1
+        np.testing.assert_equal(target, targets[key])
         return (
-            SimpleNamespace(n_estimators_=3, predict=lambda x, **k: np.full(len(x), predicted)),
+            SimpleNamespace(n_estimators_=3, predict=lambda x, **k: np.zeros(len(x))),
             {},
             ["feature_x"],
         )
 
     monkeypatch.setattr(tuning, "_fit", fit)
-    args.update(role="spread:mean_rms_l2", center_cv=cache, transform="rms", folds=folds)
-    _, record = tuning.select_parameters(**args)
-    assert record["status"] == "selected" and center_calls == spread_calls == 24
-    tuning.select_parameters(**args)
-    assert (
-        center_calls == 24 and spread_calls == 48
-    )  # same selected center; no repeated reconstruction
+    args.update(role="spread:mean_rms_l2", targets=targets, folds=folds)
+    _, record, oof = tuning.select_parameters(**args)
+    assert record["status"] == "selected" and spread_calls == 24
+    assert record["scored_fold_count"] == 3
+    assert np.isnan(oof["A/left_tail"][:22]).all()
+    assert np.isfinite(oof["A/left_tail"][22:]).all()
+    # Missing validation after warm-up must fail, not change the folds/denominator.
+    targets["D/right_tail"][22] = np.nan
+    _, failed, _ = tuning.select_parameters(**args)
+    assert failed["status"] == "fixed_no_complete_candidate"
+    assert failed["folds"] == record["folds"]
 
 
 def test_cv_pools_dates_not_fold_means_and_does_not_drop_bad_validation(
@@ -523,8 +530,9 @@ def test_cv_pools_dates_not_fold_means_and_does_not_drop_bad_validation(
 ) -> None:
     configure(monkeypatch)
     monkeypatch.setattr(tuning, "CANDIDATES", (("current", {}),))
-    grid = cases()
+    grid = cases(41)
     args = selection_args(grid)
+    args["cutoff"] = "2020-02-11"
 
     def fit(case: Any, target: Any, indices: Any, **kw: Any) -> Any:
         value = float(kw["label"].split(":")[-1])
@@ -535,33 +543,44 @@ def test_cv_pools_dates_not_fold_means_and_does_not_drop_bad_validation(
         )
 
     monkeypatch.setattr(tuning, "_fit", fit)
-    _, record = tuning.select_parameters(**args)
+    _, record, _ = tuning.select_parameters(**args)
+    assert record["parameters"]["n_estimators"] == 2  # tied losses prefer fewer rounds
     assert record["candidates"][0]["rounds"][0]["mean_loss"] == pytest.approx(
-        (14 * 0 + 13 * 1 + 13 * 4) / 40
+        (7 * 0 + 7 * 1 + 7 * 4 + 7 * 9 + 3 * 16) / 31
     )
-    args["targets"]["D/right_tail"][0] = np.nan
-    _, failed = tuning.select_parameters(**args)
+    args["targets"]["D/right_tail"][10] = np.nan
+    _, failed, _ = tuning.select_parameters(**args)
     assert failed["status"] == "fixed_no_complete_candidate"
     assert failed["folds"] == record["folds"]  # validity never changes the date partition
 
 
-def test_failed_center_reconstruction_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fixed_fallback_produces_oof_not_fitted_residuals(monkeypatch: pytest.MonkeyPatch) -> None:
     configure(monkeypatch)
     args = selection_args(cases())
-    calls = 0
+    monkeypatch.setattr(
+        tuning, "select_parameters", lambda *a, **k: ({"n_estimators": 160}, {}, {})
+    )
+    calls = []
 
-    def fail(*a: Any, **kw: Any) -> Any:
-        nonlocal calls
-        calls += 1
-        raise tuning.FitTimeout("center reconstruction timeout")
+    def fit(case: Any, target: Any, indices: Any, **kw: Any) -> Any:
+        calls.append(kw["label"])
+        assert kw["params"] == {"n_estimators": 160}
+        return (
+            SimpleNamespace(
+                n_estimators_=160, predict=lambda x, **k: np.full(len(x), len(indices))
+            ),
+            {},
+            ["feature_x"],
+        )
 
-    monkeypatch.setattr(tuning, "_center_fold_residuals", fail)
-    args.update(center_cv={"components": {}}, transform="rms")
-    for _ in range(2):
-        parameters, record = tuning.select_parameters(**args)
-        assert parameters == {"n_estimators": 160}
-        assert record["failure_reason"] == "center reconstruction timeout"
-    assert calls == 1
+    monkeypatch.setattr(tuning, "_fit", fit)
+    result = tuning.fit_joint_component(
+        **{k: v for k, v in args.items() if k != "cutoff"}, receipt=lambda r: None
+    )
+    assert len(calls) == 8 * 6
+    for c in result.values():
+        assert np.isnan(c["oof"][:10]).all()
+        assert np.all(c["oof"][10:] < c["fitted"][10:])
 
 
 @pytest.mark.parametrize("workers", [2, 3])

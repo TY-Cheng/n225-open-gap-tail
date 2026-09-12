@@ -368,7 +368,7 @@ def body_tuned_command(
         int, typer.Option(help="Independent month workers (1--3); pilot requires --workers 1.")
     ] = 2,
 ) -> None:
-    """Joint 3-fold CV tuning and in-sample tail calibration; outer monthly OOS."""
+    """Joint expanding-fold CV tuning and OOF tail calibration; outer monthly OOS."""
     from n225_open_gap_tail.forecasting.tuned_body import run_tuned_body
 
     result = run_tuned_body(

@@ -234,6 +234,14 @@ def fit_body_recipes(
                 raise PipelineRunError(
                     f"unavailable_{calibration_kind}_standardization_insufficient_sample"
                 )
+            calibration_warmup = center_warmup if transform == "iqr" else spread_warmup
+            if components is not None and calibration_kind == "oof":
+                if transform == "iqr":
+                    assert q25 is not None and q75 is not None
+                    calibration_warmup = max(c["oof_warmup_rows"] for c in (central, q25, q75))
+                else:
+                    assert spread is not None
+                    calibration_warmup = spread["oof_warmup_rows"]
             floor = (
                 ML_TAIL_ROBUST_SCALE_FLOOR**2 if transform == "rms" else ML_TAIL_ROBUST_SCALE_FLOOR
             )
@@ -264,9 +272,7 @@ def fit_body_recipes(
                     "scale_floor": None if transform == "log_abs" else ML_TAIL_ROBUST_SCALE_FLOOR,
                     "log_abs_epsilon": ML_TAIL_SCALE_FLOOR if transform == "log_abs" else None,
                     "standardized_losses": standardized,
-                    f"{calibration_kind}_warmup_rows": center_warmup
-                    if transform == "iqr"
-                    else spread_warmup,
+                    f"{calibration_kind}_warmup_rows": calibration_warmup,
                     f"{calibration_kind}_dates": oof_dates,
                     "quantile_crossing_rate": crossing,
                     "scale_nonpositive_count": int(

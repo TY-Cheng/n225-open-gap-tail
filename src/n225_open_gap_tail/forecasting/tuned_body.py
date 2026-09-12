@@ -26,7 +26,6 @@ from n225_open_gap_tail.metrics.stat_utils import forecast_eligible, index_forec
 from n225_open_gap_tail.models.ml_tail import build_ml_tail_modeling_rows
 from n225_open_gap_tail.models.ml_tuning import (
     CANDIDATES,
-    CV_SEED,
     CV_SPLITS,
     ROUND_CAPS,
     BoundedFit,
@@ -101,14 +100,14 @@ def _run_month(
                 tail_side=case["tail_side"],
                 tail_level=case["tail_level"],
                 components=fitted[key],
-                calibration_kind="in_sample",
+                calibration_kind="oof",
                 progress=progress,
             )
             current = index_forecast_sessions(result["forecasts"], session_dates=session_dates)
             refit = str(case["future"][0]["forecast_date"])
             refit_dir = output_dir / "refits" / key / refit
             _write_parquet(refit_dir / "forecasts.parquet", current)
-            _write_parquet(refit_dir / "in_sample_residuals.parquet", result["in_sample"])
+            _write_parquet(refit_dir / "oof_residuals.parquet", result["oof"])
             _write_json(refit_dir / "diagnostics.json", {"refits": result["diagnostics"]})
             records.extend(current)
         runtime.check()
@@ -176,15 +175,16 @@ def run_tuned_body(
         tail_sides=list(TAIL_SIDES),
         refit_frequency="monthly",
         claims_boundary="exploratory_same_inspected_oos_not_fresh_holdout",
-        body_parameter_policy="random_cv_eight_scenario_component_validation",
-        tail_calibration="full_history_in_sample_standardized_residuals",
-        calibration_warmup_rows=0,
+        body_parameter_policy="expanding_cv_eight_scenario_component_validation",
+        tail_calibration="selected_parameter_expanding_oof_standardized_residuals",
+        calibration_warmup_policy="per_refit_component_structural_warmup",
         tuning={
             "candidates": dict(CANDIDATES),
             "round_caps": list(ROUND_CAPS),
             "cv_splits": CV_SPLITS,
-            "cv_seed": CV_SEED,
-            "cv_shuffle": True,
+            "cv_shuffle": False,
+            "block_size": "ceil((common_training_rows-250)/5)",
+            "parameter_selection_boundary": "full_outer_training_history_not_historical_replay",
             "validation_aggregation": "pooled_dates_within_case_then_equal_eight_cases",
             "min_prior_training_rows": 250,
             "single_fit_seconds": 300,

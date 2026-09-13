@@ -17,7 +17,7 @@ from n225_open_gap_tail.config.runtime import (
     _required_float,
 )
 from n225_open_gap_tail.data_lake.artifacts import _read_manifest, _update_manifest
-from n225_open_gap_tail.config.git import _git_commit
+from n225_open_gap_tail.config.git import _git_commit, _saved_source_matches_commit
 from n225_open_gap_tail.metrics.stat_utils import (
     _safe_mean,
     fz_loss,
@@ -217,7 +217,12 @@ def _clear_run_outputs_for_force(run_dir: Path) -> None:
 def _assert_run_config_compatible(run_dir: Path, *, force: bool = False) -> None:
     manifest = _read_manifest(run_dir)
     stored_commit = manifest.get("git_commit")
-    if stored_commit and stored_commit != _git_commit():
+    current_commit = _git_commit()
+    if (
+        stored_commit
+        and stored_commit != current_commit
+        and not _saved_source_matches_commit(run_dir, stored_commit, current_commit)
+    ):
         raise PipelineRunError(
             "Run source revision differs from current code; create a new run_id. "
             "Use forecast-only reevaluation to inspect old forecasts without retraining."

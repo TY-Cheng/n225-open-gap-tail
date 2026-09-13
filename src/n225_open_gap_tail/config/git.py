@@ -1,6 +1,42 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
+
+
+def _saved_source_matches_commit(run_dir: Path, stored_commit: str, current_commit: str) -> bool:
+    """Recognize a dirty-run patch subsequently committed without source changes.
+
+    Compare committed revisions, as the existing run guard does. Saved untracked
+    source files are not represented by this diff and are conservatively rejected.
+    """
+    snapshot = run_dir / "source"
+    patch = snapshot / "working-tree.patch"
+    if not patch.is_file() or (snapshot / "src").exists():
+        return False
+    try:
+        diff = subprocess.run(
+            [
+                "git",
+                "diff",
+                "--no-ext-diff",
+                stored_commit,
+                current_commit,
+                "--",
+                "src",
+                "pyproject.toml",
+            ],
+            check=True,
+            capture_output=True,
+        ).stdout
+        lock_diff = subprocess.run(
+            ["git", "diff", "--no-ext-diff", stored_commit, current_commit, "--", "uv.lock"],
+            check=True,
+            capture_output=True,
+        ).stdout
+        return not lock_diff and diff == patch.read_bytes()
+    except (OSError, subprocess.CalledProcessError):
+        return False
 
 
 def _git_commit() -> str:

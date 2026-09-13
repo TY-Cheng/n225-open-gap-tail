@@ -589,7 +589,7 @@ def test_feature_matrix_gate_drops_sparse_minute_features_before_prediction() ->
                 None,
                 None,
             ],
-            "tolerated_history_feature": [
+            "incomplete_history_feature": [
                 1.0,
                 2.0,
                 3.0,
@@ -606,22 +606,22 @@ def test_feature_matrix_gate_drops_sparse_minute_features_before_prediction() ->
 
     gate = build_feature_matrix_gate_records(
         frame,
-        ["dense", "sparse_minute_late_60m_return", "tolerated_history_feature"],
+        ["dense", "sparse_minute_late_60m_return", "incomplete_history_feature"],
     )
 
-    assert gate["active_features"] == ["dense", "tolerated_history_feature"]
+    assert gate["active_features"] == ["dense"]
     assert "sparse_minute_late_60m_return" in cast(list[str], gate["dropped_features"])
     dropped = json.loads(str(gate["dropped_features_json"]))
     sparse_drop = next(
         item for item in dropped if item["feature"] == "sparse_minute_late_60m_return"
     )
     assert sparse_drop["drop_reason"] == "high_training_missingness"
-    assert sparse_drop["max_missingness"] == pytest.approx(0.17)
+    assert sparse_drop["max_missingness"] == pytest.approx(0.03)
 
 
 @pytest.mark.parametrize("feature", ["spy_return", "spy_late_60m_return", "n225_option_iv"])
-def test_feature_coverage_83_percent_boundary_is_uniform(feature: str) -> None:
-    for observed, expected in [(83, [feature]), (82, [])]:
+def test_feature_coverage_97_percent_boundary_is_uniform(feature: str) -> None:
+    for observed, expected in [(97, [feature]), (96, [])]:
         frame = pl.DataFrame(
             {feature: [float(i) for i in range(observed)] + [None] * (100 - observed)}
         )

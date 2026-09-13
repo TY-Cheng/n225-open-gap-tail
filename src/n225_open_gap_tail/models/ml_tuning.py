@@ -125,8 +125,6 @@ def validation_loss(target: Array, predicted: Array, objective: str, alpha: floa
         loss = absolute
     elif objective == "huber":
         loss = np.where(absolute <= 0.9, 0.5 * error**2, 0.9 * (absolute - 0.45))
-    elif objective == "fair":
-        loss = absolute - np.log1p(absolute)  # fixed fair_c=1
     else:
         loss = error**2  # also the common residual-square metric for all RMS objectives
     return float(np.mean(loss))
@@ -523,7 +521,6 @@ def fit_joint_bodies(
         ("regression_l2", None),
         ("quantile", 0.5),
         ("huber", None),
-        ("fair", None),
         ("quantile", 0.25),
         ("quantile", 0.75),
     ):

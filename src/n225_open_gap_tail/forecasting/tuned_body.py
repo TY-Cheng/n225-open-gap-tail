@@ -1,4 +1,4 @@
-"""Jointly tuned body28 execution, retaining the established tail/output path."""
+"""Jointly tuned shared-body execution, retaining the established tail/output path."""
 
 from __future__ import annotations
 
@@ -133,7 +133,7 @@ def run_tuned_body(
     progress: Callable[[str], None] | None = None,
     workers: int = 2,
 ) -> Path:
-    """All eight scenarios, all28 specs; optional one-date pilot capped at60min.
+    """All eight scenarios, all 22 specs; optional one-date pilot capped at 60min.
 
     Full runs retain monthly shards and receipts as they finish. Outputs are new;
     no old forecasts or fitted trees are reused and no model is dropped by gates.

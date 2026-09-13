@@ -358,10 +358,7 @@ def test_frozen_replay_preserves_source_and_reports_missing_candidates(
     assert manifest["forecast_retrained"] is False
     assert manifest["source_limitations"]["training_multiplier"] == training_multiplier
     if new_roster:
-        assert (
-            manifest["source_limitations"]["estimator"]
-            == "shared_nine_body_public_unibm_strict_fgls"
-        )
+        assert manifest["source_limitations"]["estimator"] == "shared_body_public_unibm_strict_fgls"
     availability = pl.read_parquet(result / "availability.parquet")
     assert availability.height == 24 + 8 * len(roster)
     assert manifest["ml_model_names"] == list(roster)
@@ -396,11 +393,11 @@ def test_frozen_replay_preserves_source_and_reports_missing_candidates(
         bad_manifest = json.loads((source / "manifest.json").read_text())
         bad_manifest["model_names"] = list(roster[:-1])
         (source / "manifest.json").write_text(json.dumps(bad_manifest))
-        with pytest.raises(ValueError, match="28-model roster"):
+        with pytest.raises(ValueError, match="22-model roster"):
             reevaluate_frozen_run(source, output_dir=tmp_path / "bad_roster")
 
 
-def test_new_roster_common_dates_keep_all_28_and_separate_es_eligibility() -> None:
+def test_new_roster_common_dates_keep_all_22_and_separate_es_eligibility() -> None:
     infos = registered_ml_tail_information_sets()
     rows = [
         {

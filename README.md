@@ -163,19 +163,22 @@ just docs
 
 ## Research Run
 
-The revised 28-spec experiment has a separate `body-rolling --source-run ...
+The revised 22-spec experiment (seven bodies x three tails plus direct quantile)
+excludes Fair--log-absolute and Mean--RMS-Tweedie. Ordinary, minute and options
+features require at least 97% finite coverage in each training window.
+It has a separate `body-rolling --source-run ...
 --output-dir ...` CLI entry point. It rebuilds the accepted sample view from
 source panel data, generates monthly shared-body forecasts for A--D/both tails,
 and writes per-refit OOF/diagnostics into a new directory. It does not reuse old
 forecast shards, run external benchmarks, select models, or export a manuscript.
 Run the existing benchmark suite on that same new panel before `reevaluate`;
-the latter reads the new run's 28-model roster. These are separately authorized
+the latter reads the new run's 22-model roster. These are separately authorized
 execution steps. `body-pilot` remains the bounded one-date entry point. Public
 UniBM must be importable in the process environment. The legacy `just full`
 workflow below still uses the original eight ML specifications.
 
 `body-tuned --source-run ... --output-dir ...` runs the accepted bounded
-component search before those same 28 forecasts. Each outer monthly cutoff uses
+component search before those same 22 forecasts. Each outer monthly cutoff uses
 five expanding validation blocks, with size `ceil((N_common - 250) / 5)` and
 at least 250 earlier training observations per case. There is no shuffle.
 Held-out losses are pooled by date within each scenario, then averaged equally

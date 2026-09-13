@@ -24,7 +24,7 @@ def rows(n: int = 120) -> list[dict[str, Any]]:
     ]
 
 
-def test_nine_bodies_share_mean_fits_and_preserve_oof_positions(
+def test_seven_bodies_share_mean_fits_and_preserve_oof_positions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(body_models, "ML_TAIL_MIN_OOF_TRAIN_ROWS", 10)
@@ -39,8 +39,17 @@ def test_nine_bodies_share_mean_fits_and_preserve_oof_positions(
             lgbm_params={"n_estimators": 3, "min_child_samples": 3},
         )
     )
-    assert len(body_models.EXPERIMENT_MODEL_NAMES) == 28
-    assert len(set(body_models.EXPERIMENT_MODEL_NAMES)) == 28
+    assert len(body_models.EXPERIMENT_MODEL_NAMES) == 22
+    assert len(set(body_models.EXPERIMENT_MODEL_NAMES)) == 22
+    assert set(bodies) == {
+        "mean_log_abs",
+        "median_mad",
+        "median_iqr",
+        "huber_log_abs",
+        "mean_rms_l2",
+        "mean_rms_poisson",
+        "mean_rms_gamma",
+    }
     assert all(body["fit_status"] == "ok" for body in bodies.values()), bodies
     mean = bodies["mean_log_abs"]["center"]
     target = bodies["mean_rms_l2"]["scale_target_oof_training_units"]
@@ -84,7 +93,7 @@ def test_native_objective_domains_and_constants() -> None:
     assert _lgbm_training_params()["num_threads"] == 3
     training = rows(20)
     mixed_zero_target = np.arange(20, dtype=float) / 20
-    for objective in ("gamma", "poisson", "tweedie", "huber", "fair"):
+    for objective in ("gamma", "poisson", "huber"):
         model, _, _ = _fit_lgb_regression_model(
             lgb=lgb,
             rows=training,
@@ -97,14 +106,10 @@ def test_native_objective_domains_and_constants() -> None:
         params = model.get_params()
         assert params["max_depth"] == 17
         assert model.booster_.params["num_threads"] == 3
-        if objective in {"gamma", "poisson", "tweedie"}:
+        if objective in {"gamma", "poisson"}:
             assert params["metric"] == "l2"
         if objective == "huber":
             assert params["alpha"] == 0.9
-        if objective == "fair":
-            assert params["fair_c"] == 1.0
-        if objective == "tweedie":
-            assert params["tweedie_variance_power"] == 1.5
         if objective == "poisson":
             assert params["poisson_max_delta_step"] == 0.7
     for target in (np.zeros(20), np.full(20, -1.0), np.full(20, np.nan)):
@@ -151,8 +156,8 @@ def test_body_failure_is_reported_without_hiding_other_recipes(
         )
     )
     assert result["huber_log_abs"]["failure_reason"] == "huber failed"
-    assert result["fair_log_abs"]["fit_status"] == "ok"
-    assert len(result) == 9
+    assert result["mean_log_abs"]["fit_status"] == "ok"
+    assert len(result) == 7
     with pytest.raises(ValueError, match="finite observed losses"):
         list(
             body_models.fit_body_recipes(

@@ -1,4 +1,4 @@
-"""Accepted nine-body experiment; fits are shared before any tail calibration.
+"""Accepted seven-body experiment; fits are shared before any tail calibration.
 
 Fits use decimal losses before each recipe's target transform. Public outputs
 use decimal returns and keep original calibration-row positions, including unavailable predictions.
@@ -35,11 +35,9 @@ BODY_RECIPES = {
     "median_mad": ("quantile", "mad", "regression_l1"),
     "median_iqr": ("quantile", "iqr", "quantile"),
     "huber_log_abs": ("huber", "log_abs", "regression_l2"),
-    "fair_log_abs": ("fair", "log_abs", "regression_l2"),
     "mean_rms_l2": ("regression_l2", "rms", "regression_l2"),
     "mean_rms_poisson": ("regression_l2", "rms", "poisson"),
     "mean_rms_gamma": ("regression_l2", "rms", "gamma"),
-    "mean_rms_tweedie": ("regression_l2", "rms", "tweedie"),
 }
 TAIL_METHODS = ("empirical", "plain_mle", "unibm")
 TRAINING_MULTIPLIER = 1.0
@@ -129,7 +127,7 @@ def fit_body_recipes(
     components: Mapping[str, dict[str, Any]] | None = None,
     calibration_kind: Literal["oof", "in_sample"] = "oof",
 ) -> Iterator[tuple[str, dict[str, Any]]]:
-    """One refit's nine bodies; the five mean recipes reuse the same center object.
+    """One refit's seven bodies; the four mean recipes reuse the same center object.
 
     A failed recipe is retained as unavailable. The cache lives only within this
     historical refit, so it cannot mix dates, information sets or loss signs.

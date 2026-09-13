@@ -475,7 +475,7 @@ def build_panel(
                 "Main modeling panel starts no earlier than the requested start, "
                 "J-Quants required-field coverage, Massive daily entitlement and "
                 "required FRED/FX coverage. All predictor classes additionally require "
-                "83% nonmissing coverage within each training window."
+                "97% nonmissing coverage within each training window."
             ),
             "combined_clean_start": combined_clean_start,
             "effective_predictor_start": effective_predictor_start,

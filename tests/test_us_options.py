@@ -303,7 +303,7 @@ def test_options_missingness_gate_matches_core_features() -> None:
     dropped = json.loads(str(gate["dropped_features_json"]))
     spy_drop = next(item for item in dropped if item["feature"] == "spy_return")
     assert spy_drop["drop_reason"] == "high_training_missingness"
-    assert spy_drop["max_missingness"] == pytest.approx(0.17)
+    assert spy_drop["max_missingness"] == pytest.approx(0.03)
 
 
 def test_options_underlying_helpers_are_gated_and_deduplicated() -> None:

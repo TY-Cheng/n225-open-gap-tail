@@ -81,10 +81,10 @@ def test_shared_refit_native_bodies_units_and_anchor_reuse(
         lgbm_params={"n_estimators": 3, "min_child_samples": 3},
         progress=progress.append,
     )
-    assert len(result["forecasts"]) == 56
+    assert len(result["forecasts"]) == 44
     assert {row["model_name"] for row in result["forecasts"]} == set(bodies.EXPERIMENT_MODEL_NAMES)
-    assert len(result["diagnostics"]) == 10 and len(result["oof"]) == 9 * len(train)
-    assert len(anchors) == 9 and len(calls) == 18
+    assert len(result["diagnostics"]) == 8 and len(result["oof"]) == 7 * len(train)
+    assert len(anchors) == 7 and len(calls) == 14
     assert all(call["shape_upper_bound"] == 0.99 for call in calls)
     for i, (values, _) in enumerate(anchors):
         assert calls[2 * i]["standardized_losses"] is values
@@ -116,7 +116,7 @@ def test_shared_refit_native_bodies_units_and_anchor_reuse(
                     assert row["es_forecast"] == pytest.approx(
                         row["location"] + row["scale"] * fitted_tail["standardized_es"]
                     )
-    assert len(progress) == 19
+    assert len(progress) == 15
 
 
 def test_refit_preserves_partial_es_and_all_unavailable_roster(
@@ -152,15 +152,15 @@ def test_refit_preserves_partial_es_and_all_unavailable_roster(
         tail_side="right_tail",
         lgbm_params={"n_estimators": 2, "min_child_samples": 3},
     )
-    assert len(result["forecasts"]) == 28
+    assert len(result["forecasts"]) == 22
     partial = [row for row in result["forecasts"] if row["model_name"].endswith("plain_mle")]
-    assert len(partial) == 9
+    assert len(partial) == 7
     assert all(
         row["var_eligible"] and not row["joint_eligible"] and not row["fz0_eligible"]
         for row in partial
     )
     assert all(row["es_forecast"] is None for row in partial)
-    assert sum(row["fit_status"] == "unavailable_fit" for row in result["forecasts"]) == 10
+    assert sum(row["fit_status"] == "unavailable_fit" for row in result["forecasts"]) == 8
     assert all(
         row["es_failure_reason"] == "insufficient_empirical_es_exceedances"
         for row in result["forecasts"]
@@ -183,7 +183,7 @@ def test_refit_preserves_partial_es_and_all_unavailable_roster(
         tail_side="left_tail",
         progress=lambda message: None,
     )
-    assert len(result["forecasts"]) == 28 and not result["oof"]
+    assert len(result["forecasts"]) == 22 and not result["oof"]
     assert all(row["fit_status"] == "unavailable_fit" for row in result["forecasts"])
 
 
@@ -416,7 +416,7 @@ def test_pilot_artifacts_isolation_binding_and_no_retry(
     )
     assert result == output and len(observed) == 1
     manifest = json.loads((output / "manifest.json").read_text())
-    assert manifest["status"] == "completed" and manifest["forecast_rows"] == 28
+    assert manifest["status"] == "completed" and manifest["forecast_rows"] == 22
     assert manifest["training_multiplier"] == 1
     assert manifest["sample_policy"] == "clean_predictor_entitlement_sample"
     assert "gold_root" not in manifest and "gold_artifacts" not in manifest
@@ -466,7 +466,7 @@ def test_pilot_artifacts_isolation_binding_and_no_retry(
     assert rolling_manifest["kind"] == "shared_body_rolling_forecast"
     assert rolling_manifest["training_multiplier"] == 1
     assert rolling_manifest["completed_refits"] == len(observed) == 8
-    assert rolling_manifest["forecast_rows"] == 224
+    assert rolling_manifest["forecast_rows"] == 176
     assert len(list((rolling / "refits").rglob("diagnostics.json"))) == 8
     assert len(list((rolling / "refits").rglob("oof_residuals.parquet"))) == 8
     assert rolling_manifest["leakage_check_failures"] == 0
@@ -515,7 +515,7 @@ def test_pilot_artifacts_isolation_binding_and_no_retry(
         tuned_manifest = json.loads((destination / "manifest.json").read_text())
         assert tuned_manifest["status"] == "completed" and len(observed) == 8
         assert tuned_manifest["month_workers"] == (2 if workers is None else workers)
-        assert tuned_manifest["completed_refits"] == 8 and tuned_manifest["forecast_rows"] == 224
+        assert tuned_manifest["completed_refits"] == 8 and tuned_manifest["forecast_rows"] == 176
         assert all(c["components"]["direct"]["test"] for c in observed)
         assert all(c["calibration_kind"] == "oof" for c in observed)
         assert tuned_manifest["tuning"]["cv_splits"] == 5

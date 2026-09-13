@@ -299,7 +299,6 @@ def test_native_prefix_predictions_and_worker_timeout() -> None:
         ("regression_l1", None),
         ("quantile", 0.95),
         ("huber", None),
-        ("fair", None),
         ("gamma", None),
     ],
 )
@@ -312,7 +311,6 @@ def test_losses_are_native_component_metrics(objective: str, alpha: float | None
         "regression_l1": 1.5,
         "quantile": 0.525,
         "huber": 0.945,
-        "fair": (3 - np.log(3) - np.log(2)) / 2,
     }[objective]
     assert loss == pytest.approx(expected)
     assert np.isnan(tuning.validation_loss(y, np.array([np.nan, 0]), objective, alpha))
@@ -343,11 +341,12 @@ def test_joint_body_targets_reuse_selected_oof_components(
     fitted = tuning.fit_joint_bodies(
         grid, runtime=tuning.BoundedFit(), receipt=lambda r: None, progress=lambda message: None
     )
-    assert len(captured) == 15
+    assert len(captured) == 12
+    assert not any("fair" in role or "tweedie" in role for role in captured)
     key = "A/left_tail"
     y = captured["center:regression_l2:None"][key]
     squared = captured["spread:mean_rms_l2"][key]
-    for objective in ("poisson", "gamma", "tweedie"):
+    for objective in ("poisson", "gamma"):
         np.testing.assert_equal(squared, captured[f"spread:mean_rms_{objective}"][key])
     np.testing.assert_allclose(squared[10:], y[10:] ** 2)
     assert np.isnan(squared[:10]).all()
@@ -453,9 +452,9 @@ def test_native_joint_components_and_direct_forecast_reuse(monkeypatch: pytest.M
         components=fitted[key],
         calibration_kind="oof",
     )
-    assert len(result["forecasts"]) == 28 and result["diagnostics"][0]["fit_status"] == "ok"
+    assert len(result["forecasts"]) == 22 and result["diagnostics"][0]["fit_status"] == "ok"
     assert "in_sample" not in result
-    assert len(result["oof"]) == 9 * 120
+    assert len(result["oof"]) == 7 * 120
     assert any(row["structural_warmup"] for row in result["oof"])
     fitted[key]["direct"]["failure_reason"] = "bounded fit failure"
     result = experiment.forecast_shared_body_refit(

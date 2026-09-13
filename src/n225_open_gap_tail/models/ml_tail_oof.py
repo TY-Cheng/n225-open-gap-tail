@@ -346,17 +346,13 @@ def _fit_lgb_regression_model(
         params["alpha"] = float(alpha)
     if objective == "huber":
         params["alpha"] = 0.9
-    elif objective == "fair":
-        params["fair_c"] = 1.0
-    elif objective in {"poisson", "gamma", "tweedie"}:
+    elif objective in {"poisson", "gamma"}:
         if not np.all(np.isfinite(target)) or np.any(target < 0) or not np.any(target > 0):
             raise PipelineRunError("unavailable_positive_link_target_domain")
         # Gamma's native objective permits zeros; its default deviance metric does not.
         params["metric"] = "l2"
         if objective == "poisson":
             params["poisson_max_delta_step"] = 0.7
-        elif objective == "tweedie":
-            params["tweedie_variance_power"] = 1.5
     if fit_executor is None:
         model = lgb.LGBMRegressor(**params)
         model.fit(x_train, target)

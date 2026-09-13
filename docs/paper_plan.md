@@ -16,6 +16,18 @@ and appendix/source notes.
 
 ## P0 Revision Decisions — 2026-09-09
 
+**2026-09-13 roster and feature-coverage revision:** retire Fair--log-absolute
+and Mean--RMS-Tweedie, including their empirical, POT-MLE and UniBM tail variants.
+The active experiment now has seven bodies x three tails plus direct quantile
+(22 specifications). Remove their dedicated objective settings and tuning roles;
+each monthly joint search now has 12 components instead of 15. Raise finite
+feature coverage from 83% to 97% in every training window, uniformly for ordinary,
+minute and options predictors (maximum missingness 3%). This supersedes the
+83% rule and nine-body roster below for future runs. Keep all other model,
+sample, OOF, tuning and VaR-gate rules unchanged. Historical artifacts and
+results retain their original roster and coverage policy; this decision does
+not authorize retraining or imply better OOS performance.
+
 **2026-09-12 calibration revision (supersedes random-CV/in-sample Q57--Q63):**
 for each outer monthly training window D, use five expanding validation blocks
 with initial training size 250 and block size ceil((N_common-250)/5). Evaluate

@@ -51,7 +51,7 @@ def reevaluate_frozen_run(run_dir: Path, *, output_dir: Path | None = None) -> P
     body_experiment = source_manifest.get("kind") == "shared_body_rolling_forecast"
     ml_model_names = EXPERIMENT_MODEL_NAMES if body_experiment else ML_TAIL_MODEL_NAMES
     if body_experiment and source_manifest.get("model_names") != list(ml_model_names):
-        raise ValueError("Body experiment manifest does not contain the registered 28-model roster")
+        raise ValueError("Body experiment manifest does not contain the registered 22-model roster")
     panel_path = run_dir / "panel" / "modeling_panel.parquet"
     panel_columns = pl.read_parquet_schema(panel_path)
     columns: list[str] = [
@@ -257,9 +257,9 @@ def reevaluate_frozen_run(run_dir: Path, *, output_dir: Path | None = None) -> P
         "source_limitations": {
             "fred_vintage_policy": source_manifest.get("fred_vintage_policy"),
             "sample_policy": source_manifest.get("sample_policy"),
-            "estimator": "shared_nine_body_public_unibm_strict_fgls"
+            "estimator": "shared_body_public_unibm_strict_fgls"
             if body_experiment
-            else "original_frozen_methods_not_updated_UniBM_or_nine_body_design",
+            else "original_frozen_methods_not_updated_UniBM_or_shared_body_design",
             "training_multiplier": source_manifest.get("training_multiplier")
             if body_experiment
             else None,

@@ -1,4 +1,4 @@
-"""Shared-body refits for the accepted 28-spec experiment, separate from frozen runs."""
+"""Shared-body refits for the accepted 22-spec experiment, separate from frozen runs."""
 
 from __future__ import annotations
 
@@ -524,7 +524,7 @@ def run_body_pilot(
     tail_side: str,
     progress: Callable[[str], None] | None = None,
 ) -> Path:
-    """One date, one info set, one exposure, 28 specs; never overwrite the source."""
+    """One date, one info set, one exposure, 22 specs; never overwrite the source."""
     started = time.perf_counter()
     date.fromisoformat(forecast_date)
     source_run, output_dir = source_run.resolve(), output_dir.resolve()
@@ -610,7 +610,7 @@ def run_body_rolling(
     *,
     progress: Callable[[str], None] | None = None,
 ) -> Path:
-    """Generate the fixed 28 x A--D x both-tail grid; no external fits or selection.
+    """Generate the fixed 22 x A--D x both-tail grid; no external fits or selection.
 
     Each refit's diagnostics and original-position OOF rows are written immediately.
     No legacy shards are loaded, and existing output directories are never reused.

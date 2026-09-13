@@ -331,7 +331,7 @@ def body_pilot_command(
     ],
     tail_side: Annotated[str, typer.Option(help="One exposure: left_tail or right_tail.")],
 ) -> None:
-    """Fit 28 shared-body specifications for one date; not the full experiment."""
+    """Fit 22 shared-body specifications for one date; not the full experiment."""
     from n225_open_gap_tail.forecasting.body_experiment import run_body_pilot
 
     result = run_body_pilot(
@@ -350,7 +350,7 @@ def body_rolling_command(
     source_run: Annotated[Path, typer.Option(help="Source data run; no old forecasts reused.")],
     output_dir: Annotated[Path, typer.Option(help="New rolling-run directory outside the source.")],
 ) -> None:
-    """Generate 28 shared-body models across A--D and both tails; no external fits or selection."""
+    """Generate 22 shared-body models across A--D and both tails; no external fits or selection."""
     from n225_open_gap_tail.forecasting.body_experiment import run_body_rolling
 
     result = run_body_rolling(source_run, output_dir, progress=typer.echo)

@@ -546,8 +546,8 @@ or robustness runs, not as the default main sample. The 2026-09-12 decision
 supersedes Q37 and restores the predictor-driven global lower bound, including
 XLC's later inception through the Massive daily family. Unavailable family
 starts do not introduce an additional bound. No missing history is backfilled.
-Every ordinary, minute and options predictor must have at least 83% finite
-coverage in its training window; variance filtering remains in force.
+Under the 2026-09-13 revision, every ordinary, minute and options predictor must
+have at least 97% finite coverage in its training window; variance filtering remains in force.
 Target, mapping, roll/SQ and other quality exclusions are unchanged. Existing
 frozen and expanded-history runs retain their original sample masks and evidence.
 

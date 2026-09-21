@@ -30,7 +30,6 @@ from n225_open_gap_tail.config.runtime import (
 from n225_open_gap_tail.forecasting._guards import _assert_leakage_gate
 from n225_open_gap_tail.forecasting.artifacts import (
     _forecast_shard_id,
-    _gold_artifact_path,
     _read_manifest,
     _write_json,
     _write_parquet,
@@ -224,12 +223,8 @@ def evaluate_sensitivity_suite(
                 metric_rows=int(status.get("metric_rows") or 0),
                 status=str(status.get("status") or "cached"),
             )
-    panel_path = _gold_artifact_path(
-        run_dir, "modeling_panel", run_dir / "panel" / "modeling_panel.parquet"
-    )
-    coverage_path = _gold_artifact_path(
-        run_dir, "feature_coverage", run_dir / "panel" / "feature_coverage.parquet"
-    )
+    panel_path = run_dir / "panel" / "modeling_panel.parquet"
+    coverage_path = run_dir / "panel" / "feature_coverage.parquet"
     if not panel_path.exists():
         raise PipelineRunError(f"Missing modeling panel: {panel_path}")
     if not coverage_path.exists():

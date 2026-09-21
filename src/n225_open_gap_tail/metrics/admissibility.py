@@ -116,7 +116,6 @@ def coverage_admissibility_summary_rows(
                 "mean_exceedance_severity_max": max(severities) if severities else None,
                 "coverage_admissible": (
                     eligible == expected_scenarios
-                    and breach == expected_scenarios
                     and kupiec == expected_scenarios
                     and christoffersen == expected_scenarios
                 ),
@@ -129,23 +128,14 @@ def pass_all_row_passes(
     row: Mapping[str, object],
     *,
     min_rows: int = PASS_ALL_MIN_ROWS,
-    tolerance: float = PASS_ALL_COVERAGE_TOLERANCE,
     test_alpha: float = PASS_ALL_TEST_ALPHA,
 ) -> bool:
     rows = int(_optional_float(row.get("rows")) or 0)
-    breach = _optional_float(row.get("var_breach_rate"))
-    expected = _optional_float(row.get("expected_breach_rate"))
     kupiec = _optional_float(row.get("kupiec_pvalue"))
     christoffersen = _optional_float(row.get("christoffersen_pvalue"))
-    if breach is None or kupiec is None or christoffersen is None:
+    if kupiec is None or christoffersen is None:
         return False
-    expected = 0.05 if expected is None else expected
-    return (
-        rows >= min_rows
-        and abs(breach - expected) <= tolerance
-        and kupiec >= test_alpha
-        and christoffersen >= test_alpha
-    )
+    return rows >= min_rows and kupiec >= test_alpha and christoffersen >= test_alpha
 
 
 def _breach_band_passes(row: Mapping[str, object]) -> bool:

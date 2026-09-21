@@ -16,29 +16,29 @@ U.S. information may be partially incorporated before the Japanese opening aucti
   Japan proxy ETFs, and Asia proxy ETFs.
 - Compares benchmark econometric models, advanced tail-risk benchmarks, and LightGBM tail
   specifications.
-- Reports VaR coverage, quantile loss, Fissler-Ziegel VaR-ES loss, DM inference,
-  Murphy diagrams, and supporting risk diagnostics.
+- Screens native VaR/ES forecasts using Kupiec, Christoffersen independence and
+  GREM, then compares admitted models using FZG, quantile loss, paired inference
+  and an FZG model confidence set.
 
 The repository does not implement a live trading system, portfolio allocation rule, or
 execution-cost study.
 
 ## Current Empirical Snapshot
 
-The current clean snapshot is based on the completed run
-`tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4`.
+The current snapshot uses frozen forecasts from
+`body22_expanding_oof_cov97_full_20260913`, reevaluated in
+`reevaluation_fzg_grem_20260921` without retraining.
 
-- Clean evaluation window: `2018-06-20` to `2026-05-22`.
-- Forecast sample: `1722` trading-day observations.
-- Primary risk level: 95% VaR, corresponding to a nominal 5% exception rate.
-- Baseline benchmark median breach rate: about 5.8%.
-- ML direct-quantile breach rates across nested information sets: about 8.9% to 12.3%.
+- Scheduled OOS: 2023-01-26–2026-05-22, with 722 clean target dates.
+- Two of 22 ML recipes pass all eight scenarios: Median–IQR–UniBM and
+  Mean–RMS-Gamma–POT-MLE. Four of 12 external models pass both tails.
+- External-only FZG selection chooses GJR-GARCH-EVT as the single reference.
+- The main comparison uses 628 joint dates, 2023-07-03–2026-05-22.
+- IQR–UniBM has the lowest mean FZG; Gamma–MLE has the lowest quantile loss.
+  FZG MCS retains both ML models, so no unique best ML model is established.
 
-This means lower average loss values for the ML tail models must be read together with
-coverage diagnostics. In the current evidence, the direct-quantile LightGBM models often
-produce less conservative VaR estimates than the baseline benchmarks.
-
-The current results are research-candidate evidence. Final manuscript claims still require
-author review of the tables, figures, and claim boundaries.
+These are exploratory, same-inspected-OOS results, not fresh-holdout validation.
+See `docs/results_snapshot.md` for exact scores, tests, sensitivity and provenance.
 
 ## Research Design
 
@@ -50,7 +50,7 @@ The main target is the settlement-to-open gap:
 log(OSE day-session open) - log(previous settlement)
 ```
 
-Forecasts are evaluated in positive loss units:
+Forecasts use an upper-loss orientation; losses and forecasts may be negative:
 
 - `left_tail`: downside opening-gap risk, `realized_loss = -gap_t`.
 - `right_tail`: upside opening-gap risk, `realized_loss = gap_t`.
@@ -61,8 +61,9 @@ For both sides, a VaR exception is defined as:
 realized_loss > var_forecast
 ```
 
-Left and right tails are evaluated separately. The empirical results should not be
-averaged across sides or interpreted as the same economic mechanism.
+Admission is assessed separately in every scenario. Comparative scores average
+A–D and both tails equally within each shared date, then average dates equally.
+This global objective does not imply identical left/right economic mechanisms.
 
 ### Information Sets
 
@@ -84,9 +85,9 @@ averaged across sides or interpreted as the same economic mechanism.
 - ML tail models: flexible, tree-based direct quantile estimation via gradient boosting
   (LightGBM), LightGBM location-scale models, and LightGBM standardized-loss POT-GPD.
 
-ML tail models are refit monthly using expanding training windows. LightGBM
-hyperparameters are held fixed across information sets and refit dates to limit
-data-dependent tuning.
+ML tail models are refit monthly using expanding training windows. Bounded
+inner expanding-OOF selection shares LightGBM parameters across information sets
+and tails within each refit; the selected parameters can change between months.
 
 ## Point-in-Time Controls
 
@@ -215,20 +216,53 @@ predictions in `forecasts/`.
 The run also preserves its working-tree source diff/new source files. Current
 training uses decimal losses; old multiplier-100 artifacts remain unchanged.
 
-`reevaluate` writes native VaR gates and comparison-specific common-date FZ0
-results, then `grem_curves.parquet` and `grem_summary.parquet`. GREM includes the
-entire pre-screen candidate roster, with W=500 primary and W=250 sensitivity;
-it never changes model/reference selection. Bets use earlier eligible observations
-and cumulative capital never resets. Known calendar/forecast unavailability gets
-zero bets; missing losses or unverified availability timing leave an explicit
-unavailable suffix. The reference level 20 is per-sequence, not a simultaneous
-or post-selection guarantee. See the accepted Q28--Q30 in `docs/paper_plan.md`.
+`reevaluate` applies native VaR gates plus W500 ES-GREM before selecting the
+single global external reference and comparing all admitted ML recipes. It
+writes native availability, fixed-common-date FZG/quantile scores, all-pair
+two-sided bootstrap tests with Holm adjustment, and FZG-only MCS. FZG accepts
+coherent signed ES and uses percentage-point units for evaluation only.
 
-Q14 adds `joint_calibration.parquet`, `joint_murphy.parquet` and
-`joint_murphy_samples.parquet` without changing that selection. Native joint
-identification means have pointwise block-bootstrap intervals; these are not a
-joint or conditional calibration test. Murphy curves use joint-eligible fixed
-common dates and a finite shared threshold grid, not a dominance test.
+To compare information sets only within the frozen admitted recipes, without
+rerunning gates or training, use a new output directory:
+
+```bash
+PYTHONPATH=src uv run python -m n225_open_gap_tail.cli information-contrasts \
+  --evaluation-dir artifacts/reevaluation_fzg_grem_20260921 \
+  --output-dir artifacts/information_contrasts_20260921
+```
+
+This writes A−reference, B−A, C−B and D−C tests for each admitted ML recipe,
+using the original main common dates and equal tail weights. All requested
+contrasts share one Holm family per score/block, separate from the global
+model comparisons. Outputs include scores, paired tests, a report and a two-panel
+FZG figure (A–D mean CIs, a GJR reference band and paired CIs/Holm p-values).
+Mean-level FZG intervals are recorded in `mean_intervals.parquet`;
+existing directories are never overwritten.
+
+To assemble the paper figure/table bundle from these frozen outputs, without
+training, rescoring or rerunning inference:
+
+```bash
+PYTHONPATH=src uv run python -m n225_open_gap_tail.cli paper-bundle \
+  --evaluation-dir artifacts/reevaluation_fzg_grem_20260921 \
+  --information-dir artifacts/information_contrasts_20260921 \
+  --output-dir artifacts/paper_bundle_20260921
+```
+
+The new directory contains PNG/PDF figures, CSV/LaTeX tables, captions and a
+source/output hash manifest. It covers sample availability and forecast timing,
+all-candidate admission, global comparison/MCS, information increments and native
+GREM diagnostics. Existing output directories are refused. This narrow export
+does not use the historical FZ0/Set-C figure pipeline or modify the manuscript.
+
+GREM covers the entire pre-screen roster. W500 is a gate; W250 is sensitivity.
+At least 450 eligible observations and a complete native sequence with historical
+running maximum below 20 are required. Bets use earlier eligible observations;
+capital never resets. Cutoff-audited unavailable forecasts get no bets, while
+missing losses or unauditable timing leave an explicit unavailable suffix.
+The threshold 20 is per sequence, not a recipe-level or post-selection guarantee.
+Full rules are in `docs/paper_plan.md`. Historical FZ0/Murphy artifacts remain
+unchanged but are not the current default reevaluation outputs.
 
 The full workflow is:
 
@@ -251,7 +285,8 @@ diagnostics, opt in explicitly:
 just full 2016-07-19 "" 6 false false
 ```
 
-For a completed run, regenerate the snapshot without fetching vendor data:
+For a completed legacy full run, generate a run-local snapshot without fetching
+vendor data or overwriting the maintained website pages:
 
 ```bash
 just snapshot latest
@@ -288,7 +323,8 @@ just docs
 
 ## Outputs
 
-- `docs/results_snapshot.md`: generated evidence map for the latest completed run.
+- `docs/results_snapshot.md`: maintained current evidence summary for the website.
+- `ARTIFACTS_DIR/<run_id>/snapshot/`: generated legacy run-local results, FAQ and assets.
 - `ARTIFACTS_DIR/<run_id>/`: run manifests, panel copies, forecasts, metrics, and diagnostics.
 - `ARTIFACTS_DIR/<run_id>/latex/tables/`: paper-facing LaTeX tables.
 - `ARTIFACTS_DIR/<run_id>/latex/figures/`: paper-facing figures.
@@ -318,7 +354,7 @@ data-lake bindings. There is no legacy-path fallback.
 
 - `docs/paper_plan.md`: research questions, model families, evaluation design, and claim
   boundaries.
-- `docs/results_snapshot.md`: generated evidence map for the current completed run.
+- `docs/results_snapshot.md`: current frozen-forecast scores, gates and inference.
 - `docs/data.md`: source roles, target hierarchy, point-in-time controls, and data
   limitations.
 - `docs/future_work.md`: extensions that should remain separate from the current paper.

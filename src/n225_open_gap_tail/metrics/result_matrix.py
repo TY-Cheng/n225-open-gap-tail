@@ -16,6 +16,7 @@ from n225_open_gap_tail.metrics.stat_utils import (
     _safe_mean,
     christoffersen_independence_test,
     fz_loss,
+    fzg_loss,
     forecast_eligible,
     index_forecast_sessions,
     kupiec_pof_test,
@@ -68,6 +69,7 @@ def build_metric_records(
         losses: Any = np.array([_required_float(row["realized_loss"]) for row in rows], dtype=float)
         var: Any = np.array([_required_float(row["var_forecast"]) for row in rows], dtype=float)
         fz_rows = [row for row in rows if forecast_eligible(row, score="fz0")]
+        fzg_rows = [row for row in rows if forecast_eligible(row, score="fzg")]
         breaches = losses > var
         alpha = 1.0 - tail_level
         kupiec = kupiec_pof_test(breaches=breaches, expected_probability=alpha)
@@ -89,6 +91,7 @@ def build_metric_records(
                 "recorded_rows": len(scheduled_rows),
                 "joint_rows": sum(forecast_eligible(row, score="joint") for row in rows),
                 "fz0_rows": len(fz_rows),
+                "fzg_rows": len(fzg_rows),
                 "fz0_excluded_rows": len(rows) - len(fz_rows),
                 "date_start": str(rows[0]["forecast_date"]) if rows else None,
                 "date_end": str(rows[-1]["forecast_date"]) if rows else None,
@@ -123,6 +126,27 @@ def build_metric_records(
                                 tail_level,
                             )
                             for row in fz_rows
+                        ]
+                    )
+                ),
+                "mean_fzg_loss": _safe_mean(
+                    np.array(
+                        [
+                            fzg_loss(
+                                _required_float(row["realized_loss"]),
+                                _required_float(row["var_forecast"]),
+                                _required_float(row["es_forecast"]),
+                                tail_level,
+                            )
+                            for row in fzg_rows
+                        ]
+                    )
+                ),
+                "mean_quantile_loss_pct": _safe_mean(
+                    np.array(
+                        [
+                            quantile_loss(100 * loss, 100 * forecast, tail_level)
+                            for loss, forecast in zip(losses, var, strict=True)
                         ]
                     )
                 ),

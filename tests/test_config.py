@@ -62,7 +62,6 @@ def test_required_directories_preserve_configured_paths(tmp_path: Path) -> None:
         data_dir=tmp_path / "data",
         bronze_data_dir=tmp_path / "data/bronze",
         silver_data_dir=tmp_path / "data/silver",
-        gold_data_dir=tmp_path / "data/gold",
         artifacts_dir=tmp_path / "artifacts",
         reports_dir=tmp_path / "reports",
     )
@@ -71,7 +70,6 @@ def test_required_directories_preserve_configured_paths(tmp_path: Path) -> None:
         tmp_path / "data",
         tmp_path / "data/bronze",
         tmp_path / "data/silver",
-        tmp_path / "data/gold",
         tmp_path / "artifacts",
         tmp_path / "reports",
     )

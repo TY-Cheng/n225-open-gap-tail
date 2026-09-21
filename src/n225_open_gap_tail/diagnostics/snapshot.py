@@ -85,7 +85,7 @@ from n225_open_gap_tail.diagnostics.target_distribution import (
 class SnapshotResult:
     snapshot_id: str
     snapshot_dir: Path
-    docs_results_path: Path
+    results_path: Path
     target_rows: int
     model_status: str
 
@@ -114,15 +114,15 @@ def write_results_snapshot_from_run(
     settings: Settings,
     run_id: str | None = None,
 ) -> SnapshotResult:
-    """Write docs/results_snapshot.md from a completed full tail-risk run."""
+    """Write a self-contained snapshot under the run, without changing the website."""
     run_dir = _resolve_snapshot_run_dir(settings=settings, run_id=run_id)
     manifest = _read_json_dict(run_dir / "manifest.json")
     resolved_run_id = str(manifest.get("run_id") or run_dir.name)
-    paths = _full_run_snapshot_paths(settings=settings, run_dir=run_dir, manifest=manifest)
+    paths = _full_run_snapshot_paths(run_dir=run_dir)
     _validate_snapshot_artifacts(paths)
     panel = _read_parquet_optional(paths["modeling_panel"])
-    docs_path = Path("docs/results_snapshot.md")
-    discussion_path = Path("docs/faq.md")
+    docs_path = run_dir / "snapshot" / "results.md"
+    discussion_path = docs_path.with_name("faq.md")
     docs_path.parent.mkdir(parents=True, exist_ok=True)
     _cleanup_stale_snapshot_asset_dirs(docs_dir=docs_path.parent, current_run_id=run_dir.name)
     _snapshot_gallery.sync_snapshot_figure_assets(
@@ -150,7 +150,7 @@ def write_results_snapshot_from_run(
     return SnapshotResult(
         snapshot_id=resolved_run_id,
         snapshot_dir=run_dir,
-        docs_results_path=docs_path,
+        results_path=docs_path,
         target_rows=panel.height,
         model_status=str(
             manifest.get("ml_tail_eval_status") or manifest.get("benchmark_eval_status")
@@ -351,7 +351,7 @@ def _full_run_results_markdown(
             ("Claim level", _code(manifest.get("claim_level") or manifest.get("claims_level"))),
             ("Requested window", _code(manifest.get("window"))),
             ("Combined clean start", _code(manifest.get("combined_clean_start"))),
-            ("Gold panel dates", panel_bounds),
+            ("Panel dates", panel_bounds),
             ("Forecast sample dates", forecast_bounds),
             ("Git commit", _code(manifest.get("git_commit"))),
             ("Git dirty", _code(manifest.get("git_dirty"))),
@@ -361,8 +361,8 @@ def _full_run_results_markdown(
     panel_table = _markdown_table(
         ("Measure", "Value"),
         [
-            ("Gold modeling rows", str(panel.height)),
-            ("Gold columns", str(panel.width)),
+            ("Modeling rows", str(panel.height)),
+            ("Panel columns", str(panel.width)),
             ("Target-audit rows", str(target.height)),
             ("Clean target rows", str(_bool_sum(target, "clean_sample"))),
             ("Forecast-sample rows", str(_bool_sum(panel, "forecast_sample"))),
@@ -482,20 +482,19 @@ hide:
 # Results And Discussion
 
 > **Research-candidate full-run artifact.** This page is generated from `{run_id}`.
-> It summarizes the durable gold modeling sample and run outputs, not the older
+> It summarizes the run-local modeling sample and run outputs, not the older
 > bounded access-check snapshot. It is still a research-candidate artifact:
 > final manuscript claims require a clean committed run and author review of the
 > tables and notes. It is organized as the paper's Results and Discussion
 > section: sample and timing results, model setup, forecasting outcomes,
 > diagnostics, tables, figures, and claim boundaries.
 
-## 1. Overview And Link To Paper Plan
+## 1. Run-Specific Evidence
 
-This page is the generated Results and Discussion companion to
-[Paper Plan](paper_plan.md). It carries forward the planned manuscript sections:
-data/timing evidence, model/evaluation setup, benchmark results, ML nested
-information-set results, post-screen comparisons, supporting diagnostics, and
-claim boundaries. Full data-source detail lives in [Data](data.md).
+This generated report describes this run's original evaluation, not necessarily
+the current selection protocol. The repository's `docs/paper_plan.md`
+defines current rules and `docs/results_snapshot.md` reports the frozen
+reevaluation. Full data-source details remain in `docs/data.md`.
 
 ### Evidence Map
 
@@ -503,7 +502,7 @@ claim boundaries. Full data-source detail lives in [Data](data.md).
 {evidence_map}
 ```
 
-- The left branch binds vendor and calendar inputs into a timestamp-audited gold panel.
+- The left branch binds vendor and calendar inputs into a timestamp-audited run-local panel.
 - The middle branch compares baseline benchmarks, advanced econometric benchmarks, and ML-tail forecasts on registered loss units.
 - The right branch separates primary ML nested information sets, diagnostic model-family comparisons, unconditional DM inference, and supporting figures.
 
@@ -519,7 +518,7 @@ claim boundaries. Full data-source detail lives in [Data](data.md).
 
 {target_tail_diagnostics}
 
-### Gold Panel Construction
+### Modeling Panel Construction
 
 {panel_table}
 
@@ -535,7 +534,7 @@ claim boundaries. Full data-source detail lives in [Data](data.md).
 
 - The map covers EST/EDT, early closes, U.S./Japan holiday desynchronization, and normal trading alignments.
 - Desync rows are not treated as normal forecast rows.
-- The timing map is part of the leakage-bound gold artifact, not ad hoc evaluation logic.
+- The timing map is part of the leakage-bound panel artifact, not ad hoc evaluation logic.
 
 ### Feature Coverage
 
@@ -551,7 +550,7 @@ claim boundaries. Full data-source detail lives in [Data](data.md).
 
 - Zero failures means no audited row violated the hard timestamp invariant.
 - Warnings are retained because they identify conservative-lag or missing-feature situations that may matter for interpretation; they are not hard timestamp failures.
-- The panel signature is deterministic and binds the leakage check to the current gold panel/config.
+- The panel signature is deterministic and binds the leakage check to the current run-local panel/config.
 
 ## 3. Model And Evaluation Setup
 
@@ -561,14 +560,14 @@ claim boundaries. Full data-source detail lives in [Data](data.md).
 | --- | --- | --- |
 | 1 | Vendor and calendar sources | Pull or read J-Quants, Massive, FRED, CBOE, and exchange-calendar inputs. |
 | 2 | Bronze and silver cache | Preserve typed vendor/cache rows, then normalize point-in-time research features. |
-| 3 | Gold modeling panel | Join targets, calendar map, feature coverage, and leakage-bound signatures. |
+| 3 | Run-local modeling panel | Join targets, calendar map, feature coverage, and leakage-bound signatures. |
 | 4 | Leakage and coverage gates | Enforce timestamp ordering and sample eligibility before evaluation. |
 | 5 | Baseline benchmarks and ML-tail registry | Run statistical and econometric benchmarks based on lagged opening-gap losses and the LightGBM tail-model families. |
 | 6 | Metrics, inference, diagnostics | Build loss matrices, DM/Murphy diagnostics, stress windows, and result matrix artifacts. |
 | 7 | Results snapshot | Summarize run-specific evidence and claim boundaries for reader review. |
 
 - Data-access and cache artifacts live under `data/bronze` and `data/silver`.
-- Durable modeling evidence lives under `data/gold`; forecast/evaluation/reporting read from gold and artifacts.
+- Modeling evidence, forecasts, evaluations, and reports live under `artifacts/<run_id>`; readers use its `panel/` and `audits/` directories.
 - Run-specific forecasts, metrics, diagnostics, and LaTeX tables live under `artifacts/<run_id>`.
 
 ### Model And Evaluation Protocol

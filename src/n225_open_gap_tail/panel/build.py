@@ -70,7 +70,7 @@ from n225_open_gap_tail.data_lake.cache_ops import (
     _fetch_massive_predictors,
 )
 from n225_open_gap_tail.config.git import _git_commit, _git_dirty
-from n225_open_gap_tail.data_lake.artifacts import _gold_panel_dir, _write_json, _write_parquet
+from n225_open_gap_tail.data_lake.artifacts import _write_json, _write_parquet
 from n225_open_gap_tail.features.asof import (
     _canonical_fx_asof,
     _canonical_fx_context,
@@ -154,10 +154,8 @@ def build_panel(
     run_dir = settings.artifacts_dir / run_id
     panel_dir = run_dir / "panel"
     config_dir = run_dir / "config"
-    gold_run_dir = _gold_panel_dir(settings.gold_data_dir, run_id)
     panel_dir.mkdir(parents=True, exist_ok=True)
     config_dir.mkdir(parents=True, exist_ok=True)
-    gold_run_dir.mkdir(parents=True, exist_ok=True)
 
     calendar_records = build_session_calendar_records(
         start=(date.fromisoformat(start) - timedelta(days=10)).isoformat(),
@@ -339,15 +337,6 @@ def build_panel(
     vintage_path = run_dir / "data_vintage.json"
     manifest_path = run_dir / "manifest.json"
     feature_dictionary_path = panel_dir / "feature_dictionary.json"
-    gold_target_audit_path = gold_run_dir / "target_audit.parquet"
-    gold_panel_path = gold_run_dir / "modeling_panel.parquet"
-    gold_coverage_path = gold_run_dir / "feature_coverage.parquet"
-    gold_fields_coverage_path = gold_run_dir / "fields_coverage_audit.parquet"
-    gold_calendar_map_path = gold_run_dir / "calendar_map.parquet"
-    gold_options_source_audit_path = gold_run_dir / "options_source_audit.parquet"
-    gold_options_feature_coverage_path = gold_run_dir / "options_feature_coverage.parquet"
-    gold_options_liquidity_audit_path = gold_run_dir / "options_liquidity_audit.parquet"
-    gold_feature_dictionary_path = gold_run_dir / "feature_dictionary.json"
     research_config_path = config_dir / "research_config.json"
     config_hash = PIPELINE_CONFIG.config_hash()
     data_vintage_payload: dict[str, object] = {
@@ -398,16 +387,6 @@ def build_panel(
         f"source={len(options_source_audit)} coverage={len(options_feature_coverage)} "
         f"liquidity={len(options_liquidity_audit)}"
     )
-    _write_parquet(gold_target_audit_path, targets)
-    _write_parquet(gold_panel_path, panel)
-    _write_parquet(gold_coverage_path, feature_coverage)
-    _write_parquet(gold_fields_coverage_path, fields_coverage)
-    _write_parquet(gold_calendar_map_path, calendar_map, schema=CALENDAR_MAP_SCHEMA)
-    _write_parquet(gold_options_source_audit_path, options_source_audit)
-    _write_parquet(gold_options_feature_coverage_path, options_feature_coverage)
-    _write_parquet(gold_options_liquidity_audit_path, options_liquidity_audit)
-    _write_json(gold_feature_dictionary_path, build_feature_dictionary(panel))
-    _pipeline_log(f"wrote durable gold panel artifacts: {gold_run_dir}")
     _write_json(schema_path, schema_probe)
     _write_json(vintage_path, data_vintage_payload)
     _write_json(feature_dictionary_path, build_feature_dictionary(panel))
@@ -453,20 +432,6 @@ def build_panel(
             "claims_level": CLAIMS_LEVEL,
             "claim_level": CLAIMS_LEVEL,
             "suite": "benchmark_panel",
-            "gold_root": str(settings.gold_data_dir),
-            "gold_path_schema": "compact",
-            "gold_panel_dir": str(gold_run_dir),
-            "gold_artifacts": {
-                "target_audit": str(gold_target_audit_path),
-                "modeling_panel": str(gold_panel_path),
-                "feature_coverage": str(gold_coverage_path),
-                "fields_coverage_audit": str(gold_fields_coverage_path),
-                "calendar_map": str(gold_calendar_map_path),
-                "options_source_audit": str(gold_options_source_audit_path),
-                "options_feature_coverage": str(gold_options_feature_coverage_path),
-                "options_liquidity_audit": str(gold_options_liquidity_audit_path),
-                "feature_dictionary": str(gold_feature_dictionary_path),
-            },
             "window": [start, end_date],
             "sample_policy": "clean_predictor_entitlement_sample",
             "main_sample_start_requested": start,
@@ -613,7 +578,7 @@ def build_panel(
     return PanelBuildResult(
         run_id=run_id,
         run_dir=run_dir,
-        panel_path=gold_panel_path,
+        panel_path=panel_path,
         rows=len(panel),
         clean_rows=clean_rows,
     )

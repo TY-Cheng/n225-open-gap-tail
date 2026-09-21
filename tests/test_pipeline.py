@@ -17,7 +17,6 @@ import polars as pl
 import pytest
 
 import n225_open_gap_tail.config.runtime as pipeline_runtime
-import n225_open_gap_tail.data_lake.artifacts as artifact_utils
 import n225_open_gap_tail.data_lake.cache_ops as paper_cache
 import n225_open_gap_tail.features as paper_features
 import n225_open_gap_tail.forecasting as paper_core
@@ -748,7 +747,6 @@ def test_options_audit_artifacts_are_disabled_until_historical_source_is_verifie
         data_dir=tmp_path / "data",
         bronze_data_dir=tmp_path / "data" / "bronze",
         silver_data_dir=tmp_path / "data" / "silver",
-        gold_data_dir=tmp_path / "data" / "gold",
         reports_dir=tmp_path / "reports",
     )
 
@@ -914,7 +912,6 @@ def test_n225_option_features_normalize_compact_v2_fields_and_write_silver(
         data_dir=tmp_path / "data",
         bronze_data_dir=tmp_path / "data" / "bronze",
         silver_data_dir=tmp_path / "data" / "silver",
-        gold_data_dir=tmp_path / "data" / "gold",
         reports_dir=tmp_path / "reports",
     )
     paper_core.write_jquants_options_silver_cache(settings=settings, rows=option_rows)
@@ -3635,18 +3632,28 @@ def test_force_config_compatibility_preserves_audits_and_updates_manifest(
     assert (run_dir / "audits" / "leakage_summary.parquet").exists()
 
 
-def test_gold_artifact_path_uses_existing_manifest_path(tmp_path: Path) -> None:
+@pytest.mark.parametrize("reader", ["leakage", "benchmark", "ml_tail"])
+def test_readers_require_local_panel_even_with_existing_legacy_paths(
+    tmp_path: Path, reader: str
+) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    gold = tmp_path / "gold.parquet"
-    fallback = tmp_path / "fallback.parquet"
-    gold.write_text("x", encoding="utf-8")
+    retired_panel = tmp_path / "retired_panel.parquet"
+    retired_panel.write_text("x", encoding="utf-8")
     (run_dir / "manifest.json").write_text(
-        json.dumps({"gold_artifacts": {"benchmark_metrics": str(gold)}}),
+        json.dumps({"gold_artifacts": {"modeling_panel": str(retired_panel)}}),
         encoding="utf-8",
     )
 
-    assert metrics_information._gold_artifact_path(run_dir, "benchmark_metrics", fallback) == gold
+    readers = {
+        "leakage": write_leakage_check,
+        "benchmark": evaluate_benchmark_suite,
+        "ml_tail": evaluate_ml_tail_suite,
+    }
+    manifest_before = (run_dir / "manifest.json").read_bytes()
+    with pytest.raises(paper_module.PipelineRunError, match="Missing modeling panel"):
+        readers[reader](run_dir=run_dir)
+    assert (run_dir / "manifest.json").read_bytes() == manifest_before
 
 
 def test_closed_form_benchmark_forecasts_and_unknown_model() -> None:
@@ -5133,7 +5140,8 @@ def test_benchmark_and_ml_tail_require_current_leakage_summary(tmp_path: Path) -
         evaluate_benchmark_suite(run_dir=run_dir, workers=1)
 
 
-def test_write_leakage_check_outputs_summary(tmp_path: Path) -> None:
+@pytest.mark.parametrize("legacy_paths", [False, True])
+def test_write_leakage_check_outputs_summary(tmp_path: Path, legacy_paths: bool) -> None:
     run_dir = tmp_path / "artifacts" / "benchmark_leakage"
     panel_dir = run_dir / "panel"
     panel_dir.mkdir(parents=True)
@@ -5157,12 +5165,27 @@ def test_write_leakage_check_outputs_summary(tmp_path: Path) -> None:
             }
         ]
     ).write_parquet(panel_dir / "modeling_panel.parquet")
-    (run_dir / "manifest.json").write_text(
-        json.dumps({"config_hash": paper_module.PIPELINE_CONFIG.config_hash()}),
-        encoding="utf-8",
-    )
+    manifest: dict[str, object] = {"config_hash": paper_module.PIPELINE_CONFIG.config_hash()}
+    retired_dir = tmp_path / "retired"
+    if legacy_paths:
+        manifest.update(
+            {
+                "gold_root": str(retired_dir),
+                "gold_artifacts": {
+                    "modeling_panel": str(retired_dir / "modeling_panel.parquet"),
+                    "calendar_map": str(retired_dir / "calendar_map.parquet"),
+                },
+            }
+        )
+    (run_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
     result = write_leakage_check(run_dir=run_dir)
+
+    assert not retired_dir.exists()
+    updated = json.loads((run_dir / "manifest.json").read_text())
+    assert {k: v for k, v in updated.items() if k.startswith("gold_")} == {
+        k: v for k, v in manifest.items() if k.startswith("gold_")
+    }
 
     assert result.rows == 1
     assert result.failures == 0
@@ -5331,7 +5354,6 @@ def test_build_panel_with_synthetic_vendor_rows(
         reports_dir=tmp_path / "reports",
         bronze_data_dir=tmp_path / "data" / "bronze",
         silver_data_dir=tmp_path / "data" / "silver",
-        gold_data_dir=tmp_path / "data" / "gold",
     )
     result = build_panel(settings=settings, start="2026-01-05", end="2026-01-06")
     panel = pl.read_parquet(result.panel_path)
@@ -5344,13 +5366,11 @@ def test_build_panel_with_synthetic_vendor_rows(
     assert "spy_return" in panel.columns
     assert (result.run_dir / "panel" / "feature_coverage.parquet").exists()
     assert (result.run_dir / "manifest.json").exists()
-    gold_panel_dir = artifact_utils._gold_panel_dir(settings.gold_data_dir, result.run_id)
-    gold_panel = gold_panel_dir / "modeling_panel.parquet"
-    gold_calendar = gold_panel.with_name("calendar_map.parquet")
-    assert gold_panel.exists()
-    assert gold_calendar.exists()
-    assert result.panel_path == gold_panel
+    assert result.panel_path == result.run_dir / "panel" / "modeling_panel.parquet"
+    assert (result.run_dir / "panel" / "calendar_map.parquet").exists()
+    assert not (settings.data_dir / "gold").exists()
     manifest = json.loads((result.run_dir / "manifest.json").read_text())
+    assert not any(key.startswith("gold_") for key in manifest)
     assert manifest["combined_clean_start"] == max(
         "2026-01-05",
         required_target_start or "2016-07-19",
@@ -5427,21 +5447,6 @@ def test_private_pipeline_helpers_cover_defensive_edges(
     assert paper_core._fmt(None) == ""
     assert paper_core._fmt(1.2345678) == "1.234568"
     assert paper_core._optional_float(True) is None
-    artifact_run_dir = tmp_path / "artifact_run"
-    artifact_run_dir.mkdir()
-    artifact_target = tmp_path / "gold_panel.parquet"
-    (artifact_run_dir / "manifest.json").write_text(
-        json.dumps({"gold_artifacts": {"modeling_panel": str(artifact_target)}}),
-        encoding="utf-8",
-    )
-    assert (
-        artifact_utils._gold_artifact_path(
-            artifact_run_dir,
-            "modeling_panel",
-            tmp_path / "fallback.parquet",
-        )
-        == artifact_target
-    )
     cache_rows_path = tmp_path / "cache_rows.parquet"
     pl.DataFrame([{"requested_date": "2026-01-05", "value": 1.0}]).write_parquet(cache_rows_path)
     assert paper_cache._read_parquet_records(cache_rows_path)[0]["requested_date"] == "2026-01-05"

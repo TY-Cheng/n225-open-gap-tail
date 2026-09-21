@@ -100,24 +100,6 @@ def _update_manifest(run_dir: Path, updates: dict[str, object]) -> None:
     _write_json(path, manifest)
 
 
-def _gold_artifact_path(run_dir: Path, key: str, fallback: Path) -> Path:
-    manifest = _read_manifest(run_dir)
-    gold_artifacts = manifest.get("gold_artifacts")
-    if isinstance(gold_artifacts, Mapping):
-        raw_path = gold_artifacts.get(key)
-        if isinstance(raw_path, str) and raw_path:
-            return Path(raw_path)
-    return fallback
-
-
-def _gold_panel_dir(gold_root: Path, run_id: str) -> Path:
-    return gold_root / "tp" / run_id
-
-
-def _gold_leakage_dir(gold_root: Path, run_id: str) -> Path:
-    return gold_root / "ls" / run_id
-
-
 def _write_forecast_shards(
     forecast_root: Path,
     forecasts: list[dict[str, object]],

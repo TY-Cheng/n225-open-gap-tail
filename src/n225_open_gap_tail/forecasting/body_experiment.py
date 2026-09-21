@@ -486,7 +486,7 @@ def _write_body_panel(
     panel_rows: list[dict[str, Any]],
     coverage: list[dict[str, Any]],
 ) -> None:
-    # New local paths and bindings; never inherit source gold_artifacts/gold_root.
+    # New run-local paths and bindings; never inherit source storage paths.
     _write_parquet(output_dir / "panel/modeling_panel.parquet", panel_rows)
     _write_parquet(output_dir / "panel/feature_coverage.parquet", coverage)
     _write_parquet(

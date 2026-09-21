@@ -2,44 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from n225_open_gap_tail.config import Settings
-from n225_open_gap_tail.data_lake.artifacts import (
-    _gold_leakage_dir,
-    _gold_panel_dir,
-)
 
-
-def full_run_snapshot_paths(
-    *,
-    settings: Settings,
-    run_dir: Path,
-    manifest: dict[str, object],
-) -> dict[str, Path]:
-    run_id = str(manifest.get("run_id") or run_dir.name)
-    gold_artifacts = _dict_value(manifest.get("gold_artifacts"))
-    gold_panel_root = _gold_panel_dir(settings.gold_data_dir, run_id)
-    leakage_root = _gold_leakage_dir(settings.gold_data_dir, run_id)
-    leakage_summary = Path(
-        str(gold_artifacts.get("leakage_summary", leakage_root / "summary.json"))
-    )
+def full_run_snapshot_paths(*, run_dir: Path) -> dict[str, Path]:
     return {
         "manifest": run_dir / "manifest.json",
         "data_vintage": run_dir / "data_vintage.json",
-        "modeling_panel": Path(
-            str(gold_artifacts.get("modeling_panel", gold_panel_root / "modeling_panel.parquet"))
-        ),
-        "target_audit": Path(
-            str(gold_artifacts.get("target_audit", gold_panel_root / "target_audit.parquet"))
-        ),
-        "calendar_map": Path(
-            str(gold_artifacts.get("calendar_map", gold_panel_root / "calendar_map.parquet"))
-        ),
-        "feature_coverage": Path(
-            str(
-                gold_artifacts.get("feature_coverage", gold_panel_root / "feature_coverage.parquet")
-            )
-        ),
-        "leakage_summary": leakage_summary,
+        "modeling_panel": run_dir / "panel" / "modeling_panel.parquet",
+        "target_audit": run_dir / "panel" / "target_audit.parquet",
+        "calendar_map": run_dir / "panel" / "calendar_map.parquet",
+        "feature_coverage": run_dir / "panel" / "feature_coverage.parquet",
+        "leakage_summary": run_dir / "audits" / "leakage_check_summary.json",
         "benchmark_status": run_dir / "metrics" / "benchmark_status.json",
         "benchmark_metrics": run_dir / "metrics" / "benchmark_metrics.parquet",
         "benchmark_metrics_per_model": run_dir / "metrics" / "benchmark_metrics_per_model.parquet",
@@ -69,7 +41,3 @@ def full_run_snapshot_paths(
         / "tables"
         / "ml_tail_result_matrix_summary_table.tex",
     }
-
-
-def _dict_value(value: object) -> dict[str, object]:
-    return value if isinstance(value, dict) else {}

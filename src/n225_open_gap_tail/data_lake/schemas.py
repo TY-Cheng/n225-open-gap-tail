@@ -49,7 +49,7 @@ class ForecastExclusionReason(StrEnum):
 
 
 class JoinMissReason(StrEnum):
-    """Typed reasons for predictor-target join gaps in the gold panel."""
+    """Typed reasons for predictor-target join gaps in the modeling panel."""
 
     PREDICTOR_UNAVAILABLE_ENTITLEMENT = "predictor_unavailable_entitlement"
     PREDICTOR_MISSING_IN_CACHE = "predictor_missing_in_cache"

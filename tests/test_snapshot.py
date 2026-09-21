@@ -378,17 +378,17 @@ def test_snapshot_summary_can_be_written_from_generated_artifact_text(tmp_path: 
     assert payload["fail_closed"] is False
 
 
-def test_results_snapshot_uses_full_run_gold_artifacts(
+def test_results_snapshot_uses_run_artifacts_and_ignores_legacy_paths(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     run_id = "tailrisk_test"
     artifacts_dir = tmp_path / "artifacts"
-    gold_dir = tmp_path / "data" / "gold"
+    retired_dir = tmp_path / "data" / "retired"
     run_dir = artifacts_dir / run_id
-    panel_dir = gold_dir / "tp" / run_id
-    leakage_dir = gold_dir / "ls" / run_id
+    panel_dir = run_dir / "panel"
+    leakage_dir = run_dir / "audits"
     metrics_dir = run_dir / "metrics"
     panel_dir.mkdir(parents=True)
     leakage_dir.mkdir(parents=True)
@@ -479,10 +479,11 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
                 "benchmark_eval_status": "completed",
                 "ml_tail_eval_status": "completed_lightgbm_ml_tail_models",
                 "gold_artifacts": {
-                    "modeling_panel": str(panel_path),
-                    "target_audit": str(target_path),
-                    "calendar_map": str(calendar_path),
-                    "feature_coverage": str(feature_path),
+                    "modeling_panel": str(retired_dir / "modeling_panel.parquet"),
+                    "target_audit": str(retired_dir / "target_audit.parquet"),
+                    "calendar_map": str(retired_dir / "calendar_map.parquet"),
+                    "feature_coverage": str(retired_dir / "feature_coverage.parquet"),
+                    "leakage_summary": str(retired_dir / "summary.json"),
                 },
             }
         ),
@@ -522,7 +523,7 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
         ),
         encoding="utf-8",
     )
-    (leakage_dir / "summary.json").write_text(
+    (leakage_dir / "leakage_check_summary.json").write_text(
         json.dumps(
             {
                 "status": "pass",
@@ -536,7 +537,10 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
         ),
         encoding="utf-8",
     )
-    (run_dir / "latex").mkdir(parents=True)
+    (run_dir / "latex" / "tables").mkdir(parents=True)
+    (run_dir / "latex" / "tables" / "ml_tail_metrics_table.tex").write_text(
+        "Test metrics table", encoding="utf-8"
+    )
     (run_dir / "latex" / "table_manifest.json").write_text(
         json.dumps(
             {
@@ -580,26 +584,42 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     figure_dir = run_dir / "latex" / "figures"
     figure_dir.mkdir(parents=True)
     (figure_dir / "es_severity_right_tail.png").write_bytes(b"png")
+    website_faq = tmp_path / "docs" / "faq.md"
+    website_faq.parent.mkdir()
+    website_faq.write_text("Existing website FAQ", encoding="utf-8")
+    website_results = website_faq.with_name("results_snapshot.md")
+    website_results.write_text("Current maintained results", encoding="utf-8")
 
+    manifest_before = (run_dir / "manifest.json").read_bytes()
     result = snapshot_module.write_results_snapshot_from_run(
         settings=Settings(
             data_dir=tmp_path / "data",
             bronze_data_dir=tmp_path / "data" / "bronze",
             silver_data_dir=tmp_path / "data" / "silver",
-            gold_data_dir=gold_dir,
             artifacts_dir=artifacts_dir,
         ),
         run_id="latest",
     )
 
-    rendered = Path("docs/results_snapshot.md").read_text(encoding="utf-8")
-    discussion_rendered = Path("docs/faq.md").read_text(encoding="utf-8")
+    assert result.results_path == run_dir / "snapshot" / "results.md"
+    assert (run_dir / "manifest.json").read_bytes() == manifest_before
+    assert not retired_dir.exists()
+    rendered = result.results_path.read_text(encoding="utf-8")
+    discussion_rendered = (result.results_path.parent / "faq.md").read_text(encoding="utf-8")
+    assert website_results.read_text(encoding="utf-8") == "Current maintained results"
+    assert website_faq.read_text(encoding="utf-8") == "Existing website FAQ"
+    assert (
+        result.results_path.parent / "figures" / run_id / "es_severity_right_tail.png"
+    ).is_file()
+    assert (result.results_path.parent / "tables" / run_id / "ml_tail_metrics_table.tex").is_file()
     assert result.snapshot_id == run_id
-    assert "Paper Plan](paper_plan.md)" in rendered
+    assert "docs/paper_plan.md" in rendered
+    assert "docs/results_snapshot.md" in rendered
+    assert "docs/evaluation_protocol.md" not in rendered
     assert "### What is the empirical question?" not in rendered
     assert "# FAQ" in discussion_rendered
     _assert_discussion_qa_headings_in_order(discussion_rendered)
-    assert "## 1. Overview And Link To Paper Plan" in rendered
+    assert "## 1. Run-Specific Evidence" in rendered
     assert "## 2. Data, Target, And Timing Results" in rendered
     assert "## 3. Model And Evaluation Setup" in rendered
     assert "### Target Distribution And Tail Diagnostics" in rendered
@@ -607,7 +627,7 @@ def test_results_snapshot_uses_full_run_gold_artifacts(
     assert "## 4. Forecasting Results And Discussion" in rendered
     assert "<!-- generated: results_discussion -->" in rendered
     _assert_results_discussion_subsections_in_order(rendered)
-    assert "Gold modeling rows" in rendered
+    assert "Modeling rows" in rendered
     assert "A: Japan only" in rendered
     assert "### Run Metadata" in rendered
     assert "### Evidence Map" in rendered

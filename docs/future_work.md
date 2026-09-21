@@ -9,8 +9,9 @@ This page records extensions that should remain outside the current paper unless
 become necessary for interpretation. The present paper is a point-in-time out-of-sample
 forecast evaluation of OSE Nikkei 225 Futures opening-gap VaR and Expected Shortfall. It
 already covers benchmark models, LightGBM tail models, downside and upside risk surfaces,
-coverage diagnostics, loss-based comparison, Murphy diagrams, ES
-severity, and stress-window diagnostics.
+native Kupiec/Christoffersen/GREM gates, FZG and quantile-loss comparisons,
+paired bootstrap inference and FZG MCS. Historical Murphy, severity and stress
+diagnostics remain tied to their original runs; they are not current headline evidence.
 
 Future work should therefore do one of two things: either sharpen the economic
 interpretation of the current evidence, or define a clearly separate paper.

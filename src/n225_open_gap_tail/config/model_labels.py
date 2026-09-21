@@ -21,6 +21,7 @@ _MODEL_DISPLAY_LABELS = {
     "lightgbm_median_mad_pot_gpd_unibm": "LightGBM median/MAD POT-GPD UniBM",
     "lightgbm_median_iqr_pot_gpd_plain_mle": "LightGBM median/IQR POT-GPD MLE",
     "lightgbm_median_iqr_pot_gpd_unibm": "LightGBM median/IQR POT-GPD UniBM",
+    "lightgbm_mean_rms_gamma_pot_gpd_plain_mle": "LightGBM mean/RMS-Gamma POT-GPD MLE",
 }
 
 _STATUS_DISPLAY_LABELS = {

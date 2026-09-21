@@ -47,6 +47,30 @@ def fz_loss(loss: float, var_forecast: float, es_forecast: float, tail_level: fl
     )
 
 
+def fzg_loss(loss: float, var_forecast: float, es_forecast: float, tail_level: float) -> float:
+    """Logistic FZG on (-100 L, -100 VaR, -100 ES), lower is better.
+
+    G1(x)=x, G2(x)=sigmoid(x), primitive=softplus(x), a(y)=log(2).
+    The expanded lower-tail convention is I(y<=q)*(q-y)-alpha*q
+    + sigmoid(e)*(e-q+I(y<=q)*(q-y)/alpha)-softplus(e)+log(2).
+    Unlike FZ0, finite coherent nonpositive ES is in the score domain.
+    The factor 100 belongs only to evaluation, never model training.
+    """
+    valid, _ = validate_forecast_values(var_forecast, es_forecast)
+    if not valid or not math.isfinite(loss) or not 0 < tail_level < 1:
+        return math.nan
+    y, q, e = 100.0 * loss, 100.0 * var_forecast, 100.0 * es_forecast
+    if not all(math.isfinite(value) for value in (y, q, e)):
+        return math.nan
+    alpha = 1.0 - tail_level
+    excess = max(y - q, 0.0)
+    exp_small = math.exp(-abs(e))
+    weight = exp_small / (1.0 + exp_small) if e >= 0 else 1.0 / (1.0 + exp_small)
+    softplus = max(-e, 0.0) + math.log1p(exp_small)
+    value = excess + alpha * q + weight * (q - e + excess / alpha) - softplus + math.log(2)
+    return float(value) if math.isfinite(value) else math.nan
+
+
 def forecast_eligible(row: Mapping[str, object], *, score: str = "var") -> bool:
     """Numerical eligibility, including recoverable ES-only legacy failures."""
     status = row.get("fit_status")
@@ -74,6 +98,8 @@ def forecast_eligible(row: Mapping[str, object], *, score: str = "var") -> bool:
         return False
     if score == "joint":
         return True
+    if score == "fzg":
+        return math.isfinite(fzg_loss(loss, var, es, level))
     return score == "fz0" and math.isfinite(fz_loss(loss, var, es, level))
 
 

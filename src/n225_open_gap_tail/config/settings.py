@@ -40,7 +40,6 @@ class Settings(BaseSettings):
     data_dir: Path = Field(default=Path("data"))
     bronze_data_dir: Path = Field(default=Path("data/bronze"))
     silver_data_dir: Path = Field(default=Path("data/silver"))
-    gold_data_dir: Path = Field(default=Path("data/gold"))
     artifacts_dir: Path = Field(default=Path("artifacts"))
     reports_dir: Path = Field(default=Path("reports"))
 
@@ -108,7 +107,6 @@ class Settings(BaseSettings):
             self.data_dir,
             self.bronze_data_dir,
             self.silver_data_dir,
-            self.gold_data_dir,
             self.artifacts_dir,
             self.reports_dir,
         )

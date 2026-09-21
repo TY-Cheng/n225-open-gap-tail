@@ -154,7 +154,7 @@ def _results_data_timing_audit(
     )
     return "\n".join(
         [
-            f"- The gold timing map covers `{date_range}` and the combined clean start is `{combined_clean_start}`.",
+            f"- The run-local timing map covers `{date_range}` and the combined clean start is `{combined_clean_start}`.",
             f"- {pre_start_sentence}",
             f"- {leakage_sentence}",
             f"- {fred_sentence}",

@@ -36,7 +36,7 @@ def evidence_map_mermaid() -> str:
         [
             "flowchart LR",
             '  A["Vendor and calendar inputs"] --> B["Bronze / silver caches"]',
-            '  B --> C["Gold panel and timing map"]',
+            '  B --> C["Run-local panel and timing map"]',
             '  C --> D["Leakage and sample gates"]',
             '  D --> E["Baseline benchmarks and advanced econometric benchmarks"]',
             '  D --> F["Primary ML nested information sets"]',

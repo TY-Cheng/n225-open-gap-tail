@@ -245,15 +245,3 @@ def _assert_run_config_compatible(run_dir: Path, *, force: bool = False) -> None
                 "config_lock_status": "locked_after_forecasts_or_metrics",
             },
         )
-
-
-def _gold_artifact_path(run_dir: Path, key: str, fallback: Path) -> Path:
-    manifest = _read_manifest(run_dir)
-    artifacts = manifest.get("gold_artifacts")
-    if isinstance(artifacts, Mapping):
-        candidate = artifacts.get(key)
-        if isinstance(candidate, str):
-            path = Path(candidate)
-            if path.exists():
-                return path
-    return fallback

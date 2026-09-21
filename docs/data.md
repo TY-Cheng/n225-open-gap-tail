@@ -98,162 +98,58 @@ FRED_ROBUSTNESS_SERIES="NFCI,ANFCI,STLFSI4"
 
 FRED uses current historical values with conservative availability semantics and is not ALFRED/vintage-safe unless a future run explicitly records realtime or vintage parameters. `DEXJPUS` is handled as a Federal Reserve H.10 weekly-batch as-of FX control: the previous business week's observations are unavailable until the following H.10 release timestamp. Massive FX is not part of the default tail-risk pipeline. `UUP`, when fetched, is a U.S.-traded dollar ETF proxy and should not be described as a USD/JPY exchange-rate source.
 
-## Current Clean-Run Data Inventory
+## Current Frozen-Run Data Inventory
 
-The current paper-facing evidence map is generated from:
+Updated 2026-09-21 from the retained panel and frozen evaluation artifacts.
+The forecast source is `artifacts/body22_expanding_oof_cov97_full_20260913`;
+the evaluation is `artifacts/reevaluation_fzg_grem_20260921`.
+[Results Snapshot](results_snapshot.md) owns model-comparison results and
+[Paper Plan](paper_plan.md) owns the evaluation and training contract.
 
-```text
-run_id = tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4
-requested window = 2016-07-19 to 2026-05-22
-clean forecast sample = 2018-06-20 to 2026-05-22
-clean forecast observations = 1,722
-```
+| Population | Dates | Rows / dates | Interpretation |
+| --- | --- | ---: | --- |
+| Stored modeling panel | 2016-07-19–2026-05-22 | 2,403 rows; 1,428 columns | Includes history and audit rows; not the OOS evaluation sample. |
+| Recorded combined clean start | 2018-06-20 | — | Predictor-driven lower bound, not the first OOS prediction. |
+| Scheduled OOS | 2023-01-26–2026-05-22 | 722 clean target dates | Monthly expanding walk-forward forecasts; model/scenario eligibility can differ. |
+| Full OOS target-session axis | 2023-01-26–2026-05-22 | 811 sessions | Preserves calendar positions, including excluded sessions. |
+| External-reference selection | 2024-04-01–2026-05-22 | 466 common dates | Joint availability of the four admitted external models, both tails. |
+| Main model comparison | 2023-07-03–2026-05-22 | 628 common dates | Two admitted ML recipes across A–D and both tails, plus the selected reference. |
 
-The clean sample begins after all required target fields, Massive core fields,
-FRED core fields, and the canonical FRED H.10 USD/JPY control satisfy the
-registered coverage and timing requirements. The gold modeling panel contains
-2,403 target-date rows before the clean-sample filter.
+The main common dates span 704 target sessions with 76 holes. They are not a
+gap-free time series. Native gates use each model/scenario's eligible dates;
+they do not use the 628-date comparison panel. The 466-date and 628-date panels
+answer different comparison questions, not a disjoint selection/test split.
 
-### Run Metadata From The Current Results Snapshot
+The former 1,722-date May-run summary is **not the current OOS sample**.
+Its source run has been retired along with the superseded reevaluation. Its remaining
+source provenance has also been deleted by explicit user decision. The old
+data vintage, configurations and source-only audits are no longer retained;
+this reduces historical traceability but does not change current results.
+The three duplicated panel payloads (modeling panel, calendar map and feature
+coverage) were verified byte-identical to body22's `panel/` files and remain there.
+The body22 manifest's unchanged `source_run` is now a historical identifier, not
+a live input path. Current evaluation and paper exports use body22's retained
+files; the retired run cannot be replayed from the retained artifacts alone.
+Old website figure/table copies and unrefreshed distribution, raw-tail EVT,
+feature-coverage and leakage summary tables are no longer presented as current
+results here.
 
-| Field | Value |
-| --- | --- |
-| Run ID | `tailrisk_20160719_20260522_20260527T083659Z_commit_7f628ff4` |
-| Claim level | `research_candidate` |
-| Requested window | `2016-07-19` to `2026-05-22` |
-| Combined clean start | `2018-06-20` |
-| Gold panel dates | `2016-07-19` to `2026-05-22` |
-| Forecast sample dates | `2018-06-20` to `2026-05-22` |
-| Forecast sample rows | `1,722` |
-| FRED vintage safe | `False` |
+### Audit Evidence and Interpretation
 
-The clean start is a modeling lower bound. Dates before it remain audit history
-rather than forecast evidence. FRED values use conservative release timing but
-are current historical observations rather than ALFRED real-time vintages.
-
-### Target Distribution Summary
-
-These rows are copied from the current results snapshot so the data appendix can
-stand alone when describing the empirical target.
-
-| Measure | Value |
-| --- | --- |
-| Clean forecast observations | `1722` |
-| Date range | `2018-06-20 to 2026-05-22` |
-| Mean gap | `0.000599` log, about `+0.06%` |
-| Standard deviation | `0.011039` log, about `+1.11%` |
-| Skewness | `-0.066817` |
-| Excess kurtosis | `11.159` |
-| 1% quantile | `-0.031062` log, about `-3.06%` |
-| 5% quantile | `-0.015606` log, about `-1.55%` |
-| Median | `0.001031` log, about `+0.10%` |
-| 95% quantile | `0.015357` log, about `+1.55%` |
-| 99% quantile | `0.027480` log, about `+2.79%` |
-| Max drawdown gap | `-0.087513` log, about `-8.38%`, on `2020-03-13` |
-| Max upside gap | `0.096937` log, about `+10.18%`, on `2025-04-10` |
-| Jarque-Bera p-value | `0` |
-| Jarque-Bera statistic | `8962.16` |
-
-The target summary is a raw-target diagnostic. It motivates tail-risk modeling
-but does not validate any VaR/ES forecast.
-
-### Raw-Tail EVT Data Diagnostics
-
-| Tail | Threshold probability | Threshold | Exceedances | Mean excess | GPD xi | GPD scale | Hill xi |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| left_tail_loss | `0.900` | `0.0160237` | `78` | `0.0104227` | `0.148364` | `0.00886263` | `0.432871` |
-| left_tail_loss | `0.925` | `0.0195554` | `59` | `0.00979449` | `0.318986` | `0.00680111` | `0.342056` |
-| left_tail_loss | `0.950` | `0.0223228` | `39` | `0.0114201` | `0.232349` | `0.0088172` | `0.354783` |
-| left_tail_loss | `0.975` | `0.0293044` | `20` | `0.0127979` | `0.257683` | `0.00960064` | `0.31884` |
-| left_tail_loss | `0.990` | `0.0373166` | `8` | `0.0175619` | `0.204438` | `0.0142233` | `0.342351` |
-| right_tail_loss | `0.900` | `0.0150066` | `92` | `0.00903798` | `0.403374` | `0.00560621` | `0.381845` |
-| right_tail_loss | `0.925` | `0.0169408` | `69` | `0.00984642` | `0.47548` | `0.00563718` | `0.370713` |
-| right_tail_loss | `0.950` | `0.0189956` | `46` | `0.0122032` | `0.29399` | `0.00878548` | `0.41336` |
-| right_tail_loss | `0.975` | `0.0259629` | `23` | `0.0146916` | `0.225126` | `0.0115191` | `0.383413` |
-| right_tail_loss | `0.990` | `0.0369444` | `10` | `0.0171855` | `0.218772` | `0.0136836` | `0.352692` |
-| absolute_gap | `0.900` | `0.0155233` | `170` | `0.00965025` | `0.287887` | `0.00694789` | `0.401867` |
-| absolute_gap | `0.925` | `0.0175227` | `127` | `0.0106185` | `0.249472` | `0.00801625` | `0.397719` |
-| absolute_gap | `0.950` | `0.0208133` | `85` | `0.011767` | `0.256151` | `0.00884033` | `0.383021` |
-| absolute_gap | `0.975` | `0.0269986` | `43` | `0.0144273` | `0.164437` | `0.0120976` | `0.372398` |
-| absolute_gap | `0.990` | `0.0371795` | `17` | `0.0183049` | `0.0605131` | `0.0172189` | `0.353301` |
-
-These diagnostics are computed on raw left loss, raw right loss, and absolute
-gap. They are data diagnostics, not forecast-model diagnostics.
-
-### Gold Panel, Target Audit, And Calendar Map
-
-| Measure | Value |
-| --- | --- |
-| Gold modeling rows | `2403` |
-| Gold columns | `1428` |
-| Target-audit rows | `2403` |
-| Clean target rows | `2206` |
-| Forecast-sample rows | `1722` |
-| Rows before combined clean start | `420` |
-| Target-not-clean rows | `197` |
-| Mapping excluded rows | `64` |
-
-| Target audit reason | Rows |
-| --- | --- |
-| None | `2206` |
-| roll_sq_excluded | `195` |
-| missing_previous_jpx_session | `1` |
-| missing_reference_price | `1` |
-
-| Timing-map measure | Value |
-| --- | --- |
-| Normal trading mappings | `2333` |
-| U.S./Japan desync mappings | `1` |
-| NYSE early-close mappings | `32` |
-| EDT rows | `1563` |
-| EST rows | `840` |
-
-Roll/SQ exclusions, missing reference prices, early closes, U.S./Japan
-desynchronization, and DST regimes are stored as auditable row-level state
-rather than applied as hidden filters.
-
-### Feature Coverage From The Current Gold Panel
-
-| Source family | Block | Features | Mean missing | Max missing |
-| --- | --- | --- | --- | --- |
-| Asia proxy | Asia proxy | `10` | `0.000%` | `0.000%` |
-| cboe_volatility | fred_core | `2` | `0.000%` | `0.000%` |
-| cross_market_derived | Asia proxy | `1` | `0.000%` | `0.000%` |
-| cross_market_derived | fred_core | `2` | `0.000%` | `0.000%` |
-| cross_market_derived | JP proxy | `2` | `0.000%` | `0.000%` |
-| cross_market_derived | US core | `2` | `0.000%` | `0.000%` |
-| event_calendar | calendar_controls | `7` | `0.000%` | `0.000%` |
-| fred_core | fred_core | `9` | `0.000%` | `0.000%` |
-| FRED credit enriched | FRED credit enriched | `4` | `62.398%` | `62.427%` |
-| fx_core | fx_core | `4` | `0.000%` | `0.000%` |
-| Japan history | Japan only | `37` | `0.005%` | `0.058%` |
-| JP proxy | JP proxy | `8` | `0.000%` | `0.000%` |
-| J-Quants N225 options | Japan only | `30` | `1.605%` | `14.634%` |
-| massive_daily | US core | `40` | `0.001%` | `0.058%` |
-| massive_minute | Asia proxy | `60` | `0.000%` | `0.000%` |
-| massive_minute | JP proxy | `24` | `0.348%` | `4.181%` |
-| massive_minute | US late session | `84` | `0.000%` | `0.000%` |
-| massive_optional | massive_optional | `2` | `0.000%` | `0.000%` |
-
-Feature coverage is an information-transparency diagnostic. A feature is
-admissible only when the timestamp availability and feature-matrix gates also
-pass.
-
-### Leakage Audit Summary
-
-| Field | Value |
-| --- | --- |
-| Status | `pass_with_warnings` |
-| Rows audited | `783378` |
-| Failures | `0` |
-| Warnings | `611790` |
-| Panel row count | `2403` |
-| Panel signature seed | `42` |
-| Panel signature | `8094755ffc96b01af6fb904876e0abdd3920370fa1b07e44c2c95681cd3e5431` |
-
-Zero hard failures means no audited row violated the timestamp invariant. The
-warnings are retained because conservative-lag and missing-feature situations
-can still matter for interpretation.
+- The forecast source's `panel/modeling_panel.parquet`,
+  `panel/calendar_map.parquet` and `panel/feature_coverage.parquet` retain
+  the panel, timestamp mappings and coverage diagnostics.
+- Its `audits/leakage_check.parquet` and
+  `audits/leakage_check_summary.json` retain the recorded timestamp audit.
+  These retained audits were not rerun during this documentation cleanup.
+- The evaluation's `target_schedule.parquet`, `availability.parquet`,
+  `availability_by_date.parquet` and `common_sample.parquet` distinguish
+  the full session axis, native eligibility and comparison-specific masks.
+- `artifacts/paper_bundle_20260921/sample.csv` and `timing.csv` provide
+  compact sample populations and evaluated-session timestamp mappings.
+- FRED uses current historical values with conservative release timing, not
+  ALFRED real-time vintages. Timestamp-audit success is not proof of
+  vintage-safe data or forecast calibration.
 
 ### Active Target and Calendar Inputs
 
@@ -449,13 +345,21 @@ They use the same cache vocabulary as the run workflow: vendor payloads under
 `data/bronze/` and typed normalized outputs under `data/silver/`. Smoke artifacts do not
 constitute empirical validation of the forecasting paper.
 
-`data/bronze`, `data/silver`, and `data/gold` are logical data-lake locations.
+`data/bronze` and `data/silver` are the reusable data-lake locations.
 Local machines should map `DATA_DIR` to external storage in `.env`, or use a
 repo-local `data/` symlink that resolves outside the cloud-synced repo.
 Experiment outputs live directly under `ARTIFACTS_DIR/<run_id>/`, with
-`ARTIFACTS_DIR=artifacts` by default. Run-local panels, forecasts, diagnostics,
-tables, and figures are not silver or gold datasets. `reports/` is reserved for
+`ARTIFACTS_DIR=artifacts` by default. Modeling inputs live in each run's `panel/`;
+leakage checks live in its `audits/`. Forecasts, diagnostics, tables, and figures
+are also run-local artifacts, not silver datasets. `reports/` is reserved for
 human-readable reports; operational logs and temporary receipts stay in `.cache/`.
+
+The former duplicate data-lake layer is retired. Legacy storage fields, when
+present in historical manifests, are ignored rather than rewritten. New runs
+write modeling inputs and audits only to their run-local directories.
+Readers require the corresponding run-local files; leakage signatures and
+configuration bindings remain enforced. Existing frozen experiment artifacts
+and their hashes are not rewritten by this storage change.
 
 ## Forecast Origins
 
@@ -509,11 +413,12 @@ Before modeling, each predictor block must produce an availability table with:
 - frequency and release/update timing;
 - effective sample impact after joining to OSE target dates.
 
-The target audit and requested window determine the main target-history lower
-bound. Predictor timelines remain audited separately: variables with short or
-unstable histories enter only where the existing training-window feature gates
-admit them. They do not shorten every model's history. These feature gates are
-distinct from the downstream model coverage gates.
+The current ML run restores the predictor-driven combined clean start described
+below, followed by per-training-window feature gates: at least 97% finite
+coverage plus variance and timestamp checks. External models retain their native
+target histories. Model comparison uses the separately declared common-date
+panels, not a new common training history. Predictor coverage gates are distinct
+from the downstream Kupiec, Christoffersen independence and GREM model gates.
 
 ## Cache-First Data Lake Contract
 
@@ -574,16 +479,17 @@ Layer boundaries:
   timestamps, row counts, schema version, schema hash, and content hash.
 - Silver stores canonical research rows. J-Quants silver filters `NK225F`, stores UTC-aware
   timestamps, flags zero or negative prices and OHLC violations, and does not impute.
-- Gold joins targets, calendar map, Massive predictors, minute late-session features, FRED
-  predictors, roll/SQ flags, and audit columns by `ose_trading_date`.
+- Each run's `artifacts/<run_id>/panel/` joins targets, calendar map, Massive predictors,
+  minute late-session features, FRED predictors, roll/SQ flags, and audit columns by
+  `ose_trading_date`.
 
-Rebuild semantics are layer-aware. Rebuilding silver or gold uses existing local cache and
+Rebuild semantics are layer-aware. Rebuilding silver or the run-local panel uses existing local cache and
 does not call vendor APIs unless bronze is missing or a vendor refresh is explicitly
 requested.
 
 ## Calendar Map and Join Diagnostics
 
-`calendar_map.parquet` is built before the gold panel. It maps the relevant U.S. close date
+`calendar_map.parquet` is built before the modeling panel. It maps the relevant U.S. close date
 to each OSE target date and records:
 
 - U.S. official close UTC and early-close flag;
@@ -594,7 +500,7 @@ to each OSE target date and records:
 - enum-valued `mapping_status`: `normal_trading`, `us_holiday`, `jp_holiday`,
   `us_jp_desync`, `ose_holiday_trading`, or `unmapped`.
 
-Gold joins preserve target rows when predictors are missing. Missing predictors are reported
+Panel joins preserve target rows when predictors are missing. Missing predictors are reported
 with enum-valued `join_miss_reason`, including entitlement gaps, missing cache partitions,
 FRED release lag, `fred_vintage_not_realtime_safe`, market-calendar desync, and predictor
 nulls. This keeps structural missingness separate from random data gaps.
@@ -608,7 +514,7 @@ fresh at run start remain valid for that run even if the TTL would expire mid-ru
 cache metadata file records the pull timestamp, run-start TTL decision timestamp, vintage
 label, revision-risk label, and refresh status.
 
-For ordinary non-FX FRED predictors, the gold panel selects each feature independently using
+For ordinary non-FX FRED predictors, the modeling panel selects each feature independently using
 the latest non-null value whose `feature_available_ts_utc` is no later than the model cutoff.
 Forward-filled levels keep their source observation date and availability timestamp; synthetic
 filled diffs are set to `0.0` and marked with fill metadata rather than treated as raw

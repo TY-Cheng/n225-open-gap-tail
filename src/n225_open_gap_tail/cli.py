@@ -250,7 +250,7 @@ def contracts_build(
 def snapshot(
     run_id: str = typer.Option("latest", help="Run id. Defaults to the latest tail-risk run."),
 ) -> None:
-    """Write docs/results_snapshot.md from a completed full tail-risk run."""
+    """Write a run-local snapshot without changing the documentation website."""
     settings = load_settings()
     result = write_results_snapshot_from_run(
         settings=settings,
@@ -259,8 +259,8 @@ def snapshot(
 
     typer.echo(f"run id: {result.snapshot_id}")
     typer.echo(f"run dir: {result.snapshot_dir}")
-    typer.echo(f"docs results snapshot: {result.docs_results_path}")
-    typer.echo(f"gold panel rows: {result.target_rows}")
+    typer.echo(f"run results snapshot: {result.results_path}")
+    typer.echo(f"panel rows: {result.target_rows}")
     typer.echo(f"model status: {result.model_status}")
 
 
@@ -296,7 +296,7 @@ def build_panel_command(
     ),
     force: bool = typer.Option(False, help="Bypass source caches and refresh panel inputs."),
 ) -> None:
-    """Build the cache-first modeling panel and durable gold artifacts."""
+    """Build the cache-first modeling panel and run-local audit artifacts."""
     settings = load_settings()
     result = build_panel(settings=settings, start=start, end=end or None, force=force)
 
@@ -319,6 +319,35 @@ def reevaluate_command(
 
     result = reevaluate_frozen_run(resolve_run_dir(load_settings(), run_id), output_dir=output_dir)
     typer.echo(f"frozen re-evaluation: {result}")
+
+
+@app.command("information-contrasts")
+def information_contrasts_command(
+    evaluation_dir: Annotated[Path, typer.Option(help="Frozen FZG/GREM evaluation directory.")],
+    output_dir: Annotated[
+        Path, typer.Option(help="New diagnostic directory outside frozen inputs.")
+    ],
+) -> None:
+    """Compare A-reference and B-A/C-B/D-C without retraining or reselecting models."""
+    from n225_open_gap_tail.diagnostics.information_contrasts import run_information_contrasts
+
+    result = run_information_contrasts(evaluation_dir, output_dir=output_dir)
+    typer.echo(f"frozen information contrasts: {result}")
+
+
+@app.command("paper-bundle")
+def paper_bundle_command(
+    evaluation_dir: Annotated[Path, typer.Option(help="Frozen FZG/GREM evaluation directory.")],
+    information_dir: Annotated[Path, typer.Option(help="Frozen information-contrast directory.")],
+    output_dir: Annotated[Path, typer.Option(help="New paper figure/table directory.")],
+) -> None:
+    """Export paper figures and tables from frozen results; no training or rescoring."""
+    from n225_open_gap_tail.reporting.paper_bundle import export_paper_bundle
+
+    result = export_paper_bundle(
+        evaluation_dir=evaluation_dir, information_dir=information_dir, output_dir=output_dir
+    )
+    typer.echo(f"paper bundle: {result}")
 
 
 @app.command("body-pilot")

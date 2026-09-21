@@ -18,7 +18,11 @@ from n225_open_gap_tail.config.runtime import (
     PipelineRunError,
     validate_forecast_values,
 )
-from n225_open_gap_tail.forecasting.reevaluation import _availability_records, reevaluate_frozen_run
+from n225_open_gap_tail.forecasting.reevaluation import (
+    _availability_records,
+    _global_inference,
+    reevaluate_frozen_run,
+)
 from n225_open_gap_tail.market.calendars import _ose_night_close_for_us_close
 from n225_open_gap_tail.metrics.admissibility import select_external_references
 from n225_open_gap_tail.metrics.cross_suite_dm import build_screened_comparison_artifacts
@@ -73,6 +77,49 @@ def test_var_joint_and_fz0_have_separate_domains() -> None:
     assert metrics[0]["rows"] == 3
     assert metrics[0]["joint_rows"] == 2
     assert metrics[0]["fz0_rows"] == 1
+
+
+def test_frozen_availability_keeps_signed_es_in_primary_score_domain() -> None:
+    row = {
+        **forecast("2024-01-02", var=-0.02, es=-0.01),
+        "target_family": "test_target",
+    }
+    ledger, summary = _availability_records(
+        [row],
+        {"2024-01-02": {"realized_loss": 0.5}},
+        target="test_target",
+        level=0.95,
+    )
+    recorded = next(item for item in ledger if item["recorded"])
+    assert recorded["availability_reason"] == "available"
+    assert recorded["fzg_eligible"] is True
+    assert recorded["fz0_eligible"] is False
+    native = next(item for item in summary if item["recorded_rows"])
+    assert native["fzg_rows"] == 1 and native["fz0_rows"] == 0
+
+
+def test_frozen_global_inference_preserves_daily_panel_and_fzg_only_mcs() -> None:
+    rows = [
+        {
+            "model_name": model,
+            "forecast_date": (datetime(2024, 1, 1) + timedelta(days=day)).date().isoformat(),
+            "target_session_index": 2 * day,
+            "fzg": 1.0 + np.sin(day + offset),
+            "quantile_loss": (1.0 + np.sin(day + offset)) / 10,
+            "exception": day % 10 == 0,
+        }
+        for model, offset in (("first", 0), ("second", 1))
+        for day in range(125)
+    ]
+    result = _global_inference(rows)
+    assert len(result["global_scores"]) == 4
+    assert all(row["n_common"] == 125 for row in result["global_scores"])
+    assert len(result["pairwise"]) == 4  # two scores x distinct block lengths 5, 10
+    assert all(row["calendar_span"] == 249 for row in result["pairwise"])
+    assert len(result["mcs"]) == 4
+    assert {row["score_name"] for row in result["mcs"]} == {"fzg"}
+    with pytest.raises(ValueError, match="complete unique date/model"):
+        _global_inference(rows[:-1])
 
 
 def test_independence_counts_only_adjacent_target_sessions_and_sorts_rows() -> None:
@@ -362,10 +409,11 @@ def test_frozen_replay_preserves_source_and_reports_missing_candidates(
     availability = pl.read_parquet(result / "availability.parquet")
     assert availability.height == 24 + 8 * len(roster)
     assert manifest["ml_model_names"] == list(roster)
-    screens = pl.read_parquet(result / "coverage_admissibility.parquet")
+    screens = pl.read_parquet(result / "admissibility.parquet")
     assert set(roster).issubset(screens["model_name"])
-    matrix = pl.read_parquet(result / "ml_matrix.parquet")
-    assert set(matrix["model_name"].drop_nulls()) == set(roster)
+    assert (result / "comparison_status.parquet").exists()
+    assert (result / "pairwise.parquet").exists()
+    assert (result / "mcs.parquet").exists()
     assert availability["scheduled_rows"].unique().to_list() == [3]
     native = pl.read_parquet(result / "native_metrics.parquet")
     assert native["christoffersen_transition_count"].to_list() == [0, 0]
@@ -374,14 +422,14 @@ def test_frozen_replay_preserves_source_and_reports_missing_candidates(
     assert grem.height == 2 * (24 + 8 * len(roster))
     assert set(grem["window"]) == {250, 500}
     assert set(roster).issubset(grem["model_name"])
-    assert manifest["grem_policy"]["used_for_selection"] is False
-    assert manifest["joint_diagnostic_policy"]["used_for_selection"] is False
-    joint = pl.read_parquet(result / "joint_calibration.parquet")
-    assert joint.height == availability.height
-    assert joint["joint_rows"].sum() == 4
-    assert (result / "joint_murphy_samples.parquet").exists()
+    assert manifest["grem_policy"]["used_for_selection"] is True
+    assert manifest["grem_policy"]["selection_window"] == 500
+    assert manifest["grem_policy"]["sensitivity_window_not_a_gate"] == 250
+    assert manifest["source_hashes_verified_after_evaluation"] is True
+    assert manifest["evaluation_policy"]["mcs"] == "FZG_only_TR_nominal95_approximate_exploratory"
+    assert not (result / "joint_murphy_samples.parquet").exists()
     # These candidates fail N>=450, but GREM must still retain their input timelines.
-    assert not any(native["coverage_gate_pass"])
+    assert not any(native["var_gate_pass"])
     curves = pl.read_parquet(result / "grem_curves.parquet")
     assert curves["forecast_date"].n_unique() == 4
     assert set(curves["window"]) == {250, 500}

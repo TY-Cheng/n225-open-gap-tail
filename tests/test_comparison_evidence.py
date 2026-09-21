@@ -17,7 +17,7 @@ from n225_open_gap_tail.metrics.cross_suite_dm import (
 from n225_open_gap_tail.reporting.latex import _coverage_admissibility_to_latex
 
 
-def test_coverage_admissibility_counts_all_three_checks_across_eight_scenarios() -> None:
+def test_coverage_admissibility_reports_breach_band_but_gates_only_on_pvalues() -> None:
     rows: list[dict[str, object]] = []
     information_sets = ("A", "B", "C", "D")
     for model_name in ("pass_model", "kupiec_failure"):
@@ -29,7 +29,7 @@ def test_coverage_admissibility_counts_all_three_checks_across_eight_scenarios()
                         "tail_side": tail_side,
                         "information_set": information_set,
                         "rows": 500,
-                        "var_breach_rate": 0.05,
+                        "var_breach_rate": 0.20 if model_name == "pass_model" else 0.05,
                         "expected_breach_rate": 0.05,
                         "kupiec_pvalue": (
                             0.01
@@ -53,7 +53,7 @@ def test_coverage_admissibility_counts_all_three_checks_across_eight_scenarios()
         {
             "model_name": "pass_model",
             "eligible_scenarios": 8,
-            "breach_passes": 8,
+            "breach_passes": 0,
             "kupiec_passes": 8,
             "christoffersen_independence_passes": 8,
             "mean_exceedance_severity_min": 0.010,

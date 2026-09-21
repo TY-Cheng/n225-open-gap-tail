@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import time
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
+import numpy as np
 import polars as pl
 
 from n225_open_gap_tail.config.git import _git_commit, _git_dirty
@@ -21,25 +24,21 @@ from n225_open_gap_tail.config.runtime import (
     find_oos_start_date,
 )
 from n225_open_gap_tail.data_lake.artifacts import _write_json, _write_parquet
-from n225_open_gap_tail.inference.core import build_common_sample_artifacts
 from n225_open_gap_tail.metrics.admissibility import (
     PASS_ALL_INFORMATION_SETS,
     PASS_ALL_TAIL_SIDES,
-    coverage_admissibility_summary_rows,
     pass_all_row_passes,
 )
-from n225_open_gap_tail.metrics.cross_suite_dm import build_screened_comparison_artifacts
 from n225_open_gap_tail.metrics.grem import build_grem_artifacts
-from n225_open_gap_tail.metrics.joint_diagnostics import build_joint_diagnostic_artifacts
-from n225_open_gap_tail.metrics.result_matrix import (
-    build_metric_records,
-    build_ml_tail_result_matrix_artifacts,
-)
+from n225_open_gap_tail.metrics.result_matrix import build_metric_records
+from n225_open_gap_tail.metrics.robust_comparison import build_robust_comparison_artifacts
+from n225_open_gap_tail.metrics.score_inference import build_score_inference
 from n225_open_gap_tail.metrics.stat_utils import forecast_eligible, index_forecast_sessions
 from n225_open_gap_tail.models.ml_body import EXPERIMENT_MODEL_NAMES
 
 
 def reevaluate_frozen_run(run_dir: Path, *, output_dir: Path | None = None) -> Path:
+    started = time.perf_counter()
     run_dir = run_dir.resolve()
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     output_dir = (output_dir or run_dir.parent / f"reevaluation_{run_dir.name}_{stamp}").resolve()
@@ -47,12 +46,15 @@ def reevaluate_frozen_run(run_dir: Path, *, output_dir: Path | None = None) -> P
         raise ValueError("Frozen re-evaluation output must be outside the source run")
     if output_dir.exists():
         raise FileExistsError(f"Refusing to overwrite re-evaluation output: {output_dir}")
-    source_manifest = json.loads((run_dir / "manifest.json").read_text())
+    source_manifest_path = run_dir / "manifest.json"
+    source_hashes = {str(source_manifest_path): _file_sha256(source_manifest_path)}
+    source_manifest = json.loads(source_manifest_path.read_text())
     body_experiment = source_manifest.get("kind") == "shared_body_rolling_forecast"
     ml_model_names = EXPERIMENT_MODEL_NAMES if body_experiment else ML_TAIL_MODEL_NAMES
     if body_experiment and source_manifest.get("model_names") != list(ml_model_names):
         raise ValueError("Body experiment manifest does not contain the registered 22-model roster")
     panel_path = run_dir / "panel" / "modeling_panel.parquet"
+    source_hashes[str(panel_path)] = _file_sha256(panel_path)
     panel_columns = pl.read_parquet_schema(panel_path)
     columns: list[str] = [
         name
@@ -99,12 +101,14 @@ def reevaluate_frozen_run(run_dir: Path, *, output_dir: Path | None = None) -> P
     ):
         path = run_dir / "forecasts" / filename
         source_files.append(path)
+        source_hashes[str(path)] = _file_sha256(path)
         forecasts.extend(
             {**row, "suite": suite} for row in pl.read_parquet(path).iter_rows(named=True)
         )
         failure_path = path.with_name(filename.replace("forecasts", "failures"))
         if failure_path.exists():
             source_files.append(failure_path)
+            source_hashes[str(failure_path)] = _file_sha256(failure_path)
             source_failures.extend(
                 {**row, "suite": suite}
                 for row in pl.read_parquet(failure_path).iter_rows(named=True)
@@ -112,6 +116,7 @@ def reevaluate_frozen_run(run_dir: Path, *, output_dir: Path | None = None) -> P
         diagnostic_path = path.with_name(filename.replace("forecasts", "fit_diagnostics"))
         if diagnostic_path.exists():
             source_files.append(diagnostic_path)
+            source_hashes[str(diagnostic_path)] = _file_sha256(diagnostic_path)
             fit_diagnostics.extend(pl.read_parquet(diagnostic_path).to_dicts())
     forecasts = index_forecast_sessions(forecasts, session_dates=list(panel_rows))
     ledger, availability = _availability_records(
@@ -119,24 +124,21 @@ def reevaluate_frozen_run(run_dir: Path, *, output_dir: Path | None = None) -> P
     )
     native = build_metric_records(forecasts)
     for row in native:
-        row["coverage_gate_pass"] = pass_all_row_passes(row)
-    native_frame = pl.from_dicts(native, infer_schema_length=None)
-    screens = coverage_admissibility_summary_rows(native_frame, model_order=ml_model_names)
-    screens.extend(
-        coverage_admissibility_summary_rows(
-            native_frame,
-            model_order=BENCHMARK_BASELINE_MODEL_NAMES + BENCHMARK_ADVANCED_MODEL_NAMES,
-            information_sets=("target_history_only",),
-        )
+        row["var_gate_pass"] = pass_all_row_passes(row)
+    grem = build_grem_artifacts(
+        forecasts,
+        roster=availability,
+        panel_rows=panel_rows,
+        start=start,
+        target=target,
+        tail_level=level,
+        unavailable_records=source_failures + fit_diagnostics,
     )
-    screened = build_screened_comparison_artifacts(
-        forecasts, native_frame, ml_model_names=ml_model_names
+    comparison = build_robust_comparison_artifacts(
+        forecasts, native, grem["grem_summary"], ml_model_names=ml_model_names
     )
-    ml_rows = [row for row in forecasts if row["suite"] == "ml_tail"]
-    ml = build_ml_tail_result_matrix_artifacts(ml_rows, model_names=ml_model_names)
     outputs: dict[str, list[dict[str, object]]] = {
         "native_metrics": native,
-        "coverage_admissibility": screens,
         "availability": availability,
         "availability_by_date": ledger,
         "source_failure_records": source_failures,
@@ -151,45 +153,12 @@ def reevaluate_frozen_run(run_dir: Path, *, output_dir: Path | None = None) -> P
             for day, row in panel_rows.items()
             if day >= start
         ],
-        **{f"screened_{key}": rows for key, rows in screened.items()},
-        **{
-            f"ml_{key}": cast(list[dict[str, object]], ml[key])
-            for key in ("matrix", "sample_audit", "dm")
-        },
+        **grem,
+        **comparison,
+        **_global_inference(comparison["daily_scores"]),
     }
-    for tier, models in (
-        ("baseline", BENCHMARK_BASELINE_MODEL_NAMES),
-        ("advanced", BENCHMARK_ADVANCED_MODEL_NAMES),
-    ):
-        comparison = build_common_sample_artifacts(
-            [row for row in forecasts if row["model_name"] in models],
-            suite=f"benchmark_{tier}",
-            anchor_model=models[0],
-            anchor_information_set="target_history_only",
-            model_names=models,
-        )
-        for key in ("primary_metrics", "model_eviction", "dm_inference"):
-            outputs[f"benchmark_{tier}_{key}"] = cast(list[dict[str, object]], comparison[key])
-    # Selection is already fixed above. Sequential diagnostics never feed back into it.
-    outputs.update(
-        build_joint_diagnostic_artifacts(
-            forecasts,
-            roster=availability,
-            ml_model_names=ml_model_names,
-            references=screened["references"],
-        )
-    )
-    outputs.update(
-        build_grem_artifacts(
-            forecasts,
-            roster=availability,
-            panel_rows=panel_rows,
-            start=start,
-            target=target,
-            tail_level=level,
-            unavailable_records=source_failures + fit_diagnostics,
-        )
-    )
+    if any(_file_sha256(path) != source_hashes[str(path)] for path in source_files):
+        raise RuntimeError("Source files changed during frozen reevaluation")
     manifest: dict[str, object] = {
         "kind": "frozen_forecast_reevaluation",
         "created_at_utc": datetime.now(UTC).isoformat(),
@@ -203,6 +172,14 @@ def reevaluate_frozen_run(run_dir: Path, *, output_dir: Path | None = None) -> P
         "evaluator_git_commit": _git_commit(),
         "evaluator_git_dirty": _git_dirty(),
         "source_files": [str(path) for path in source_files],
+        "source_sha256": source_hashes,
+        "source_hashes_verified_after_evaluation": True,
+        "evaluation_elapsed_seconds": time.perf_counter() - started,
+        "evaluation_protocol_version": "fzg_grem_global_20260921",
+        "evaluation_source_sha256": {
+            str(path.relative_to(Path(__file__).resolve().parents[1])): _file_sha256(path)
+            for path in sorted(Path(__file__).resolve().parents[1].rglob("*.py"))
+        },
         "forecast_rows": len(forecasts),
         "native_scenarios": len(native),
         "scheduled_start": start,
@@ -213,31 +190,29 @@ def reevaluate_frozen_run(run_dir: Path, *, output_dir: Path | None = None) -> P
         "source_model_policy": policy,
         "evaluation_policy": {
             "native_gates": (
-                "own_valid_var_sample_n450_breach_band_0.025_kupiec_and_independence_p0.05"
+                "own_valid_var_n450_kupiec_independence_p0.05_"
+                "plus_native_ES_GREM_W500_n450_complete_running_max_below20"
             ),
             "ml_admission": "all_four_information_sets_and_both_tails",
-            "external_admission": "both_tails_then_external_only_shared_fz0_dates",
-            "comparisons": "fixed_roster_by_question_separate_var_and_fz0_common_dates",
+            "external_admission": "both_tails_then_external_only_shared_joint_dates",
+            "reference": "one_global_minimum_equal_two_tail_FZG",
+            "comparisons": "all_admitted_ML_plus_fixed_reference_single_joint_common_panel",
+            "aggregation": "equal_eight_scenarios_per_date_then_equal_dates",
+            "primary_score": "logistic_FZG_G1_identity_G2_sigmoid_primitive_softplus_log2",
+            "score_units": "percentage_points_evaluation_only_training_unchanged",
+            "secondary_score": "quantile_loss",
+            "score_domain": "finite_coherent_signed_ES_no_positive_ES_restriction",
             "missing_members": "explicit_unavailable_never_silently_drop",
-            "bootstrap": "circular_target_session_blocks_with_missing_mask_reps999_seed225",
+            "bootstrap": "joint_circular_target_session_blocks_mask_ratio_reps9999_seed225",
+            "block_length": "max(5,round(N_common**(1/3)))_half_and_double_sensitivity",
+            "paired_tests": "all_pairs_two_sided_centered_bootstrap_plus_one_Holm_by_score",
+            "intervals": "pointwise_95pct_basic_not_simultaneous",
+            "inference_floor": "n_common120_pairwise_five_distinct_exception_dates_union8",
+            "mcs": "FZG_only_TR_nominal95_approximate_exploratory",
+            "mcs_floor": "all_pairs_meet_inference_floor_or_whole_set_unavailable",
+            "legacy_native_columns": "mean_fz_loss_is_FZ0_mean_quantile_loss_is_decimal",
         },
         "forecast_retrained": False,
-        "joint_diagnostic_policy": {
-            "population": "all_registered_candidates_before_coverage_screening",
-            "calibration": (
-                "native_joint_identification_means_pointwise_95pct_basic_block_intervals"
-            ),
-            "calibration_limits": (
-                "not_joint_or_conditional_test_"
-                "finite_second_moments_and_dependence_assumptions_not_verified"
-            ),
-            "es_interpretation": "joint_error_not_ES_only_when_VaR_misspecified",
-            "murphy": "upper_loss_S_v2_101_pooled_common_ES_loss_quantiles_including_bounds",
-            "comparisons": "fixed_roster_joint_eligible_dates_by_question",
-            "claim_scope": "descriptive_finite_grid_not_population_or_uniform_dominance",
-            "used_for_selection": False,
-            "sources": ["https://arxiv.org/html/1608.05498v2", "https://arxiv.org/pdf/1705.04537"],
-        },
         "grem_policy": {
             "method": "equal_capital_GREE_GREL_mixture_Taylor_approximation_gamma0.5",
             "windows": [500, 250],
@@ -249,7 +224,10 @@ def reevaluate_frozen_run(run_dir: Path, *, output_dir: Path | None = None) -> P
             "null": "correct_conditional_VaR_and_ES_not_underreported",
             "reference_level": 20,
             "error_scope": "single_sequence_5pct_anytime_not_familywise_or_post_selection",
-            "used_for_selection": False,
+            "used_for_selection": True,
+            "selection_window": 500,
+            "sensitivity_window_not_a_gate": 250,
+            "minimum_input_eligible_rows": 450,
             "source": "https://arxiv.org/html/2209.00991v6",
         },
         "calendar_features_regenerated": False,
@@ -273,6 +251,57 @@ def reevaluate_frozen_run(run_dir: Path, *, output_dir: Path | None = None) -> P
     # A directory without this last-written manifest is an incomplete evaluation.
     _write_json(output_dir / "manifest.json", manifest)
     return output_dir
+
+
+def _file_sha256(path: Path) -> str:
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def _global_inference(daily: list[dict[str, object]]) -> dict[str, list[dict[str, object]]]:
+    result: dict[str, list[dict[str, object]]] = {"global_scores": [], "pairwise": [], "mcs": []}
+    if not daily:
+        return result
+    models = list(dict.fromkeys(str(row["model_name"]) for row in daily))
+    dates = sorted({str(row["forecast_date"]) for row in daily})
+    lookup = {(str(row["forecast_date"]), str(row["model_name"])): row for row in daily}
+    if len(lookup) != len(daily) or len(lookup) != len(dates) * len(models):
+        raise ValueError("Global inference requires a complete unique date/model score panel")
+    indices = [
+        int(_required_float(lookup[(day, models[0])]["target_session_index"])) for day in dates
+    ]
+    exceptions = np.array(
+        [[bool(lookup[(day, model)]["exception"]) for model in models] for day in dates]
+    )
+    for score in ("fzg", "quantile_loss"):
+        values = np.array(
+            [[_required_float(lookup[(day, model)][score]) for model in models] for day in dates]
+        )
+        for model, mean in zip(models, np.mean(values, axis=0), strict=True):
+            result["global_scores"].append(
+                {
+                    "model_name": model,
+                    "score_name": score,
+                    "mean_score": float(mean),
+                    "n_common": len(dates),
+                    "date_start": dates[0],
+                    "date_end": dates[-1],
+                    "scenario_weights": "equal_eight",
+                    "date_weights": "equal",
+                    "score_units": "percentage_points",
+                    "scope": "exploratory_common_dates",
+                }
+            )
+        inference = build_score_inference(
+            values,
+            model_names=models,
+            session_indices=indices,
+            exception_flags=exceptions,
+            score_name=score,
+        )
+        result["pairwise"].extend(inference["pairwise"])
+        result["mcs"].extend(inference["mcs"])
+    return result
 
 
 def _availability_records(
@@ -328,6 +357,7 @@ def _availability_records(
             var_ok = forecast_eligible(row)
             joint_ok = forecast_eligible(row, score="joint")
             fz_ok = forecast_eligible(row, score="fz0")
+            fzg_ok = forecast_eligible(row, score="fzg")
             reason = (
                 "not_recorded"
                 if not row
@@ -337,8 +367,8 @@ def _availability_records(
                 if not var_ok
                 else "invalid_or_unavailable_joint_pair"
                 if not joint_ok
-                else "outside_fz0_domain"
-                if not fz_ok
+                else "nonfinite_fzg_score"
+                if not fzg_ok
                 else "available"
             )
             record = {
@@ -350,6 +380,7 @@ def _availability_records(
                 "var_eligible": var_ok,
                 "joint_eligible": joint_ok,
                 "fz0_eligible": fz_ok,
+                "fzg_eligible": fzg_ok,
                 "original_fit_status": row.get("fit_status"),
                 "original_is_valid_forecast": row.get("is_valid_forecast"),
                 "original_failure_reason": row.get("failure_reason"),
@@ -370,7 +401,7 @@ def _availability_records(
                 "missing_rows": len(scheduled) - len(by_date),
                 **{
                     f"{metric}_rows": sum(bool(row[f"{metric}_eligible"]) for row in scenario_rows)
-                    for metric in ("var", "joint", "fz0")
+                    for metric in ("var", "joint", "fz0", "fzg")
                 },
                 "recovered_var_rows": sum(
                     bool(row["recovered_var_from_legacy_es_filter"]) for row in scenario_rows

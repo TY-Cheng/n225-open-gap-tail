@@ -40,7 +40,6 @@ from n225_open_gap_tail.inference.core import build_common_sample_artifacts
 from n225_open_gap_tail.metrics.stat_utils import index_forecast_sessions
 from n225_open_gap_tail.metrics.information import (
     _assert_run_config_compatible,
-    _gold_artifact_path,
     build_incremental_information_records,
 )
 from n225_open_gap_tail.metrics.result_matrix import build_ml_tail_result_matrix_artifacts
@@ -71,12 +70,8 @@ def evaluate_ml_tail_suite(
     tail_side: str = TAIL_SIDE_BOTH,
     resume: bool = True,
 ) -> EvaluationResult:
-    panel_path = _gold_artifact_path(
-        run_dir, "modeling_panel", run_dir / "panel" / "modeling_panel.parquet"
-    )
-    coverage_path = _gold_artifact_path(
-        run_dir, "feature_coverage", run_dir / "panel" / "feature_coverage.parquet"
-    )
+    panel_path = run_dir / "panel" / "modeling_panel.parquet"
+    coverage_path = run_dir / "panel" / "feature_coverage.parquet"
     if not panel_path.exists():
         raise PipelineRunError(f"Missing modeling panel: {panel_path}")
     if not coverage_path.exists():

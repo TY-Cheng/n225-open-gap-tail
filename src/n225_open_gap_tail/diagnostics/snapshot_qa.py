@@ -180,5 +180,5 @@ The current evidence supports a coverage-first, loss-second comparison.
 - It should not claim that one model is universally strongest.
 - It should not average downside and upside evidence into one mechanism.
 - It should not present trigger or feature-block diagnostics as causal proof or realized trading performance.
-- The current bottom line: the pipeline now produces a clean evidence set from the durable gold layer; {advanced_bottom_line_bullet}
+- The current bottom line: the pipeline now produces an auditable evidence set from run-local artifacts; {advanced_bottom_line_bullet}
 """

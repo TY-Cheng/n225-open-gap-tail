@@ -36,7 +36,6 @@ from n225_open_gap_tail.inference.core import build_common_sample_artifacts
 from n225_open_gap_tail.metrics.stat_utils import index_forecast_sessions
 from n225_open_gap_tail.metrics.information import (
     _assert_run_config_compatible,
-    _gold_artifact_path,
 )
 from n225_open_gap_tail.models.benchmark import _evaluate_benchmark_shard
 from n225_open_gap_tail.models.benchmark_advanced import _evaluate_benchmark_advanced_shard
@@ -50,9 +49,7 @@ def evaluate_benchmark_suite(
     include_advanced: bool = True,
     tail_side: str = TAIL_SIDE_BOTH,
 ) -> EvaluationResult:
-    panel_path = _gold_artifact_path(
-        run_dir, "modeling_panel", run_dir / "panel" / "modeling_panel.parquet"
-    )
+    panel_path = run_dir / "panel" / "modeling_panel.parquet"
     if not panel_path.exists():
         raise PipelineRunError(f"Missing modeling panel: {panel_path}")
     _assert_run_config_compatible(run_dir, force=force)

@@ -45,6 +45,9 @@ theme:
     - toc.follow
 plugins:
   - search
+exclude_docs: |
+  /evaluation_protocol.md
+  /evaluation_20260921.md
 not_in_nav: |
   tables/*/model_metrics_breach_audit.md
 extra_javascript:

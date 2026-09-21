@@ -35,6 +35,7 @@ def test_pipeline_commands_expose_help() -> None:
         "build-panel",
         "evaluate",
         "export-tables",
+        "paper-bundle",
         "feature-audit",
         "leakage-check",
         "sensitivity",
@@ -43,6 +44,38 @@ def test_pipeline_commands_expose_help() -> None:
         result = runner.invoke(app, [command, "--help"])
         assert result.exit_code == 0
         assert command in result.output
+
+
+def test_paper_bundle_command_forwards_frozen_directories(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from n225_open_gap_tail.reporting import paper_bundle
+
+    evaluation = tmp_path / "evaluation"
+    information = tmp_path / "information"
+    output = tmp_path / "paper"
+
+    def export(*, evaluation_dir: Path, information_dir: Path, output_dir: Path) -> Path:
+        assert evaluation_dir == evaluation
+        assert information_dir == information
+        assert output_dir == output
+        return output_dir
+
+    monkeypatch.setattr(paper_bundle, "export_paper_bundle", export)
+    result = CliRunner().invoke(
+        app,
+        [
+            "paper-bundle",
+            "--evaluation-dir",
+            str(evaluation),
+            "--information-dir",
+            str(information),
+            "--output-dir",
+            str(output),
+        ],
+    )
+    assert result.exit_code == 0
+    assert f"paper bundle: {output}" in result.output
 
 
 def test_source_probe_command_reports_provider_status(
@@ -94,7 +127,7 @@ def test_status_reports_environment_without_secret_values(
     data_dir = tmp_path / "data"
     bronze_dir = data_dir / "bronze"
     silver_dir = data_dir / "silver"
-    gold_dir = data_dir / "gold"
+    retired_dir = data_dir / "gold"
     artifacts_dir = tmp_path / "artifacts"
     reports_dir = tmp_path / "reports"
     massive_key_file = tmp_path / "massive.keyfile"
@@ -103,14 +136,14 @@ def test_status_reports_environment_without_secret_values(
     massive_key_file.write_text("massive-secret\n", encoding="utf-8")
     massive_flat_file_key_file.write_text("massive-flat-file-secret\n", encoding="utf-8")
     jquants_key_file.write_text("jquants-secret\n", encoding="utf-8")
-    for directory in (data_dir, bronze_dir, silver_dir, gold_dir, artifacts_dir, reports_dir):
+    for directory in (data_dir, bronze_dir, silver_dir, artifacts_dir, reports_dir):
         directory.mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", "${HOME}/.venvs/n225-open-gap-tail")
     monkeypatch.setenv("DATA_DIR", str(data_dir))
     monkeypatch.setenv("BRONZE_DATA_DIR", str(bronze_dir))
     monkeypatch.setenv("SILVER_DATA_DIR", str(silver_dir))
-    monkeypatch.setenv("GOLD_DATA_DIR", str(gold_dir))
+    monkeypatch.setenv("GOLD_DATA_DIR", str(retired_dir))
     monkeypatch.setenv("ARTIFACTS_DIR", str(artifacts_dir))
     monkeypatch.setenv("REPORTS_DIR", str(reports_dir))
     monkeypatch.setenv("MASSIVE_DAILY_TICKERS", ",".join(CORE_MASSIVE_TICKERS))
@@ -133,7 +166,8 @@ def test_status_reports_environment_without_secret_values(
     assert f"  - {data_dir}: ok" in result.output
     assert f"  - {bronze_dir}: ok" in result.output
     assert f"  - {silver_dir}: ok" in result.output
-    assert f"  - {gold_dir}: ok" in result.output
+    assert str(retired_dir) not in result.output
+    assert not retired_dir.exists()
     assert f"  - {artifacts_dir}: ok" in result.output
     assert "data/raw" not in result.output
     assert "data/interim" not in result.output
@@ -427,14 +461,14 @@ def test_snapshot_command_reports_summary(
     tmp_path: Path,
 ) -> None:
     snapshot_dir = tmp_path / "tailrisk_run"
-    docs_results = tmp_path / "docs" / "results_snapshot.md"
+    results_path = snapshot_dir / "snapshot" / "results.md"
 
     def fake_write_results_snapshot_from_run(**kwargs: object) -> SnapshotResult:
         assert kwargs["run_id"] == "latest"
         return SnapshotResult(
             snapshot_id="tailrisk_latest",
             snapshot_dir=snapshot_dir,
-            docs_results_path=docs_results,
+            results_path=results_path,
             target_rows=250,
             model_status="completed_lightgbm_ml_tail_models",
         )
@@ -450,8 +484,8 @@ def test_snapshot_command_reports_summary(
     assert result.exit_code == 0
     assert "run id: tailrisk_latest" in result.output
     assert f"run dir: {snapshot_dir}" in result.output
-    assert f"docs results snapshot: {docs_results}" in result.output
-    assert "gold panel rows: 250" in result.output
+    assert f"run results snapshot: {results_path}" in result.output
+    assert "panel rows: 250" in result.output
     assert "model status: completed_lightgbm_ml_tail_models" in result.output
 
 

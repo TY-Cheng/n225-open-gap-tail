@@ -12,6 +12,8 @@ ask_reviewer.py
 # Local working notes and tool caches
 /CONTEXT.md
 /.cache/
+/docs/evaluation_protocol.md
+/docs/evaluation_20260921.md
 
 # Python
 __pycache__/
@@ -30,7 +32,6 @@ htmlcov/
 /data
 data/bronze/*
 data/silver/*
-data/gold/*
 /artifacts/
 reports/*
 !reports/.gitkeep
